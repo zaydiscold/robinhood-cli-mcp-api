@@ -4,7 +4,7 @@
 
 As far as I can tell, this is the **only open-source project that exposes the *entire* Robinhood brokerage surface as all three at once** — a reverse-engineered API map, a CLI, and an MCP server — driving the real account you already have, not an isolated sandbox.
 
-I wanted to run my *entire* Robinhood account from the terminal and from my agents — not just the crypto sandbox, the whole brokerage. So I sat down, mapped the API myself (browser captures, signed requests, a lot of staring at the network tab), and built this: a TypeScript CLI and MCP server that drive the full Robinhood surface using my own auth.
+I wanted to run my *entire* Robinhood account from the terminal and from my agents — full-blown account management: multi-account brokerage and retirement, options, watchlist management, recurring investments, transfers, dividends, margin, the works. So I sat down, mapped the API myself (browser captures, signed requests, a lot of staring at the network tab), and built this: a TypeScript CLI and MCP server that drive the full Robinhood surface using my own auth.
 
 ## What it does
 

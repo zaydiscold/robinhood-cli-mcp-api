@@ -231,7 +231,19 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "write-or-sensitive",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "summary": "List (GET) or create (POST) an ACH bank link.",
+    "bodyKeys": [
+      "bank_routing_number",
+      "bank_account_number",
+      "bank_account_type",
+      "bank_account_holder_name"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/{0}/",
@@ -239,7 +251,12 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "write-or-sensitive",
+    "methods": [
+      "GET",
+      "DELETE"
+    ],
+    "summary": "Get (GET) or delete (DELETE) an ACH relationship."
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/{0}/unlink/",
@@ -247,7 +264,11 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "destructive"
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Unlink an ACH relationship (no body)."
   },
   {
     "url": "https://api.robinhood.com/ach/transfers/",
@@ -255,7 +276,18 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "write-or-sensitive",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "summary": "List (GET) or create (POST) an ACH transfer. direction=deposit moves money IN, direction=withdraw moves money OUT.",
+    "bodyKeys": [
+      "ach_relationship",
+      "amount",
+      "direction"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
     "url": "https://api.robinhood.com/banking/cross-sell/creditcard/applications/{uuid}",
@@ -618,11 +650,12 @@
     "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
     "host": "api.robinhood.com",
     "categories": [
-      "history-documents"
+      "dividends"
     ],
     "risk": "sensitive-read",
     "methods": [
-      "GET"
+      "GET",
+      "PATCH"
     ],
     "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
     "seenOn": [
@@ -631,7 +664,12 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "summary": "Read (GET) or toggle (PATCH) DRIP dividend-reinvestment enrollment for an account. PATCH body: {\"drip_enrolled\": true|false}.",
+    "bodyKeys": [
+      "drip_enrolled"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
     "url": "https://api.robinhood.com/corp_actions/v2/split_payments/",
@@ -2436,7 +2474,12 @@
       "options",
       "orders"
     ],
-    "risk": "destructive"
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Cancel an order (no body).",
+    "source": "wire-writes 2026-05-29"
   },
   {
     "url": "https://api.robinhood.com/options/positions/",
@@ -2556,7 +2599,12 @@
     "categories": [
       "orders"
     ],
-    "risk": "destructive"
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Cancel an order (no body).",
+    "source": "wire-writes 2026-05-29"
   },
   {
     "url": "https://api.robinhood.com/orders/session/",
@@ -5563,7 +5611,8 @@
     ],
     "risk": "write-or-sensitive",
     "methods": [
-      "GET"
+      "GET",
+      "POST"
     ],
     "source": "cdp-2026-05-27-stock-account-sanitized",
     "seenOn": [
@@ -5575,7 +5624,18 @@
       "currency_pair_id",
       "page_size",
       "state_group"
-    ]
+    ],
+    "summary": "List (GET) or place (POST) a crypto order.",
+    "bodyKeys": [
+      "account_id",
+      "currency_pair_id",
+      "side",
+      "type",
+      "quantity",
+      "price",
+      "time_in_force"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
     "url": "https://nummus.robinhood.com/orders/{0}/",
@@ -5583,7 +5643,11 @@
     "categories": [
       "orders"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "write-or-sensitive",
+    "methods": [
+      "GET"
+    ],
+    "summary": "Get a single crypto order."
   },
   {
     "url": "https://nummus.robinhood.com/orders/{0}/cancel/",
@@ -5591,7 +5655,12 @@
     "categories": [
       "orders"
     ],
-    "risk": "destructive"
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Cancel an order (no body).",
+    "source": "wire-writes 2026-05-29"
   },
   {
     "url": "https://nummus.robinhood.com/portfolios/{uuid}/",
@@ -5701,7 +5770,7 @@
     "methods": [
       "GET"
     ],
-    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings \u2192 tickers/quotes",
+    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
     "queryKeys": [
       "ids"
     ]
@@ -5717,7 +5786,7 @@
     "methods": [
       "GET"
     ],
-    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings \u2192 tickers/quotes",
+    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
     "queryKeys": [
       "ids"
     ]
@@ -5890,5 +5959,46 @@
     "requestTypes": [
       "XHR"
     ]
+  },
+  {
+    "url": "https://bonfire.robinhood.com/recurring_schedules/{0}/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "recurring"
+    ],
+    "risk": "destructive",
+    "methods": [
+      "GET",
+      "PATCH",
+      "DELETE"
+    ],
+    "summary": "Manage one recurring buy: GET status, PATCH to resume/pause (body {\"state\":\"active\"} to resume, {\"state\":\"paused\"} to pause), DELETE to remove. Resume/pause is reversible; DELETE is not.",
+    "bodyKeys": [
+      "state"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting — state field confirmed on the schedule object; PATCH verb confirmed via OPTIONS.",
+    "source": "wire-writes 2026-05-29"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/recurring_schedules/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "recurring"
+    ],
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Create a recurring buy.",
+    "bodyKeys": [
+      "amount",
+      "frequency",
+      "investment_target",
+      "source_of_funds",
+      "start_date",
+      "account_number"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "source": "wire-writes 2026-05-29"
   }
 ]

@@ -17,7 +17,7 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
 
 **The four moving parts:**
 
-1. **The route map** (`api-map/brokerage-routes.json`) — a catalog of ~267 real Robinhood
+1. **The route map** (`api-map/brokerage-routes.json`) — a catalog of ~277 real Robinhood
    API endpoints, reverse-engineered from the authenticated web app. Each entry records the
    URL, the HTTP method(s), and a **risk level** (`read` … `destructive`). The CLI/MCP only
    ever calls endpoints that are in this map; it is the allow-list and the safety taxonomy
@@ -108,7 +108,7 @@ runtime until you rebuild:
 ```bash
 pnpm --filter @zaydiscold/robinhood-cli build       # CLI
 pnpm --filter @zaydiscold/robinhood-cli-mcp build   # MCP
-# verify (currently 271 routes):
+# verify (currently 277 routes):
 node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"
 ```
 
@@ -313,7 +313,54 @@ Gotchas learned the hard way:
 
 ---
 
-## 9. Exact-action consent (non-negotiable)
+## 9. Recurring buys, DRIP, and money-movement writes
+
+These write surfaces are mapped. **Bodies marked `inferred` in the route's `note`
+are unverified — confirm against a live capture before trusting them, and never run a
+live money write on an unverified body.**
+
+```bash
+# RECURRING BUYS — list every schedule and its state (paused_by_user vs transfer_reversal):
+robinhood-cli brokerage execute \
+  "https://bonfire.robinhood.com/recurring_schedules/" --method GET --full
+
+# RESUME a paused buy (PATCH; verb confirmed via OPTIONS, state field confirmed on the object).
+# Dry-run first (sends nothing), then go live with BOTH gates:
+robinhood-cli brokerage execute \
+  "https://bonfire.robinhood.com/recurring_schedules/{0}/" --method PATCH \
+  --param 0=<SCHEDULE_ID> --body-json '{"state":"active"}'         # dry-run
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
+  "https://bonfire.robinhood.com/recurring_schedules/{0}/" --method PATCH \
+  --param 0=<SCHEDULE_ID> --body-json '{"state":"active"}' --live-write   # PAUSE: "paused"
+
+# DRIP — toggle dividend reinvestment per account (PATCH, body {"drip_enrolled": true|false}):
+robinhood-cli brokerage execute \
+  "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/" --method PATCH \
+  --param num=<ACCOUNT_NUMBER> --body-json '{"drip_enrolled":true}'   # dry-run unless gated
+
+# CANCEL an order (POST, no body):
+robinhood-cli brokerage execute \
+  "https://api.robinhood.com/orders/{0}/cancel/" --method POST --param 0=<ORDER_ID> --live-write
+
+# ACH transfer (POST). direction=deposit moves money IN, direction=withdraw moves money OUT:
+robinhood-cli brokerage execute "https://api.robinhood.com/ach/transfers/" --method POST \
+  --body-json '{"ach_relationship":"<REL_URL>","amount":"10.00","direction":"deposit"}'
+```
+
+Notes learned:
+- **Resume/pause is reversible** (flip `state` back); **DELETE on a schedule is not.**
+- **OPTIONS preflight is useless for schema discovery here** — the edge gateway returns an
+  identical `DELETE, GET, OPTIONS, PATCH, POST, PUT` allow-list for *every* path, so it
+  confirms nothing endpoint-specific. Bodies come from live capture, not preflight.
+- **Don't black-box probe money endpoints** — empty/invalid PATCH bodies return 500/502,
+  not helpful validation errors. Capture the real web request instead.
+- DRIP reads as already-enrolled at both the account object (`drip_enabled`) and the
+  dedicated endpoint (`drip_enrolled`); a Roth can show `drip_enabled:true` with
+  `eligible_for_drip:false` (enrolled ≠ currently eligible).
+
+---
+
+## 10. Exact-action consent (non-negotiable)
 
 Reads and dry-runs are free. A **live write** (trade, transfer, cancel, unlink) runs only
 when the user asked for *that specific operation*. Before sending, echo the resolved
@@ -323,7 +370,7 @@ settings/permissions, never print the token value.
 
 ---
 
-## 10. MCP registration
+## 11. MCP registration
 
 ```bash
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js

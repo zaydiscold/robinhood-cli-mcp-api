@@ -319,6 +319,26 @@ These write surfaces are mapped. **Bodies marked `inferred` in the route's `note
 are unverified — confirm against a live capture before trusting them, and never run a
 live money write on an unverified body.**
 
+### Preferred: the first-class `recurring` command
+
+Recurring buys have a dedicated command so you don't hand-craft URLs or bodies. It shares
+the same engine + double-gate as everything else (reads run live, writes need both gates):
+
+```bash
+robinhood-cli recurring list                        # live read: symbol/state/amount/next/id
+robinhood-cli recurring list --state paused --json   # filter + JSON for machine use
+
+# Resume / pause. Without BOTH gates these DRY-RUN (plan only, send nothing):
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --all --live-write
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --id <SCHEDULE_ID> --live-write
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring pause  --all --account <ACCOUNT_NUMBER> --live-write
+```
+
+`--all` resolves targets by current state (resume → all paused; pause → all active), so it
+is idempotent and safe to re-run. Verified live: resume=`{"state":"active"}`, pause=`{"state":"paused"}`.
+
+### Underlying raw recipes (what the command calls)
+
 ```bash
 # RECURRING BUYS — list every schedule and its state (paused_by_user vs transfer_reversal):
 robinhood-cli brokerage execute \

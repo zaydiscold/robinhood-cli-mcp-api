@@ -122,7 +122,28 @@ Any route whose risk is `write-safe`, `write-mutate`, `write-or-sensitive`, or
 2. the `ROBINHOOD_ALLOW_LIVE_WRITE=1` environment variable.
 
 With one or neither, the request is planned but never sent; the result carries a
-`liveWriteBlocked` reason. Order-placement routes:
+`liveWriteBlocked` reason.
+
+### Turning dry-run off (going live)
+
+A write is dry-run **by default**. To turn dry-run off and send a real order you must
+flip **both** switches in the same invocation — there is no single "go live" flag:
+
+```bash
+# This is "dry-run OFF": both gates set, order is sent for real.
+ROBINHOOD_ALLOW_LIVE_WRITE=1 \
+  node cli/dist/index.js brokerage execute "<write-url>" --method POST --live-write --body-json '{...}'
+```
+
+- Drop **either** `ROBINHOOD_ALLOW_LIVE_WRITE=1` **or** `--live-write` → dry-run turns
+  back **on** automatically and nothing is sent.
+- Do **not** export `ROBINHOOD_ALLOW_LIVE_WRITE=1` into your shell profile — keep it inline
+  on the one command, so dry-run is always the resting state.
+- MCP equivalent: pass `liveWrite: true` **and** have `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the
+  server's environment. (Note: `dryRun: true` always wins — it forces a plan even with both
+  gates set, a deliberate "I want to preview this exact live call" escape hatch.)
+
+Order-placement routes:
 
 - Equity: `https://api.robinhood.com/orders/` (POST, `write-mutate`)
 - Options: `https://api.robinhood.com/options/orders/` (POST, `write-mutate`)

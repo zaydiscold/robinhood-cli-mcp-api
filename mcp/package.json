@@ -1,0 +1,25 @@
+{
+  "name": "@zaydiscold/robinhood-cli-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server for personal live Robinhood read/write API-map tools.",
+  "bin": {
+    "robinhood-cli-mcp": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@zaydiscold/robinhood-cli": "workspace:*",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

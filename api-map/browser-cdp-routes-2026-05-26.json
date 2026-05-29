@@ -1,0 +1,2201 @@
+[
+  {
+    "url": "https://api.robinhood.com/acats-aggregation/fee_reimbursements/history",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/acats/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "default_to_all_accounts",
+      "include_managed",
+      "include_multiple_individual",
+      "include_multiple_individual_accounts",
+      "is_default"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/stock_loan_payments/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number",
+      "account_numbers",
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/sweeps/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "default_to_all_accounts",
+      "include_managed",
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/sweeps/interest/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root",
+      "portfolio-home",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/sweeps/timeline_summary/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number",
+      "datetime"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/cash_journal/margin_interest_charges/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [
+      "default_to_all_accounts",
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/ceres/v1/accounts",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "rhsAccountNumber"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/ceres/v1/accounts/{id}/aggregated_positions",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root",
+      "portfolio-home"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/ceres/v1/accounts/{id}/orders",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "contractType",
+      "orderState",
+      "pageSize"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/ceres/v1/accounts/{id}/pnl_cost_basis",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/ceres/v1/cash_settlement_executions",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [
+      "accountId",
+      "pageSize"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/ceres/v1/futures_account_eligibility/{num}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/ceres/v1/manual_cash_correction",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [
+      "accountId"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/ceres/v1/user_settings",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/combo/orders/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "equity_instrument_id",
+      "page_size",
+      "states"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/adr_fees/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number",
+      "account_numbers",
+      "default_to_all_accounts",
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/v2/split_payments/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number",
+      "account_numbers",
+      "instrument_ids",
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "object_id",
+      "object_type",
+      "owner_type"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/default/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/items/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "list_id",
+      "load_all_attributes"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/user_items/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/ratings/{id}/overview/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/dividends/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number",
+      "account_numbers",
+      "include_managed",
+      "instrument_id",
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/documents/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/documents/edocs_v2/ira/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [
+      "account_id",
+      "date",
+      "edoc_type",
+      "file_type"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/goku/lcm",
+    "host": "api.robinhood.com",
+    "categories": [
+      "telemetry-config"
+    ],
+    "risk": "write-safe",
+    "methods": [
+      "POST"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "Fetch"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/goku/lcmv2",
+    "host": "api.robinhood.com",
+    "categories": [
+      "telemetry-config"
+    ],
+    "risk": "write-safe",
+    "methods": [
+      "POST"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "Fetch"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/goku/live_frontend_log_events",
+    "host": "api.robinhood.com",
+    "categories": [
+      "telemetry-config"
+    ],
+    "risk": "write-safe",
+    "methods": [
+      "POST"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "Fetch"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/hippo/ux-flags",
+    "host": "api.robinhood.com",
+    "categories": [
+      "telemetry-config"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "flags"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/inbox/notifications/badge",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "userUuid"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/inbox/threads/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/instruments/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "active_instruments_only",
+      "ids",
+      "symbol"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/instruments/{id}/shorting/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/kaizen/experiments/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "telemetry-config"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "entity_type",
+      "names",
+      "trigger"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/margin/{num}/upgrade_restrictions",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/margin/{num}/upgrade_restrictions/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/margin/calls/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/earnings/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "instrument"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/equities/summary/robinhood/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/forex/historicals/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "bounds",
+      "ids",
+      "interval",
+      "span"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/forex/quotes/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root",
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "ids"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/fundamentals/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "bounds",
+      "include_inactive",
+      "open"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/fundamentals/short/v1/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "ids",
+      "start_date"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/hedgefunds/summary/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/hedgefunds/transactions/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/historicals/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "bounds",
+      "ids",
+      "interval",
+      "span"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/historicals/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "bounds",
+      "include_inactive",
+      "interval",
+      "span"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/insiders/summary/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/insiders/transactions/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/options/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "options"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "ids",
+      "includeAllSessions",
+      "include_all_sessions"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/options/strategy/quotes/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "options"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "ids",
+      "include_all_sessions",
+      "ratios",
+      "types"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/quotes/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "bounds",
+      "ids",
+      "include_bbo_source",
+      "include_inactive"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/quotes/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/markets/{market}/hours/{date}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/markets/{market}/hours/{date}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/markets/{market}/hours/{date}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/markets/{market}/hours/{date}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/markets/{market}/hours/{date}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/markets/{market}/hours/{date}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/notification_settings/ui_resources/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "notifications"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "entity_type"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/notifications/stack/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "notifications"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/ratings/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "ids"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/ratings/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/nimbus/v1/asset_transfers",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [
+      "pageSize"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options-product/tooltips/home-tab/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "account_number",
+      "location_item_ids"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/aggregate_positions/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "chain_ids",
+      "nonzero"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/chains/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number",
+      "equity_instrument_id",
+      "equity_instrument_ids",
+      "ids"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/chains/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/chains/{id}/collateral/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/corp_actions/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents",
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/events/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "chain_ids",
+      "equity_instrument_id",
+      "page_size",
+      "states"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/instruments/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "options"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "portfolio-home",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "ids"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/orders/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "chain_ids",
+      "page_size",
+      "states"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/positions/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "chain_ids",
+      "nonzero"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/should_show_options_upgrade_on_sdp/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number",
+      "should_include_null_risk_tolerance"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/strategies/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "strategy_codes"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/orders/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "include_managed",
+      "instrument",
+      "is_closed",
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/orders/session/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "date",
+      "type"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/pathfinder/concierge/plus/status/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/pathfinder/issues/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "active_only"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/pathfinder/support_chats/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/pluto/historical_activities/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "page_size"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/portfolios/{num}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/positions/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [
+      "account_number",
+      "instrument",
+      "nonzero"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/user/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "account-root",
+      "account-settings",
+      "portfolio-home",
+      "stock-aapl",
+      "stock-nvda",
+      "stock-tsla"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/user/additional_info/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-root"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/user/verify/email/info/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-settings"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/wonka/promotions/upsell_configs/BADGE",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "portfolio-home"
+    ],
+    "queryKeys": [
+      "locationContext.accountNumber",
+      "locationContext.locations"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/yoda/v1/list_advisor_trades",
+    "host": "api.robinhood.com",
+    "categories": [
+      "history-documents"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized",
+    "seenOn": [
+      "account-history"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "name": "robinhood-cli-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "build": "pnpm --filter @zaydiscold/robinhood-cli build && pnpm --filter @zaydiscold/robinhood-cli-mcp build",
+    "merge:cdp": "node scripts/merge-cdp-capture.mjs",
+    "generate:api-map": "node scripts/generate-brokerage-openapi.mjs && node scripts/generate-unified-api-map.mjs && node scripts/generate-brokerage-markdown.mjs && node scripts/generate-brokerage-curl.mjs && node scripts/generate-endpoint-markdown.mjs",
+    "test": "pnpm --filter @zaydiscold/robinhood-cli test",
+    "typecheck": "pnpm --filter @zaydiscold/robinhood-cli typecheck && pnpm --filter @zaydiscold/robinhood-cli build && pnpm --filter @zaydiscold/robinhood-cli-mcp typecheck",
+    "cli": "pnpm --filter @zaydiscold/robinhood-cli cli"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.8.0",
+    "vitest": "^4.0.0"
+  }
+}

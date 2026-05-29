@@ -1827,6 +1827,25 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/marketdata/options/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "options"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: templated ids= form of marketdata/options for single/batch option mark (adjusted_mark_price) lookup; ids key from captured queryKeys",
+    "seenOn": [
+      "portfolio-options"
+    ],
+    "queryKeys": [
+      "ids"
+    ]
+  },
+  {
     "url": "https://api.robinhood.com/marketdata/options/",
     "host": "api.robinhood.com",
     "categories": [
@@ -2884,6 +2903,22 @@
     "queryKeys": [
       "account_number",
       "instrument",
+      "nonzero"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: templated account_number form so any account (incl. Roth IRA REDACTED-ACCT) can be queried, not just primary; placeholder filled via --param",
+    "queryKeys": [
+      "account_number",
       "nonzero"
     ]
   },
@@ -5705,5 +5740,124 @@
       "account"
     ],
     "risk": "sensitive-read"
+  },
+  {
+    "url": "https://api.robinhood.com/orders/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "equity",
+      "trading"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "source": "self-extension 2026-05-28: equity order PLACEMENT (POST). Map was capture-built from reads only and lacked it; needed to place/manage stock orders. Double-gated via --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    "bodyKeys": [
+      "account",
+      "instrument",
+      "symbol",
+      "type",
+      "time_in_force",
+      "trigger",
+      "price",
+      "quantity",
+      "side",
+      "ref_id"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/orders/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "options",
+      "trading"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "source": "self-extension 2026-05-28: options order PLACEMENT (POST). Same reason as equity orders; supports legs[] for single/multi-leg. Double-gated.",
+    "bodyKeys": [
+      "account",
+      "direction",
+      "time_in_force",
+      "trigger",
+      "type",
+      "price",
+      "quantity",
+      "legs",
+      "ref_id",
+      "override_day_trade_checks"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/instruments/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings \u2192 tickers/quotes",
+    "queryKeys": [
+      "ids"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/quotes/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "quotes"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings \u2192 tickers/quotes",
+    "queryKeys": [
+      "ids"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/instruments/?symbol={symbol}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution",
+    "queryKeys": [
+      "symbol"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id",
+    "queryKeys": [
+      "chain_id",
+      "expiration_dates",
+      "type"
+    ]
   }
 ]

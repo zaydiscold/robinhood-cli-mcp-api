@@ -1,7 +1,41 @@
+import { execFileSync } from "node:child_process";
 import { createPrivateKey, sign } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Resolve the repo root from this compiled module: dist/ -> cli/ -> repo root.
+function repoRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+}
+
+// Auto-load the repo .env so every consumer (CLI, MCP server, scripts) gets auth
+// with no shell sourcing. Explicit env vars always win — only unset keys are filled.
+// Runs once at module load; a missing/garbled file is non-fatal.
+function loadRepoEnv(): void {
+  try {
+    const path = join(repoRoot(), ".env");
+    if (!existsSync(path)) return;
+    for (const line of readFileSync(path, "utf8").split("\n")) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+      const eq = t.indexOf("=");
+      if (eq === -1) continue;
+      const key = t.slice(0, eq).trim();
+      let val = t.slice(eq + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (key && process.env[key] === undefined) process.env[key] = val;
+    }
+  } catch {
+    // explicit env vars still work
+  }
+}
+loadRepoEnv();
 
 export type RouteRisk = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
 
@@ -98,6 +132,8 @@ export interface ExecuteBrokerageOptions {
   fullBody?: boolean;
   maxBodyBytes?: number;
   fetchImpl?: typeof fetch;
+  /** Set false to disable the on-401 browser-free token refresh + retry (default on). */
+  autoRefresh?: boolean;
 }
 
 export interface ExecuteCryptoOptions {
@@ -430,6 +466,33 @@ function cryptoAuthFromEnv(options: ExecuteCryptoOptions) {
   };
 }
 
+// Browser-free token self-heal: on a 401, re-read the freshest access_token from
+// Chrome's on-disk localStorage (via scripts/refresh-auth.sh) and return it so the
+// request can be retried once. Returns undefined if the refresh produced nothing.
+// Runs in the CLI's own (TCC-permitted) context, so no daemon / Full Disk Access
+// grant is needed. See scripts/refresh-auth.sh for the disk-read rationale.
+function tryRefreshBrokerageToken(): string | undefined {
+  try {
+    const root = repoRoot();
+    const script = join(root, "scripts", "refresh-auth.sh");
+    const envPath = join(root, ".env");
+    if (!existsSync(script)) return undefined;
+    execFileSync("/bin/bash", [script], { stdio: "ignore", timeout: 30000 });
+    if (!existsSync(envPath)) return undefined;
+    for (const line of readFileSync(envPath, "utf8").split("\n")) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+      if (t.startsWith("ROBINHOOD_BROKERAGE_TOKEN=")) {
+        const val = t.slice("ROBINHOOD_BROKERAGE_TOKEN=".length).trim();
+        return val || undefined;
+      }
+    }
+  } catch {
+    // refresh unavailable (no Chrome auth, not on this machine, etc.) — caller keeps the 401
+  }
+  return undefined;
+}
+
 export async function executeBrokerageRequest(
   plan: PlannedBrokerageRequest,
   options: ExecuteBrokerageOptions = {}
@@ -455,27 +518,64 @@ export async function executeBrokerageRequest(
     console.error(warning);
   }
 
-  const { token, cookie, csrfToken } = authFromEnv(options);
+  let { token } = authFromEnv(options);
+  const { cookie, csrfToken } = authFromEnv(options);
+  // Cold start: no token at all — try a browser-free disk refresh before giving up,
+  // so a fresh MCP/CLI process self-arms without any manual setup.
+  if (
+    plan.requiresAuth &&
+    !token &&
+    !cookie &&
+    options.fetchImpl === undefined &&
+    options.autoRefresh !== false
+  ) {
+    const fresh = tryRefreshBrokerageToken();
+    if (fresh) {
+      token = fresh;
+      process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
+    }
+  }
   if (plan.requiresAuth && !token && !cookie) {
     throw new Error("Missing auth: set ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE outside the repo.");
   }
 
   const body = options.body ?? plan.body;
-  const headers: Record<string, string> = {
-    accept: "application/json, text/plain, */*",
-    "user-agent": "robinhood-cli/0.1"
-  };
-  if (token) headers.authorization = `Bearer ${token}`;
-  if (cookie) headers.cookie = cookie;
-  if (csrfToken) headers["x-csrftoken"] = csrfToken;
   const serializedBody = stringifyBody(body);
-  if (serializedBody !== undefined) headers["content-type"] = "application/json";
+  const fetchImpl = options.fetchImpl ?? fetch;
 
-  const response = await (options.fetchImpl ?? fetch)(plan.url, {
-    method: plan.method,
-    headers,
-    body: plan.method === "GET" ? undefined : serializedBody
-  });
+  const send = (authToken?: string) => {
+    const headers: Record<string, string> = {
+      accept: "application/json, text/plain, */*",
+      "user-agent": "robinhood-cli/0.1"
+    };
+    if (authToken) headers.authorization = `Bearer ${authToken}`;
+    if (cookie) headers.cookie = cookie;
+    if (csrfToken) headers["x-csrftoken"] = csrfToken;
+    if (serializedBody !== undefined) headers["content-type"] = "application/json";
+    return fetchImpl(plan.url, {
+      method: plan.method,
+      headers,
+      body: plan.method === "GET" ? undefined : serializedBody
+    });
+  };
+
+  let response = await send(token);
+
+  // A 401 means the token expired and the request was rejected (never executed),
+  // so retrying after a refresh is safe even for writes. Only self-heal real token
+  // auth — skip for cookie-only or injected test fetch impls.
+  if (
+    response.status === 401 &&
+    token &&
+    options.fetchImpl === undefined &&
+    options.autoRefresh !== false
+  ) {
+    const fresh = tryRefreshBrokerageToken();
+    if (fresh && fresh !== token) {
+      process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
+      response = await send(fresh);
+    }
+  }
 
   const text = await response.text();
   const max = options.fullBody ? Number.POSITIVE_INFINITY : options.maxBodyBytes ?? 4000;

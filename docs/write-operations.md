@@ -7,7 +7,12 @@ This is a personal `zaydiscold` repo. It is read/write capable.
 - `brokerage execute` sends live HTTP requests when `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE` is present.
 - `crypto execute` sends live HTTP requests to Robinhood's official Crypto Trading API when `ROBINHOOD_CRYPTO_API_KEY` and `ROBINHOOD_CRYPTO_PRIVATE_KEY_B64` are present.
 - `--dry-run` is opt-in and returns the execution plan without sending.
-- There is no `ROBINHOOD_PP_ALLOW_WRITES` or equivalent environment gate here.
+- **Writes are double-gated.** Any route whose risk is `write-safe`, `write-mutate`,
+  `write-or-sensitive`, or `destructive` is forced to a dry-run UNLESS both gates are set:
+  the `--live-write` flag AND the `ROBINHOOD_ALLOW_LIVE_WRITE=1` environment variable.
+  With only one (or neither), `resolveLiveWriteGate` returns `forcedDryRun: true` and the
+  request is planned but never sent (the result carries a `liveWriteBlocked` reason).
+- Reads (`read`, `sensitive-read`) always run live; no gate applies to them.
 - Write-capable risks emit `[WRITES TO LIVE ROBINHOOD]` to stderr before sending.
 
 ## Risk Levels
@@ -22,10 +27,19 @@ This is a personal `zaydiscold` repo. It is read/write capable.
 ## Examples
 
 ```bash
-robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --dry-run --json
-ROBINHOOD_BROKERAGE_TOKEN=... robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --json
-robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/" --query-param symbol=BTC-USD --dry-run --json
-ROBINHOOD_CRYPTO_API_KEY=... ROBINHOOD_CRYPTO_PRIVATE_KEY_B64=... robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/" --query-param symbol=BTC-USD --json
+# Read (runs live, no gate):
+robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --json
+
+# Write, gate OFF → forced dry-run (safe; prints the plan + liveWriteBlocked reason):
+robinhood-cli brokerage execute "https://api.robinhood.com/orders/" --method POST \
+  --body-json '{"account":"...","instrument":"...","symbol":"F","type":"limit","time_in_force":"gfd","trigger":"immediate","price":"9.00","quantity":"1","side":"buy"}'
+
+# Write, BOTH gates ON → sends live:
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute "https://api.robinhood.com/orders/" \
+  --method POST --live-write --body-json '{...}'
+
+# Crypto read:
+robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/" --query-param symbol=BTC-USD --json
 ```
 
 Use exact-action consent for mutations: trade, transfer, cancel, unlink, or destructive calls should only be run when the user asked for that specific live operation.

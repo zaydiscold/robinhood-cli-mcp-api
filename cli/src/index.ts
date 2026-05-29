@@ -27,6 +27,9 @@ import {
   summarizeApiMap
 } from "./lib.js";
 
+// .env auto-load + token self-heal live in lib.ts (shared by CLI + MCP server),
+// so importing it above is enough — no per-entry loader needed here.
+
 const program = new Command();
 
 program
@@ -203,7 +206,7 @@ brokerage
   .option("--json", "emit JSON")
   .action((query: string, options: { method?: string; param?: string[]; json?: boolean }) => {
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
-    const route = matches.find((candidate) => candidate.url === query) ?? matches[0];
+    const route = selectRouteByQueryAndMethod(matches, query, options.method);
     if (!route) {
       throw new Error(`No brokerage route matched: ${query}`);
     }
@@ -243,7 +246,7 @@ brokerage
   .option("--json", "emit JSON")
   .action(async (query: string, options: { method?: string; param?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; full?: boolean; json?: boolean }) => {
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
-    const route = matches.find((candidate) => candidate.url === query) ?? matches[0];
+    const route = selectRouteByQueryAndMethod(matches, query, options.method);
     if (!route) {
       throw new Error(`No brokerage route matched: ${query}`);
     }

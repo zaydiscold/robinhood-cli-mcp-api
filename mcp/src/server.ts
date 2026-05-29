@@ -142,7 +142,7 @@ server.registerTool(
   },
   async ({ query, method, params }) => {
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
-    const route = matches.find((candidate) => candidate.url === query) ?? matches[0];
+    const route = selectRouteByQueryAndMethod(matches, query, method);
     if (!route) {
       throw new Error(`No brokerage route matched: ${query}`);
     }
@@ -174,7 +174,7 @@ server.registerTool(
   },
   async ({ query, method, params, body, dryRun, liveWrite, fullBody }) => {
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
-    const route = matches.find((candidate) => candidate.url === query) ?? matches[0];
+    const route = selectRouteByQueryAndMethod(matches, query, method);
     if (!route) {
       throw new Error(`No brokerage route matched: ${query}`);
     }

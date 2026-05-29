@@ -9,7 +9,8 @@
     "generate:api-map": "node scripts/generate-brokerage-openapi.mjs && node scripts/generate-unified-api-map.mjs && node scripts/generate-brokerage-markdown.mjs && node scripts/generate-brokerage-curl.mjs && node scripts/generate-endpoint-markdown.mjs",
     "test": "pnpm --filter @zaydiscold/robinhood-cli test",
     "typecheck": "pnpm --filter @zaydiscold/robinhood-cli typecheck && pnpm --filter @zaydiscold/robinhood-cli build && pnpm --filter @zaydiscold/robinhood-cli-mcp typecheck",
-    "cli": "pnpm --filter @zaydiscold/robinhood-cli cli"
+    "cli": "pnpm --filter @zaydiscold/robinhood-cli cli",
+    "auth:refresh": "bash scripts/refresh-auth.sh"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

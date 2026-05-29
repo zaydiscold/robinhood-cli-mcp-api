@@ -7,6 +7,49 @@ or the MCP tools. Hand this whole file to your agent — it is self-contained.
 
 ---
 
+## What this is and how it works (read this for context)
+
+**What it does.** It lets an agent read and trade a real Robinhood account from the
+command line (or via MCP tools) — quotes, positions, portfolio values across every
+account, options chains, and order placement/cancel for shares and options. It talks to
+Robinhood's own private web API (`api.robinhood.com` and friends), the same one the
+website uses — not the official, walled "agent sandbox" (which is equity-only).
+
+**The four moving parts:**
+
+1. **The route map** (`api-map/brokerage-routes.json`) — a catalog of ~267 real Robinhood
+   API endpoints, reverse-engineered from the authenticated web app. Each entry records the
+   URL, the HTTP method(s), and a **risk level** (`read` … `destructive`). The CLI/MCP only
+   ever calls endpoints that are in this map; it is the allow-list and the safety taxonomy
+   in one file.
+
+2. **The engine** (`cli/src/lib.ts`) — shared by both the CLI and the MCP server. Given a
+   query it: (a) finds the matching route, (b) fills `{placeholders}` and attaches the body,
+   (c) decides the method, (d) applies the **write-gate**, then (e) either sends the live
+   HTTP request or returns a dry-run plan. Because it's one engine, the CLI and MCP behave
+   identically — same auth, same gate, same routing.
+
+3. **Auth** — a single web-session **bearer token** in `.env`. The engine auto-loads it on
+   import, and self-heals: if it's missing or a request returns `401`, it re-reads the
+   freshest token from Chrome's on-disk storage and retries once. No browser popup, no
+   manual login. (Details in §1.)
+
+4. **Two front doors** — the **CLI** (`cli/dist/index.js`, for humans/scripts) and the
+   **MCP server** (`mcp/dist/server.js`, 10 tools for agents). Both are thin wrappers over
+   the engine.
+
+**How a single call flows:** you give a query string → the engine substring-matches it
+against the route map → fills params/body → infers or honors the method → checks the risk
+level against the write-gate → **reads go live, writes dry-run unless both gates are set**
+→ returns the response or the plan. That gate is the core safety property: the default
+outcome of any mutating call is "planned but not sent."
+
+**Why the rebuild matters:** the build copies the route map into `cli/dist/`, and the
+runtime reads that **copy**, not the source — so map edits do nothing until you rebuild
+(§3). This is the single most common way to get confused.
+
+---
+
 ## 0. TL;DR for an agent
 
 - **Reads run live, free.** Writes (trade / cancel / transfer) are **double-gated** and

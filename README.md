@@ -49,6 +49,10 @@ The CLI is nice, but the headline artifact is [`api-map/`](./api-map/). It's the
 
 It covers **265+ captured endpoints (278 mapped routes)** across eight Robinhood API hosts — `api.robinhood.com`, `bonfire.robinhood.com`, `nummus.robinhood.com` (crypto), `cashier.robinhood.com` (money movement), plus `dora`, `identi`, `minerva`, and `phoenix`. Where Robinhood publishes an official spec (the Crypto Trading API), I fold that in verbatim; everything else is sanitized, browser-backed evidence — route shapes, methods, and query keys, never tokens, balances, or order tickets.
 
+### Design note: method-aware route resolution
+
+This CLI selects routes **by URL *and* HTTP method**, so a single endpoint can carry both a safe read and a gated write (e.g. `GET` vs `PATCH` on `recurring_schedules/{id}/`) and each resolves to the correct risk level. That's what lets the same URL expose a free read and a double-gated write without one leaking into the other. A URL-keyed resolver (route looked up by path alone) can't do this safely — a shared GET+write entry would either bypass the write gate or block the read — so it must split writes onto distinct, write-only URLs instead. The method-aware design is why the write surface here can be rich without weakening the safety gate.
+
 ## Getting started
 
 ### Requirements

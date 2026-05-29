@@ -21,7 +21,7 @@ This talks to my real, existing Robinhood account. Read and write:
 - **Margin** — status, maintenance requirements, margin balance.
 - **Recurring investments** *(the flagship)* — list, create, edit, pause, resume, and cancel automatic investments.
 
-The differentiator: **this manages the account I already have.** Robinhood's own official agent MCP makes you stand up a separate, isolated portfolio — this drives your real one. Full coverage: identify, navigate, and modify across every account; deposits and withdrawals; a safe read-only default with a dry-run test mode on every write.
+The differentiator: **this manages the account I already have.** Robinhood's own official agent access ("agentic") is **equity-only** and makes you stand up a separate, isolated portfolio — this drives your *real* one, across **every account**, with the full surface: options, recurring investments, transfers/deposits/withdrawals, dividends, watchlists, and margin. Account management that's a pain through their UI becomes one command here. Full coverage: identify, navigate, and modify across every account; a safe read-only default with a dry-run test mode on every write.
 
 It does both **reads and writes**, including **buy/sell for equities and options**. But it will never place a real trade on its own. Every write defaults to a dry-run and only goes live when you pass an explicit `--live-write` flag *and* set the `ROBINHOOD_ALLOW_LIVE_WRITE=1` environment gate. Two deliberate opt-ins, or nothing leaves the machine.
 
@@ -35,29 +35,82 @@ The CLI is nice, but the headline artifact is [`api-map/`](./api-map/). It's the
 
 It covers **265+ captured endpoints (278 mapped routes)** across eight Robinhood API hosts — `api.robinhood.com`, `bonfire.robinhood.com`, `nummus.robinhood.com` (crypto), `cashier.robinhood.com` (money movement), plus `dora`, `identi`, `minerva`, and `phoenix`. Where Robinhood publishes an official spec (the Crypto Trading API), I fold that in verbatim; everything else is sanitized, browser-backed evidence — route shapes, methods, and query keys, never tokens, balances, or order tickets.
 
-## Quick start
+## Getting started
+
+### Requirements
+
+- **Node.js 18+** and **pnpm** (`npm i -g pnpm`).
+- A **Robinhood account** you own, logged in via the Robinhood web app in a Chromium-based browser (Chrome/Brave/Edge) on the same machine — that's where auth is read from.
+
+### 1. Install & build
 
 ```bash
+git clone https://github.com/zaydiscold/robinhood-cli.git
+cd robinhood-cli
 pnpm install
-pnpm build
-pnpm --filter @zaydiscold/robinhood-cli cli -- --help
-
-robinhood-cli api-map summary --json
-robinhood-cli recurring list                       # flagship: list recurring buys + state
-robinhood-cli brokerage plan "https://api.robinhood.com/accounts/{0}/" --param 0=ACCOUNT_ID --json
-
-# Reads run live. A write stays dry-run unless you mean it:
-robinhood-cli brokerage execute "https://api.robinhood.com/orders/" --body-json '{...}'            # forced dry-run
-ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute "https://api.robinhood.com/orders/" \
-  --body-json '{...}' --live-write                                                                  # actually sends
+pnpm build        # builds the CLI and copies the API map into dist (see "rebuild" note below)
 ```
 
-MCP server:
+### 2. Authenticate (browser-free, self-healing)
+
+The CLI authenticates with your existing Robinhood **web session** — no separate login, no OAuth app, no password stored.
+
+- It reads the freshest bearer token straight from your browser's on-disk storage and writes it to a gitignored `.env` as `ROBINHOOD_BROKERAGE_TOKEN`.
+- On a cold start (no token) or any `401`, it auto-refreshes once and retries. Force a refresh anytime:
+
+```bash
+pnpm auth:refresh
+```
+
+> Make sure you're logged into Robinhood in your browser first. The token never leaves your machine and is never committed.
+
+### 3. Run the CLI
+
+```bash
+# Link the binary (or call via: node cli/dist/index.js <args>)
+pnpm --filter @zaydiscold/robinhood-cli cli -- --help
+
+robinhood-cli api-map summary --json                 # what the map covers
+robinhood-cli recurring list                          # flagship: recurring buys + state
+robinhood-cli brokerage routes --category orders      # browse mapped routes
+robinhood-cli brokerage plan "https://api.robinhood.com/accounts/{0}/" --param 0=ACCOUNT_ID --json
+```
+
+### 4. Reads vs. writes — the safety model
+
+**Reads run live and free. Every write defaults to a dry-run** ("test mode") and only sends when you set **both** gates — a flag *and* an environment variable. Two deliberate opt-ins, or nothing leaves the machine:
+
+```bash
+# Dry-run (default): builds the request, prints the plan, sends nothing
+robinhood-cli brokerage execute "https://api.robinhood.com/orders/" --body-json '{...}'
+
+# Live: BOTH gates required
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
+  "https://api.robinhood.com/orders/" --body-json '{...}' --live-write
+
+# First-class commands carry the same gate, e.g. recurring investments:
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --all --live-write
+```
+
+### 5. Use it from an AI agent (MCP server)
+
+The MCP server exposes the same engine as tools for Claude, Cursor, or any Model Context Protocol client:
 
 ```bash
 pnpm --filter @zaydiscold/robinhood-cli-mcp build
+
+# Register with Claude Code (CLI):
+claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
+
+# Or run it directly:
 node mcp/dist/server.js
 ```
+
+Tools surface as `mcp__robinhood-cli__*` and inherit the identical auth, route map, and write-gate as the CLI.
+
+> **Rebuild note:** the build copies `api-map/brokerage-routes.json` into `cli/dist/`, and the runtime reads that copy. After editing the route map, **rebuild** (`pnpm build`) or your change is a silent no-op.
+
+For the full agent playbook — account discovery, the gate, watchlists, recurring investments — see [`AGENTS.md`](./AGENTS.md).
 
 ## Extending it
 

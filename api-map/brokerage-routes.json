@@ -2929,7 +2929,7 @@
     "methods": [
       "GET"
     ],
-    "source": "self-extension 2026-05-28: templated account_number form so any account (incl. Roth IRA REDACTED-ACCT) can be queried, not just primary; placeholder filled via --param",
+    "source": "self-extension 2026-05-28: templated account_number form so any account (individual, Roth/IRA, etc.) can be queried, not just primary; placeholder filled via --param",
     "queryKeys": [
       "account_number",
       "nonzero"
@@ -5925,5 +5925,77 @@
       "operations"
     ],
     "source": "self-extension 2026-05-28: watchlist edit/rearrange surface"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "List all watchlists"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/default/",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Get default watchlist"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/items/",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "List watchlist items"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/user_items/",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "List user watchlist items"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Get one watchlist"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/",
+    "method": "POST",
+    "risk": "destructive",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Create watchlist"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
+    "method": "PATCH",
+    "risk": "destructive",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Rename watchlist"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
+    "method": "DELETE",
+    "risk": "destructive",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Delete watchlist"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/?owner_type=custom",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "List all custom watchlists"
   }
 ]

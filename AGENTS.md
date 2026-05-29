@@ -78,20 +78,24 @@ runtime reads that **copy**, not the source — so map edits do nothing until yo
 
 ---
 
-## 2. The accounts on this login (verified 2026-05-28)
+## 2. Discover the accounts — never hardcode them
 
-One login, multiple accounts behind the in-app dropdown. Equity account numbers:
+A login can have one account or many (multiple individual brokerage accounts, a Roth/IRA,
+crypto via Nummus, futures via ceres) behind the in-app dropdown. **Do not assume a
+count or specific account numbers — enumerate them at runtime.** Every per-account read
+below takes the account number you discover here.
 
-| Account number | Type            | Nickname     | Approx equity | Notes |
-|----------------|-----------------|--------------|---------------|-------|
-| `REDACTED-ACCT`    | individual      | "3-month"    | ~$REDACTED       | **the options book lives here** |
-| `REDACTED-ACCT`    | individual      | "9-month"    | ~$REDACTED       | |
-| `REDACTED-ACCT`    | ira_roth        | Roth         | ~$REDACTED      | 46 positions, bulk of the portfolio |
-| `REDACTED-ACCT`    | individual      | —            | $0            | empty |
-| `REDACTED-ACCT`    | individual      | —            | $0            | empty |
+```bash
+# Enumerate every equity account number + type for THIS login.
+# (The plain accounts/ endpoint under-reports; the transfer graph is the complete list.)
+node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full
+node cli/dist/index.js brokerage execute "accounts/?default_to_all_accounts=true" --json --full
+```
 
-Plus crypto (Nummus, enrolled, holdings $0) and futures (ceres, active, no open contracts).
-Total equity ≈ $REDACTED. See §4 for how to enumerate these — the default endpoint hides most of them.
+Read `account_number`, `brokerage_account_type` (e.g. `individual`, `ira_roth`), and the
+nickname/balance fields off each result. Pick whichever account the user means (e.g. the
+one holding their options book) and pass its number to the per-account reads in §4.
+See §4 for the full enumeration recipe — the default endpoint hides most accounts.
 
 ---
 
@@ -123,11 +127,11 @@ node cli/dist/index.js brokerage execute "accounts/?default_to_all_accounts=true
 node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full
 ```
 
-Per-account reads (fill `--param`):
+Per-account reads (fill `--param` with an account number you discovered in §2):
 
 ```bash
-node cli/dist/index.js brokerage execute "portfolios/{num}/" --param num=REDACTED-ACCT --json --full
-node cli/dist/index.js brokerage execute "positions/?account_number={account_number}&nonzero=true" --param account_number=REDACTED-ACCT --json --full
+node cli/dist/index.js brokerage execute "portfolios/{num}/" --param num=<ACCOUNT_NUMBER> --json --full
+node cli/dist/index.js brokerage execute "positions/?account_number={account_number}&nonzero=true" --param account_number=<ACCOUNT_NUMBER> --json --full
 ```
 
 Resolve holding UUIDs → tickers and quotes in bulk:
@@ -195,7 +199,7 @@ Order-placement routes:
 ```bash
 # Dry-run (safe, proves the plan + body, sends nothing):
 node cli/dist/index.js brokerage execute "https://api.robinhood.com/orders/" --method POST \
-  --body-json '{"account":"https://api.robinhood.com/accounts/REDACTED-ACCT/","instrument":"https://api.robinhood.com/instruments/<id>/","symbol":"F","type":"limit","time_in_force":"gfd","trigger":"immediate","price":"9.00","quantity":"1","side":"buy"}'
+  --body-json '{"account":"https://api.robinhood.com/accounts/<ACCOUNT_NUMBER>/","instrument":"https://api.robinhood.com/instruments/<id>/","symbol":"F","type":"limit","time_in_force":"gfd","trigger":"immediate","price":"9.00","quantity":"1","side":"buy"}'
 
 # Live — requires BOTH gates:
 ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute "https://api.robinhood.com/orders/" \
@@ -212,7 +216,8 @@ Equity order body keys: `account`, `instrument`, `symbol`, `type` (`market`|`lim
 
 This is the exact sequence to open **1 AAPL 2026-12-18 $100 Call** (the
 "$100 strike, end of year" order). Every step below is a live read except the last,
-which is shown as a dry-run.
+which is shown as a dry-run. The UUIDs in the comments are **example outputs** — re-run
+each step to get current values; don't hardcode them. The account number comes from §2.
 
 **Step 1 — symbol → instrument + option chain id:**
 ```bash
@@ -249,7 +254,7 @@ node cli/dist/index.js brokerage execute "marketdata/options/?ids={ids}" \
 ```bash
 REF=$(python3 -c "import uuid;print(uuid.uuid4())")
 node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orders/" --method POST \
-  --body-json "{\"account\":\"https://api.robinhood.com/accounts/REDACTED-ACCT/\",\"direction\":\"debit\",\"legs\":[{\"side\":\"buy\",\"option\":\"https://api.robinhood.com/options/instruments/8d6d6f2b-d51c-41e6-8a6f-e0ec7fbed190/\",\"position_effect\":\"open\",\"ratio_quantity\":1}],\"type\":\"limit\",\"time_in_force\":\"gtc\",\"trigger\":\"immediate\",\"price\":\"0.01\",\"quantity\":\"1\",\"ref_id\":\"$REF\"}" \
+  --body-json "{\"account\":\"https://api.robinhood.com/accounts/<ACCOUNT_NUMBER>/\",\"direction\":\"debit\",\"legs\":[{\"side\":\"buy\",\"option\":\"https://api.robinhood.com/options/instruments/<OPTION_INSTRUMENT_ID>/\",\"position_effect\":\"open\",\"ratio_quantity\":1}],\"type\":\"limit\",\"time_in_force\":\"gtc\",\"trigger\":\"immediate\",\"price\":\"0.01\",\"quantity\":\"1\",\"ref_id\":\"$REF\"}" \
   --json --full
 # -> risk: write-mutate, mode: dry_run, liveWriteBlocked (no order sent).
 # To send: prepend ROBINHOOD_ALLOW_LIVE_WRITE=1 and add --live-write.

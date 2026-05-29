@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const routesPath = resolve(root, "api-map/brokerage-routes.json");
-const outPath = resolve(root, "api-map/openapi/robinhood-brokerage-seed.openapi.json");
+const outPath = resolve(root, "api-map/openapi/robinhood-brokerage.openapi.json");
 
 const riskRank = {
   read: 0,
@@ -60,7 +60,7 @@ function pathParams(pathname) {
       in: "path",
       required: true,
       schema: { type: "string" },
-      description: `Route placeholder ${name}. Seed map name; live verification should replace with a semantic parameter name when known.`
+      description: `Route placeholder ${name}. Mapped route name; live verification should replace with a semantic parameter name when known.`
     });
   }
   return params;
@@ -124,10 +124,10 @@ for (const route of routes) {
 const spec = {
   openapi: "3.1.0",
   info: {
-    title: "Robinhood Brokerage Seed API Map",
+    title: "Robinhood Brokerage API Map",
     version: "0.1.0",
     description:
-      "Personal Robinhood brokerage/account API map from community seed routes and sanitized authenticated browser capture. This repo can execute live with caller-owned auth; pass dryRun/--dry-run for non-sending tests."
+      "Personal Robinhood brokerage/account API map from reverse-engineered routes and sanitized authenticated browser capture. This repo can execute live with caller-owned auth; pass dryRun/--dry-run for non-sending tests."
   },
   servers: [
     { url: "https://api.robinhood.com" },
@@ -140,7 +140,7 @@ const spec = {
     ...new Set(routes.flatMap((route) => (route.categories?.length ? route.categories : ["uncategorized"])))
   ]
     .sort()
-    .map((name) => ({ name, description: `${titleCase(name)} routes from the brokerage seed map.` })),
+    .map((name) => ({ name, description: `${titleCase(name)} routes from the brokerage route map.` })),
   paths: {}
 };
 
@@ -150,7 +150,7 @@ for (const group of [...grouped.values()].sort((a, b) => a.path.localeCompare(b.
   spec.paths[group.path] ??= {};
   spec.paths[group.path][group.method] = {
     operationId: operationId(group.path, group.method),
-    summary: `${titleCase(categories[0] ?? "uncategorized")} seed route`,
+    summary: `${titleCase(categories[0] ?? "uncategorized")} brokerage route`,
     description:
       `Personal route map entry. Risk: ${group.risk}. ` +
       "Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
@@ -158,7 +158,7 @@ for (const group of [...grouped.values()].sort((a, b) => a.path.localeCompare(b.
     parameters: params,
     responses: {
       "200": {
-        description: "Seed response shape not yet live-verified.",
+        description: "Response shape not yet live-verified.",
         content: {
           "application/json": {
             schema: {}
@@ -177,4 +177,4 @@ for (const group of [...grouped.values()].sort((a, b) => a.path.localeCompare(b.
 await mkdir(dirname(outPath), { recursive: true });
 await writeFile(outPath, `${JSON.stringify(spec, null, 2)}\n`);
 console.error(`wrote ${outPath}`);
-console.error(`seed routes=${routes.length} openapi paths=${Object.keys(spec.paths).length} operations=${grouped.size}`);
+console.error(`brokerage routes=${routes.length} openapi paths=${Object.keys(spec.paths).length} operations=${grouped.size}`);

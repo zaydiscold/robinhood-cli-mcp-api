@@ -137,7 +137,7 @@ apiMap
 
 program.addCommand(apiMap);
 
-const brokerage = new Command("brokerage").description("Inspect reverse-engineered brokerage/account seed routes");
+const brokerage = new Command("brokerage").description("Inspect reverse-engineered brokerage/account routes");
 
 brokerage
   .command("routes")

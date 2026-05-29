@@ -26,7 +26,7 @@ const robinhoodPublishedExampleApiKey = () =>
   ["rh", "api", "6148effc", "c0b1", "486c", "8940", "a1d099456be6"].join("-");
 
 describe("Robinhood API map", () => {
-  it("loads the brokerage seed map with conservative risk counts", () => {
+  it("loads the brokerage route map with conservative risk counts", () => {
     const routes = loadBrokerageRoutes();
     expect(routes.length).toBeGreaterThanOrEqual(259);
     expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(4);

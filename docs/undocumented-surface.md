@@ -11,7 +11,7 @@ Current counts after the 2026-05-27 deep CDP merge:
 - 259 brokerage/account route templates.
 - 217 latest authenticated browser route templates.
 - 263 normalized unified OpenAPI paths and 266 unified operations in `api-map/openapi/robinhood-unified.openapi.json`.
-- 249 normalized OpenAPI paths and 250 operations in `api-map/openapi/robinhood-brokerage-seed.openapi.json`.
+- 249 normalized OpenAPI paths and 250 operations in `api-map/openapi/robinhood-brokerage.openapi.json`.
 - 72 read.
 - 182 sensitive-read.
 - 4 write-safe.

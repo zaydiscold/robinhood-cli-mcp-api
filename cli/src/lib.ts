@@ -188,7 +188,7 @@ export function loadCryptoSpec(root = repoRootFromCli()): any {
 }
 
 export function loadBrokerageOpenApi(root = repoRootFromCli()): any {
-  return readJson(join(root, "api-map/openapi/robinhood-brokerage-seed.openapi.json"));
+  return readJson(join(root, "api-map/openapi/robinhood-brokerage.openapi.json"));
 }
 
 export function loadUnifiedOpenApi(root = repoRootFromCli()): any {

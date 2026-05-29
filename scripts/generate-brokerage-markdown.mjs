@@ -16,7 +16,7 @@ const byRisk = routes.reduce((acc, route) => {
 const lines = [
   "# Robinhood Brokerage Route Map",
   "",
-  "Source: community seed routes plus sanitized authenticated Chrome/CDP captures through 2026-05-27.",
+  "Source: reverse-engineered routes plus sanitized authenticated Chrome/CDP captures through 2026-05-27.",
   "",
   "Personal repo semantics: mapped routes can be executed live with caller-owned `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE`. Pass `--dry-run` when you want a non-sending test plan.",
   "",

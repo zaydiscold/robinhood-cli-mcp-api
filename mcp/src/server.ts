@@ -61,7 +61,7 @@ server.registerTool(
   "robinhood_api_map_summary",
   {
     title: "Robinhood API Map Summary",
-    description: "Summarize the bundled official Crypto OpenAPI and brokerage/account seed route map.",
+    description: "Summarize the bundled official Crypto OpenAPI and brokerage/account route map.",
     inputSchema: z.object({}),
     annotations: toolAnnotations(true, "read")
   },
@@ -72,7 +72,7 @@ server.registerTool(
   "robinhood_brokerage_routes",
   {
     title: "Robinhood Brokerage Routes",
-    description: "List reverse-engineered brokerage/account seed routes with optional risk/category/host/query filters. This does not make live calls.",
+    description: "List reverse-engineered brokerage/account routes with optional risk/category/host/query filters. This does not make live calls.",
     annotations: toolAnnotations(true, "read"),
     inputSchema: z.object({
       risk: z.enum(["read", "sensitive-read", "write-safe", "write-mutate", "write-or-sensitive", "destructive"]).optional(),

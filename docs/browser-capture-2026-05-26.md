@@ -8,7 +8,7 @@ An authenticated Chrome/CDP sweep found 93 unique `https://api.robinhood.com` ro
 - `api-map/robinhood-routes.json`
 - `api-map/brokerage-routes.json`
 - `api-map/openapi/robinhood-unified.openapi.json`
-- `api-map/openapi/robinhood-brokerage-seed.openapi.json`
+- `api-map/openapi/robinhood-brokerage.openapi.json`
 - `api-map/markdown/robinhood-routes.md`
 - `api-map/markdown/brokerage-routes.md`
 

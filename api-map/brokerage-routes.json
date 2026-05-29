@@ -722,109 +722,6 @@
     ]
   },
   {
-    "url": "https://api.robinhood.com/discovery/lists/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "sensitive-read",
-    "methods": [
-      "GET"
-    ],
-    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
-    "seenOn": [
-      "crypto-btc",
-      "etf-qqq",
-      "etf-spy",
-      "stock-aapl",
-      "stock-hood",
-      "stock-nvda",
-      "stock-tsla"
-    ],
-    "queryKeys": [
-      "object_id",
-      "object_type",
-      "owner_type"
-    ],
-    "requestTypes": [
-      "XHR"
-    ]
-  },
-  {
-    "url": "https://api.robinhood.com/discovery/lists/default/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "sensitive-read",
-    "methods": [
-      "GET"
-    ],
-    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
-    "seenOn": [
-      "crypto-btc",
-      "etf-qqq",
-      "etf-spy",
-      "portfolio-home",
-      "stock-aapl",
-      "stock-hood",
-      "stock-nvda",
-      "stock-tsla"
-    ],
-    "queryKeys": [],
-    "requestTypes": [
-      "XHR"
-    ]
-  },
-  {
-    "url": "https://api.robinhood.com/discovery/lists/items/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "sensitive-read",
-    "methods": [
-      "GET"
-    ],
-    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
-    "seenOn": [
-      "portfolio-home"
-    ],
-    "queryKeys": [
-      "list_id",
-      "load_all_attributes"
-    ],
-    "requestTypes": [
-      "XHR"
-    ]
-  },
-  {
-    "url": "https://api.robinhood.com/discovery/lists/user_items/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "sensitive-read",
-    "methods": [
-      "GET"
-    ],
-    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
-    "seenOn": [
-      "crypto-btc",
-      "etf-qqq",
-      "etf-spy",
-      "portfolio-home",
-      "stock-aapl",
-      "stock-hood",
-      "stock-nvda",
-      "stock-tsla"
-    ],
-    "queryKeys": [],
-    "requestTypes": [
-      "XHR"
-    ]
-  },
-  {
     "url": "https://api.robinhood.com/discovery/ratings/{id}/overview/",
     "host": "api.robinhood.com",
     "categories": [
@@ -2031,19 +1928,6 @@
     "requestTypes": [
       "XHR"
     ]
-  },
-  {
-    "url": "https://api.robinhood.com/discovery/lists/{id}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "destructive",
-    "methods": [
-      "DELETE"
-    ],
-    "summary": "Delete a watchlist",
-    "source": "schema-fix 2026-05-28: normalized url_template/method/category -> url/methods/categories"
   },
   {
     "url": "https://api.robinhood.com/midlands/lists/default/",
@@ -5874,59 +5758,6 @@
     ]
   },
   {
-    "url": "https://api.robinhood.com/discovery/lists/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "write-mutate",
-    "methods": [
-      "POST"
-    ],
-    "summary": "Create a watchlist",
-    "bodyKeys": [
-      "display_name",
-      "icon_emoji",
-      "object_type"
-    ],
-    "source": "self-extension 2026-05-28: watchlist edit/rearrange surface"
-  },
-  {
-    "url": "https://api.robinhood.com/discovery/lists/{id}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "write-mutate",
-    "methods": [
-      "PATCH"
-    ],
-    "summary": "Rename/edit a watchlist (name, icon_emoji)",
-    "bodyKeys": [
-      "display_name",
-      "icon_emoji"
-    ],
-    "source": "self-extension 2026-05-28: watchlist edit/rearrange surface"
-  },
-  {
-    "url": "https://api.robinhood.com/discovery/lists/items/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "write-mutate",
-    "methods": [
-      "POST"
-    ],
-    "summary": "Add/remove/reorder watchlist items (operations on object_id/object_type)",
-    "bodyKeys": [
-      "list_id",
-      "updates",
-      "operations"
-    ],
-    "source": "self-extension 2026-05-28: watchlist edit/rearrange surface"
-  },
-  {
     "url_template": "https://api.robinhood.com/discovery/lists/",
     "method": "GET",
     "risk": "sensitive-read",
@@ -5997,5 +5828,67 @@
     "category": "watchlists",
     "host": "api.robinhood.com",
     "summary": "List all custom watchlists"
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/?owner_type=custom",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "manual",
+    "queryKeys": [
+      "owner_type"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/{id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "destructive",
+    "methods": [
+      "PATCH",
+      "DELETE"
+    ],
+    "summary": "Rename/edit (PATCH) or delete (DELETE) a watchlist. PATCH body uses display_name (NOT name) and optional icon_emoji.",
+    "bodyKeys": [
+      "display_name",
+      "icon_emoji"
+    ],
+    "source": "manual",
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Create a watchlist. Body uses display_name (NOT name), optional icon_emoji and object_type.",
+    "bodyKeys": [
+      "display_name",
+      "icon_emoji",
+      "object_type"
+    ],
+    "source": "manual",
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
   }
 ]

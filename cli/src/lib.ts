@@ -696,10 +696,18 @@ export function summarizeApiMap(root = repoRootFromCli()): ApiMapSummary {
   const byCategory: Record<string, number> = {};
   const hosts: Record<string, number> = {};
 
+  // Route entries use one of two schema dialects: { categories: [...] } or the
+  // older { category: "..." }. Read either so summary never crashes on a mixed map.
+  const categoriesOf = (route: { categories?: string[]; category?: string }): string[] => {
+    if (Array.isArray(route.categories) && route.categories.length) return route.categories;
+    if (typeof route.category === "string" && route.category) return [route.category];
+    return ["uncategorized"];
+  };
+
   for (const route of unifiedRoutes) {
     unifiedByRisk[route.risk] = (unifiedByRisk[route.risk] ?? 0) + 1;
     unifiedHosts[route.host] = (unifiedHosts[route.host] ?? 0) + 1;
-    for (const category of route.categories.length ? route.categories : ["uncategorized"]) {
+    for (const category of categoriesOf(route)) {
       unifiedByCategory[category] = (unifiedByCategory[category] ?? 0) + 1;
     }
   }
@@ -707,7 +715,7 @@ export function summarizeApiMap(root = repoRootFromCli()): ApiMapSummary {
   for (const route of routes) {
     byRisk[route.risk] = (byRisk[route.risk] ?? 0) + 1;
     hosts[route.host] = (hosts[route.host] ?? 0) + 1;
-    for (const category of route.categories.length ? route.categories : ["uncategorized"]) {
+    for (const category of categoriesOf(route)) {
       byCategory[category] = (byCategory[category] ?? 0) + 1;
     }
   }

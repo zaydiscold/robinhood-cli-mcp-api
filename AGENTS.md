@@ -104,7 +104,7 @@ runtime until you rebuild:
 ```bash
 pnpm --filter @zaydiscold/robinhood-cli build       # CLI
 pnpm --filter @zaydiscold/robinhood-cli-mcp build   # MCP
-# verify (currently 267 routes):
+# verify (currently 271 routes):
 node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"
 ```
 
@@ -261,7 +261,54 @@ Options order body shape: `account`, `direction` (`debit`|`credit`), `legs[]`
 
 ---
 
-## 8. Exact-action consent (non-negotiable)
+## 8. Worked example — managing watchlists (create / rename / delete)
+
+Watchlists live under `discovery/lists/`. Every read AND the list endpoints need
+`owner_type=custom` as a discriminator. All three write verbs are proven live through
+the CLI (create 201, rename 200, delete 204).
+
+```bash
+# List every watchlist (id + display_name). owner_type is REQUIRED.
+robinhood-cli brokerage execute \
+  "https://api.robinhood.com/discovery/lists/?owner_type=custom" --json
+
+# Read one list's items (object_id = instrument id, weight = sort order):
+robinhood-cli brokerage execute \
+  "https://api.robinhood.com/discovery/lists/items/?list_id={id}&owner_type=custom" \
+  --param id=<LIST_ID> --json
+
+# CREATE a list (POST, risk write-mutate). Field is display_name, NOT name.
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
+  "https://api.robinhood.com/discovery/lists/" --method POST --live-write \
+  --body-json '{"display_name":"My List","object_type":"instrument","owner_type":"custom"}'
+
+# RENAME a list (PATCH). The mutable field is display_name — sending "name" is a
+# silent no-op (200 but nothing changes).
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
+  "https://api.robinhood.com/discovery/lists/{id}/" --method PATCH --live-write \
+  --param id=<LIST_ID> --body-json '{"display_name":"Renamed"}'
+
+# DELETE a list (DELETE, risk destructive -> 204 No Content, irreversible).
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
+  "https://api.robinhood.com/discovery/lists/{id}/" --method DELETE --live-write \
+  --param id=<LIST_ID>
+```
+
+Gotchas learned the hard way:
+- **`owner_type=custom` is mandatory** on every list read; without it you get
+  `["owner_type of request must be specified"]` (400).
+- **Rename uses `display_name`**, not `name`. Wrong field → 200 with no change.
+- **The Options Watchlist cannot be deleted.** Robinhood hard-blocks it server-side:
+  `["Cannot delete options watchlist"]` (400). The web "Delete list" button fails on it
+  too — it is not a CLI limitation. Every other list deletes cleanly.
+- **Method-aware routing** picks the right verb when a URL has several (GET vs POST on
+  `discovery/lists/`, PATCH vs DELETE on `discovery/lists/{id}/`) — always pass `--method`.
+- Item add/remove/reorder (`discovery/lists/items/` POST) is **not yet mapped** — the
+  server returns `{"failed operations":""}` with no detail, so the exact body is unconfirmed.
+
+---
+
+## 9. Exact-action consent (non-negotiable)
 
 Reads and dry-runs are free. A **live write** (trade, transfer, cancel, unlink) runs only
 when the user asked for *that specific operation*. Before sending, echo the resolved
@@ -271,7 +318,7 @@ settings/permissions, never print the token value.
 
 ---
 
-## 9. MCP registration
+## 10. MCP registration
 
 ```bash
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js

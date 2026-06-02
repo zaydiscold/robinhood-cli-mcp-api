@@ -90,6 +90,8 @@ pnpm --filter @zaydiscold/robinhood-cli cli -- --help
 
 robinhood-cli api-map summary --json                 # what the map covers
 robinhood-cli recurring list                          # flagship: recurring buys + state
+robinhood-cli options positions                       # rank open options by % return
+robinhood-cli options chain MRVL --width 6            # live chain around the money
 robinhood-cli brokerage routes --category orders      # browse mapped routes
 robinhood-cli brokerage plan "https://api.robinhood.com/accounts/{0}/" --param 0=ACCOUNT_ID --json
 ```
@@ -125,6 +127,33 @@ node mcp/dist/server.js
 ```
 
 Tools surface as `mcp__robinhood-cli__*` and inherit the identical auth, route map, and write-gate as the CLI.
+
+### 6. Options analytics — positions & chains
+
+Two read-only convenience commands that join the raw options routes (`aggregate_positions`, `marketdata/options`, `instruments`, `chains`) into one line each — the kind of thing that's six hand-built `brokerage execute` calls otherwise:
+
+```bash
+# Rank every open option position by percent return (best performer last line).
+# Premiums and % only — no account totals are printed.
+robinhood-cli options positions
+robinhood-cli options positions --json
+
+# Live option chain around the money. Defaults to the nearest expiry and calls.
+robinhood-cli options chain MRVL
+robinhood-cli options chain NVDA --expiration 2026-07-02 --type put --width 10 --json
+```
+
+```text
+$ robinhood-cli options positions
+contract              qty  entry  mark    return    delta
+--------------------  ---  -----  ------  --------  -----
+DRAM $50 Call 6/18    1    $1.30  $18.65  +1334.6%  0.93
+HPE $30 Call 9/18     1    $1.68  $19.00  +1031.0%  0.88
+...
+Best performer: DRAM $50 Call 6/18 at +1334.6%.
+```
+
+Both are pure reads (no write gate). `--json` emits structured rows for piping into a spreadsheet or an agent.
 
 > **Rebuild note:** the build copies `api-map/brokerage-routes.json` into `cli/dist/`, and the runtime reads that copy. After editing the route map, **rebuild** (`pnpm build`) or your change is a silent no-op.
 

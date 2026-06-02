@@ -9,6 +9,7 @@
 
 import { Command } from "commander";
 import {
+  classifyMoneyness,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterBrokerageRoutes,
@@ -17,12 +18,14 @@ import {
   loadBrowserRoutes,
   loadBrokerageRoutes,
   loadRobinhoodRoutes,
+  optionReturnPct,
   parseParamAssignments,
   planBrokerageRequest,
   planCryptoRequest,
   printJson,
   printTable,
   resolveLiveWriteGate,
+  selectNearStrikes,
   signCryptoRequest,
   summarizeApiMap
 } from "./lib.js";
@@ -424,6 +427,202 @@ recurring
   );
 
 program.addCommand(recurring);
+
+// --- Options: first-class positions performance + chain ---
+// Wraps the mapped options routes (aggregate_positions, marketdata/options,
+// instruments, chains, options/instruments) into two read-only convenience
+// commands so an agent can answer "what's my best option?" and "show me the
+// chain for X" without hand-assembling six `brokerage execute` calls. Same
+// engine, same map. All reads — no live-write gate needed.
+const AGG_POSITIONS_URL = "https://api.robinhood.com/options/aggregate_positions/?account_numbers=";
+const MARKETDATA_OPTIONS_URL = "https://api.robinhood.com/marketdata/options/?ids={ids}";
+const INSTRUMENTS_SYMBOL_URL = "https://api.robinhood.com/instruments/?symbol={symbol}";
+const OPTIONS_CHAIN_URL = "https://api.robinhood.com/options/chains/{id}/";
+const OPTIONS_INSTRUMENTS_URL =
+  "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}";
+const MARKETDATA_QUOTES_URL = "https://api.robinhood.com/marketdata/quotes/?ids={ids}";
+
+// Authenticated GET against a mapped route, with placeholders filled from params.
+// Returns parsed JSON; throws on a missing route, unfilled placeholder, or non-200.
+async function brokerageGetJson(url: string, params: Record<string, string> = {}): Promise<any> {
+  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: url });
+  const route = selectRouteByQueryAndMethod(matches, url, "GET");
+  if (!route) throw new Error(`Route missing from map: ${url} — rebuild the map (AGENTS.md §3).`);
+  const plan = planBrokerageRequest({ route, method: "GET", params, dryRun: false });
+  if (plan.missingParams.length > 0) {
+    throw new Error(`Missing params for ${url}: ${plan.missingParams.join(", ")}`);
+  }
+  const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true });
+  if (result.status !== 200) throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
+  return JSON.parse(result.body || "{}");
+}
+
+const num = (value: unknown): number => Number(value);
+const usd = (value: number): string => (Number.isFinite(value) ? `$${value.toFixed(2)}` : "—");
+const pct = (value: number): string => (Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(1)}%` : "—");
+
+interface OpenOptionPosition {
+  symbol: string;
+  name: string;
+  averageOpenPrice: number;
+  quantity: number;
+  optionId: string;
+}
+
+async function loadOpenOptionPositions(): Promise<OpenOptionPosition[]> {
+  const data = await brokerageGetJson(AGG_POSITIONS_URL);
+  const results: any[] = Array.isArray(data.results) ? data.results : [];
+  const open: OpenOptionPosition[] = [];
+  for (const position of results) {
+    const quantity = num(position.quantity);
+    const optionId = position.legs?.[0]?.option_id;
+    if (!(quantity > 0) || !optionId) continue;
+    // detail_display_name is like "$50 Call 6/18/27" — it omits the underlying,
+    // so prefix the symbol to keep the leaderboard legible (DRAM vs HPE vs …).
+    const detail = position.detail_display_name ?? position.strategy;
+    open.push({
+      symbol: position.symbol,
+      name: `${position.symbol} ${detail}`,
+      averageOpenPrice: num(position.average_open_price),
+      quantity,
+      optionId
+    });
+  }
+  return open;
+}
+
+// Fetch option marketdata for many instrument ids, chunked to keep URLs bounded.
+async function fetchOptionMarks(ids: string[]): Promise<Map<string, any>> {
+  const marks = new Map<string, any>();
+  const chunkSize = 40;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const data = await brokerageGetJson(MARKETDATA_OPTIONS_URL, { ids: ids.slice(i, i + chunkSize).join(",") });
+    for (const row of data.results ?? []) {
+      if (row?.instrument_id) marks.set(row.instrument_id, row);
+    }
+  }
+  return marks;
+}
+
+const options = new Command("options").description("Options analytics: position performance and live chains (reads)");
+
+options
+  .command("positions")
+  .description("Rank your open option positions by return (live read). Premiums and % only — no account totals.")
+  .option("--json", "emit JSON")
+  .action(async (opts: { json?: boolean }) => {
+    const open = await loadOpenOptionPositions();
+    if (open.length === 0) {
+      process.stdout.write("No open option positions.\n");
+      return;
+    }
+    const marks = await fetchOptionMarks(open.map((position) => position.optionId));
+    const rows = open
+      .map((position) => {
+        const mark = num(marks.get(position.optionId)?.adjusted_mark_price);
+        const delta = num(marks.get(position.optionId)?.delta);
+        return {
+          contract: position.name,
+          qty: position.quantity,
+          entry: position.averageOpenPrice / 100,
+          mark,
+          returnPct: optionReturnPct(position.averageOpenPrice, mark),
+          delta
+        };
+      })
+      .sort((a, b) => (Number.isFinite(b.returnPct) ? b.returnPct : -Infinity) - (Number.isFinite(a.returnPct) ? a.returnPct : -Infinity));
+    if (opts.json) {
+      printJson(rows);
+      return;
+    }
+    printTable(
+      rows.map((row) => ({
+        contract: row.contract,
+        qty: row.qty,
+        entry: usd(row.entry),
+        mark: usd(row.mark),
+        return: pct(row.returnPct),
+        delta: Number.isFinite(row.delta) ? row.delta.toFixed(2) : "—"
+      })),
+      ["contract", "qty", "entry", "mark", "return", "delta"]
+    );
+    const best = rows.find((row) => Number.isFinite(row.returnPct));
+    if (best) process.stdout.write(`\nBest performer: ${best.contract} at ${pct(best.returnPct)}.\n`);
+  });
+
+options
+  .command("chain")
+  .description("Print the option chain around the money for a symbol (live read)")
+  .argument("<symbol>", "underlying ticker, e.g. MRVL")
+  .option("--expiration <date>", "YYYY-MM-DD expiration; default is the nearest")
+  .option("--type <type>", "call or put", "call")
+  .option("--width <n>", "strikes to show on each side of spot", "8")
+  .option("--json", "emit JSON")
+  .action(async (symbolArg: string, opts: { expiration?: string; type?: string; width?: string; json?: boolean }) => {
+    const symbol = symbolArg.toUpperCase();
+    const type = (opts.type ?? "call").toLowerCase() === "put" ? "put" : "call";
+    const width = Math.max(0, Number.parseInt(opts.width ?? "8", 10) || 0);
+
+    const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
+    if (!instrument) throw new Error(`No equity instrument found for ${symbol}.`);
+    const chainId = instrument.tradable_chain_id;
+    if (!chainId) throw new Error(`${symbol} has no tradable options chain.`);
+
+    const quote = (await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: instrument.id })).results?.[0] ?? {};
+    const spot = num(quote.last_trade_price ?? quote.adjusted_previous_close);
+
+    const expirations: string[] = (await brokerageGetJson(OPTIONS_CHAIN_URL, { id: chainId })).expiration_dates ?? [];
+    if (expirations.length === 0) throw new Error(`${symbol} chain has no listed expirations.`);
+    const expiration = opts.expiration && expirations.includes(opts.expiration) ? opts.expiration : expirations[0];
+
+    const instruments: any[] =
+      (await brokerageGetJson(OPTIONS_INSTRUMENTS_URL, { chain_id: chainId, expiration_dates: expiration, type })).results ?? [];
+    const ladder = instruments
+      .map((row) => ({ strike: num(row.strike_price), id: row.id }))
+      .filter((row) => Number.isFinite(row.strike) && row.id);
+    const near = selectNearStrikes(ladder, spot, width);
+    const marks = await fetchOptionMarks(near.map((row) => row.id));
+
+    const rows = near.map((row) => {
+      const mark = marks.get(row.id) ?? {};
+      return {
+        strike: row.strike,
+        bid: num(mark.bid_price),
+        ask: num(mark.ask_price),
+        mark: num(mark.adjusted_mark_price),
+        delta: num(mark.delta),
+        ivPct: num(mark.implied_volatility) * 100,
+        volume: num(mark.volume),
+        openInterest: num(mark.open_interest),
+        moneyness: classifyMoneyness(row.strike, spot, type)
+      };
+    });
+
+    if (opts.json) {
+      printJson({ symbol, spot, expiration, type, strikes: rows });
+      return;
+    }
+    process.stdout.write(`${symbol} ${type}s — exp ${expiration} — spot ${usd(spot)}\n\n`);
+    printTable(
+      rows.map((row) => ({
+        strike: row.strike.toFixed(2),
+        bid: usd(row.bid),
+        ask: usd(row.ask),
+        mark: usd(row.mark),
+        delta: Number.isFinite(row.delta) ? row.delta.toFixed(2) : "—",
+        iv: Number.isFinite(row.ivPct) ? `${row.ivPct.toFixed(0)}%` : "—",
+        vol: Number.isFinite(row.volume) ? row.volume : "—",
+        oi: Number.isFinite(row.openInterest) ? row.openInterest : "—",
+        money: row.moneyness
+      })),
+      ["strike", "bid", "ask", "mark", "delta", "iv", "vol", "oi", "money"]
+    );
+    if (expirations.length > 1) {
+      process.stdout.write(`\nOther expirations: ${expirations.slice(0, 8).join(", ")}${expirations.length > 8 ? " …" : ""}\n`);
+    }
+  });
+
+program.addCommand(options);
 
 const crypto = new Command("crypto").description("Inspect and sign official Robinhood Crypto API requests");
 

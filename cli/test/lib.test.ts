@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyMoneyness,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterBrokerageRoutes,
@@ -8,10 +9,12 @@ import {
   loadBrowserRoutes,
   loadBrokerageRoutes,
   loadRobinhoodRoutes,
+  optionReturnPct,
   parseParamAssignments,
   planBrokerageRequest,
   planCryptoRequest,
   resolveLiveWriteGate,
+  selectNearStrikes,
   signCryptoRequest,
   summarizeApiMap
 } from "../src/lib.js";
@@ -29,7 +32,10 @@ describe("Robinhood API map", () => {
   it("loads the brokerage route map with conservative risk counts", () => {
     const routes = loadBrokerageRoutes();
     expect(routes.length).toBeGreaterThanOrEqual(259);
-    expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(4);
+    // 8 genuinely destructive routes: ACH unlink, 3× order cancel, watchlist
+    // create/edit/delete, recurring create/delete. Bump deliberately when the map
+    // grows so a misclassification can't sneak in as "just another count change".
+    expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(8);
     expect(filterBrokerageRoutes(routes, { risk: "write-safe" }).length).toBeGreaterThanOrEqual(4);
     expect(filterBrokerageRoutes(routes, { category: "options" }).length).toBeGreaterThanOrEqual(11);
     expect(filterBrokerageRoutes(routes, { query: "ach/relationships" }).length).toBeGreaterThan(0);
@@ -281,5 +287,34 @@ describe("Robinhood API map", () => {
         env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" }
       })
     ).toEqual({ allowed: true, forcedDryRun: false });
+  });
+});
+
+describe("Options analytics helpers", () => {
+  it("computes long-option percent return from cost basis and mark", () => {
+    // DRAM $50C: $1.30 premium (avg 130) -> $18.65 mark ≈ +1335%
+    expect(optionReturnPct(130, 18.65)).toBeCloseTo(1334.6, 0);
+    // A loser: $2.09 premium -> $0.67 mark ≈ -68%
+    expect(optionReturnPct(209.33, 0.67)).toBeCloseTo(-68.0, 0);
+    // Guards: zero/negative basis or non-finite mark -> NaN, never a divide-by-zero blowup
+    expect(optionReturnPct(0, 5)).toBeNaN();
+    expect(optionReturnPct(100, Number.NaN)).toBeNaN();
+  });
+
+  it("classifies call and put moneyness, treating equality and unknown spot as ATM", () => {
+    expect(classifyMoneyness(200, 219, "call")).toBe("ITM");
+    expect(classifyMoneyness(240, 219, "call")).toBe("OTM");
+    expect(classifyMoneyness(240, 219, "put")).toBe("ITM");
+    expect(classifyMoneyness(200, 219, "put")).toBe("OTM");
+    expect(classifyMoneyness(219, 219, "call")).toBe("ATM");
+    expect(classifyMoneyness(219, 0, "call")).toBe("ATM");
+  });
+
+  it("selects an ATM-centered strike window and sorts ascending", () => {
+    const ladder = [200, 205, 210, 215, 220, 225, 230, 235, 240].map((strike) => ({ strike }));
+    const near = selectNearStrikes(ladder, 219, 2);
+    expect(near.map((row) => row.strike)).toEqual([210, 215, 220, 225, 230]);
+    // Unknown spot returns the full ladder (sorted), not an empty window
+    expect(selectNearStrikes(ladder, 0, 2)).toHaveLength(ladder.length);
   });
 });

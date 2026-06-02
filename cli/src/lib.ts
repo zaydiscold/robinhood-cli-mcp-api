@@ -790,6 +790,50 @@ export function signCryptoRequest(input: {
   };
 }
 
+// --- Options analytics: pure helpers (shared by the `options` command surface) ---
+//
+// Robinhood splits cost basis (aggregate_positions.average_open_price, a
+// per-contract dollar amount = premium * 100) from the live mark
+// (marketdata/options.adjusted_mark_price, per share). Percent return joins the
+// two. Kept pure so the math is unit-tested without any live calls.
+
+/** Percent return of a long option: (markPerShare*100 - averageOpenPrice) / averageOpenPrice * 100. */
+export function optionReturnPct(averageOpenPrice: number, adjustedMarkPrice: number): number {
+  if (!(averageOpenPrice > 0) || !Number.isFinite(adjustedMarkPrice)) return Number.NaN;
+  const currentValue = adjustedMarkPrice * 100;
+  return ((currentValue - averageOpenPrice) / averageOpenPrice) * 100;
+}
+
+export type Moneyness = "ITM" | "ATM" | "OTM";
+
+/** Classify a strike relative to spot for a call or put. Equality (or no spot) is ATM. */
+export function classifyMoneyness(strike: number, spot: number, type: "call" | "put"): Moneyness {
+  if (!(spot > 0) || strike === spot) return "ATM";
+  const strikeBelowSpot = strike < spot;
+  if (type === "call") return strikeBelowSpot ? "ITM" : "OTM";
+  return strikeBelowSpot ? "OTM" : "ITM";
+}
+
+/**
+ * Slice the strike ladder to `width` strikes on each side of the strike nearest
+ * spot (so an ATM-centered window of up to 2*width+1 rows). Returns the input
+ * untouched when spot is unknown or the ladder already fits the window.
+ */
+export function selectNearStrikes<T extends { strike: number }>(rows: T[], spot: number, width: number): T[] {
+  const sorted = [...rows].sort((a, b) => a.strike - b.strike);
+  if (!(spot > 0) || !(width >= 0) || sorted.length <= width * 2 + 1) return sorted;
+  let centerIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  sorted.forEach((row, index) => {
+    const distance = Math.abs(row.strike - spot);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      centerIndex = index;
+    }
+  });
+  return sorted.slice(Math.max(0, centerIndex - width), centerIndex + width + 1);
+}
+
 export function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }

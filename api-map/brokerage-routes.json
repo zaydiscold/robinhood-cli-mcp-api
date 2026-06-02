@@ -5832,7 +5832,8 @@
     "risk": "sensitive-read",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "List all watchlists"
+    "summary": "List all watchlists",
+    "url": "https://api.robinhood.com/discovery/lists/"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/default/",
@@ -5840,7 +5841,8 @@
     "risk": "sensitive-read",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "Get default watchlist"
+    "summary": "Get default watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/default/"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/items/",
@@ -5848,7 +5850,8 @@
     "risk": "sensitive-read",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "List watchlist items"
+    "summary": "List watchlist items",
+    "url": "https://api.robinhood.com/discovery/lists/items/"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/user_items/",
@@ -5856,7 +5859,8 @@
     "risk": "sensitive-read",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "List user watchlist items"
+    "summary": "List user watchlist items",
+    "url": "https://api.robinhood.com/discovery/lists/user_items/"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
@@ -5864,7 +5868,8 @@
     "risk": "sensitive-read",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "Get one watchlist"
+    "summary": "Get one watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/{0}/"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/",
@@ -5872,7 +5877,8 @@
     "risk": "destructive",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "Create watchlist"
+    "summary": "Create watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
@@ -5880,7 +5886,8 @@
     "risk": "destructive",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "Rename watchlist"
+    "summary": "Rename watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/{0}/"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
@@ -5888,7 +5895,8 @@
     "risk": "destructive",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "Delete watchlist"
+    "summary": "Delete watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/{0}/"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/?owner_type=custom",
@@ -5896,7 +5904,8 @@
     "risk": "sensitive-read",
     "category": "watchlists",
     "host": "api.robinhood.com",
-    "summary": "List all custom watchlists"
+    "summary": "List all custom watchlists",
+    "url": "https://api.robinhood.com/discovery/lists/?owner_type=custom"
   },
   {
     "url": "https://api.robinhood.com/discovery/lists/?owner_type=custom",

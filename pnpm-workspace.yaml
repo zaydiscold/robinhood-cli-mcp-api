@@ -1,3 +1,6 @@
 packages:
-  - "cli"
-  - "mcp"
+  - cli
+  - mcp
+
+ignoredBuiltDependencies:
+  - esbuild

@@ -11,6 +11,7 @@ import {
   loadRobinhoodRoutes,
   optionReturnPct,
   parseParamAssignments,
+  percentChange,
   planBrokerageRequest,
   planCryptoRequest,
   resolveLiveWriteGate,
@@ -32,10 +33,12 @@ describe("Robinhood API map", () => {
   it("loads the brokerage route map with conservative risk counts", () => {
     const routes = loadBrokerageRoutes();
     expect(routes.length).toBeGreaterThanOrEqual(259);
-    // 8 genuinely destructive routes: ACH unlink, 3× order cancel, watchlist
-    // create/edit/delete, recurring create/delete. Bump deliberately when the map
-    // grows so a misclassification can't sneak in as "just another count change".
-    expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(8);
+    // 11 genuinely destructive routes: ACH unlink, 3× order cancel, watchlist
+    // create/rename/delete (the url_template→url repair in c2dd79f made the legacy
+    // discovery/lists stubs countable again), recurring create/delete. Bump
+    // deliberately after auditing so a misclassification can't slip in as "just
+    // another count change".
+    expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(11);
     expect(filterBrokerageRoutes(routes, { risk: "write-safe" }).length).toBeGreaterThanOrEqual(4);
     expect(filterBrokerageRoutes(routes, { category: "options" }).length).toBeGreaterThanOrEqual(11);
     expect(filterBrokerageRoutes(routes, { query: "ach/relationships" }).length).toBeGreaterThan(0);
@@ -308,6 +311,14 @@ describe("Options analytics helpers", () => {
     expect(classifyMoneyness(200, 219, "put")).toBe("OTM");
     expect(classifyMoneyness(219, 219, "call")).toBe("ATM");
     expect(classifyMoneyness(219, 0, "call")).toBe("ATM");
+  });
+
+  it("computes generic percent change for equity P/L and day moves", () => {
+    expect(percentChange(331.46, 364.6)).toBeCloseTo(10.0, 1); // avg cost vs last
+    expect(percentChange(205, 219.26)).toBeCloseTo(6.96, 1); // prev close vs last
+    expect(percentChange(100, 80)).toBeCloseTo(-20.0, 1);
+    expect(percentChange(0, 50)).toBeNaN();
+    expect(percentChange(100, Number.NaN)).toBeNaN();
   });
 
   it("selects an ATM-centered strike window and sorts ascending", () => {

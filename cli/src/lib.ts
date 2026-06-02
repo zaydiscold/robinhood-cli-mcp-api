@@ -804,6 +804,16 @@ export function optionReturnPct(averageOpenPrice: number, adjustedMarkPrice: num
   return ((currentValue - averageOpenPrice) / averageOpenPrice) * 100;
 }
 
+/**
+ * Generic percent change from a base to a current value: (current - base) / base * 100.
+ * Used for equity P/L (avg buy vs last) and day change (prev close vs last). Returns
+ * NaN on a non-positive base or non-finite current so callers render "—" not Infinity.
+ */
+export function percentChange(base: number, current: number): number {
+  if (!(base > 0) || !Number.isFinite(current)) return Number.NaN;
+  return ((current - base) / base) * 100;
+}
+
 export type Moneyness = "ITM" | "ATM" | "OTM";
 
 /** Classify a strike relative to spot for a call or put. Equality (or no spot) is ATM. */

@@ -76,8 +76,12 @@ robinhood-cli api-map routes --host trading.robinhood.com --json
 robinhood-cli brokerage routes --risk read --json
 robinhood-cli brokerage route "https://api.robinhood.com/accounts/" --json
 robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --dry-run --json
+robinhood-cli quote MRVL NVDA AAPL --json
+robinhood-cli positions --json
 robinhood-cli options positions --json
 robinhood-cli options chain MRVL --width 6 --json
+robinhood-cli options expirations MRVL --json
+robinhood-cli watchlist list --json
 robinhood-cli crypto routes --json
 robinhood-cli crypto sign --api-key "$ROBINHOOD_API_KEY" --private-key-b64 "$ROBINHOOD_PRIVATE_KEY_B64" --path /api/v1/crypto/trading/accounts/ --method GET
 robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/" --query-param symbol=BTC-USD --dry-run --json

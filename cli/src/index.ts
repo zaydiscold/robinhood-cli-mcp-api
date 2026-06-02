@@ -20,6 +20,7 @@ import {
   loadRobinhoodRoutes,
   optionReturnPct,
   parseParamAssignments,
+  percentChange,
   planBrokerageRequest,
   planCryptoRequest,
   printJson,
@@ -442,15 +443,26 @@ const OPTIONS_INSTRUMENTS_URL =
   "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}";
 const MARKETDATA_QUOTES_URL = "https://api.robinhood.com/marketdata/quotes/?ids={ids}";
 
-// Authenticated GET against a mapped route, with placeholders filled from params.
+// Authenticated GET against a mapped route, with {placeholders} filled from
+// params and optional query-string params appended after substitution (for
+// filters like ?nonzero=true or ?owner_type=custom that aren't route slots).
 // Returns parsed JSON; throws on a missing route, unfilled placeholder, or non-200.
-async function brokerageGetJson(url: string, params: Record<string, string> = {}): Promise<any> {
+async function brokerageGetJson(
+  url: string,
+  params: Record<string, string> = {},
+  query: Record<string, string> = {}
+): Promise<any> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: url });
   const route = selectRouteByQueryAndMethod(matches, url, "GET");
   if (!route) throw new Error(`Route missing from map: ${url} — rebuild the map (AGENTS.md §3).`);
   const plan = planBrokerageRequest({ route, method: "GET", params, dryRun: false });
   if (plan.missingParams.length > 0) {
     throw new Error(`Missing params for ${url}: ${plan.missingParams.join(", ")}`);
+  }
+  if (Object.keys(query).length > 0) {
+    const parsed = new URL(plan.url);
+    for (const [key, value] of Object.entries(query)) parsed.searchParams.set(key, value);
+    plan.url = parsed.toString();
   }
   const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true });
   if (result.status !== 200) throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
@@ -622,7 +634,176 @@ options
     }
   });
 
+options
+  .command("expirations")
+  .description("List the available option expiration dates for a symbol (live read)")
+  .argument("<symbol>", "underlying ticker, e.g. MRVL")
+  .option("--json", "emit JSON")
+  .action(async (symbolArg: string, opts: { json?: boolean }) => {
+    const symbol = symbolArg.toUpperCase();
+    const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
+    if (!instrument) throw new Error(`No equity instrument found for ${symbol}.`);
+    const chainId = instrument.tradable_chain_id;
+    if (!chainId) throw new Error(`${symbol} has no tradable options chain.`);
+    const expirations: string[] = (await brokerageGetJson(OPTIONS_CHAIN_URL, { id: chainId })).expiration_dates ?? [];
+    if (opts.json) {
+      printJson({ symbol, expirations });
+      return;
+    }
+    if (expirations.length === 0) {
+      process.stdout.write(`${symbol} has no listed expirations.\n`);
+      return;
+    }
+    process.stdout.write(`${symbol} — ${expirations.length} expirations:\n${expirations.join("\n")}\n`);
+  });
+
 program.addCommand(options);
+
+// --- Quote / positions / watchlist: read-only convenience commands ---
+// Same engine + map as everything else. Like `options`, these print prices and
+// percentages but never a summed account/position dollar total, so output stays
+// safe to screenshot.
+const POSITIONS_URL = "https://api.robinhood.com/positions/";
+const DISCOVERY_LISTS_URL = "https://api.robinhood.com/discovery/lists/";
+
+// Batch instrument-id -> quote lookup, chunked to keep URLs bounded.
+async function fetchQuotes(instrumentIds: string[]): Promise<Map<string, any>> {
+  const quotes = new Map<string, any>();
+  const chunkSize = 40;
+  for (let i = 0; i < instrumentIds.length; i += chunkSize) {
+    const data = await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: instrumentIds.slice(i, i + chunkSize).join(",") });
+    for (const row of data.results ?? []) {
+      if (row?.instrument_id) quotes.set(row.instrument_id, row);
+    }
+  }
+  return quotes;
+}
+
+const quoteLast = (quote: any): number => num(quote?.last_trade_price ?? quote?.last_extended_hours_trade_price);
+
+program
+  .command("quote")
+  .description("Live quote for one or more symbols (last, day change, bid/ask). Read.")
+  .argument("<symbols...>", "one or more tickers, e.g. MRVL NVDA AAPL")
+  .option("--json", "emit JSON")
+  .action(async (symbols: string[], opts: { json?: boolean }) => {
+    const resolved = await Promise.all(
+      symbols.map(async (raw) => {
+        const symbol = raw.toUpperCase();
+        const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
+        return instrument ? { symbol, instrumentId: instrument.id, name: instrument.simple_name ?? instrument.name } : { symbol, instrumentId: undefined, name: undefined };
+      })
+    );
+    const ids = resolved.map((entry) => entry.instrumentId).filter((id): id is string => Boolean(id));
+    const quotes = await fetchQuotes(ids);
+    const rows = resolved.map((entry) => {
+      const quote = entry.instrumentId ? quotes.get(entry.instrumentId) : undefined;
+      const last = quoteLast(quote);
+      const prevClose = num(quote?.previous_close ?? quote?.adjusted_previous_close);
+      return {
+        symbol: entry.symbol,
+        last,
+        dayPct: percentChange(prevClose, last),
+        bid: num(quote?.bid_price),
+        ask: num(quote?.ask_price),
+        found: Boolean(quote)
+      };
+    });
+    if (opts.json) {
+      printJson(rows);
+      return;
+    }
+    printTable(
+      rows.map((row) => ({
+        symbol: row.symbol,
+        last: row.found ? usd(row.last) : "not found",
+        day: pct(row.dayPct),
+        bid: usd(row.bid),
+        ask: usd(row.ask)
+      })),
+      ["symbol", "last", "day", "bid", "ask"]
+    );
+  });
+
+program
+  .command("positions")
+  .description("Your open equity positions ranked by unrealized return (live read). Per-share and % only — no totals.")
+  .option("--sort <key>", "sort by: return (default) or symbol", "return")
+  .option("--json", "emit JSON")
+  .action(async (opts: { sort?: string; json?: boolean }) => {
+    const data = await brokerageGetJson(POSITIONS_URL, {}, { nonzero: "true" });
+    const held = (Array.isArray(data.results) ? data.results : []).filter((position: any) => num(position.quantity) > 0);
+    if (held.length === 0) {
+      process.stdout.write("No open equity positions.\n");
+      return;
+    }
+    const quotes = await fetchQuotes(held.map((position: any) => position.instrument_id).filter(Boolean));
+    let rows = held.map((position: any) => {
+      const last = quoteLast(quotes.get(position.instrument_id));
+      const avgCost = num(position.average_buy_price);
+      return {
+        symbol: position.symbol,
+        qty: num(position.quantity),
+        avgCost,
+        last,
+        returnPct: percentChange(avgCost, last)
+      };
+    });
+    rows = rows.sort((a: any, b: any) =>
+      opts.sort === "symbol"
+        ? String(a.symbol).localeCompare(String(b.symbol))
+        : (Number.isFinite(b.returnPct) ? b.returnPct : -Infinity) - (Number.isFinite(a.returnPct) ? a.returnPct : -Infinity)
+    );
+    if (opts.json) {
+      printJson(rows);
+      return;
+    }
+    printTable(
+      rows.map((row: any) => ({
+        symbol: row.symbol,
+        qty: Number.isInteger(row.qty) ? row.qty : row.qty.toFixed(4),
+        avgCost: usd(row.avgCost),
+        last: usd(row.last),
+        return: pct(row.returnPct)
+      })),
+      ["symbol", "qty", "avgCost", "last", "return"]
+    );
+    const winners = rows.filter((row: any) => Number.isFinite(row.returnPct) && row.returnPct > 0).length;
+    process.stdout.write(`\n${held.length} positions — ${winners} green, ${held.length - winners} red.\n`);
+  });
+
+const watchlist = new Command("watchlist").description("Inspect your custom watchlists (read)");
+
+watchlist
+  .command("list")
+  .description("List your custom watchlists and their sizes (live read)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { json?: boolean }) => {
+    const data = await brokerageGetJson(DISCOVERY_LISTS_URL, {}, { owner_type: "custom" });
+    const lists = Array.isArray(data.results) ? data.results : [];
+    const rows = lists
+      .map((list: any) => ({
+        name: list.display_name,
+        items: num(list.item_count),
+        emoji: list.icon_emoji ?? "",
+        id: list.id
+      }))
+      .sort((a: any, b: any) => (Number.isFinite(b.items) ? b.items : -1) - (Number.isFinite(a.items) ? a.items : -1));
+    if (opts.json) {
+      printJson(rows);
+      return;
+    }
+    if (rows.length === 0) {
+      process.stdout.write("No custom watchlists.\n");
+      return;
+    }
+    printTable(
+      rows.map((row: any) => ({ name: row.name, items: Number.isFinite(row.items) ? row.items : "—", emoji: row.emoji, id: row.id })),
+      ["name", "items", "emoji", "id"]
+    );
+  });
+
+program.addCommand(watchlist);
 
 const crypto = new Command("crypto").description("Inspect and sign official Robinhood Crypto API requests");
 

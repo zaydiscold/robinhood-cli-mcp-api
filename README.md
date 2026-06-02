@@ -90,8 +90,11 @@ pnpm --filter @zaydiscold/robinhood-cli cli -- --help
 
 robinhood-cli api-map summary --json                 # what the map covers
 robinhood-cli recurring list                          # flagship: recurring buys + state
+robinhood-cli quote MRVL NVDA AAPL                    # live quotes for one+ symbols
+robinhood-cli positions                               # equity holdings ranked by return
 robinhood-cli options positions                       # rank open options by % return
 robinhood-cli options chain MRVL --width 6            # live chain around the money
+robinhood-cli watchlist list                          # your custom watchlists + sizes
 robinhood-cli brokerage routes --category orders      # browse mapped routes
 robinhood-cli brokerage plan "https://api.robinhood.com/accounts/{0}/" --param 0=ACCOUNT_ID --json
 ```
@@ -154,6 +157,35 @@ Best performer: DRAM $50 Call 6/18 at +1334.6%.
 ```
 
 Both are pure reads (no write gate). `--json` emits structured rows for piping into a spreadsheet or an agent.
+
+### 7. More read commands — quote, positions, watchlists
+
+The same one-line ergonomics for everyday lookups. All read-only; all print per-share prices and percentages, never a summed account total (so output stays safe to screenshot):
+
+```bash
+# Live quotes for one or more symbols (last, day %, bid/ask).
+robinhood-cli quote MRVL NVDA AAPL
+
+# Your open equity positions, ranked by unrealized return.
+robinhood-cli positions
+robinhood-cli positions --sort symbol --json
+
+# Your custom watchlists and how many symbols each holds.
+robinhood-cli watchlist list
+
+# Option expirations for a symbol (handy before `options chain`).
+robinhood-cli options expirations MRVL
+```
+
+```text
+$ robinhood-cli positions
+symbol  qty     avgCost  last     return
+------  ------  -------  -------  ------
+HPE     0.1074  $37.23   $56.15   +50.8%
+ARM     0.0060  $331.46  $402.55  +21.4%
+...
+21 positions — 14 green, 7 red.
+```
 
 > **Rebuild note:** the build copies `api-map/brokerage-routes.json` into `cli/dist/`, and the runtime reads that copy. After editing the route map, **rebuild** (`pnpm build`) or your change is a silent no-op.
 

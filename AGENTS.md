@@ -319,6 +319,28 @@ These write surfaces are mapped. **Bodies marked `inferred` in the route's `note
 are unverified — confirm against a live capture before trusting them, and never run a
 live money write on an unverified body.**
 
+### First-class read commands: quote / positions / options / watchlist
+
+Common reads have dedicated commands so you don't assemble multi-step joins by hand. All
+are read-only (no gate), and all print per-share prices and percentages but never a summed
+account total, so their output is safe to paste into shared artifacts:
+
+```bash
+robinhood-cli quote MRVL NVDA AAPL              # last, day %, bid/ask for one+ symbols
+robinhood-cli positions                          # open equity positions ranked by return
+robinhood-cli positions --sort symbol --json     # alpha sort + JSON for machine use
+robinhood-cli options positions                  # open option positions ranked by % return
+robinhood-cli options chain MRVL --width 6        # chain around the money, nearest expiry
+robinhood-cli options chain NVDA --expiration 2026-07-02 --type put
+robinhood-cli options expirations MRVL            # list expirations before pulling a chain
+robinhood-cli watchlist list                      # custom watchlists + item counts
+```
+
+Each joins the mapped routes it needs (`positions` joins `positions/` → `marketdata/quotes/`;
+`options chain` joins `instruments/` → `chains/` → `options/instruments/` → `marketdata/options/`)
+through the shared plan/execute engine. `options positions`/`positions` compute return from cost
+basis (`average_open_price` / `average_buy_price`) vs the live mark/last.
+
 ### Preferred: the first-class `recurring` command
 
 Recurring buys have a dedicated command so you don't hand-craft URLs or bodies. It shares

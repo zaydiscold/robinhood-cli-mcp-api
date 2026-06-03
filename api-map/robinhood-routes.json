@@ -6526,5 +6526,22 @@
     ],
     "operationId": "api_v2_crypto_trading_trading_pairs",
     "summary": "Get Trading Pairs"
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/search/?query={query}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "search",
+      "instruments"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "queryKeys": [
+      "query"
+    ],
+    "source": "manual-search-2026-06-03",
+    "summary": "Global instrument search (web search bar) — resolve name/theme to tickers."
   }
 ]

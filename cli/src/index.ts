@@ -569,6 +569,109 @@ brokerage
     process.stdout.write(result.body ? `${result.body}\n` : "");
   });
 
+// --- Equity buy: first-class wrapper over the WEB order body ---
+// Builds exactly the gate-clearing body (order_form_version 7 + live bid/ask collar)
+// documented in AGENTS.md, with the OTC / fractional guard so a dollar order can never
+// be sent for a non-fractional/OTC name. Same engine + same two-gate write protection.
+const ORDERS_URL = "https://api.robinhood.com/orders/";
+brokerage
+  .command("buy <symbol>")
+  .description("Equity buy: --dollars (fractional/market) or --shares (whole; OTC auto-limit). Web order body. Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .requiredOption("--account <account_number>", "brokerage account number")
+  .option("--dollars <amount>", "dollar-notional fractional buy (market, regular hours only)")
+  .option("--shares <qty>", "share quantity (whole shares for OTC names)")
+  .option("--limit <price>", "explicit limit price; else market with ask collar (OTC forces a limit at the ask)")
+  .option("--tif <gfd|gtc>", "time in force", "gfd")
+  .option("--dry-run", "print plan/body, send nothing")
+  .option("--live-write", "permit a live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--json", "emit JSON")
+  .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
+    if (opts.dollars && opts.shares) throw new Error("Pass only one of --dollars or --shares.");
+    const inst = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
+    if (!inst) throw new Error(`No instrument for ${symbol} — check the ticker (use 'brokerage search').`);
+    const q = (await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: inst.id })).results?.[0] ?? {};
+    // OTC signal: otc_market_tier populated OR fractional only closeable.
+    const otc = Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
+
+    const body: Record<string, unknown> = {
+      account: `https://api.robinhood.com/accounts/${opts.account}/`,
+      instrument: `https://api.robinhood.com/instruments/${inst.id}/`,
+      symbol: inst.symbol,
+      side: "buy",
+      time_in_force: opts.tif === "gtc" ? "gtc" : "gfd",
+      trigger: "immediate",
+      position_effect: "open",
+      market_hours: "regular_hours",
+      order_form_version: 7,
+      bid_price: q.bid_price,
+      ask_price: q.ask_price,
+      bid_ask_timestamp: q.updated_at ?? new Date().toISOString(),
+      ref_id: randomUUID()
+    };
+
+    if (opts.dollars) {
+      if (inst.fractional_tradability !== "tradable") {
+        throw new Error(`${inst.symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional order. Use --shares <whole qty>${otc ? " (OTC: limit at ask)" : ""}.`);
+      }
+      body.type = "market";
+      body.dollar_based_amount = { amount: Number(opts.dollars).toFixed(2), currency_code: "USD" };
+    } else {
+      body.quantity = String(opts.shares);
+      if (opts.limit || otc) {
+        body.type = "limit";
+        body.price = opts.limit ?? q.ask_price;
+      } else {
+        body.type = "market";
+        body.price = q.ask_price; // collar
+      }
+    }
+
+    const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: ORDERS_URL });
+    const route = selectRouteByQueryAndMethod(matches, ORDERS_URL, "POST");
+    if (!route) throw new Error("orders/ POST route missing from map — rebuild (AGENTS.md §3).");
+    const gate = resolveLiveWriteGate({ risk: route.risk, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
+    if (gate.forcedDryRun && gate.reason) process.stderr.write(`${gate.reason}\n`);
+    const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
+    const plan = planBrokerageRequest({ route, method: "POST", params: {}, body, dryRun: effectiveDryRun });
+    const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: true });
+
+    const kind = opts.dollars ? `$${Number(opts.dollars).toFixed(2)} fractional/market` : `${opts.shares}sh ${body.type}${otc ? " (OTC)" : ""}`;
+    if (opts.json) {
+      printJson({ symbol: inst.symbol, account: opts.account, otc, kind, dryRun: effectiveDryRun, status: result.status, body: result.body });
+      return;
+    }
+    process.stdout.write(`${effectiveDryRun ? "DRY-RUN" : result.status + " " + result.statusText} buy ${inst.symbol} ${kind} acct ${opts.account}\n`);
+    process.stdout.write(result.body ? `${result.body}\n` : "");
+  });
+
+// --- Instrument search: ground ticker resolution in Robinhood's own universe ---
+// The web search bar. Use this BEFORE buying when you only have a name/theme, so an
+// agent never guesses a ticker (e.g. "oracle 2x" -> ORCX/ORCU, not a hallucinated SSO).
+const SEARCH_URL = "https://api.robinhood.com/midlands/search/?query={query}";
+brokerage
+  .command("search <query>")
+  .description("Search Robinhood's instrument universe by name/ticker (the web search bar). Grounds ticker resolution: 'oracle 2x' -> ORCX/ORCU. Shows tradability, fractional eligibility, and OTC flag.")
+  .option("--limit <n>", "max results", "12")
+  .option("--json", "emit JSON")
+  .action(async (query: string, opts: { limit?: string; json?: boolean }) => {
+    const data = await brokerageGetJson(SEARCH_URL, { query });
+    const insts: any[] = Array.isArray(data.instruments) ? data.instruments : [];
+    const rows = insts.slice(0, Number(opts.limit ?? 12)).map((i) => ({
+      symbol: i.symbol,
+      name: i.simple_name || i.name,
+      tradable: i.tradability,
+      fractional: i.fractional_tradability,
+      otc: i.otc_market_tier ? "OTC" : "",
+      id: i.id
+    }));
+    if (opts.json) { printJson({ query, count: rows.length, results: rows }); return; }
+    if (!rows.length) { process.stdout.write(`No instruments for "${query}".\n`); return; }
+    for (const r of rows) {
+      process.stdout.write(`${String(r.symbol || "").padEnd(8)} ${String(r.tradable || "").padEnd(10)} frac=${String(r.fractional || "-").padEnd(20)} ${String(r.otc).padEnd(4)} ${r.name || ""}\n`);
+    }
+  });
+
 program.addCommand(brokerage);
 
 // --- Recurring investments: first-class command surface ---

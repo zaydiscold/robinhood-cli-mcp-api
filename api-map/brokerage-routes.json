@@ -6146,23 +6146,60 @@
   {
     "url": "https://api.robinhood.com/robinhood/agentic/",
     "host": "api.robinhood.com",
-    "categories": ["account"],
+    "categories": [
+      "account"
+    ],
     "risk": "sensitive-read",
-    "methods": ["GET"],
+    "methods": [
+      "GET"
+    ],
     "source": "cdp-2026-05-28-account-section-unique; agent-added-2026-06-02",
-    "seenOn": ["account-section"],
-    "queryKeys": ["account_number"],
-    "requestTypes": ["XHR"]
+    "seenOn": [
+      "account-section"
+    ],
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
   },
   {
     "url": "https://api.robinhood.com/robinhood/agentic/",
     "host": "api.robinhood.com",
-    "categories": ["account"],
+    "categories": [
+      "account"
+    ],
     "risk": "write-or-sensitive",
-    "methods": ["PATCH"],
+    "methods": [
+      "PATCH"
+    ],
     "source": "cdp-2026-05-28-account-section-unique; agent-added-2026-06-02",
-    "seenOn": ["account-section"],
-    "queryKeys": ["account_number"],
-    "requestTypes": ["XHR"]
+    "seenOn": [
+      "account-section"
+    ],
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/search/?query={query}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "search",
+      "instruments"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "queryKeys": [
+      "query"
+    ],
+    "source": "manual-search-2026-06-03",
+    "summary": "Global instrument search (web search bar) — resolve name/theme to tickers."
   }
 ]

@@ -1536,9 +1536,18 @@ export async function executeBrokerageRequest(
   const fetchImpl = options.fetchImpl ?? fetch;
 
   const send = (authToken?: string) => {
+    // Present as the Robinhood WEB app. The legacy mobile identity ("robinhood-cli/0.1")
+    // trips the equity-order client-version gate ("Your app version is missing important
+    // stock trading updates. You can still place orders on the web."). These web headers
+    // (captured live 2026-06-03) clear that gate. Versions rotate — override via env.
     const headers: Record<string, string> = {
       accept: "application/json, text/plain, */*",
-      "user-agent": "robinhood-cli/0.1"
+      "user-agent": process.env.ROBINHOOD_USER_AGENT ?? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      origin: "https://robinhood.com",
+      referer: "https://robinhood.com/",
+      "x-robinhood-api-version": process.env.ROBINHOOD_API_VERSION ?? "1.431.4",
+      "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.23.2025+43f8dad0de15",
+      "x-hyper-ex": "enabled"
     };
     if (authToken) headers.authorization = `Bearer ${authToken}`;
     if (cookie) headers.cookie = cookie;

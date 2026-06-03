@@ -197,6 +197,8 @@ Both are pure reads (no write gate). `--json` emits structured rows for piping i
 
 The strategy layer is separate from the live chain reader. It is a research/planning catalog for single legs, covered calls, cash-secured puts, naked short calls/puts, debit and credit spreads, straddles, strangles, butterflies, iron condors, and calendar rolls. Each strategy records the leg roles, payoff bounds, rough Greek posture, Robinhood lookup steps, and an `options/orders/` body template.
 
+The companion `SKILL.md` teaches an agent how to drive all of this end to end: a when-to-use-what playbook, a worked iron-condor build, account-aware capability rules (cash vs margin vs IRA — what each can and can't do, e.g. rolling on a cash account), the live-verified order/cancel lifecycle, the Greeks-as-a-math-function model, and a research methodology for extending a brokerage that ships no official API.
+
 ```bash
 # Browse the strategy catalog.
 robinhood-cli api-map options-strategies

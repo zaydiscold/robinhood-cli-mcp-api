@@ -554,6 +554,129 @@ When updating the skill, follow progressive disclosure:
 
 ---
 
+## Operating Playbook — When To Use What
+
+This repo gives an agent a typed, gated grip on a brokerage that ships **no public
+brokerage API** (only the separate official Crypto API). Everything below the
+crypto line is a mapped browser/app surface. So an agent's job is two things at
+once: **(1) call the hardcoded actions correctly**, and **(2) reason like an
+options trader** about what to call. This section routes intent to action; the
+deep math lives in *Options Greeks and Strategy Math* above.
+
+| User intent | Action | Command (verify with `--help`) |
+|-------------|--------|--------------------------------|
+| "What do I own / how are my accounts?" | discover accounts, then read | `brokerage execute "accounts/?default_to_all_accounts=true"`; portfolios/positions per account |
+| "Quote X" / "what's the chain?" | live read | `quote <SYM>`, `options chain <SYM>`, `options expirations <SYM>` |
+| "Best option position" / P&L | ranked read | `options positions` |
+| "Price a spread / iron condor" | dry-run strategy quote | `options strategy-quote <strategy> --account <N> --symbol <S> --expiration <D> --leg ...` |
+| "Plan a named strategy" | catalog plan | `api-map options-strategies`, `api-map options-strategy-plan <id>` |
+| "Open the exact contract for me" | resolve + navigate | `api-map options-contract-links ...` (emits the API-resolved contract + chain-id deeplink) |
+| "Roll my position" | staged close+open plan | `options roll-plan ...` (cash-account aware; see below) |
+| "Place / cancel an order" | gated write | `brokerage execute "options/orders/" --method POST --live-write` ... then `options/orders/{0}/cancel/` |
+| "Change a setting (DRIP, recurring, etc.)" | gated write | `recurring pause|resume`; route-map writes via `brokerage execute --method ... --live-write` |
+
+**Decision rule:** read first, classify the strategy, compute payoff + net Greeks,
+emit blockers, *then* (only on explicit request + both write gates) send. Never
+infer naked/undefined-risk exposure from loose wording — see *Options Strategy
+Classification*.
+
+## Worked Build — Iron Condor, End to End
+
+An iron condor = short put spread + short call spread (4 legs, net credit,
+defined risk). Build it with the live tools, not by hand:
+
+```bash
+# 1. Resolve the chain + expiration
+node cli/dist/index.js options chain <SYM> --json
+node cli/dist/index.js options expirations <SYM> --json
+
+# 2. Inspect the named strategy contract (legs it expects, review fields)
+node cli/dist/index.js api-map options-strategy-plan iron-condor --json
+
+# 3. Live dry-run quote the 4 legs (resolves ids, reads bid/ask/Greeks,
+#    computes net credit + a safe limit, fills the order body — sends nothing)
+node cli/dist/index.js options strategy-quote iron-condor \
+  --account <N> --symbol <SYM> --expiration <D> \
+  --leg short_put=<K1> --leg long_put=<K2> \
+  --leg short_call=<K3> --leg long_call=<K4> \
+  --pricing-mode safe-sell-probe --json
+```
+
+Before sending, the summary must show: strategy id, risk label, **net credit**,
+**max profit = credit×100**, **max loss = (widest wing − credit)×100**, both
+breakevens, net Greeks, liquidity/expiration flags, the exact `options/orders/`
+body (`direction:"credit"`, 4 legs with `ratio_quantity`), and write-gate state.
+Same pattern for verticals (2 legs), straddles/strangles, and butterflies — only
+the leg set and `direction` change.
+
+## Account-Aware Capabilities — read the account, then say what's allowed
+
+Always read `account.type` and `brokerage_account_type` first and **annotate what
+the account can and cannot do** before planning a write. This is required behavior,
+not a nicety — the user holds a cash account and several margin accounts, and the
+allowed actions differ:
+
+| Account type | Can | Cannot / caution |
+|--------------|-----|------------------|
+| `cash` | buy/sell, cash-secured puts, covered calls, debit spreads | no margin borrowing, no naked/undefined-risk shorts, **rolling that needs margin won't work**, unsettled-cash (T+1) limits, watch good-faith violations |
+| `margin` (individual) | the above + margin, rolls, spreads requiring buying power | PDT rule (<$25k → ≤3 day trades/5d), maintenance margin |
+| `ira_roth` | long options, defined-risk spreads, covered calls | no margin, no naked shorts; contribution/withdrawal rules out of scope |
+
+When a requested action is impossible for the account type, **say so and stop**:
+e.g. "Account `…cash…` is a cash account — it can't roll on margin; options-level
+rolling here is limited to closing then re-opening with settled cash." Read margin
+state from `bonfire.robinhood.com/margin/{id}/investing_info/` and
+`.../settings/`; read cash/sweep from `accounts/sweeps/`. Surface the constraint
+in the plan output, the way the tool already reports buying power.
+
+## Live Write & Order Lifecycle (verified 2026-06-03)
+
+Verified live, not theorized:
+
+- **Both gates fire and mutate:** `--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+  A recurring `pause`→`resume` round-trip returned `200` both ways and restored
+  state; an options order placed (`201`, state `queued`) and cancelled (`200`).
+- **Order lifecycle:** `POST options/orders/` returns the order `id` → confirm it
+  is `queued/confirmed` → `POST options/orders/{0}/cancel/` (brace syntax!) →
+  re-read; a `403`/"cannot cancel" on a second cancel means it is already
+  cancelled. Use a far-from-market limit (`$0.01` buy / natural+`$200` sell) for
+  any test order so it physically cannot fill.
+- **Two gotchas that bite live:** (1) keep the `{0}`/`{num}` **placeholder** in the
+  query and pass the real value via `--param`; substituting the raw value fails to
+  match the route. (2) pass `--method` explicitly for writes — GET and POST share
+  a URL.
+- **Do not trust a route-map write until it is live-verified.** Example: the map
+  claimed DRIP toggles via `PATCH corp_actions/drip/enrollment/{num}/`; live, all
+  of PATCH/POST/PUT return `405` — that endpoint is GET-only. A dry-run would have
+  endorsed the bad body forever. Treat unverified write bodies as research.
+
+## Research Methodology — mapping a no-official-API surface
+
+Because there is no official brokerage API, the surface is discovered, not
+documented. To extend it safely:
+
+1. **Capture, don't guess.** Drive the logged-in web UI with the network tab / CDP
+   recording open, perform the action once, and capture the exact method, URL, and
+   body. That capture is the source of truth (the DRIP write endpoint, for
+   example, is only knowable this way).
+2. **Add it to the map** (`api-map/brokerage-routes.json`), rebuild
+   (`pnpm build`), then **live-verify** with a reversible action.
+3. **Recon for surface, not exploits.** Passive enumeration (subfinder, dnsx,
+   waybackurls) maps the host/endpoint space; cross-reference against the route
+   map to spot anything missing. Note interesting hosts (`api-streaming` for
+   websockets, `ceres` futures, `vgs` tokenization) without intrusive scanning.
+4. **Document honestly.** Mark anything not live-verified as research; never claim
+   working automation for an unconfirmed body. Keep raw/private captures in the
+   gitignored `info/` folder; promote only sanitized, tested behavior to the public
+   CLI/MCP/docs.
+
+> Greeks as a math function: the full delta/gamma/theta/vega/rho model, net-Greek
+> aggregation across legs, and the Black-Scholes sanity baseline are in *Options
+> Greeks and Strategy Math* above. An agent can specialize there when asked for
+> deep options analysis — but it is a tool in the kit, not the default mode.
+
+---
+
 ## MCP Server
 
 17 tools surfaced via Hermes MCP. Same engine -> same auth, gate, and method-aware routing as the CLI.

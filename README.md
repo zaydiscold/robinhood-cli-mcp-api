@@ -107,7 +107,7 @@ robinhood-cli api-map options-strategy-plan naked-short-put --json
 robinhood-cli recurring list                          # recurring buys + state
 robinhood-cli quote MRVL NVDA AAPL                    # live quotes for one+ symbols
 robinhood-cli positions                               # equity holdings ranked by return
-robinhood-cli positions --account REDACTED-ACCT            # per-account equity positions
+robinhood-cli positions --account <ACCOUNT_NUMBER>     # per-account equity positions
 robinhood-cli options positions                       # rank open options by % return
 robinhood-cli options chain MRVL --width 6            # live chain around the money
 robinhood-cli options strategy-quote call-credit-spread --account <ACCOUNT_NUMBER> --symbol DRAM --expiration 2026-12-18 --leg short_call=80 --leg long_call=85 --pricing-mode safe-sell-probe --json
@@ -385,8 +385,8 @@ robinhood-cli positions
 robinhood-cli positions --sort symbol --json
 
 # Target a specific account by account number.
-robinhood-cli positions --account REDACTED-ACCT                 # individual brokerage
-robinhood-cli positions --account REDACTED-ACCT                 # Roth IRA
+robinhood-cli positions --account <ACCOUNT_NUMBER>          # individual brokerage
+robinhood-cli positions --account <ROTH_ACCOUNT_NUMBER>     # Roth IRA
 
 # Your custom watchlists and how many symbols each holds.
 robinhood-cli watchlist list
@@ -396,8 +396,8 @@ robinhood-cli options expirations MRVL
 ```
 
 ```text
-$ robinhood-cli positions --account REDACTED-ACCT
-Account REDACTED-ACCT
+$ robinhood-cli positions --account <ACCOUNT_NUMBER>
+Account <ACCOUNT_NUMBER>
 symbol  qty     avgCost  last     return
 ------  ------  -------  -------  ------
 HPE     0.1074  $37.23   $56.15   +50.8%

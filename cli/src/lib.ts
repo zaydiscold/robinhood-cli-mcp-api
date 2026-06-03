@@ -135,11 +135,65 @@ export interface OptionsStrategyOrderPlan {
   risk: "write-mutate";
 }
 
+export type OptionsStrategyPricingMode = "natural" | "mid" | "safe-sell-probe" | "safe-buy-probe";
+
+export interface OptionsStrategyPricingLegInput {
+  id: string;
+  action: "buy" | "sell";
+  ratioQuantity?: number;
+  bid?: number | string | null;
+  ask?: number | string | null;
+  mark?: number | string | null;
+  last?: number | string | null;
+  delta?: number | string | null;
+  gamma?: number | string | null;
+  theta?: number | string | null;
+  vega?: number | string | null;
+  rho?: number | string | null;
+}
+
+export interface OptionsStrategyPricingLegSummary {
+  id: string;
+  action: "buy" | "sell";
+  ratioQuantity: number;
+  bid: number;
+  ask: number;
+  mark: number;
+  last: number;
+  naturalUnitPrice: number;
+  midUnitPrice: number;
+  signedNaturalContribution: number;
+  signedMidContribution: number;
+  bidAskWidth: number;
+  quoteSource: "bid_ask" | "mark" | "last" | "missing";
+}
+
+export interface OptionsStrategyPricingSummary {
+  mode: OptionsStrategyPricingMode;
+  direction: "credit" | "debit";
+  naturalNet: number;
+  midNet: number;
+  naturalPrice: number;
+  midPrice: number;
+  limitPrice: number;
+  farLimitOffset: number;
+  legs: OptionsStrategyPricingLegSummary[];
+  netGreeks: {
+    contractMultiplier: 100;
+    delta: number;
+    gamma: number;
+    theta: number;
+    vega: number;
+    rho: number;
+  };
+  warnings: string[];
+}
+
 export type OptionContractType = "call" | "put";
 export type OptionTradeSide = "buy" | "sell";
 export type OptionPositionEffect = "open" | "close";
 
-export interface OptionsContractDeepLinkInput {
+export interface OptionsContractNavigationInput {
   accountNumber?: string;
   symbol?: string;
   expiration?: string;
@@ -156,7 +210,7 @@ export interface OptionsContractDeepLinkInput {
   source?: string;
 }
 
-export interface OptionsContractDeepLinkPlan {
+export interface OptionsContractNavigationPlan {
   mode: "dry_run";
   risk: "write-mutate";
   selector: {
@@ -175,13 +229,7 @@ export interface OptionsContractDeepLinkPlan {
     optionOrderId?: string;
     source: string;
   };
-  webDeepLinks: Array<{
-    id: string;
-    url: string;
-    confidence: "observed" | "candidate";
-    purpose: string;
-  }>;
-  mobileDeepLinks: Array<{
+  webNavigation: Array<{
     id: string;
     url: string;
     confidence: "observed" | "candidate";
@@ -623,22 +671,14 @@ function apiUrl(path: string, query: Record<string, string | undefined> = {}): s
   return unescapeTemplatePlaceholders(url.toString());
 }
 
-function mobileUrl(path: string, query: Record<string, string | undefined> = {}): string {
-  const url = new URL(`robinhood://${path.replace(/^\/+/, "")}`);
-  for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== "") url.searchParams.set(key, value);
-  }
-  return unescapeTemplatePlaceholders(url.toString());
-}
-
-export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkInput): OptionsContractDeepLinkPlan {
+export function buildOptionsContractNavigationPlan(input: OptionsContractNavigationInput): OptionsContractNavigationPlan {
   const optionType = requireKnownValue(input.optionType, ["call", "put"], "option type");
   const side = requireKnownValue(input.side, ["buy", "sell"], "side");
   const positionEffect = requireKnownValue(input.positionEffect ?? "open", ["open", "close"], "position effect") ?? "open";
   const symbol = input.symbol?.trim().toUpperCase();
   const strike = input.strike?.trim();
   const expiration = input.expiration?.trim();
-  const source = input.source?.trim() || "robinhood-cli-deeplink";
+  const source = input.source?.trim() || "robinhood-cli-contract-plan";
   const missing = new Set<string>();
   for (const [key, value] of Object.entries({
     account_number: input.accountNumber,
@@ -670,14 +710,6 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
   const chainIdToken = input.chainId || "{chain_id}";
   const accountChainUrl = webUrl(chainPath, { account_number: input.accountNumber });
   const candidateContractUrl = webUrl(chainPath, contractQuery);
-  const decompiledOptionChainTargetUrl = webUrl("/option_chain", {
-    chain_id: chainIdToken,
-    source
-  });
-  const decompiledOptionChainsTargetUrl = webUrl("/option_chains", {
-    chain_ids: chainIdToken,
-    source
-  });
   const fragment = new URLSearchParams(
     Object.fromEntries(Object.entries(contractQuery).filter((entry): entry is [string, string] => Boolean(entry[1])))
   ).toString();
@@ -688,26 +720,12 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
   });
   const direction = side === "buy" ? "debit" : "credit";
 
-  const webDeepLinks: OptionsContractDeepLinkPlan["webDeepLinks"] = [
+  const webNavigation: OptionsContractNavigationPlan["webNavigation"] = [
     {
       id: "options-chain-account-shell",
       url: accountChainUrl,
       confidence: input.accountNumber ? "observed" : "candidate",
       purpose: "Open the Robinhood web options-chain shell with explicit account context."
-    },
-    {
-      id: "android-option-chain-by-chain-id",
-      url: decompiledOptionChainTargetUrl,
-      confidence: "observed",
-      purpose:
-        "Android-decompiled deeplink target for an option chain. Reads chain_id and source only; account_number is not read by this target."
-    },
-    {
-      id: "android-option-chains-by-chain-ids",
-      url: decompiledOptionChainsTargetUrl,
-      confidence: "observed",
-      purpose:
-        "Android-decompiled multi-chain target. Reads comma-separated chain_ids and source; useful after resolving chain ids across symbols."
     },
     {
       id: "options-chain-contract-query-candidate",
@@ -724,82 +742,7 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
     }
   ];
 
-  const mobileDeepLinks: OptionsContractDeepLinkPlan["mobileDeepLinks"] = [
-    {
-      id: "mobile-option-chain-by-chain-id-observed",
-      url: mobileUrl("/option_chain", { chain_id: chainIdToken, source }),
-      confidence: "observed",
-      purpose:
-        "App-scheme route from Android decompile. It opens a chain by chain_id; it does not encode expiration/strike/type/side or account_number."
-    },
-    {
-      id: "mobile-option-chains-by-chain-ids-observed",
-      url: mobileUrl("/option_chains", { chain_ids: chainIdToken, source }),
-      confidence: "observed",
-      purpose: "App-scheme multi-chain route from Android decompile."
-    },
-    {
-      id: "mobile-options-chain-shell-candidate",
-      url: mobileUrl(`/options/chains/${encodeURIComponent(symbol || "{symbol}")}`, contractQuery),
-      confidence: "candidate",
-      purpose: "App-scheme candidate for the option-chain shell; exact unopened-contract routing still needs device validation."
-    }
-  ];
-  if (input.aggregatePositionId) {
-    mobileDeepLinks.push({
-      id: "mobile-aggregate-option-position-observed",
-      url: mobileUrl("/aggregate_option_position", {
-        id: input.aggregatePositionId,
-        account_number: input.accountNumber,
-        show_in_tab: "true"
-      }),
-      confidence: "observed",
-      purpose: "Open a held aggregate option position; Android decompile reads id and account_number."
-    });
-    mobileDeepLinks.push({
-      id: `mobile-option-position-${positionEffect}-order-form-observed`,
-      url: mobileUrl(positionEffect === "close" ? "/option_position_close" : "/option_position_open", {
-        id: input.aggregatePositionId,
-        account_number: input.accountNumber,
-        source
-      }),
-      confidence: "observed",
-      purpose:
-        "Open an option order form from a held aggregate position. Android decompile reads id, account_number, and source."
-    });
-  }
-  if (input.optionPositionId) {
-    mobileDeepLinks.push({
-      id: "mobile-option-position-observed",
-      url: mobileUrl("/option_position", { id: input.optionPositionId, show_in_tab: "true" }),
-      confidence: "observed",
-      purpose: "Open a held option-position detail; Android decompile reads id and show_in_tab."
-    });
-  }
-  if (input.optionOrderId) {
-    mobileDeepLinks.push(
-      {
-        id: "mobile-pending-option-order-replace-observed",
-        url: mobileUrl("/pending_option_order_replace", {
-          id: input.optionOrderId,
-          account_number: input.accountNumber
-        }),
-        confidence: "observed",
-        purpose: "Open the replace flow for a pending option order. Android decompile reads id and account_number."
-      },
-      {
-        id: "mobile-pending-option-order-cancel-observed",
-        url: mobileUrl("/pending_option_order_cancel", {
-          id: input.optionOrderId,
-          account_number: input.accountNumber
-        }),
-        confidence: "observed",
-        purpose: "Open the cancel flow for a pending option order. Android decompile reads id and account_number."
-      }
-    );
-  }
-
-  const apiResolutionSteps: OptionsContractDeepLinkPlan["apiResolutionSteps"] = [
+  const apiResolutionSteps: OptionsContractNavigationPlan["apiResolutionSteps"] = [
     {
       id: "resolve-equity-instrument",
       method: "GET",
@@ -894,8 +837,7 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
       optionOrderId: input.optionOrderId,
       source
     },
-    webDeepLinks,
-    mobileDeepLinks,
+    webNavigation,
     queryParamCandidates: {
       account: ["account_number"],
       expiration: ["expiration", "expiration_date", "expiration_dates"],
@@ -903,10 +845,6 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
       side: ["side", "action"],
       strike: ["strike", "strike_price"],
       positionEffect: ["position_effect"],
-      decompiledOptionChainTarget: ["chain_id", "source"],
-      decompiledOptionChainsTarget: ["chain_ids", "source"],
-      decompiledOptionPositionOrderTargets: ["id", "account_number", "source"],
-      decompiledPendingOrderTargets: ["id", "account_number"],
       source: ["source"]
     },
     apiResolutionSteps,
@@ -949,7 +887,6 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
     warnings: [
       "Dry-run planner only. This command opens nothing and sends no Robinhood order.",
       "Only account_number on the web options-chain shell is browser-observed. Expiration, strike, side, and type query keys are candidate probe keys, not proven URL state.",
-      "Android option_chain external deeplink reads chain_id and source only in the decompiled target; account_number is supported by internal OptionChainIntentKey but not parsed by that external route.",
       "For exact contracts, prefer API resolution: chains -> instruments filtered by expiration/type/strike -> marketdata/options -> strategy quote -> dry-run order body.",
       "Live options orders remain blocked unless exact user approval, --live-write, and ROBINHOOD_ALLOW_LIVE_WRITE=1 are all present.",
       ...riskWarnings("write-mutate")
@@ -958,20 +895,6 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
       {
         source: "api-map/account-context-browser-workflows-2026-06-02.json",
         finding: "The options-chain web shell accepted account_number as mixed account-context routing; exact contract fields were not encoded in the location bar."
-      },
-      {
-        source: "ScriptedAlchemy/robinhood-decompiled: OptionChainIntentKey.java",
-        finding:
-          "Android navigation carries equityInstrumentId, optionChainIdLaunchMode, targetLegs, targetStrikePrice, initialFilter, initialAccountNumber, and source."
-      },
-      {
-        source: "ScriptedAlchemy/robinhood-decompiled: OptionOrderIntentKey.java",
-        finding:
-          "Android option order navigation carries initialAccountNumber, optionOrderBundle, order replacement fields, prefilled order type/time-in-force, source, and strategyCode."
-      },
-      {
-        source: "ScriptedAlchemy/robinhood-decompiled: AggregateOptionPositionDeeplinkTarget.java",
-        finding: "Held aggregate option positions accept id plus account_number as mobile deeplink query parameters."
       }
     ]
   };
@@ -1679,6 +1602,129 @@ export function selectNearStrikes<T extends { strike: number }>(rows: T[], spot:
     }
   });
   return sorted.slice(Math.max(0, centerIndex - width), centerIndex + width + 1);
+}
+
+function finitePrice(value: number | string | null | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : Number.NaN;
+}
+
+function finiteNumber(value: number | string | null | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function firstFinite(...values: number[]): number {
+  return values.find((value) => Number.isFinite(value)) ?? Number.NaN;
+}
+
+function roundOptionMoney(value: number): number {
+  if (!Number.isFinite(value)) return Number.NaN;
+  return Math.round(value * 100) / 100;
+}
+
+function signedGreek(
+  legs: OptionsStrategyPricingLegInput[],
+  key: "delta" | "gamma" | "theta" | "vega" | "rho",
+  multiplier: 100
+): number {
+  const total = legs.reduce((sum, leg) => {
+    const value = finiteNumber(leg[key]);
+    if (!Number.isFinite(value)) return sum;
+    const sign = leg.action === "sell" ? -1 : 1;
+    return sum + sign * value * Math.max(1, leg.ratioQuantity ?? 1) * multiplier;
+  }, 0);
+  return roundOptionMoney(total);
+}
+
+export function buildOptionsStrategyPricingSummary(input: {
+  legs: OptionsStrategyPricingLegInput[];
+  mode?: OptionsStrategyPricingMode;
+  preferredDirection?: "credit" | "debit";
+  farLimitOffset?: number;
+}): OptionsStrategyPricingSummary {
+  const mode = input.mode ?? "mid";
+  if (!["natural", "mid", "safe-sell-probe", "safe-buy-probe"].includes(mode)) {
+    throw new Error("pricing mode must be one of: natural, mid, safe-sell-probe, safe-buy-probe");
+  }
+  if (input.legs.length === 0) throw new Error("at least one option leg is required");
+  const warnings: string[] = [];
+  const farLimitOffset = input.farLimitOffset ?? 200;
+
+  const legs = input.legs.map((leg): OptionsStrategyPricingLegSummary => {
+    const bid = finitePrice(leg.bid);
+    const ask = finitePrice(leg.ask);
+    const mark = finitePrice(leg.mark);
+    const last = finitePrice(leg.last);
+    const ratioQuantity = Math.max(1, leg.ratioQuantity ?? 1);
+    const hasBidAsk = Number.isFinite(bid) && Number.isFinite(ask) && ask >= bid && ask > 0;
+    const midUnitPrice = hasBidAsk ? (bid + ask) / 2 : firstFinite(mark, last, leg.action === "sell" ? bid : ask);
+    const naturalUnitPrice =
+      leg.action === "sell" ? firstFinite(bid, mark, last, ask) : firstFinite(ask, mark, last, bid);
+    const quoteSource = hasBidAsk ? "bid_ask" : Number.isFinite(mark) ? "mark" : Number.isFinite(last) ? "last" : "missing";
+    const signedNaturalContribution = (leg.action === "sell" ? 1 : -1) * naturalUnitPrice * ratioQuantity;
+    const signedMidContribution = (leg.action === "sell" ? 1 : -1) * midUnitPrice * ratioQuantity;
+    const bidAskWidth = Number.isFinite(bid) && Number.isFinite(ask) ? ask - bid : Number.NaN;
+
+    if (!hasBidAsk) warnings.push(`${leg.id}: missing or unusable bid/ask; fell back to ${quoteSource}.`);
+    if (Number.isFinite(bidAskWidth) && bidAskWidth < 0) warnings.push(`${leg.id}: crossed bid/ask quote.`);
+    if (Number.isFinite(bidAskWidth) && bidAskWidth > 1) warnings.push(`${leg.id}: bid/ask width is wide (${bidAskWidth.toFixed(2)}).`);
+
+    return {
+      id: leg.id,
+      action: leg.action,
+      ratioQuantity,
+      bid,
+      ask,
+      mark,
+      last,
+      naturalUnitPrice: roundOptionMoney(naturalUnitPrice),
+      midUnitPrice: roundOptionMoney(midUnitPrice),
+      signedNaturalContribution: roundOptionMoney(signedNaturalContribution),
+      signedMidContribution: roundOptionMoney(signedMidContribution),
+      bidAskWidth: roundOptionMoney(bidAskWidth),
+      quoteSource
+    };
+  });
+
+  const naturalNet = roundOptionMoney(legs.reduce((sum, leg) => sum + leg.signedNaturalContribution, 0));
+  const midNet = roundOptionMoney(legs.reduce((sum, leg) => sum + leg.signedMidContribution, 0));
+  const inferredDirection = naturalNet >= 0 ? "credit" : "debit";
+  const direction = input.preferredDirection ?? inferredDirection;
+  const naturalPrice = roundOptionMoney(Math.abs(naturalNet));
+  const midPrice = roundOptionMoney(Math.abs(midNet));
+  let limitPrice = mode === "natural" ? naturalPrice : midPrice;
+
+  if (mode === "safe-sell-probe") {
+    limitPrice = direction === "credit" ? naturalPrice + farLimitOffset : Math.max(0.01, naturalPrice - farLimitOffset);
+    warnings.push(`safe-sell-probe limit is intentionally $${farLimitOffset.toFixed(2)} away from the natural market; dry-run only.`);
+  } else if (mode === "safe-buy-probe") {
+    limitPrice = direction === "debit" ? Math.max(0.01, naturalPrice - farLimitOffset) : naturalPrice + farLimitOffset;
+    warnings.push(`safe-buy-probe limit is intentionally $${farLimitOffset.toFixed(2)} away from the natural market; dry-run only.`);
+  }
+
+  if (!Number.isFinite(limitPrice)) warnings.push("limit price could not be computed from available quotes.");
+
+  return {
+    mode,
+    direction,
+    naturalNet,
+    midNet,
+    naturalPrice,
+    midPrice,
+    limitPrice: roundOptionMoney(limitPrice),
+    farLimitOffset,
+    legs,
+    netGreeks: {
+      contractMultiplier: 100,
+      delta: signedGreek(input.legs, "delta", 100),
+      gamma: signedGreek(input.legs, "gamma", 100),
+      theta: signedGreek(input.legs, "theta", 100),
+      vega: signedGreek(input.legs, "vega", 100),
+      rho: signedGreek(input.legs, "rho", 100)
+    },
+    warnings
+  };
 }
 
 export function printJson(value: unknown): void {

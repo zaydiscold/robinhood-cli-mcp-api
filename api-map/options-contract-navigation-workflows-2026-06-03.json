@@ -1,0 +1,38 @@
+[
+  {
+    "id": "options-contract-account-shell-api-resolution",
+    "title": "Exact options contract web navigation plus API resolution planner",
+    "surface": "options-chain",
+    "observedWebShell": "https://robinhood.com/options/chains/{symbol}?account_number={account_number}",
+    "candidateContractQueryKeys": {
+      "expiration": ["expiration", "expiration_date", "expiration_dates"],
+      "optionType": ["type", "option_type"],
+      "side": ["side", "action"],
+      "strike": ["strike", "strike_price"],
+      "positionEffect": ["position_effect"]
+    },
+    "apiResolution": [
+      "GET https://api.robinhood.com/instruments/?symbol={symbol}",
+      "GET https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol={symbol}",
+      "GET https://api.robinhood.com/options/chains/?account_number={account_number}&equity_instrument_id={equity_instrument_id}",
+      "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type={call_or_put}",
+      "GET https://api.robinhood.com/marketdata/options/?ids={option_instrument_id}&include_all_sessions=true",
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={option_instrument_id}&ratios=1&types={buy_or_sell}",
+      "GET https://api.robinhood.com/options/chains/{chain_id}/collateral/?account_number={account_number}",
+      "POST https://api.robinhood.com/options/orders/"
+    ],
+    "evidence": [
+      "docs/options-contract-navigation-2026-06-03.md",
+      "api-map/account-context-browser-workflows-2026-06-02.json",
+      "api-map/browser-cdp-routes-2026-06-02.json"
+    ],
+    "cliCommand": "robinhood-cli api-map options-contract-plan --account <ACCOUNT_NUMBER> --symbol XBI --expiration 2026-06-26 --type call --side buy --strike 127 --json",
+    "warnings": [
+      "The workflow is API/navigation-first.",
+      "Only account_number on the web options-chain shell is browser-observed.",
+      "Expiration, strike, side, type, and position_effect URL query keys are candidates, not proven URL state.",
+      "Resolve exact option_instrument_id before building any order body.",
+      "Live options orders require exact user approval, --live-write, and ROBINHOOD_ALLOW_LIVE_WRITE=1."
+    ]
+  }
+]

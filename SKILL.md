@@ -136,16 +136,17 @@ Do not overclaim first-class support. If a capability is route-map-only, say so 
 | Browser account routing | `robinhood-cli api-map account-context` | Shows whether `?account_number=` propagates, is mixed, or is ignored on each web surface |
 | Build web workflow URL | `robinhood-cli api-map account-url <id> --account <n> ...` | Navigation/research only; prefer direct API routes for automation |
 | Options strategy catalog | `robinhood-cli api-map options-strategies` | Lists single legs, covered calls, cash-secured/naked puts, naked calls, debit/credit spreads, straddles, strangles, butterflies, iron condors |
+| Live strategy dry-run quote | `robinhood-cli options strategy-quote <id> --account <n> --symbol <s> --expiration <d> --leg leg_id=strike --json` | Resolves exact option ids, reads bid/ask/Greeks, computes natural/mid/protective limits, and fills a dry-run body; never sends |
 | Strategy dry-run body | `robinhood-cli api-map options-strategy-plan <id> --param key=value` | Emits lookup steps + `options/orders/` body template; never sends |
-| Exact contract deeplink plan | `robinhood-cli api-map options-contract-deeplink --account <n> --symbol <s> --expiration <d> --type call|put --side buy|sell --strike <k> --json` | Emits observed web shell, candidate URL/app deeplinks, API resolution steps, and dry-run single-leg handoff |
+| Exact contract navigation plan | `robinhood-cli api-map options-contract-plan --account <n> --symbol <s> --expiration <d> --type call|put --side buy|sell --strike <k> --json` | Emits the tested web account shell, candidate web URL probes, API resolution steps, and dry-run single-leg handoff |
 
 Primary options references:
 
 - `docs/options-greeks-strategy-research-2026-06-02.md`
 - `docs/options-quantitative-playbook-2026-06-03.md`
-- `docs/options-contract-deeplink-research-2026-06-03.md`
+- `docs/options-contract-navigation-2026-06-03.md`
 - `api-map/options-strategy-workflows-2026-06-02.json`
-- `api-map/options-contract-deeplink-workflows-2026-06-03.json`
+- `api-map/options-contract-navigation-workflows-2026-06-03.json`
 
 ### Options Greeks and Strategy Math
 
@@ -187,6 +188,22 @@ Where `leg_side` is `+1` for buy/long legs and `-1` for sell/short legs. Use
 this as a live sensitivity snapshot, not a prediction: delta/gamma move with the
 underlying, theta changes as expiration approaches, and vega changes with implied
 volatility.
+
+Pricing rules for dry-run strategy quotes:
+
+```text
+buy leg natural price  = ask
+sell leg natural price = bid
+leg mid price          = (bid + ask) / 2 when usable, else mark/last fallback
+net credit/debit       = sum(sell prices * ratio) - sum(buy prices * ratio)
+safe-sell-probe        = natural credit + $200, dry-run only
+safe-buy-probe         = max($0.01, natural debit - $200), dry-run only
+```
+
+Prefer `robinhood-cli options strategy-quote` over manually filling
+`options-strategy-plan` when the user asks about spreads or live pricing. It is
+still dry-run: it resolves option ids, quotes bid/ask/Greeks, computes a limit,
+and fills the body without calling `POST options/orders/`.
 
 For quick scenarios:
 
@@ -350,12 +367,12 @@ automatically.
 Use this exact planning sequence:
 
 1. `robinhood-cli api-map account-context --json` to understand browser account routing. Prefer explicit API `account_number` fields over URL state.
-2. For an exact contract, run `robinhood-cli api-map options-contract-deeplink --account <N> --symbol <SYMBOL> --expiration <DATE> --type call|put --side buy|sell --strike <K> --json`.
+2. For an exact contract, run `robinhood-cli api-map options-contract-plan --account <N> --symbol <SYMBOL> --expiration <DATE> --type call|put --side buy|sell --strike <K> --json`.
 3. `robinhood-cli options expirations <SYMBOL> --json` and `robinhood-cli options chain <SYMBOL> --expiration <DATE> --type call|put --json` to inspect available contracts.
-4. Resolve all leg instrument ids through `options/instruments/`, then quote individual legs with `marketdata/options/`.
-5. For spreads/straddles/condors, quote the package with `marketdata/options/strategy/quotes/` when available.
-6. `robinhood-cli api-map options-strategies --json` to choose the strategy id.
-7. `robinhood-cli api-map options-strategy-plan <id> --param key=value --json` to emit lookup steps and an `options/orders/` body template.
+4. `robinhood-cli api-map options-strategies --json` to choose the strategy id and leg ids.
+5. For spreads/straddles/condors, run `robinhood-cli options strategy-quote <id> --account <N> --symbol <SYMBOL> --expiration <DATE> --leg <leg_id>=<strike> ... --pricing-mode mid --json`.
+6. Use `--pricing-mode safe-sell-probe` only as a dry-run control when proving a sell/credit body is far from the market.
+7. If exact ids are already known, `robinhood-cli api-map options-strategy-plan <id> --param key=value --json` can still emit the raw template body.
 8. Only after the dry-run body is exact should any live route be considered, and only with `--live-write` plus `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
 
 Required fields before a dry-run is acceptable: account, symbol, expiration,
@@ -385,13 +402,13 @@ For a spread, never trust a label alone. Reconstruct every leg from option
 instrument id, strike, expiration, side, ratio, and `position_effect`, then
 quote the package and calculate max profit/loss before emitting the dry-run.
 
-### Exact Contract Deeplink Rules
+### Exact Contract Navigation Rules
 
-Use `api-map options-contract-deeplink` when the user wants a specific contract
-opened or planned:
+Use `api-map options-contract-plan` when the user wants a specific contract
+planned:
 
 ```bash
-robinhood-cli api-map options-contract-deeplink \
+robinhood-cli api-map options-contract-plan \
   --account <ACCOUNT_NUMBER> \
   --symbol XBI \
   --expiration 2026-06-26 \
@@ -404,35 +421,13 @@ robinhood-cli api-map options-contract-deeplink \
 Interpret output this way:
 
 - `options-chain-account-shell` is the observed web shell for account context.
-- `android-option-chain-by-chain-id` and `mobile-option-chain-by-chain-id-observed`
-  are the source-backed app/web route shapes for a chain after API resolution:
-  `option_chain?chain_id=<CHAIN_ID>&source=<SOURCE>`.
-- External Android `option_chain` reads `chain_id` and `source` only. Although
-  the internal `OptionChainIntentKey` supports `initialAccountNumber`, the
-  decompiled external target does not parse `account_number`.
 - `options-chain-contract-query-candidate` and fragment variants are probes,
   not proof that Robinhood stores contract state in the URL.
-- `robinhood://option_position?id=<id>` and
-  `robinhood://aggregate_option_position?id=<id>&account_number=<n>` are held
-  position detail links from Android decompile evidence; do not use unopened
-  contract ids in those slots.
-- `robinhood://option_position_open?id=<aggregate_position_id>&account_number=<n>`
-  and `robinhood://option_position_close?id=<aggregate_position_id>&account_number=<n>`
-  are order-form routes for an existing aggregate option position, not fresh
-  symbol/expiry/strike contract routes.
-- `robinhood://pending_option_order_replace?id=<order_id>&account_number=<n>`
-  and `robinhood://pending_option_order_cancel?id=<order_id>&account_number=<n>`
-  are pending-order management routes.
 - For unopened contracts, exactness comes from API resolution:
   `options/chains/` -> `options/instruments/` filtered by expiration/type/strike
   -> `marketdata/options/` -> optional `strategy/quotes/`.
-
-Decompiled Android evidence lives in
-`docs/options-contract-deeplink-research-2026-06-03.md`. The key finding is that
-internal option-chain navigation carries `targetStrikePrice`,
-`initialAccountNumber`, `initialFilter`, `targetLegs`, and chain launch modes,
-while order navigation carries `initialAccountNumber`, `optionOrderBundle`,
-replacement fields, order type/time-in-force, source, and `strategyCode`.
+- Do not claim a universal unopened-contract URL unless it has been verified in
+  a logged-in browser/device pass across multiple symbols and expirations.
 
 ### Route Matching Gotchas
 
@@ -451,9 +446,9 @@ research belong in:
 
 - `docs/options-quantitative-playbook-2026-06-03.md`
 - `docs/options-greeks-strategy-research-2026-06-02.md`
-- `docs/options-contract-deeplink-research-2026-06-03.md`
+- `docs/options-contract-navigation-2026-06-03.md`
 - `api-map/options-strategy-workflows-2026-06-02.json`
-- `api-map/options-contract-deeplink-workflows-2026-06-03.json`
+- `api-map/options-contract-navigation-workflows-2026-06-03.json`
 - `AGENTS.md`
 
 When updating the skill, follow progressive disclosure:
@@ -462,6 +457,7 @@ When updating the skill, follow progressive disclosure:
 - Link detailed docs instead of duplicating whole reference essays.
 - Verify live command names with `node cli/dist/index.js --help`.
 - Verify strategy count and `reviewContract` with `node cli/dist/index.js api-map options-strategies --json` and `node cli/dist/index.js api-map options-strategy-plan iron-condor --json`.
+- Verify live strategy quoting with `node cli/dist/index.js options strategy-quote call-credit-spread --account <N> --symbol <S> --expiration <D> --leg short_call=<K1> --leg long_call=<K2> --pricing-mode safe-sell-probe --json`.
 - If a route supports both read and write methods, state the method explicitly; do not rely on URL-only matching.
 - If a body shape is inferred or unverified, label it route-map research, not supported automation.
 
@@ -497,7 +493,7 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_account_context_url` | Build a workflow URL from safe placeholders |
 | `robinhood_options_strategy_workflows` | Strategy catalog with payoff and Greek posture |
 | `robinhood_options_strategy_plan` | Dry-run strategy lookup steps + order body template |
-| `robinhood_options_contract_deeplink` | Exact contract web/mobile deeplink candidates + API resolution plan |
+| `robinhood_options_contract_plan` | Exact contract web navigation candidates + API resolution plan |
 | `robinhood_brokerage_plan` | Create a dry-run plan (no execution) |
 | `robinhood_brokerage_execute` | Execute a brokerage request |
 | `robinhood_crypto_routes` | List official Crypto API routes |

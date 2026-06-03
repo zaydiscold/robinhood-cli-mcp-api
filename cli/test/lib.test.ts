@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAccountContextUrl,
-  buildOptionsContractDeepLinkPlan,
+  buildOptionsContractNavigationPlan,
+  buildOptionsStrategyPricingSummary,
   buildOptionsStrategyOrderPlan,
   classifyMoneyness,
   executeBrokerageRequest,
@@ -164,8 +165,64 @@ describe("Robinhood API map", () => {
     expect(JSON.stringify(workflows)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
 
-  it("builds exact-contract deeplink/API plans without treating candidate URL params as proven", () => {
-    const plan = buildOptionsContractDeepLinkPlan({
+  it("prices option credit spreads from side-aware bid/ask and builds a far sell probe", () => {
+    const pricing = buildOptionsStrategyPricingSummary({
+      mode: "safe-sell-probe",
+      preferredDirection: "credit",
+      legs: [
+        {
+          id: "short_call",
+          action: "sell",
+          ratioQuantity: 1,
+          bid: "1.20",
+          ask: "1.30",
+          mark: "1.25",
+          delta: "0.40",
+          theta: "-0.03"
+        },
+        {
+          id: "long_call",
+          action: "buy",
+          ratioQuantity: 1,
+          bid: "0.40",
+          ask: "0.50",
+          mark: "0.45",
+          delta: "0.20",
+          theta: "-0.01"
+        }
+      ]
+    });
+
+    expect(pricing.direction).toBe("credit");
+    expect(pricing.naturalNet).toBeCloseTo(0.7);
+    expect(pricing.naturalPrice).toBeCloseTo(0.7);
+    expect(pricing.midPrice).toBeCloseTo(0.8);
+    expect(pricing.limitPrice).toBeCloseTo(200.7);
+    expect(pricing.netGreeks.delta).toBeCloseTo(-20);
+    expect(pricing.netGreeks.theta).toBeCloseTo(2);
+    expect(pricing.warnings.join("\n")).toContain("safe-sell-probe");
+  });
+
+  it("prices option debit spreads from ask paid and bid received", () => {
+    const pricing = buildOptionsStrategyPricingSummary({
+      mode: "mid",
+      preferredDirection: "debit",
+      legs: [
+        { id: "long_call", action: "buy", ratioQuantity: 1, bid: "1.80", ask: "2.00", mark: "1.90", delta: "0.55" },
+        { id: "short_call", action: "sell", ratioQuantity: 1, bid: "0.75", ask: "0.85", mark: "0.80", delta: "0.35" }
+      ]
+    });
+
+    expect(pricing.direction).toBe("debit");
+    expect(pricing.naturalNet).toBeCloseTo(-1.25);
+    expect(pricing.naturalPrice).toBeCloseTo(1.25);
+    expect(pricing.midPrice).toBeCloseTo(1.1);
+    expect(pricing.limitPrice).toBeCloseTo(1.1);
+    expect(pricing.netGreeks.delta).toBeCloseTo(20);
+  });
+
+  it("builds exact-contract navigation/API plans without treating candidate URL params as proven", () => {
+    const plan = buildOptionsContractNavigationPlan({
       accountNumber: "ACCOUNT_TEST",
       symbol: "xbi",
       expiration: "2026-06-26",
@@ -181,35 +238,18 @@ describe("Robinhood API map", () => {
     expect(plan.risk).toBe("write-mutate");
     expect(plan.selector.symbol).toBe("XBI");
     expect(plan.selector.positionEffect).toBe("open");
-    expect(plan.webDeepLinks.find((link) => link.id === "options-chain-account-shell")?.url).toBe(
+    expect(plan.webNavigation.find((link) => link.id === "options-chain-account-shell")?.url).toBe(
       "https://robinhood.com/options/chains/XBI?account_number=ACCOUNT_TEST"
     );
-    const decompiledChain = plan.webDeepLinks.find((link) => link.id === "android-option-chain-by-chain-id");
-    expect(decompiledChain?.confidence).toBe("observed");
-    expect(decompiledChain?.url).toBe(
-      "https://robinhood.com/option_chain?chain_id=CHAIN_TEST&source=robinhood-cli-deeplink"
-    );
-    expect(decompiledChain?.url).not.toContain("account_number");
-    const candidate = plan.webDeepLinks.find((link) => link.id === "options-chain-contract-query-candidate");
+    const candidate = plan.webNavigation.find((link) => link.id === "options-chain-contract-query-candidate");
     expect(candidate?.confidence).toBe("candidate");
     expect(candidate?.url).toContain("expiration_dates=2026-06-26");
     expect(candidate?.url).toContain("strike_price=127");
     expect(candidate?.url).toContain("side=buy");
     expect(candidate?.url).toContain("type=call");
+    expect(candidate?.url).toContain("source=robinhood-cli-contract-plan");
     expect(plan.queryParamCandidates.expiration).toEqual(["expiration", "expiration_date", "expiration_dates"]);
-    expect(plan.queryParamCandidates.decompiledOptionChainTarget).toEqual(["chain_id", "source"]);
-    expect(plan.mobileDeepLinks.find((link) => link.id === "mobile-option-chain-by-chain-id-observed")?.url).toBe(
-      "robinhood://option_chain?chain_id=CHAIN_TEST&source=robinhood-cli-deeplink"
-    );
-    expect(plan.mobileDeepLinks.find((link) => link.id === "mobile-option-position-open-order-form-observed")?.url).toBe(
-      "robinhood://option_position_open?id=AGGREGATE_TEST&account_number=ACCOUNT_TEST&source=robinhood-cli-deeplink"
-    );
-    expect(plan.mobileDeepLinks.find((link) => link.id === "mobile-pending-option-order-replace-observed")?.url).toBe(
-      "robinhood://pending_option_order_replace?id=ORDER_TEST&account_number=ACCOUNT_TEST"
-    );
-    expect(plan.mobileDeepLinks.find((link) => link.id === "mobile-pending-option-order-cancel-observed")?.url).toBe(
-      "robinhood://pending_option_order_cancel?id=ORDER_TEST&account_number=ACCOUNT_TEST"
-    );
+    expect(Object.keys(plan.queryParamCandidates)).not.toContain("appOnlyOptionChainTarget");
     expect(plan.apiResolutionSteps.map((step) => step.id)).toContain("resolve-contracts-for-expiration-type");
     expect(plan.apiResolutionSteps.find((step) => step.id === "resolve-contracts-for-expiration-type")?.url).toBe(
       "https://api.robinhood.com/options/instruments/?account_number=ACCOUNT_TEST&chain_id=CHAIN_TEST&expiration_dates=2026-06-26&state=active&type=call"
@@ -219,7 +259,6 @@ describe("Robinhood API map", () => {
     );
     expect(JSON.stringify(plan.orderHandoff.orderTemplate)).toContain("https://api.robinhood.com/options/instruments/OPTION_TEST/");
     expect(plan.warnings.join("\n")).toContain("candidate probe keys");
-    expect(plan.warnings.join("\n")).toContain("account_number is supported by internal OptionChainIntentKey but not parsed");
     expect(JSON.stringify(plan)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
 

@@ -102,6 +102,7 @@ robinhood-cli quote MRVL NVDA AAPL                    # live quotes for one+ sym
 robinhood-cli positions                               # equity holdings ranked by return
 robinhood-cli options positions                       # rank open options by % return
 robinhood-cli options chain MRVL --width 6            # live chain around the money
+robinhood-cli options strategy-quote call-credit-spread --account <ACCOUNT_NUMBER> --symbol DRAM --expiration 2026-12-18 --leg short_call=80 --leg long_call=85 --pricing-mode safe-sell-probe --json
 robinhood-cli watchlist list                          # your custom watchlists + sizes
 robinhood-cli brokerage routes --category orders      # browse mapped routes
 robinhood-cli brokerage plan "https://api.robinhood.com/accounts/{0}/" --param 0=ACCOUNT_ID --json
@@ -166,7 +167,7 @@ Best performer: DRAM $50 Call 6/18 at +1334.6%.
 
 Both are pure reads (no write gate). `--json` emits structured rows for piping into a spreadsheet or an agent.
 
-### 6.1 Options strategy planners — Greeks, spreads, and dry-run bodies
+### 6.1 Options strategy planners — Greeks, spreads, quotes, and dry-run bodies
 
 The strategy layer is separate from the live chain reader. It is a research/planning catalog for single legs, covered calls, cash-secured puts, naked short calls/puts, debit and credit spreads, straddles, strangles, butterflies, and iron condors. Each strategy records the leg roles, payoff bounds, rough Greek posture, Robinhood lookup steps, and an `options/orders/` body template.
 
@@ -176,6 +177,17 @@ robinhood-cli api-map options-strategies
 robinhood-cli api-map options-strategies --defined-risk
 robinhood-cli api-map options-strategies --aggressiveness aggressive --json
 robinhood-cli api-map options-strategy-plan short-strangle --json
+
+# Resolve exact legs, read live bid/ask/mark/Greeks, quote the package when
+# Robinhood returns a strategy quote, and build a dry-run body with a limit price.
+robinhood-cli options strategy-quote call-credit-spread \
+  --account <ACCOUNT_NUMBER> \
+  --symbol DRAM \
+  --expiration 2026-12-18 \
+  --leg short_call=80 \
+  --leg long_call=85 \
+  --pricing-mode safe-sell-probe \
+  --json
 
 # Build a dry-run body template. This does not send an order.
 robinhood-cli api-map options-strategy-plan call-credit-spread \
@@ -192,6 +204,8 @@ robinhood-cli api-map options-strategy-plan call-credit-spread \
   --param ref_id=$(python3 -c "import uuid;print(uuid.uuid4())") \
   --json
 ```
+
+`strategy-quote` is the practical spread command: it resolves `symbol -> account chain -> expiration/type instruments -> exact strikes -> marketdata/options`, computes natural and mid from bid/ask by leg side, sums net Greeks with the 100-share multiplier, calls `marketdata/options/strategy/quotes/` when available, then fills the dry-run `options/orders/` body. `safe-sell-probe` intentionally places the dry-run credit limit $200 above the natural market; it is a control/sanity mode, not a live-trading recommendation.
 
 Planner output is still a write-capable order body, so the live route remains blocked by the normal double gate. Treat aggressive or undefined-risk strategies as exact-approval only.
 
@@ -214,13 +228,13 @@ Use this for navigation and endpoint discovery. For automation, prefer direct AP
 
 Security-research details live in [`docs/security-research-account-number-context-routing-2026-06-03.md`](./docs/security-research-account-number-context-routing-2026-06-03.md). It records the account-number dropdown/routing pattern, full-scope retest matrix, and the boundary between account-context evidence and any real IDOR claim.
 
-### 6.3 Exact options contract deeplinks
+### 6.3 Exact options contract navigation
 
-Use this when you need to open or plan one specific contract by account, symbol,
+Use this when you need to plan one specific contract by account, symbol,
 expiration, strike, call/put, and buy/sell side:
 
 ```bash
-robinhood-cli api-map options-contract-deeplink \
+robinhood-cli api-map options-contract-plan \
   --account <ACCOUNT_NUMBER> \
   --symbol XBI \
   --expiration 2026-06-26 \
@@ -230,27 +244,20 @@ robinhood-cli api-map options-contract-deeplink \
   --json
 ```
 
-The planner emits observed web account-context URLs, Android-decompiled
-`option_chain?chain_id=...` app/web target shapes, candidate contract query
-params, deterministic API lookup steps, and a dry-run single-leg
+The planner is API-first. It emits the tested web account shell, candidate web query/fragment URLs for
+manual browser probes, deterministic API lookup steps, and a dry-run single-leg
 `options/orders/` handoff template. Treat the API lookup as the source of truth:
 resolve `chain_id`, filter `options/instruments/` by expiration/type/strike,
 quote the resulting `option_instrument_id`, then build the order body.
-Expiration, strike, side, and type URL params are probe candidates until
-validated in a logged-in browser/device pass.
 
-For phone tests, `robinhood://stocks/AAPL` is the equity baseline. The closest
-source-backed options equivalent is `robinhood://option_chain?chain_id=<CHAIN_ID>&source=<SOURCE>`
-after resolving the chain ID. Android decompile evidence shows that external
-`option_chain` reads `chain_id` and `source`, but does **not** read
-`account_number`; account specificity still belongs in the web chain shell and
-API/order handoff. Held-position/order routes do read account context where
-shown, for example `robinhood://option_position_close?id=<AGGREGATE_POSITION_ID>&account_number=<ACCOUNT_NUMBER>`.
+No universal unopened-contract URL is claimed. Expiration, strike, side, and
+type URL params are probe candidates until validated in a logged-in browser pass
+across multiple symbols and expirations.
 
-Research details live in
-[`docs/options-contract-deeplink-research-2026-06-03.md`](./docs/options-contract-deeplink-research-2026-06-03.md)
+Operational details live in
+[`docs/options-contract-navigation-2026-06-03.md`](./docs/options-contract-navigation-2026-06-03.md)
 and the machine-readable workflow lives in
-[`api-map/options-contract-deeplink-workflows-2026-06-03.json`](./api-map/options-contract-deeplink-workflows-2026-06-03.json).
+[`api-map/options-contract-navigation-workflows-2026-06-03.json`](./api-map/options-contract-navigation-workflows-2026-06-03.json).
 
 ### 7. More read commands — quote, positions, watchlists
 

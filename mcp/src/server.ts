@@ -4,7 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import {
   buildAccountContextUrl,
-  buildOptionsContractDeepLinkPlan,
+  buildOptionsContractNavigationPlan,
   buildOptionsStrategyOrderPlan,
   executeBrokerageRequest,
   executeCryptoRequest,
@@ -216,11 +216,11 @@ server.registerTool(
 );
 
 server.registerTool(
-  "robinhood_options_contract_deeplink",
+  "robinhood_options_contract_plan",
   {
-    title: "Robinhood Options Contract Deeplink Plan",
+    title: "Robinhood Options Contract Navigation Plan",
     description:
-      "Build web/mobile deeplink candidates plus deterministic API lookup steps for one exact options contract. This does not execute an order.",
+      "Build account-scoped web navigation candidates plus deterministic API lookup steps for one exact options contract. This does not execute an order.",
     annotations: toolAnnotations(true, "read"),
     inputSchema: z.object({
       accountNumber: z.string(),
@@ -233,10 +233,7 @@ server.registerTool(
       chainId: z.string().optional(),
       equityInstrumentId: z.string().optional(),
       optionInstrumentId: z.string().optional(),
-      optionPositionId: z.string().optional(),
-      aggregatePositionId: z.string().optional(),
-      optionOrderId: z.string().optional(),
-      source: z.string().default("robinhood-cli-deeplink")
+      source: z.string().default("robinhood-cli-contract-plan")
     })
   },
   async ({
@@ -250,13 +247,10 @@ server.registerTool(
     chainId,
     equityInstrumentId,
     optionInstrumentId,
-    optionPositionId,
-    aggregatePositionId,
-    optionOrderId,
     source
   }) =>
     jsonResponse(
-      buildOptionsContractDeepLinkPlan({
+      buildOptionsContractNavigationPlan({
         accountNumber,
         symbol,
         expiration,
@@ -267,9 +261,6 @@ server.registerTool(
         chainId,
         equityInstrumentId,
         optionInstrumentId,
-        optionPositionId,
-        aggregatePositionId,
-        optionOrderId,
         source
       })
     )

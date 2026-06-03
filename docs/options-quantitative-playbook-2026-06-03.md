@@ -53,6 +53,22 @@ The personal CLI now emits this as `reviewContract` from:
 robinhood-cli api-map options-strategy-plan <strategy-id> --json
 ```
 
+For live quote-backed spread planning, prefer:
+
+```bash
+robinhood-cli options strategy-quote <strategy-id> \
+  --account <ACCOUNT_NUMBER> \
+  --symbol <SYMBOL> \
+  --expiration <YYYY-MM-DD> \
+  --leg <leg_id>=<strike> \
+  --json
+```
+
+This resolves exact option instrument ids, reads `marketdata/options/`, computes
+side-aware natural/mid prices, asks `marketdata/options/strategy/quotes/` with
+`types=long|short`, then fills the dry-run `options/orders/` body without
+sending it.
+
 ## Greek Unit Rules
 
 Sum signed legs after normalizing units:
@@ -139,14 +155,14 @@ Use this exact sequence:
 1. `robinhood-cli api-map account-context --json`
 2. `robinhood-cli options expirations <SYMBOL> --json`
 3. `robinhood-cli options chain <SYMBOL> --expiration <DATE> --type call|put --json`
-4. Resolve all leg ids with `options/instruments/`.
-5. Quote legs with `marketdata/options/`.
-6. Quote packages with `marketdata/options/strategy/quotes/` when multi-leg.
-7. Select the strategy:
+4. Select the strategy:
    `robinhood-cli api-map options-strategies --query "<phrase>" --json`
-8. Build the dry-run body:
+5. Resolve and quote the strategy:
+   `robinhood-cli options strategy-quote <id> --account <N> --symbol <SYMBOL> --expiration <DATE> --leg <leg_id>=<strike> --json`
+6. Use `--pricing-mode safe-sell-probe` only for a dry-run control price that is far from market.
+7. If exact ids are already known, build the raw dry-run body:
    `robinhood-cli api-map options-strategy-plan <id> --param key=value --json`
-9. Stop unless every required field and every `reviewContract` check is satisfied.
+8. Stop unless every required field and every `reviewContract` check is satisfied.
 
 Live execution is outside this playbook unless the user gives exact approval and
 the normal CLI gate is satisfied: `--live-write` plus

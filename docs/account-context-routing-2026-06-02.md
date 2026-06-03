@@ -86,7 +86,7 @@ Options-chain/builder behavior:
 options/chains/?account_number={account_number}&underlying_symbol={symbol}
 options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type={call_or_put}
 marketdata/options/?ids={option_instrument_ids}&include_all_sessions=true
-marketdata/options/strategy/quotes/?ids={option_instrument_ids}&ratios={ratios}&types={buy_or_sell}
+marketdata/options/strategy/quotes/?ids={option_instrument_ids}&ratios={ratios}&types={long_or_short}&include_all_sessions=true
 options/chains/{chain_id}/collateral/?account_number={account_number}
 ```
 

@@ -1,7 +1,7 @@
 # Robinhood Trading — Buy / Sell (write surface)
 
 Captured 2026-05-28 (CDP). The CLI exposes buy/sell as commands; all writes default to **dry-run** and
-require an explicit `--live-write` flag + `ROBINHOOD_PP_ALLOW_WRITES=1` env gate before any real order.
+require an explicit `--live-write` flag + `ROBINHOOD_ALLOW_LIVE_WRITE=1` env gate before any real order.
 Account-scoped: every order takes `--account <alias|number>` (cash / margin / roth → account id).
 
 ## Review (preview) — no order placed
@@ -50,7 +50,7 @@ Account-scoped: every order takes `--account <alias|number>` (cash / margin / ro
   }
   ```
 - **Cancel:** `POST api/options/orders/<order_id>/cancel/`
-- **Pricing for spreads/rolls:** `GET api/marketdata/options/strategy/quotes/` (multi-leg quote),
+- **Pricing for spreads/rolls:** `GET api/marketdata/options/strategy/quotes/?ids=<ids>&ratios=<ratios>&types=<long|short>&include_all_sessions=true` (multi-leg quote),
   `GET bonfire/options/lego_chain_eligibility/:uuid/` (multi-leg builder eligibility),
   `GET api/options/chains/:uuid/collateral/`.
 - **Buying power:** `GET bonfire/accounts/:id/options_buying_power`.

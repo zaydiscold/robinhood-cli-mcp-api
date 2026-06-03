@@ -8,9 +8,11 @@
 //   4. Personal repo commands may execute live with caller-owned auth; use --dry-run for non-sending tests.
 
 import { Command } from "commander";
+import { randomUUID } from "node:crypto";
 import {
   buildAccountContextUrl,
-  buildOptionsContractDeepLinkPlan,
+  buildOptionsContractNavigationPlan,
+  buildOptionsStrategyPricingSummary,
   buildOptionsStrategyOrderPlan,
   classifyMoneyness,
   executeBrokerageRequest,
@@ -37,6 +39,7 @@ import {
   signCryptoRequest,
   summarizeApiMap
 } from "./lib.js";
+import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
 // .env auto-load + token self-heal live in lib.ts (shared by CLI + MCP server),
 // so importing it above is enough — no per-entry loader needed here.
@@ -289,8 +292,8 @@ apiMap
   });
 
 apiMap
-  .command("options-contract-deeplink")
-  .description("Plan web/mobile deeplinks and API lookup steps for one exact options contract")
+  .command("options-contract-plan")
+  .description("Plan account-scoped web navigation candidates and API lookup steps for one exact options contract")
   .requiredOption("--account <account_number>", "selected Robinhood account_number")
   .requiredOption("--symbol <symbol>", "underlying symbol, e.g. XBI")
   .requiredOption("--expiration <YYYY-MM-DD>", "option expiration date")
@@ -301,10 +304,7 @@ apiMap
   .option("--chain-id <chain_id>", "known Robinhood option chain id")
   .option("--equity-instrument-id <uuid>", "known underlying equity instrument id")
   .option("--option-id <option_instrument_id>", "known Robinhood option instrument id")
-  .option("--option-position-id <uuid>", "known held option position id for closing/detail deeplinks")
-  .option("--aggregate-position-id <uuid>", "known held aggregate option position id for closing/detail deeplinks")
-  .option("--option-order-id <uuid>", "known pending option order id for cancel/replace deeplinks")
-  .option("--source <source>", "deeplink/source marker", "robinhood-cli-deeplink")
+  .option("--source <source>", "URL probe/source marker", "robinhood-cli-contract-plan")
   .option("--json", "emit JSON")
   .action(
     (options: {
@@ -318,13 +318,10 @@ apiMap
       chainId?: string;
       equityInstrumentId?: string;
       optionId?: string;
-      optionPositionId?: string;
-      aggregatePositionId?: string;
-      optionOrderId?: string;
       source?: string;
       json?: boolean;
     }) => {
-      const plan = buildOptionsContractDeepLinkPlan({
+      const plan = buildOptionsContractNavigationPlan({
         accountNumber: options.account,
         symbol: options.symbol,
         expiration: options.expiration,
@@ -335,9 +332,6 @@ apiMap
         chainId: options.chainId,
         equityInstrumentId: options.equityInstrumentId,
         optionInstrumentId: options.optionId,
-        optionPositionId: options.optionPositionId,
-        aggregatePositionId: options.aggregatePositionId,
-        optionOrderId: options.optionOrderId,
         source: options.source
       });
       if (options.json) {
@@ -345,10 +339,8 @@ apiMap
         return;
       }
       process.stdout.write(`selector: ${plan.selector.symbol} ${plan.selector.expiration} ${plan.selector.strike} ${plan.selector.optionType} ${plan.selector.side}-${plan.selector.positionEffect}\n`);
-      process.stdout.write("\nweb deeplinks:\n");
-      for (const link of plan.webDeepLinks) process.stdout.write(`- [${link.confidence}] ${link.id}: ${link.url}\n`);
-      process.stdout.write("\nmobile deeplinks:\n");
-      for (const link of plan.mobileDeepLinks) process.stdout.write(`- [${link.confidence}] ${link.id}: ${link.url}\n`);
+      process.stdout.write("\nweb navigation candidates:\n");
+      for (const link of plan.webNavigation) process.stdout.write(`- [${link.confidence}] ${link.id}: ${link.url}\n`);
       process.stdout.write("\napi resolution:\n");
       for (const step of plan.apiResolutionSteps) process.stdout.write(`- ${step.method} ${step.url} (${step.id})\n`);
       for (const warning of plan.warnings) process.stderr.write(`warning: ${warning}\n`);
@@ -651,7 +643,9 @@ program.addCommand(recurring);
 // engine, same map. All reads — no live-write gate needed.
 const AGG_POSITIONS_URL = "https://api.robinhood.com/options/aggregate_positions/?account_numbers=";
 const MARKETDATA_OPTIONS_URL = "https://api.robinhood.com/marketdata/options/?ids={ids}";
+const MARKETDATA_OPTIONS_STRATEGY_QUOTES_URL = "https://api.robinhood.com/marketdata/options/strategy/quotes/";
 const INSTRUMENTS_SYMBOL_URL = "https://api.robinhood.com/instruments/?symbol={symbol}";
+const OPTIONS_CHAINS_LIST_URL = "https://api.robinhood.com/options/chains/";
 const OPTIONS_CHAIN_URL = "https://api.robinhood.com/options/chains/{id}/";
 const OPTIONS_INSTRUMENTS_URL =
   "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}";
@@ -730,7 +724,68 @@ async function fetchOptionMarks(ids: string[]): Promise<Map<string, any>> {
   return marks;
 }
 
-const options = new Command("options").description("Options analytics: position performance and live chains (reads)");
+function finiteNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function optionInstrumentId(row: any): string | undefined {
+  if (row?.id) return String(row.id);
+  const match = String(row?.url ?? row?.instrument ?? "").match(/\/options\/instruments\/([^/]+)\/?$/);
+  return match?.[1];
+}
+
+function sameStrike(left: unknown, right: unknown): boolean {
+  const a = finiteNumber(left);
+  const b = finiteNumber(right);
+  return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 0.000001;
+}
+
+function strikeForLeg(leg: OptionStrategyLegTemplate, assignments: Record<string, string>): string | undefined {
+  const keys = [leg.id, leg.strikeRole, `${leg.id}_strike`, `${leg.strikeRole}_price`, `${leg.strikeRole}_strike`];
+  const raw = keys.map((key) => assignments[key]).find((value) => value !== undefined && value !== "");
+  return raw?.trim().replace(/^\$/, "").replace(/,/g, "");
+}
+
+function summarizeAvailableStrikes(instruments: any[]): string {
+  const strikes = instruments
+    .map((row) => finiteNumber(row?.strike_price))
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (strikes.length === 0) return "none";
+  const sample = strikes.length <= 20 ? strikes : [...strikes.slice(0, 8), Number.NaN, ...strikes.slice(-8)];
+  return sample.map((value) => (Number.isFinite(value) ? value.toFixed(2).replace(/\.00$/, "") : "...")).join(", ");
+}
+
+async function resolveChainIdForAccount(symbol: string, account: string, fallbackChainId: string, warnings: string[]): Promise<string> {
+  try {
+    const data = await brokerageGetJson(OPTIONS_CHAINS_LIST_URL, {}, { account_number: account, underlying_symbol: symbol });
+    const first = Array.isArray(data.results) ? data.results[0] : data;
+    const chainId = first?.id ?? first?.chain_id;
+    if (chainId) return String(chainId);
+    warnings.push("Account-scoped chain lookup returned no chain id; using the underlying instrument tradable_chain_id fallback.");
+  } catch (error) {
+    warnings.push(`Account-scoped chain lookup failed; using tradable_chain_id fallback. ${(error as Error).message}`);
+  }
+  return fallbackChainId;
+}
+
+async function fetchStrategyQuote(ids: string[], ratios: string[], types: string[], warnings: string[]): Promise<any | undefined> {
+  try {
+    const data = await brokerageGetJson(MARKETDATA_OPTIONS_STRATEGY_QUOTES_URL, {}, {
+      ids: ids.join(","),
+      ratios: ratios.join(","),
+      types: types.join(","),
+      include_all_sessions: "true"
+    });
+    return Array.isArray(data.results) ? data.results[0] ?? data.results : data;
+  } catch (error) {
+    warnings.push(`Package strategy quote endpoint did not return a usable quote; leg bid/ask math is still available. ${(error as Error).message}`);
+    return undefined;
+  }
+}
+
+const options = new Command("options").description("Options analytics: position performance, live chains, and dry-run strategy quotes");
 
 options
   .command("positions")
@@ -812,6 +867,8 @@ options
     const rows = near.map((row) => {
       const mark = marks.get(row.id) ?? {};
       return {
+        optionInstrumentId: row.id,
+        optionInstrumentUrl: `https://api.robinhood.com/options/instruments/${row.id}/`,
         strike: row.strike,
         bid: num(mark.bid_price),
         ask: num(mark.ask_price),
@@ -847,6 +904,245 @@ options
       process.stdout.write(`\nOther expirations: ${expirations.slice(0, 8).join(", ")}${expirations.length > 8 ? " …" : ""}\n`);
     }
   });
+
+options
+  .command("strategy-quote")
+  .description("Resolve strategy legs, read live bid/ask/Greeks, and build a dry-run limit order body")
+  .argument("<strategyId>", "strategy id, e.g. call-credit-spread or iron-condor")
+  .requiredOption("--account <account_number>", "selected Robinhood account_number")
+  .requiredOption("--symbol <symbol>", "underlying ticker, e.g. DRAM")
+  .requiredOption("--expiration <date>", "YYYY-MM-DD expiration")
+  .option("--leg <id=strike>", "leg strike assignment; repeatable, e.g. --leg short_call=100", (value: string, previous: string[] = []) => [
+    ...previous,
+    value
+  ])
+  .option("--param <name=value>", "extra dry-run order template parameter; repeatable", (value: string, previous: string[] = []) => [
+    ...previous,
+    value
+  ])
+  .option("--quantity <n>", "strategy contract quantity", "1")
+  .option("--time-in-force <tif>", "Robinhood time_in_force", "gfd")
+  .option("--pricing-mode <mode>", "natural, mid, safe-sell-probe, or safe-buy-probe", "mid")
+  .option("--limit-price <price>", "override computed limit price in the dry-run body")
+  .option("--ref-id <uuid>", "ref_id for the dry-run body; default random UUID")
+  .option("--json", "emit JSON")
+  .action(
+    async (
+      strategyId: string,
+      opts: {
+        account: string;
+        symbol: string;
+        expiration: string;
+        leg?: string[];
+        param?: string[];
+        quantity?: string;
+        timeInForce?: string;
+        pricingMode?: OptionsStrategyPricingMode;
+        limitPrice?: string;
+        refId?: string;
+        json?: boolean;
+      }
+    ) => {
+      const workflow = loadOptionsStrategyWorkflows().find((candidate) => candidate.id === strategyId);
+      if (!workflow) throw new Error(`No options strategy workflow matched id: ${strategyId}`);
+      if (workflow.legs.some((leg) => leg.optionType === "stock")) {
+        throw new Error(`${workflow.id} includes a stock leg; strategy-quote currently resolves option legs only.`);
+      }
+
+      const symbol = opts.symbol.toUpperCase();
+      const account = opts.account;
+      const expiration = opts.expiration;
+      const quantity = opts.quantity ?? "1";
+      const timeInForce = opts.timeInForce ?? "gfd";
+      const refId = opts.refId ?? randomUUID();
+      const templateParams = parseParamAssignments(opts.param);
+      const legAssignments = { ...templateParams, ...parseParamAssignments(opts.leg) };
+      const warnings: string[] = [];
+
+      const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
+      if (!instrument) throw new Error(`No equity instrument found for ${symbol}.`);
+      const fallbackChainId = instrument.tradable_chain_id;
+      if (!fallbackChainId) throw new Error(`${symbol} has no tradable options chain.`);
+      const chainId = await resolveChainIdForAccount(symbol, account, String(fallbackChainId), warnings);
+      const expirations: string[] = (await brokerageGetJson(OPTIONS_CHAIN_URL, { id: chainId })).expiration_dates ?? [];
+      if (expirations.length > 0 && !expirations.includes(expiration)) {
+        throw new Error(`${symbol} chain does not list ${expiration}. First expirations: ${expirations.slice(0, 12).join(", ")}`);
+      }
+
+      const instrumentsByType = new Map<"call" | "put", any[]>();
+      const neededTypes = [...new Set(workflow.legs.map((leg) => leg.optionType).filter((type): type is "call" | "put" => type !== "stock"))];
+      for (const type of neededTypes) {
+        const data = await brokerageGetJson(
+          OPTIONS_INSTRUMENTS_URL,
+          { chain_id: chainId, expiration_dates: expiration, type },
+          { account_number: account }
+        );
+        instrumentsByType.set(type, Array.isArray(data.results) ? data.results : []);
+      }
+
+      const resolvedLegs = workflow.legs.map((leg) => {
+        const strike = strikeForLeg(leg, legAssignments);
+        if (!strike) {
+          throw new Error(
+            `Missing strike for ${leg.id}. Use --leg ${leg.id}=<strike> or --leg ${leg.strikeRole}=<strike>.`
+          );
+        }
+        const instruments = instrumentsByType.get(leg.optionType as "call" | "put") ?? [];
+        const match = instruments.find((row) => sameStrike(row?.strike_price, strike));
+        if (!match) {
+          throw new Error(
+            `No ${leg.optionType} strike ${strike} for ${symbol} ${expiration}. Available ${leg.optionType} strikes: ${summarizeAvailableStrikes(instruments)}`
+          );
+        }
+        const id = optionInstrumentId(match);
+        if (!id) throw new Error(`Matched ${leg.id} but could not read its option instrument id.`);
+        return {
+          template: leg,
+          strike,
+          optionInstrumentId: id,
+          optionInstrumentUrl: `https://api.robinhood.com/options/instruments/${id}/`
+        };
+      });
+
+      const ids = resolvedLegs.map((leg) => leg.optionInstrumentId);
+      const marks = await fetchOptionMarks(ids);
+      const pricingLegs = resolvedLegs.map((leg) => {
+        const mark = marks.get(leg.optionInstrumentId) ?? {};
+        return {
+          id: leg.template.id,
+          action: leg.template.action,
+          ratioQuantity: leg.template.ratioQuantity,
+          bid: mark.bid_price,
+          ask: mark.ask_price,
+          mark: mark.adjusted_mark_price ?? mark.mark_price,
+          last: mark.last_trade_price,
+          delta: mark.delta,
+          gamma: mark.gamma,
+          theta: mark.theta,
+          vega: mark.vega,
+          rho: mark.rho
+        };
+      });
+      const preferredDirection = (workflow.orderTemplate as any)?.direction === "credit" ? "credit" : (workflow.orderTemplate as any)?.direction === "debit" ? "debit" : undefined;
+      const pricing = buildOptionsStrategyPricingSummary({
+        legs: pricingLegs,
+        mode: opts.pricingMode ?? "mid",
+        preferredDirection
+      });
+      const computedLimitPrice = finiteNumber(opts.limitPrice ?? pricing.limitPrice);
+      if (!Number.isFinite(computedLimitPrice) || computedLimitPrice < 0) {
+        throw new Error(
+          `Could not compute a usable limit price. ${pricing.warnings.length > 0 ? pricing.warnings.join(" ") : "No bid/ask/mark/last quote was available."}`
+        );
+      }
+
+      const ratios = resolvedLegs.map((leg) => String(leg.template.ratioQuantity));
+      const quoteTypes = resolvedLegs.map((leg) => (leg.template.action === "sell" ? "short" : "long"));
+      const orderSides = resolvedLegs.map((leg) => leg.template.action);
+      const strategyQuote = await fetchStrategyQuote(ids, ratios, quoteTypes, warnings);
+      const strategyQuoteUrl = new URL(MARKETDATA_OPTIONS_STRATEGY_QUOTES_URL);
+      strategyQuoteUrl.searchParams.set("ids", ids.join(","));
+      strategyQuoteUrl.searchParams.set("ratios", ratios.join(","));
+      strategyQuoteUrl.searchParams.set("types", quoteTypes.join(","));
+      strategyQuoteUrl.searchParams.set("include_all_sessions", "true");
+
+      const orderParams: Record<string, string> = {
+        ...templateParams,
+        account_number: account,
+        symbol,
+        chain_id: chainId,
+        expiration,
+        strategy_legs: resolvedLegs.map((leg) => `${leg.template.action}:${leg.template.ratioQuantity}:${leg.optionInstrumentId}`).join(","),
+        strategy_ids: ids.join(","),
+        ratios: ratios.join(","),
+        types: quoteTypes.join(","),
+        order_sides: orderSides.join(","),
+        limit_price: computedLimitPrice.toFixed(2),
+        quantity,
+        time_in_force: timeInForce,
+        ref_id: refId
+      };
+      for (const leg of resolvedLegs) {
+        if (leg.template.optionPlaceholder) orderParams[leg.template.optionPlaceholder] = leg.optionInstrumentId;
+        orderParams[`${leg.template.id}_option_id`] = leg.optionInstrumentId;
+        orderParams[leg.template.id] = leg.strike;
+        orderParams[leg.template.strikeRole] = leg.strike;
+      }
+      const orderPlan = buildOptionsStrategyOrderPlan(workflow, orderParams);
+      const allWarnings = [...warnings, ...pricing.warnings, ...orderPlan.warnings];
+      const output = {
+        mode: "dry_run",
+        sent: false,
+        strategy: {
+          id: workflow.id,
+          title: workflow.title,
+          direction: pricing.direction,
+          definedRisk: workflow.definedRisk,
+          aggressiveness: workflow.aggressiveness
+        },
+        accountContext: { accountNumber: account, symbol, chainId, expiration },
+        resolvedLegs: resolvedLegs.map((leg, index) => ({
+          id: leg.template.id,
+          action: leg.template.action,
+          optionType: leg.template.optionType,
+          strike: finiteNumber(leg.strike),
+          ratioQuantity: leg.template.ratioQuantity,
+          positionEffect: leg.template.positionEffect,
+          optionInstrumentId: leg.optionInstrumentId,
+          optionInstrumentUrl: leg.optionInstrumentUrl,
+          greeks: {
+            delta: finiteNumber(pricingLegs[index]?.delta),
+            gamma: finiteNumber(pricingLegs[index]?.gamma),
+            theta: finiteNumber(pricingLegs[index]?.theta),
+            vega: finiteNumber(pricingLegs[index]?.vega),
+            rho: finiteNumber(pricingLegs[index]?.rho)
+          },
+          quote: pricing.legs[index]
+        })),
+        strategyQuoteUrl: strategyQuoteUrl.toString(),
+        strategyQuote,
+        pricing: {
+          ...pricing,
+          limitPrice: computedLimitPrice,
+          limitPriceSource: opts.limitPrice ? "override" : opts.pricingMode ?? "mid"
+        },
+        order: orderPlan.order,
+        missingParams: orderPlan.missingParams,
+        reviewContract: orderPlan.reviewContract,
+        warnings: allWarnings
+      };
+
+      if (opts.json) {
+        printJson(output);
+        return;
+      }
+      process.stdout.write(`${workflow.title} (${workflow.id}) — dry-run only\n`);
+      process.stdout.write(`account: ${account}  symbol: ${symbol}  expiration: ${expiration}  direction: ${pricing.direction}\n\n`);
+      printTable(
+        output.resolvedLegs.map((leg) => ({
+          leg: leg.id,
+          side: leg.action,
+          type: leg.optionType,
+          strike: Number.isFinite(leg.strike) ? leg.strike.toFixed(2) : String(leg.strike),
+          bid: usd(leg.quote.bid),
+          ask: usd(leg.quote.ask),
+          mark: usd(leg.quote.mark),
+          natural: usd(leg.quote.naturalUnitPrice),
+          mid: usd(leg.quote.midUnitPrice),
+          delta: Number.isFinite(leg.greeks.delta) ? leg.greeks.delta.toFixed(2) : "—"
+        })),
+        ["leg", "side", "type", "strike", "bid", "ask", "mark", "natural", "mid", "delta"]
+      );
+      process.stdout.write(
+        `\nnet natural: ${pricing.direction === "credit" ? "credit" : "debit"} ${usd(pricing.naturalPrice)}  ` +
+          `net mid: ${usd(pricing.midPrice)}  limit: ${usd(computedLimitPrice)} (${output.pricing.limitPriceSource})\n`
+      );
+      process.stdout.write(`strategy quote: ${strategyQuote ? "returned" : "not returned; using leg math"}\n`);
+      process.stdout.write(`\norder body (not sent):\n${JSON.stringify(orderPlan.order, null, 2)}\n`);
+      for (const warning of allWarnings) process.stderr.write(`warning: ${warning}\n`);
+      if (orderPlan.missingParams.length > 0) process.stderr.write(`missing params: ${orderPlan.missingParams.join(", ")}\n`);
+    }
+  );
 
 options
   .command("expirations")

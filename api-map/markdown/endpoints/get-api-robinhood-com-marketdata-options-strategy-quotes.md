@@ -13,3 +13,11 @@ Route template:
 ```text
 https://api.robinhood.com/marketdata/options/strategy/quotes/
 ```
+
+Observed working query shape:
+
+```text
+ids=<option_instrument_id,...>&ratios=<ratio,...>&types=<long|short,...>&include_all_sessions=true
+```
+
+`types` is leg exposure (`long` or `short`), not order side (`buy` or `sell`).

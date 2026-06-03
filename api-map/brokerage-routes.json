@@ -6201,5 +6201,41 @@
     ],
     "source": "manual-search-2026-06-03",
     "summary": "Global instrument search (web search bar) — resolve name/theme to tickers."
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/news/?symbol={symbol}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "sentiment",
+      "news",
+      "data"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "queryKeys": [
+      "symbol"
+    ],
+    "source": "sentiment-rd-2026-06-03",
+    "summary": "News articles per symbol (sentiment source)."
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/tags/tag/{tag}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "sentiment",
+      "discovery",
+      "data"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "queryKeys": [
+      "tag"
+    ],
+    "source": "sentiment-rd-2026-06-03",
+    "summary": "Crowd/discovery lists: 100-most-popular, top-movers, etc."
   }
 ]

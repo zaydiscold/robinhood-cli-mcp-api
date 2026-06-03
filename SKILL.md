@@ -716,6 +716,23 @@ Verified live, not theorized:
   (re-verified). DRIP/cash-sweep/stock-lending/margin **write** endpoints remain unproven and need a
   fresh browser capture before any automation. Treat them as research, not supported writes.
 
+### Sentiment data + deep-link pipeline (mapped 2026-06-03)
+
+RH exposes a live sentiment layer under `api.robinhood.com/midlands/` (risk `read`):
+- `midlands/news/?symbol=<SYM>` — news articles per ticker.
+- `midlands/ratings/{instrument_id}/` — analyst buy/hold/sell summary + dated texts.
+- `midlands/tags/tag/{100-most-popular|top-movers|...}/` — crowd / momentum instrument lists.
+(Per-instrument `instruments/{id}/popularity/` is now 404 — use the `tags` crowd lists instead.
+Internal hosts `news./youfeed./charted./ai-realtime.` have no public TLS; `midlands/` is the surface.)
+
+**Signal → deep link → order:** a signal ("SPY $1000c EOY", "+$100 from strike") → contract spec
+→ resolve via `api-map options-contract-links` (symbol→chain→**bulk-enumerate** `options/instruments/`
+→ match strike → `option_instrument_id`) → it emits `links.webContractPageDesktop`
+(`robinhood.com/options/instruments/{uuid}/`, the verified desktop order ticket; `+?account_number=`
+to pin). **Option UUIDs are random v4 — not generatable; bulk-enumerate a chain/expiration in one
+call.** The URL carries no side; set `side`+`position_effect` in the `options/orders/` body
+(buy/open, sell/close, sell/open, buy/close) for the agentic order.
+
 ## Research Methodology — mapping a no-official-API surface
 
 Because there is no official brokerage API, the surface is discovered, not

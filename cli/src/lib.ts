@@ -303,6 +303,9 @@ export interface OptionsContractLinkBundle {
     appChainById?: string;
     webChainById?: string;
     browserAccountSwitcherChain?: string;
+    webContractPageDesktop?: string;
+    webContractPageDesktopAccountPinned?: string;
+    appContractById?: string;
     candidateExactWebQueries: Array<{
       id: string;
       url: string;
@@ -1023,6 +1026,19 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
   const browserAccountSwitcherChain = chainId
     ? `https://bonfire.robinhood.com/account_switcher/option_chain/${encodeURIComponent(chainId)}`
     : undefined;
+  // VERIFIED 2026-06-03 (on-device): this DESKTOP web URL opens a working order ticket for the
+  // exact contract (keyed only by the option_instrument_id — no expiration/strike/side in the URL).
+  // Mobile Safari 404s (no app handoff). This is the closest thing to an exact-contract deep link.
+  const webContractPageDesktop = optionInstrumentId
+    ? `https://robinhood.com/options/instruments/${encodeURIComponent(optionInstrumentId)}/`
+    : undefined;
+  const webContractPageDesktopAccountPinned = optionInstrumentId && selector.accountNumber
+    ? `https://robinhood.com/options/instruments/${encodeURIComponent(optionInstrumentId)}/?account_number=${encodeURIComponent(selector.accountNumber)}`
+    : undefined;
+  // Recognized app route but server/version-gated as of 2026-06-03 ("update app" on latest build).
+  const appContractById = optionInstrumentId
+    ? `robinhood://option?option_id=${encodeURIComponent(optionInstrumentId)}`
+    : undefined;
   const candidateExactWebQueries = navigationPlan.webNavigation
     .filter((link) => link.confidence === "candidate")
     .map((link) => ({ id: link.id, url: link.url, confidence: "candidate" as const }));
@@ -1038,7 +1054,7 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
   );
 
   const warnings = [
-    "No universal URL is proven to open an unopened Robinhood option with expiration, strike, call/put, side, and account already selected.",
+    "Verified 2026-06-03 (on-device): the DESKTOP web contract page links.webContractPageDesktop (options/instruments/{option_instrument_id}/) opens a working order ticket for the exact contract. Mobile Safari 404s (no app handoff). The app scheme robinhood://option?option_id= is a recognized route but server/version-gated ('update app' on latest). The app option_chain deep link reads chain_id only (opens nearest-expiry ATM). No single URL preselects side+account across all platforms.",
     "This bundle is for dry-run navigation and webhook R&D. It does not send an order.",
     "Use the exact API contract id as the source of truth; use links only as navigation handoffs.",
     ...navigationPlan.warnings
@@ -1076,6 +1092,9 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
       appChainById,
       webChainById,
       browserAccountSwitcherChain,
+      webContractPageDesktop,
+      webContractPageDesktopAccountPinned,
+      appContractById,
       candidateExactWebQueries
     },
     webhookHandoff: {

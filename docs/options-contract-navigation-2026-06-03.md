@@ -80,8 +80,6 @@ authority before building any order body.
 
 ## Supplementary R&D
 
-Operational R&D details live in
-[`docs/deep-link/options-contract-link-bundle-2026-06-03.md`](./deep-link/options-contract-link-bundle-2026-06-03.md).
 The public rule is narrow: promote only tested, additive handoff behavior into
-CLI/API/MCP/docs; keep generated webhook builders and account-specific bundles
-inside ignored local folders.
+CLI/API/MCP/docs; keep generated webhook builders, link bundles, and
+account-specific payloads inside the gitignored `info/` folder.

@@ -331,10 +331,8 @@ across multiple symbols and expirations.
 
 Operational details live in
 [`docs/options-contract-navigation-2026-06-03.md`](./docs/options-contract-navigation-2026-06-03.md)
-and [`docs/deep-link/options-contract-link-bundle-2026-06-03.md`](./docs/deep-link/options-contract-link-bundle-2026-06-03.md)
 and the machine-readable workflow lives in
-[`api-map/options-contract-navigation-workflows-2026-06-03.json`](./api-map/options-contract-navigation-workflows-2026-06-03.json)
-plus [`api-map/deep-link/options-contract-link-bundle-2026-06-03.json`](./api-map/deep-link/options-contract-link-bundle-2026-06-03.json).
+[`api-map/options-contract-navigation-workflows-2026-06-03.json`](./api-map/options-contract-navigation-workflows-2026-06-03.json).
 
 ### 6.4 Stock page profile reads
 

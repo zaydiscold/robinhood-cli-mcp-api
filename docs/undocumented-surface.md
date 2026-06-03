@@ -49,6 +49,32 @@ Current counts after the 2026-06-03 options/account-settings hardening pass:
 - Options-chain finding: `/options/chains/{symbol}` defaults to the nearest expiration in UI, while expiration/type/side are stateful UI controls backed by `options/chains`, `options/instruments`, `marketdata/options`, and strategy quote/order routes.
 - Docs: `docs/account-context-routing-2026-06-02.md` and `docs/options-greeks-strategy-research-2026-06-02.md`.
 
+2026-06-03 equity-order gate + instrument search (verified live):
+
+- **`POST api.robinhood.com/orders/` — the WEB body.** The legacy mobile body
+  (`type`/`quantity`/`price`/`side`) is rejected with *"Your app version is missing important
+  stock trading updates. You can still place orders on the web."* Clearing the gate needs
+  (1) web-app headers — now sent by the engine: `x-robinhood-api-version`,
+  `x-robinhood-web-app-version`, `x-hyper-ex: enabled`, web `user-agent`, `origin`/`referer` —
+  and (2) `order_form_version: 7` + a live bid/ask collar
+  (`bid_price`/`ask_price`/`bid_ask_timestamp`) + `market_hours` + `position_effect: open`.
+  Fractional buys use `dollar_based_amount: {amount, currency_code}` (server computes shares);
+  whole-share/OTC buys use `price` + `quantity`. Full body shapes in `AGENTS.md`.
+- **OTC names** (`otc_market_tier` non-empty, `fractional_tradability: "position_closing_only"`,
+  e.g. RNECY) **reject `type: market`** — must be a marketable **limit** at the ask, whole shares.
+- **Rate limit:** `orders/` burst-limits *fractional* orders — ~9 then HTTP **429**
+  (*"Too many requests for fractional orders"* / *"throttled, available in N seconds"*, ~48s
+  cooldown). Honor it by sleeping the directed seconds and retrying the same `ref_id` (429 =
+  nothing placed). Insufficient funds returns 400 *"You can only purchase 0 shares"* /
+  *"Not enough buying power."*
+- **`GET api.robinhood.com/midlands/search/?query=<q>`** — Robinhood's global instrument search
+  (the web search bar). Returns `instruments[]` (+ `lists`) with full instrument objects
+  (symbol, name, tradability, fractional_tradability, otc_market_tier). Read-only; added to the
+  map and wrapped as `brokerage search`. Use it to resolve a name/theme to the exact ticker
+  (e.g. "oracle 2x" → ORCX/ORCU) instead of guessing.
+- Reference impl: `cli/src/index.ts` `brokerage buy` / `brokerage search`, `scripts/equity-buy.mjs`,
+  `scripts/rh-get.mjs`. Receipts (account numbers + order ids) stay in gitignored `info/`.
+
 When a new undocumented route is discovered, record:
 
 1. Discovery source.

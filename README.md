@@ -1,5 +1,7 @@
 # Robinhood CLI
 
+> **In the name of equity** *(pun intended)* — your **equities**, and your **equity**: the right to read, research, and manage your own money from a terminal or an agent.
+
 > Trading at the speed of inference.
 
 > **Zayd's Robinhood referral link:** https://join.robinhood.com/zaydk5

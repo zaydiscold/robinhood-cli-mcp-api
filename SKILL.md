@@ -93,21 +93,24 @@ Run this short preflight before any account-specific operation:
 
 ```bash
 date
-node cli/dist/index.js --help >/dev/null
+node cli/dist/index.js --help >/dev/null                 # CLI builds + runs
+node scripts/equity-buy.mjs --preflight                  # LIGHT LOGIN CHECK (one call): is auth live?
 node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"
-node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full
 ```
 
 Interpretation:
 
-- Date matters for options expirations, next-business-day staged rolls,
-  after-hours behavior, and recurring-investment timing.
-- Route count should match the current docs (`285` brokerage/account entries).
-- `transfer/accounts/` is the account graph. Use it to discover account numbers,
-  account types, deposit/withdraw eligibility, recurring-source eligibility, and
-  display labels. Never hardcode account numbers.
-- If auth fails or a read returns `401`, run `pnpm auth:refresh`, then retry the
-  same command once. Do not spin up random browser sessions.
+- **`--preflight` is the auth/login check — run it first.** It hits `accounts/` with the
+  web-app headers and prints `PREFLIGHT: OK — auth live, N accounts: …` or
+  `PREFLIGHT: FAIL`. This is the "is the MCP/CLI/API login good?" gate; do it before any
+  account op so you fail fast instead of mid-batch. On FAIL → `pnpm auth:refresh`, retry once.
+  Do NOT spin up random browser sessions.
+- Date matters for options expirations, staged rolls, after-hours behavior, recurring timing.
+- Route count should match current docs (`288` brokerage/account entries incl. `midlands/search`).
+- Discover accounts via `transfer/accounts/` (full graph: numbers, types, deposit/recurring
+  eligibility, labels). **Never hardcode account numbers.** Note: the bare `accounts/` endpoint
+  may only return a subset for a given token — the full set comes from `transfer/accounts/` or
+  the MCP `get_accounts`; writes still work against any owned account by its number.
 
 ---
 
@@ -630,6 +633,27 @@ state from `bonfire.robinhood.com/margin/{id}/investing_info/` and
 `.../settings/`; read cash/sweep from `accounts/sweeps/`. Surface the constraint
 in the plan output, the way the tool already reports buying power.
 
+### Pattern Day Trading (PDT) — check per account, every time
+
+Before any plan that could involve a same-day **round trip** (buy then sell, or sell then
+buy the same security in one session), read the account and apply the PDT scale. **Buys
+alone never trigger PDT** — only *day trades* (round trips) count. Decide per account from
+`get_portfolio` (`total_value` + `buying_power`) and `account.type`:
+
+- **`cash` account:** PDT does not apply (no margin day-trading). But T+1 settlement and
+  good-faith violations do — selling unsettled funds can flag it.
+- **`margin` account, total value ≥ $25,000:** PDT lifted — effectively unlimited day
+  trades. (The user's Roth ≈ $40k and the 9mo are margin ⇒ PDT moot there.)
+- **`margin` account, total value < $25,000:** classic PDT — **≤ 3 day trades / 5 rolling
+  business days**, else flagged ~90 days.
+
+So each time you look at a new account, ask: *cash (n/a) or margin? if margin, total ≥ $25k?*
+and state which branch applies in the plan.
+
+> Rule-change watch: there is active movement to lower/restructure the $25k threshold
+> (proposals around ~$5k). Treat $25k as current law; re-verify if the user flags a change,
+> and keep this number easy to update.
+
 ## Live Write & Order Lifecycle (verified 2026-06-03)
 
 Verified live, not theorized:
@@ -650,6 +674,29 @@ Verified live, not theorized:
   claimed DRIP toggles via `PATCH corp_actions/drip/enrollment/{num}/`; live, all
   of PATCH/POST/PUT return `405` — that endpoint is GET-only. A dry-run would have
   endorsed the bad body forever. Treat unverified write bodies as research.
+
+### Equity buying — `buy` + `search` (verified live 2026-06-03)
+
+- **Ground the ticker first.** With only a name/theme, run `brokerage search "<name>"`
+  (Robinhood's own search bar, `midlands/search/`) and pick the exact symbol. **Never guess
+  a ticker.** (A prior agent guessed `SSO` for an "Oracle 2x ETF"; `search "oracle 2x"` returns
+  the real ones — `ORCX` / `ORCU`.) Search output flags `fractional` eligibility and `OTC`.
+- **Place with `brokerage buy`** (single) or `scripts/equity-buy.mjs` (batches) — both build the
+  web order body (`order_form_version: 7` + live bid/ask collar):
+  - `brokerage buy ORCU --account <num> --dollars 5` → fractional dollar-notional (market).
+  - `brokerage buy RNECY --account <num> --shares 1` → whole shares; **OTC auto-limits at ask**.
+  - Dry-run by default; live needs `--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+- **OTC / fractional guard.** Before a dollar order the tool reads `fractional_tradability` +
+  `otc_market_tier`. OTC names (e.g. RNECY) are `position_closing_only` and **reject market
+  orders** — buy them as **whole shares via a marketable limit**. "$X of <OTC>" is impossible;
+  switch to `--shares` and say so rather than malforming an order.
+- **Rate limit — agentic managers, NOT an HFT script.** `orders/` burst-limits *fractional*
+  orders (~9, then HTTP **429**, ~48s cooldown). A web endpoint will never tolerate hammering.
+  Pace ≥2.5s; on 429 sleep the server-directed seconds and retry the **same `ref_id`** (429 =
+  nothing placed → idempotent). The batch script does this and **stops on "You can only purchase
+  0 shares" / "Not enough buying power"** (account dry) instead of spamming dead orders.
+- **Affordability.** Read `get_portfolio.buying_power` before a batch and size to fit — $3–5 DCA
+  across dozens of names drains an account fast (a $40k account can show ~$1 buying power).
 
 ## Research Methodology — mapping a no-official-API surface
 

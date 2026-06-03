@@ -1,5 +1,10 @@
 # AGENTS.md — driving robinhood-cli from an agent
 
+> **Canonical agent guide: [SKILL.md](SKILL.md)** (the project's `CLAUDE.md` is a symlink to
+> it). Read SKILL.md first for the operating model, preflight, PDT scale, equity `buy`/`search`,
+> and rate-limit discipline. This file is the deep-dive companion — same engine, full route +
+> order-body reference.
+
 This repo drives a **real Robinhood account** (not the official agent sandbox) via a
 TypeScript CLI and a paired MCP server. Both share one engine (`cli/src/lib.ts`), so
 auth, the route map, and the write-gate behave identically whether you call the CLI
@@ -212,19 +217,70 @@ Order-placement routes:
 - Options: `https://api.robinhood.com/options/orders/` (POST, `write-mutate`)
 - Cancel: `POST /orders/{0}/cancel/` (equity) or `/options/orders/{0}/cancel/` (options) — `destructive`, same gate.
 
+### Equity orders — the WEB body (verified live 2026-06-03)
+
+The legacy mobile body (`type`/`quantity`/`price`/`side` only) is **rejected** by
+`api.robinhood.com/orders/` with *"Your app version is missing important stock trading
+updates. You can still place orders on the web."* — a client-version gate. Clearing it
+takes **two** things:
+
+1. **Web-app headers** — sent automatically by the engine (`cli/src/lib.ts` `send()`):
+   `x-robinhood-api-version`, `x-robinhood-web-app-version`, `x-hyper-ex: enabled`, a web
+   `user-agent`, and `origin`/`referer: https://robinhood.com`. Rotate stale values via
+   `ROBINHOOD_API_VERSION` / `ROBINHOOD_WEB_APP_VERSION` / `ROBINHOOD_USER_AGENT`.
+2. **`order_form_version: 7`** in the body + a live **bid/ask collar**
+   (`bid_price`/`ask_price`/`bid_ask_timestamp`) + `market_hours` + `position_effect: open`.
+
+**Dollar-notional (fractional) buy** — server computes shares from the live quote. Valid
+only when `fractional_tradability == "tradable"` and `market_hours: "regular_hours"`:
+```json
+{
+  "account": "https://api.robinhood.com/accounts/<ACCT>/",
+  "instrument": "https://api.robinhood.com/instruments/<id>/",
+  "symbol": "ORCU", "type": "market", "side": "buy",
+  "time_in_force": "gfd", "trigger": "immediate", "position_effect": "open",
+  "market_hours": "regular_hours", "order_form_version": 7,
+  "bid_price": "21.87", "ask_price": "21.90", "bid_ask_timestamp": "2026-06-03T18:43:01Z",
+  "dollar_based_amount": {"amount": "5.00", "currency_code": "USD"}, "ref_id": "<uuid>"
+}
+```
+
+**Whole-share / OTC buy** — OTC names (`otc_market_tier` non-empty, or
+`fractional_tradability: "position_closing_only"`, e.g. RNECY) **reject `type: market`**
+(*"traded on the over-the-counter market…"*) and can't be bought fractionally. Use a
+**marketable limit at the ask**, whole `quantity` (same envelope, swap the last line):
+`"type": "limit", "price": "<ask>", "quantity": "1"` (drop `dollar_based_amount`).
+
+**OTC / fractional guard:** before any dollar order, read `fractional_tradability`. If it is
+not `"tradable"`, do NOT send a dollar order — switch to whole-share (limit for OTC). This is
+what stops "$3 of RNECY" from malforming a real order.
+
+**Rate limit (we are agentic managers, NOT an HFT script):** `orders/` burst-limits
+**fractional** orders — ~9 in quick succession, then HTTP **429** (*"Too many requests for
+fractional orders"* / *"throttled, available in N seconds"*, ~48s cooldown). A web endpoint
+will never tolerate hammering. Pace ≥2.5s between orders; on 429 sleep the server-directed
+seconds and retry with the **same `ref_id`** (429 = nothing placed, so same ref_id is
+idempotent). Stop the batch on *"You can only purchase 0 shares"* / *"Not enough buying
+power"* (account is dry — keep going only wastes calls).
+
+**Reference impl:** `scripts/equity-buy.mjs` and the first-class `brokerage buy` command
+build exactly this body (dollar/share, OTC auto-limit, fractional guard, 429 backoff,
+buying-power early-stop, JSON receipts).
+
 ```bash
 # Dry-run (safe, proves the plan + body, sends nothing):
 node cli/dist/index.js brokerage execute "https://api.robinhood.com/orders/" --method POST \
-  --body-json '{"account":"https://api.robinhood.com/accounts/<ACCOUNT_NUMBER>/","instrument":"https://api.robinhood.com/instruments/<id>/","symbol":"F","type":"limit","time_in_force":"gfd","trigger":"immediate","price":"9.00","quantity":"1","side":"buy"}'
-
+  --body-json '{...web body above...}'
 # Live — requires BOTH gates:
-ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute "https://api.robinhood.com/orders/" \
-  --method POST --live-write --body-json '{...}'
+ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute \
+  "https://api.robinhood.com/orders/" --method POST --live-write --body-json '{...}'
 ```
 
 Equity order body keys: `account`, `instrument`, `symbol`, `type` (`market`|`limit`),
-`time_in_force` (`gfd`|`gtc`), `trigger` (`immediate`|`stop`), `price` (limit), `quantity`,
-`side` (`buy`|`sell`), `ref_id` (UUID, recommended for idempotency).
+`time_in_force` (`gfd`|`gtc`), `trigger`, `side`, `position_effect` (`open`|`close`),
+`order_form_version` (7), `bid_price`/`ask_price`/`bid_ask_timestamp` (live collar),
+`market_hours` (`regular_hours` for fractional), `dollar_based_amount` {amount, currency_code}
+(fractional) **or** `price`+`quantity` (limit/whole-share), `ref_id` (UUID, idempotency).
 
 ---
 

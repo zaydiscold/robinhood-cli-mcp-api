@@ -698,6 +698,24 @@ Verified live, not theorized:
 - **Affordability.** Read `get_portfolio.buying_power` before a batch and size to fit — $3–5 DCA
   across dozens of names drains an account fast (a $40k account can show ~$1 buying power).
 
+### Options order gotchas (verified live 2026-06-03)
+
+- **Per-chain min tick.** `options/chains/{id}` returns `min_ticks` (`below_tick`, `above_tick`,
+  `cutoff_price`). A limit below `cutoff_price` (often $3.00) must use `below_tick` — ARKG is
+  **$0.05**, so `$0.01` → 400 *"Price does not satisfy the min tick value."* (AAPL allows $0.01.)
+  Read the chain's ticks; never assume $0.01.
+- **GTC options open is gated by _overnight_ buying power**, not regular BP. A `time_in_force: gtc`
+  buy-to-open on thin overnight BP → 400 *"not enough overnight buying power"* even when regular BP
+  looks fine. (Cross-account test: ARKG $0.05 call → `201 queued` in the 9mo, `400` overnight-BP in
+  the Roth + near-3mo individual.)
+- **No version gate on options.** `options/orders/` takes the standard body (no `order_form_version`)
+  — the version gate is equity-only.
+- **Lifecycle (verified):** POST `options/orders/` (`201 queued`) → `options/orders/{0}/cancel/`
+  (`200`) → re-read (`cancelled`). Always use a far-from-market limit for test orders so they can't fill.
+- **DRIP toggle is NOT `PATCH corp_actions/drip/enrollment/{num}/`** — GET-only; PATCH/POST/PUT → `405`
+  (re-verified). DRIP/cash-sweep/stock-lending/margin **write** endpoints remain unproven and need a
+  fresh browser capture before any automation. Treat them as research, not supported writes.
+
 ## Research Methodology — mapping a no-official-API surface
 
 Because there is no official brokerage API, the surface is discovered, not

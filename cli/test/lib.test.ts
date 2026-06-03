@@ -173,7 +173,9 @@ describe("Robinhood API map", () => {
       side: "buy",
       strike: "127",
       chainId: "CHAIN_TEST",
-      optionInstrumentId: "OPTION_TEST"
+      optionInstrumentId: "OPTION_TEST",
+      aggregatePositionId: "AGGREGATE_TEST",
+      optionOrderId: "ORDER_TEST"
     });
     expect(plan.mode).toBe("dry_run");
     expect(plan.risk).toBe("write-mutate");
@@ -182,6 +184,12 @@ describe("Robinhood API map", () => {
     expect(plan.webDeepLinks.find((link) => link.id === "options-chain-account-shell")?.url).toBe(
       "https://robinhood.com/options/chains/XBI?account_number=ACCOUNT_TEST"
     );
+    const decompiledChain = plan.webDeepLinks.find((link) => link.id === "android-option-chain-by-chain-id");
+    expect(decompiledChain?.confidence).toBe("observed");
+    expect(decompiledChain?.url).toBe(
+      "https://robinhood.com/option_chain?chain_id=CHAIN_TEST&source=robinhood-cli-deeplink"
+    );
+    expect(decompiledChain?.url).not.toContain("account_number");
     const candidate = plan.webDeepLinks.find((link) => link.id === "options-chain-contract-query-candidate");
     expect(candidate?.confidence).toBe("candidate");
     expect(candidate?.url).toContain("expiration_dates=2026-06-26");
@@ -189,6 +197,19 @@ describe("Robinhood API map", () => {
     expect(candidate?.url).toContain("side=buy");
     expect(candidate?.url).toContain("type=call");
     expect(plan.queryParamCandidates.expiration).toEqual(["expiration", "expiration_date", "expiration_dates"]);
+    expect(plan.queryParamCandidates.decompiledOptionChainTarget).toEqual(["chain_id", "source"]);
+    expect(plan.mobileDeepLinks.find((link) => link.id === "mobile-option-chain-by-chain-id-observed")?.url).toBe(
+      "robinhood://option_chain?chain_id=CHAIN_TEST&source=robinhood-cli-deeplink"
+    );
+    expect(plan.mobileDeepLinks.find((link) => link.id === "mobile-option-position-open-order-form-observed")?.url).toBe(
+      "robinhood://option_position_open?id=AGGREGATE_TEST&account_number=ACCOUNT_TEST&source=robinhood-cli-deeplink"
+    );
+    expect(plan.mobileDeepLinks.find((link) => link.id === "mobile-pending-option-order-replace-observed")?.url).toBe(
+      "robinhood://pending_option_order_replace?id=ORDER_TEST&account_number=ACCOUNT_TEST"
+    );
+    expect(plan.mobileDeepLinks.find((link) => link.id === "mobile-pending-option-order-cancel-observed")?.url).toBe(
+      "robinhood://pending_option_order_cancel?id=ORDER_TEST&account_number=ACCOUNT_TEST"
+    );
     expect(plan.apiResolutionSteps.map((step) => step.id)).toContain("resolve-contracts-for-expiration-type");
     expect(plan.apiResolutionSteps.find((step) => step.id === "resolve-contracts-for-expiration-type")?.url).toBe(
       "https://api.robinhood.com/options/instruments/?account_number=ACCOUNT_TEST&chain_id=CHAIN_TEST&expiration_dates=2026-06-26&state=active&type=call"
@@ -198,6 +219,7 @@ describe("Robinhood API map", () => {
     );
     expect(JSON.stringify(plan.orderHandoff.orderTemplate)).toContain("https://api.robinhood.com/options/instruments/OPTION_TEST/");
     expect(plan.warnings.join("\n")).toContain("candidate probe keys");
+    expect(plan.warnings.join("\n")).toContain("account_number is supported by internal OptionChainIntentKey but not parsed");
     expect(JSON.stringify(plan)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
 

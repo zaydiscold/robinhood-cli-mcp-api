@@ -12,6 +12,13 @@ send live orders.
 - The web URL does not currently provide a proven location-bar encoding for
   expiration, strike, buy/sell side, or call/put side. The CLI now emits those
   as probe candidates, not as proven state.
+- The Android app has a source-backed external option-chain route:
+  `robinhood://option_chain?chain_id=<CHAIN_ID>&source=<SOURCE>` and the
+  equivalent `https://robinhood.com/option_chain?chain_id=<CHAIN_ID>&source=<SOURCE>`.
+  The target reads `chain_id` and `source`; it does **not** parse
+  `account_number`.
+- The Android app also has `option_chains?chain_ids=<ID1,ID2>&source=<SOURCE>`
+  for multiple chain IDs.
 - The reliable exact-contract path is API resolution:
   `chains -> instruments filtered by expiration/type/strike -> marketdata/options -> strategy quote -> dry-run options/orders body`.
 - The Android decompile confirms Robinhood's internal option chain navigation
@@ -21,6 +28,11 @@ send live orders.
 - The Android decompile also confirms held option-position deeplinks:
   `option_position?id=<OPTION_POSITION_ID>` and
   `aggregate_option_position?id=<AGGREGATE_POSITION_ID>&account_number=<ACCOUNT_NUMBER>`.
+- Order-form and pending-order deeplinks are ID based:
+  `option_position_open?id=<AGGREGATE_POSITION_ID>&account_number=<ACCOUNT_NUMBER>`,
+  `option_position_close?id=<AGGREGATE_POSITION_ID>&account_number=<ACCOUNT_NUMBER>`,
+  `pending_option_order_replace?id=<ORDER_ID>&account_number=<ACCOUNT_NUMBER>`,
+  and `pending_option_order_cancel?id=<ORDER_ID>&account_number=<ACCOUNT_NUMBER>`.
 
 ## Why It Matters
 
@@ -41,8 +53,12 @@ That command now returns:
 
 - observed web account-context URL;
 - candidate web query/fragment variants for expiration, strike, side, and type;
-- candidate `robinhood://` app-scheme URL;
+- source-backed `option_chain?chain_id=<CHAIN_ID>` app/web route shapes;
+- candidate symbol/expiration/strike `robinhood://options/chains/<SYMBOL>`
+  app-scheme URL;
 - observed held-position mobile deeplink shapes when position ids are supplied;
+- observed aggregate-position open/close and pending-order cancel/replace mobile
+  deeplink shapes when those ids are supplied;
 - deterministic API lookup steps;
 - exact-match checklist before any order body is trusted;
 - dry-run single-leg `options/orders/` handoff template.
@@ -151,6 +167,53 @@ account_number
 show_in_tab
 ```
 
+Option-chain target:
+
+```text
+app/sources/com/robinhood/android/optionschain/targets/OptionChainDeeplinkTarget.java
+```
+
+`OptionChainDeeplinkTarget` reads:
+
+```text
+chain_id
+source
+```
+
+It constructs `OptionChainIntentKey(..., initialAccountNumber=null, source=source)`.
+This is the key account-context boundary: `OptionChainIntentKey` can carry
+`initialAccountNumber` internally, but this external target does not parse
+`account_number`.
+
+Option open/close order-form targets:
+
+```text
+audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets2.java
+audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets3.java
+```
+
+They read:
+
+```text
+id
+account_number
+source
+```
+
+Pending option-order management targets:
+
+```text
+audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets.java
+audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets4.java
+```
+
+They read:
+
+```text
+id
+account_number
+```
+
 ## Reproducibility
 
 Research commands used:
@@ -161,8 +224,13 @@ cd /private/tmp/robinhood-decompiled-research
 rg -n "OptionChainIntentKey|OptionOrderIntentKey|option_position|aggregate_option_position|account_number" audit/sources app/sources
 sed -n '1,230p' audit/sources/com/robinhood/android/options/contracts/OptionChainIntentKey.java
 sed -n '1,180p' audit/sources/com/robinhood/android/options/contracts/OptionOrderIntentKey.java
+sed -n '1,120p' app/sources/com/robinhood/android/optionschain/targets/OptionChainDeeplinkTarget.java
 sed -n '1,120p' audit/sources/com/robinhood/android/options/p208ui/targets/AggregateOptionPositionDeeplinkTarget.java
 sed -n '1,115p' audit/sources/com/robinhood/android/options/p208ui/targets/OptionPositionDeeplinkTarget.java
+sed -n '1,120p' audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets2.java
+sed -n '1,120p' audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets3.java
+sed -n '1,120p' audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets.java
+sed -n '1,120p' audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets4.java
 ```
 
 CLI verification command:
@@ -183,12 +251,19 @@ robinhood-cli api-map options-contract-deeplink \
 ## Current Boundaries
 
 - `account_number` on the web chain shell is observed from browser research.
+- External Android `option_chain` does not parse `account_number` in the current
+  decompiled target. A phone test may still verify app UX, but the route source
+  says account specificity is not encoded there.
 - Contract-specific web query keys are candidates until validated on a logged-in
   browser across multiple symbols/contracts.
 - `robinhood://option_position` and `robinhood://aggregate_option_position`
   are observed Android deeplink targets for held positions, not unopened
   contracts.
+- `robinhood://option_position_open`, `robinhood://option_position_close`,
+  `robinhood://pending_option_order_replace`, and
+  `robinhood://pending_option_order_cancel` are observed Android targets for
+  existing aggregate positions or pending orders, not symbol-only fresh contract
+  selection.
 - For unopened contracts, the exact route remains API-first.
 - Live order sending remains blocked by exact approval, `--live-write`, and
   `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
-

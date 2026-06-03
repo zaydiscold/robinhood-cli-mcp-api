@@ -404,12 +404,25 @@ robinhood-cli api-map options-contract-deeplink \
 Interpret output this way:
 
 - `options-chain-account-shell` is the observed web shell for account context.
+- `android-option-chain-by-chain-id` and `mobile-option-chain-by-chain-id-observed`
+  are the source-backed app/web route shapes for a chain after API resolution:
+  `option_chain?chain_id=<CHAIN_ID>&source=<SOURCE>`.
+- External Android `option_chain` reads `chain_id` and `source` only. Although
+  the internal `OptionChainIntentKey` supports `initialAccountNumber`, the
+  decompiled external target does not parse `account_number`.
 - `options-chain-contract-query-candidate` and fragment variants are probes,
   not proof that Robinhood stores contract state in the URL.
 - `robinhood://option_position?id=<id>` and
   `robinhood://aggregate_option_position?id=<id>&account_number=<n>` are held
   position detail links from Android decompile evidence; do not use unopened
   contract ids in those slots.
+- `robinhood://option_position_open?id=<aggregate_position_id>&account_number=<n>`
+  and `robinhood://option_position_close?id=<aggregate_position_id>&account_number=<n>`
+  are order-form routes for an existing aggregate option position, not fresh
+  symbol/expiry/strike contract routes.
+- `robinhood://pending_option_order_replace?id=<order_id>&account_number=<n>`
+  and `robinhood://pending_option_order_cancel?id=<order_id>&account_number=<n>`
+  are pending-order management routes.
 - For unopened contracts, exactness comes from API resolution:
   `options/chains/` -> `options/instruments/` filtered by expiration/type/strike
   -> `marketdata/options/` -> optional `strategy/quotes/`.

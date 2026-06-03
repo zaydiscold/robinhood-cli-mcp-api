@@ -230,13 +230,22 @@ robinhood-cli api-map options-contract-deeplink \
   --json
 ```
 
-The planner emits observed web account-context URLs, candidate contract query
-params, candidate `robinhood://` app links, deterministic API lookup steps, and
-a dry-run single-leg `options/orders/` handoff template. Treat the API lookup as
-the source of truth: resolve `chain_id`, filter `options/instruments/` by
-expiration/type/strike, quote the resulting `option_instrument_id`, then build
-the order body. Expiration, strike, side, and type URL params are probe
-candidates until validated in a logged-in browser/device pass.
+The planner emits observed web account-context URLs, Android-decompiled
+`option_chain?chain_id=...` app/web target shapes, candidate contract query
+params, deterministic API lookup steps, and a dry-run single-leg
+`options/orders/` handoff template. Treat the API lookup as the source of truth:
+resolve `chain_id`, filter `options/instruments/` by expiration/type/strike,
+quote the resulting `option_instrument_id`, then build the order body.
+Expiration, strike, side, and type URL params are probe candidates until
+validated in a logged-in browser/device pass.
+
+For phone tests, `robinhood://stocks/AAPL` is the equity baseline. The closest
+source-backed options equivalent is `robinhood://option_chain?chain_id=<CHAIN_ID>&source=<SOURCE>`
+after resolving the chain ID. Android decompile evidence shows that external
+`option_chain` reads `chain_id` and `source`, but does **not** read
+`account_number`; account specificity still belongs in the web chain shell and
+API/order handoff. Held-position/order routes do read account context where
+shown, for example `robinhood://option_position_close?id=<AGGREGATE_POSITION_ID>&account_number=<ACCOUNT_NUMBER>`.
 
 Research details live in
 [`docs/options-contract-deeplink-research-2026-06-03.md`](./docs/options-contract-deeplink-research-2026-06-03.md)

@@ -4,6 +4,47 @@
     "title": "Exact options contract deeplink plus API resolution planner",
     "surface": "options-chain",
     "observedWebShell": "https://robinhood.com/options/chains/{symbol}?account_number={account_number}",
+    "decompiledAndroidTargets": [
+      {
+        "target": "option_chain",
+        "route": "robinhood://option_chain?chain_id={chain_id}&source={source}",
+        "httpsRoute": "https://robinhood.com/option_chain?chain_id={chain_id}&source={source}",
+        "reads": ["chain_id", "source"],
+        "doesNotRead": ["account_number"],
+        "notes": "Source-backed chain deeplink. Account specificity is not encoded by this external target."
+      },
+      {
+        "target": "option_chains",
+        "route": "robinhood://option_chains?chain_ids={chain_id_csv}&source={source}",
+        "httpsRoute": "https://robinhood.com/option_chains?chain_ids={chain_id_csv}&source={source}",
+        "reads": ["chain_ids", "source"],
+        "notes": "Source-backed multi-chain deeplink."
+      },
+      {
+        "target": "option_position_open",
+        "route": "robinhood://option_position_open?id={aggregate_position_id}&account_number={account_number}&source={source}",
+        "reads": ["id", "account_number", "source"],
+        "notes": "Existing aggregate-position order form, not fresh symbol/expiry/strike contract selection."
+      },
+      {
+        "target": "option_position_close",
+        "route": "robinhood://option_position_close?id={aggregate_position_id}&account_number={account_number}&source={source}",
+        "reads": ["id", "account_number", "source"],
+        "notes": "Existing aggregate-position close order form."
+      },
+      {
+        "target": "pending_option_order_replace",
+        "route": "robinhood://pending_option_order_replace?id={option_order_id}&account_number={account_number}",
+        "reads": ["id", "account_number"],
+        "notes": "Pending option-order replace flow."
+      },
+      {
+        "target": "pending_option_order_cancel",
+        "route": "robinhood://pending_option_order_cancel?id={option_order_id}&account_number={account_number}",
+        "reads": ["id", "account_number"],
+        "notes": "Pending option-order cancel flow."
+      }
+    ],
     "candidateContractQueryKeys": {
       "expiration": ["expiration", "expiration_date", "expiration_dates"],
       "optionType": ["type", "option_type"],
@@ -33,9 +74,14 @@
         "notes": "Held aggregate option position detail target with account_number query support."
       },
       {
+        "route": "robinhood://option_chain?chain_id={chain_id}&source={source}",
+        "confidence": "observed-android-decompile",
+        "notes": "Closest phone-tappable equivalent after API chain resolution. The external target does not read account_number."
+      },
+      {
         "route": "robinhood://options/chains/{symbol}?account_number={account_number}&expiration_dates={expiration}&type={call_or_put}&side={buy_or_sell}&strike_price={strike}",
         "confidence": "candidate",
-        "notes": "Candidate app-scheme chain shell for unopened contracts; requires device/browser validation."
+        "notes": "Candidate symbol/contract app-scheme chain shell for unopened contracts; not found as a decompiled external target."
       }
     ],
     "evidence": [
@@ -43,12 +89,19 @@
       "api-map/account-context-browser-workflows-2026-06-02.json",
       "ScriptedAlchemy/robinhood-decompiled audit/sources/com/robinhood/android/options/contracts/OptionChainIntentKey.java",
       "ScriptedAlchemy/robinhood-decompiled audit/sources/com/robinhood/android/options/contracts/OptionOrderIntentKey.java",
+      "ScriptedAlchemy/robinhood-decompiled app/sources/com/robinhood/android/optionschain/targets/OptionChainDeeplinkTarget.java",
+      "ScriptedAlchemy/robinhood-decompiled app/sources/com/robinhood/android/optionschain/targets/OptionChainsDeeplinkTarget.java",
+      "ScriptedAlchemy/robinhood-decompiled audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets.java",
+      "ScriptedAlchemy/robinhood-decompiled audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets2.java",
+      "ScriptedAlchemy/robinhood-decompiled audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets3.java",
+      "ScriptedAlchemy/robinhood-decompiled audit/sources/com/robinhood/android/trade/options/targets/OptionOrderTargets4.java",
       "ScriptedAlchemy/robinhood-decompiled audit/sources/com/robinhood/android/options/p208ui/targets/OptionPositionDeeplinkTarget.java",
       "ScriptedAlchemy/robinhood-decompiled audit/sources/com/robinhood/android/options/p208ui/targets/AggregateOptionPositionDeeplinkTarget.java"
     ],
     "cliCommand": "robinhood-cli api-map options-contract-deeplink --account <ACCOUNT_NUMBER> --symbol XBI --expiration 2026-06-26 --type call --side buy --strike 127 --json",
     "warnings": [
       "Only account_number on the web chain shell is browser-observed.",
+      "Android option_chain reads chain_id/source only; it does not parse account_number in the decompiled external target.",
       "Expiration, strike, side, and type URL query keys are candidates, not proven URL state.",
       "Resolve exact option_instrument_id before building any order body.",
       "Live options orders require exact user approval, --live-write, and ROBINHOOD_ALLOW_LIVE_WRITE=1."

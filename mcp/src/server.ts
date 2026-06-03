@@ -235,6 +235,7 @@ server.registerTool(
       optionInstrumentId: z.string().optional(),
       optionPositionId: z.string().optional(),
       aggregatePositionId: z.string().optional(),
+      optionOrderId: z.string().optional(),
       source: z.string().default("robinhood-cli-deeplink")
     })
   },
@@ -251,6 +252,7 @@ server.registerTool(
     optionInstrumentId,
     optionPositionId,
     aggregatePositionId,
+    optionOrderId,
     source
   }) =>
     jsonResponse(
@@ -267,6 +269,7 @@ server.registerTool(
         optionInstrumentId,
         optionPositionId,
         aggregatePositionId,
+        optionOrderId,
         source
       })
     )

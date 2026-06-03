@@ -303,6 +303,7 @@ apiMap
   .option("--option-id <option_instrument_id>", "known Robinhood option instrument id")
   .option("--option-position-id <uuid>", "known held option position id for closing/detail deeplinks")
   .option("--aggregate-position-id <uuid>", "known held aggregate option position id for closing/detail deeplinks")
+  .option("--option-order-id <uuid>", "known pending option order id for cancel/replace deeplinks")
   .option("--source <source>", "deeplink/source marker", "robinhood-cli-deeplink")
   .option("--json", "emit JSON")
   .action(
@@ -319,6 +320,7 @@ apiMap
       optionId?: string;
       optionPositionId?: string;
       aggregatePositionId?: string;
+      optionOrderId?: string;
       source?: string;
       json?: boolean;
     }) => {
@@ -335,6 +337,7 @@ apiMap
         optionInstrumentId: options.optionId,
         optionPositionId: options.optionPositionId,
         aggregatePositionId: options.aggregatePositionId,
+        optionOrderId: options.optionOrderId,
         source: options.source
       });
       if (options.json) {

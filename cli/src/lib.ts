@@ -152,6 +152,7 @@ export interface OptionsContractDeepLinkInput {
   optionInstrumentId?: string;
   optionPositionId?: string;
   aggregatePositionId?: string;
+  optionOrderId?: string;
   source?: string;
 }
 
@@ -171,6 +172,7 @@ export interface OptionsContractDeepLinkPlan {
     optionInstrumentId?: string;
     optionPositionId?: string;
     aggregatePositionId?: string;
+    optionOrderId?: string;
     source: string;
   };
   webDeepLinks: Array<{
@@ -664,13 +666,21 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
     position_effect: positionEffect,
     source
   };
+  const optionInstrumentToken = input.optionInstrumentId || "{option_instrument_id}";
+  const chainIdToken = input.chainId || "{chain_id}";
   const accountChainUrl = webUrl(chainPath, { account_number: input.accountNumber });
   const candidateContractUrl = webUrl(chainPath, contractQuery);
+  const decompiledOptionChainTargetUrl = webUrl("/option_chain", {
+    chain_id: chainIdToken,
+    source
+  });
+  const decompiledOptionChainsTargetUrl = webUrl("/option_chains", {
+    chain_ids: chainIdToken,
+    source
+  });
   const fragment = new URLSearchParams(
     Object.fromEntries(Object.entries(contractQuery).filter((entry): entry is [string, string] => Boolean(entry[1])))
   ).toString();
-  const optionInstrumentToken = input.optionInstrumentId || "{option_instrument_id}";
-  const chainIdToken = input.chainId || "{chain_id}";
   const strategyQuoteUrl = apiUrl("/marketdata/options/strategy/quotes/", {
     ids: optionInstrumentToken,
     ratios: "1",
@@ -684,6 +694,20 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
       url: accountChainUrl,
       confidence: input.accountNumber ? "observed" : "candidate",
       purpose: "Open the Robinhood web options-chain shell with explicit account context."
+    },
+    {
+      id: "android-option-chain-by-chain-id",
+      url: decompiledOptionChainTargetUrl,
+      confidence: "observed",
+      purpose:
+        "Android-decompiled deeplink target for an option chain. Reads chain_id and source only; account_number is not read by this target."
+    },
+    {
+      id: "android-option-chains-by-chain-ids",
+      url: decompiledOptionChainsTargetUrl,
+      confidence: "observed",
+      purpose:
+        "Android-decompiled multi-chain target. Reads comma-separated chain_ids and source; useful after resolving chain ids across symbols."
     },
     {
       id: "options-chain-contract-query-candidate",
@@ -702,6 +726,19 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
 
   const mobileDeepLinks: OptionsContractDeepLinkPlan["mobileDeepLinks"] = [
     {
+      id: "mobile-option-chain-by-chain-id-observed",
+      url: mobileUrl("/option_chain", { chain_id: chainIdToken, source }),
+      confidence: "observed",
+      purpose:
+        "App-scheme route from Android decompile. It opens a chain by chain_id; it does not encode expiration/strike/type/side or account_number."
+    },
+    {
+      id: "mobile-option-chains-by-chain-ids-observed",
+      url: mobileUrl("/option_chains", { chain_ids: chainIdToken, source }),
+      confidence: "observed",
+      purpose: "App-scheme multi-chain route from Android decompile."
+    },
+    {
       id: "mobile-options-chain-shell-candidate",
       url: mobileUrl(`/options/chains/${encodeURIComponent(symbol || "{symbol}")}`, contractQuery),
       confidence: "candidate",
@@ -719,6 +756,17 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
       confidence: "observed",
       purpose: "Open a held aggregate option position; Android decompile reads id and account_number."
     });
+    mobileDeepLinks.push({
+      id: `mobile-option-position-${positionEffect}-order-form-observed`,
+      url: mobileUrl(positionEffect === "close" ? "/option_position_close" : "/option_position_open", {
+        id: input.aggregatePositionId,
+        account_number: input.accountNumber,
+        source
+      }),
+      confidence: "observed",
+      purpose:
+        "Open an option order form from a held aggregate position. Android decompile reads id, account_number, and source."
+    });
   }
   if (input.optionPositionId) {
     mobileDeepLinks.push({
@@ -727,6 +775,28 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
       confidence: "observed",
       purpose: "Open a held option-position detail; Android decompile reads id and show_in_tab."
     });
+  }
+  if (input.optionOrderId) {
+    mobileDeepLinks.push(
+      {
+        id: "mobile-pending-option-order-replace-observed",
+        url: mobileUrl("/pending_option_order_replace", {
+          id: input.optionOrderId,
+          account_number: input.accountNumber
+        }),
+        confidence: "observed",
+        purpose: "Open the replace flow for a pending option order. Android decompile reads id and account_number."
+      },
+      {
+        id: "mobile-pending-option-order-cancel-observed",
+        url: mobileUrl("/pending_option_order_cancel", {
+          id: input.optionOrderId,
+          account_number: input.accountNumber
+        }),
+        confidence: "observed",
+        purpose: "Open the cancel flow for a pending option order. Android decompile reads id and account_number."
+      }
+    );
   }
 
   const apiResolutionSteps: OptionsContractDeepLinkPlan["apiResolutionSteps"] = [
@@ -821,6 +891,7 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
       optionInstrumentId: input.optionInstrumentId,
       optionPositionId: input.optionPositionId,
       aggregatePositionId: input.aggregatePositionId,
+      optionOrderId: input.optionOrderId,
       source
     },
     webDeepLinks,
@@ -832,6 +903,10 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
       side: ["side", "action"],
       strike: ["strike", "strike_price"],
       positionEffect: ["position_effect"],
+      decompiledOptionChainTarget: ["chain_id", "source"],
+      decompiledOptionChainsTarget: ["chain_ids", "source"],
+      decompiledOptionPositionOrderTargets: ["id", "account_number", "source"],
+      decompiledPendingOrderTargets: ["id", "account_number"],
       source: ["source"]
     },
     apiResolutionSteps,
@@ -874,6 +949,7 @@ export function buildOptionsContractDeepLinkPlan(input: OptionsContractDeepLinkI
     warnings: [
       "Dry-run planner only. This command opens nothing and sends no Robinhood order.",
       "Only account_number on the web options-chain shell is browser-observed. Expiration, strike, side, and type query keys are candidate probe keys, not proven URL state.",
+      "Android option_chain external deeplink reads chain_id and source only in the decompiled target; account_number is supported by internal OptionChainIntentKey but not parsed by that external route.",
       "For exact contracts, prefer API resolution: chains -> instruments filtered by expiration/type/strike -> marketdata/options -> strategy quote -> dry-run order body.",
       "Live options orders remain blocked unless exact user approval, --live-write, and ROBINHOOD_ALLOW_LIVE_WRITE=1 are all present.",
       ...riskWarnings("write-mutate")

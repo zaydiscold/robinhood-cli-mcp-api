@@ -23,7 +23,7 @@ This talks to my real, existing Robinhood account. Read and write:
 - **Orders** — equity and options order history, status, placement, and cancellation.
 - **Watchlists** — list, add, remove.
 - **Margin** — status, maintenance requirements, margin balance.
-- **Recurring investments** *(the flagship)* — list, create, edit, pause, resume, and cancel automatic investments.
+- **Recurring investments**  — list, create, edit, pause, resume, and cancel automatic investments.
 
 The differentiator: **this manages the account I already have.** Robinhood's own official agent access ("agentic") is **equity-only** and makes you stand up a separate, isolated portfolio — this drives your *real* one, across **every account**, with the full surface: options, recurring investments, transfers/deposits/withdrawals, dividends, watchlists, and margin. Account management that's a pain through their UI becomes one command here. Full coverage: identify, navigate, and modify across every account; a safe read-only default with a dry-run test mode on every write.
 

@@ -565,7 +565,7 @@ deep math lives in *Options Greeks and Strategy Math* above.
 
 | User intent | Action | Command (verify with `--help`) |
 |-------------|--------|--------------------------------|
-| "What do I own / how are my accounts?" | discover accounts, then read | `brokerage execute "accounts/?default_to_all_accounts=true"`; portfolios/positions per account |
+| "What do I own / how are my accounts?" | discover accounts, then read | `accounts` (lists every account with cash/margin/IRA capabilities; unverified-type accounts flagged conservative); then portfolios/positions per account |
 | "Quote X" / "what's the chain?" | live read | `quote <SYM>`, `options chain <SYM>`, `options expirations <SYM>` |
 | "Best option position" / P&L | ranked read | `options positions` |
 | "Price a spread / iron condor" | dry-run strategy quote | `options strategy-quote <strategy> --account <N> --symbol <S> --expiration <D> --leg ...` |

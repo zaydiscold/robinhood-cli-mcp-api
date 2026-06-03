@@ -1685,6 +1685,108 @@ program
     );
   });
 
+// Account-aware capability reader: lists every account and annotates what each
+// account TYPE can and cannot do, so an agent states constraints (e.g. a cash
+// account cannot roll on margin) before planning a write. Read-only.
+function accountCapabilities(account: Record<string, any>): {
+  canMarginBorrow: boolean;
+  canRollOnMargin: boolean;
+  canNakedShort: boolean;
+  note: string;
+} {
+  const type = String(account?.type ?? "").toLowerCase();
+  const brokType = String(account?.brokerage_account_type ?? "").toLowerCase();
+  const isIra = brokType.includes("ira") || brokType.includes("roth") || type.includes("ira") || type.includes("roth");
+  const isMargin = type === "margin" && !isIra;
+  const isCash = type === "cash" || (!isMargin && !isIra);
+  if (isIra) {
+    return {
+      canMarginBorrow: false,
+      canRollOnMargin: false,
+      canNakedShort: false,
+      note: "IRA: long options, defined-risk spreads, and covered calls only — no margin borrowing and no naked/undefined-risk shorts."
+    };
+  }
+  if (isMargin) {
+    return {
+      canMarginBorrow: true,
+      canRollOnMargin: true,
+      canNakedShort: true,
+      note: "Margin: can borrow, roll, and run spreads/shorts that need buying power. Watch the PDT rule (<$25k equity -> <=3 day trades/5 sessions) and maintenance margin."
+    };
+  }
+  return {
+    canMarginBorrow: false,
+    canRollOnMargin: false,
+    canNakedShort: false,
+    note: "Cash: buy/sell, cash-secured puts, covered calls, and debit spreads only. No margin borrowing, no naked/undefined-risk shorts, and no margin rolls — rolling is limited to closing then re-opening with SETTLED cash (T+1; watch good-faith violations)."
+  };
+}
+
+program
+  .command("accounts")
+  .description("List all accounts with type and account-aware capabilities (cash vs margin vs IRA). Read.")
+  .option("--json", "emit JSON")
+  .action(async (opts: { json?: boolean }) => {
+    // transfer/accounts is the COMPLETE account graph (the plain accounts/ endpoint
+    // under-reports); accounts/?default_to_all_accounts=true carries the real
+    // cash/margin type for the accounts it returns. Merge both, and mark any
+    // account whose type the API does not return as unverified (conservative).
+    const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
+    const graphRows: Record<string, any>[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? (graph as any) : [];
+    const typed = await tryBrokerageGetJson("https://api.robinhood.com/accounts/?default_to_all_accounts=true");
+    const typedRows: Record<string, any>[] = typed.ok && Array.isArray((typed.data as any)?.results) ? (typed.data as any).results : [];
+    const typeByNum = new Map<string, Record<string, any>>();
+    for (const a of typedRows) if (a?.account_number) typeByNum.set(String(a.account_number), a);
+
+    const brokerage = graphRows.filter((r) => {
+      const t = String(r?.type ?? "").toLowerCase();
+      return !r?.is_external && t !== "ach" && Boolean(r?.account_number);
+    });
+    const rows = brokerage.map((g) => {
+      const num = String(g.account_number);
+      const transferType = String(g?.type ?? "").toLowerCase(); // rhs | ira_roth | ...
+      const isIra = transferType.includes("ira") || transferType.includes("roth");
+      const detail = typeByNum.get(num) ?? {};
+      const realType = String(detail.type ?? "").toLowerCase(); // cash | margin (when present)
+      const verified = isIra || realType === "cash" || realType === "margin";
+      const acct: Record<string, any> = { ...detail };
+      if (isIra) acct.brokerage_account_type = "ira_roth";
+      const caps = accountCapabilities(acct);
+      const cls = isIra ? "ira" : realType || "unverified";
+      return {
+        accountNumber: num,
+        class: cls,
+        verified,
+        nickname: g.account_name ?? g.display_title,
+        portfolioCash: detail.portfolio_cash,
+        buyingPower: detail.buying_power,
+        canMarginBorrow: verified ? caps.canMarginBorrow : false,
+        canRollOnMargin: verified ? caps.canRollOnMargin : false,
+        canNakedShort: verified ? caps.canNakedShort : false,
+        capabilityNote: verified
+          ? caps.note
+          : "Type not returned by the accounts endpoint — treat conservatively (no margin/roll/naked) until verified via the web UI or accounts/?default_to_all_accounts=true."
+      };
+    });
+    if (opts.json) {
+      printJson(rows);
+      return;
+    }
+    printTable(
+      rows.map((row) => ({
+        account: row.accountNumber,
+        class: row.class,
+        cash: usd(num(row.portfolioCash)),
+        margin: row.canMarginBorrow ? "yes" : "no",
+        roll: row.canRollOnMargin ? "yes" : "no",
+        naked: row.canNakedShort ? "yes" : "no"
+      })),
+      ["account", "class", "cash", "margin", "roll", "naked"]
+    );
+    for (const row of rows) process.stdout.write(`\n${row.accountNumber} (${row.class}): ${row.capabilityNote}\n`);
+  });
+
 const stock = new Command("stock").description("Stock/ETF detail reads from Robinhood stock pages");
 
 stock

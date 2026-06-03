@@ -4,8 +4,8 @@ Source: reverse-engineered routes plus sanitized authenticated Chrome/CDP captur
 
 Personal repo semantics: mapped routes can be executed live with caller-owned `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE`. Pass `--dry-run` when you want a non-sending test plan.
 
-Current count: 259 route templates.
-Risk counts: destructive=4, read=66, sensitive-read=176, write-mutate=1, write-or-sensitive=8, write-safe=4.
+Current count: 285 route templates.
+Risk counts: destructive=12, read=71, sensitive-read=188, write-mutate=4, write-or-sensitive=6, write-safe=4.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -22,10 +22,13 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/accounts/sweeps/interest/` |
 | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/accounts/sweeps/timeline_summary/` |
 | read | inferred | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/received/transfers/` |
-| write-or-sensitive | inferred | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/relationships/` |
-| write-or-sensitive | inferred | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/relationships/{0}/` |
-| destructive | inferred | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/relationships/{0}/unlink/` |
-| write-or-sensitive | inferred | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/transfers/` |
+| sensitive-read | GET | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/relationships/` |
+| write-or-sensitive | POST | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/relationships/` |
+| sensitive-read | GET | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/relationships/{0}/` |
+| destructive | DELETE | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/relationships/{0}/` |
+| destructive | POST | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/relationships/{0}/unlink/` |
+| sensitive-read | GET | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/transfers/` |
+| write-or-sensitive | POST | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/ach/transfers/` |
 | sensitive-read | GET | money-movement | api.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/banking/cross-sell/creditcard/applications/{uuid}` |
 | sensitive-read | GET | unknown | api.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/bw/config` |
 | read | GET | account, history-documents | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/cash_journal/margin_interest_charges/` |
@@ -42,15 +45,12 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | read | inferred | auth | api.robinhood.com | community-seed | `https://api.robinhood.com/challenge/{0}/respond/` |
 | sensitive-read | GET | orders | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/combo/orders/` |
 | sensitive-read | GET | history-documents | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/corp_actions/adr_fees/` |
-| sensitive-read | GET | history-documents | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/corp_actions/drip/enrollment/{num}/` |
+| sensitive-read | GET | dividends | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/corp_actions/drip/enrollment/{num}/` |
+| write-or-sensitive | PATCH | dividends | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/corp_actions/drip/enrollment/{num}/` |
 | sensitive-read | GET | history-documents | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/corp_actions/v2/split_payments/` |
 | sensitive-read | GET | account, money-movement | api.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/crypto-transfers/account/` |
 | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/devices/` |
 | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/devices/disable_remove_device/` |
-| sensitive-read | GET | watchlists | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/discovery/lists/` |
-| sensitive-read | GET | watchlists | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/discovery/lists/default/` |
-| sensitive-read | GET | watchlists | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/discovery/lists/items/` |
-| sensitive-read | GET | watchlists | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/discovery/lists/user_items/` |
 | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/discovery/ratings/{id}/overview/` |
 | sensitive-read | GET | history-documents | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/dividends/` |
 | sensitive-read | GET | history-documents | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/documents/` |
@@ -92,6 +92,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/marketdata/historicals/{id}/` |
 | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/marketdata/insiders/summary/{id}/` |
 | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/marketdata/insiders/transactions/{id}/` |
+| read | GET | marketdata, options | api.robinhood.com | self-extension 2026-05-28: templated ids= form of marketdata/options for single/batch option mark (adjusted_mark_price) lookup; ids key from captured queryKeys | `https://api.robinhood.com/marketdata/options/?ids={ids}` |
 | read | GET | marketdata, options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/marketdata/options/` |
 | read | inferred | marketdata, options | api.robinhood.com | community-seed | `https://api.robinhood.com/marketdata/options/historicals/{0}/` |
 | read | GET | marketdata, options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/marketdata/options/strategy/quotes/` |
@@ -131,13 +132,13 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | read | GET | marketdata, options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/options/instruments/` |
 | read | inferred | marketdata, options | api.robinhood.com | community-seed | `https://api.robinhood.com/options/instruments/{0}/` |
 | sensitive-read | GET | options, orders | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/options/orders/` |
-| destructive | inferred | options, orders | api.robinhood.com | community-seed | `https://api.robinhood.com/options/orders/{0}/cancel/` |
+| destructive | POST | options, orders | api.robinhood.com | wire-writes 2026-05-29 | `https://api.robinhood.com/options/orders/{0}/cancel/` |
 | sensitive-read | inferred | account, options | api.robinhood.com | community-seed | `https://api.robinhood.com/options/positions/` |
 | sensitive-read | GET | account, options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/options/positions/?account_numbers=` |
 | sensitive-read | GET | options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized | `https://api.robinhood.com/options/should_show_options_upgrade_on_sdp/` |
 | sensitive-read | GET | options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/options/strategies/` |
 | sensitive-read | GET | orders | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/orders/` |
-| destructive | inferred | orders | api.robinhood.com | community-seed | `https://api.robinhood.com/orders/{0}/cancel/` |
+| destructive | POST | orders | api.robinhood.com | wire-writes 2026-05-29 | `https://api.robinhood.com/orders/{0}/cancel/` |
 | sensitive-read | GET | orders | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/orders/session/` |
 | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/pathfinder/concierge/plus/status/` |
 | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/pathfinder/issues/` |
@@ -148,6 +149,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | inferred | account | api.robinhood.com | community-seed | `https://api.robinhood.com/portfolios/historicals/{0}/` |
 | sensitive-read | inferred | account | api.robinhood.com | community-seed | `https://api.robinhood.com/positions/` |
 | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/positions/?account_number=` |
+| sensitive-read | GET | account | api.robinhood.com | self-extension 2026-05-28: templated account_number form so any account (individual, Roth/IRA, etc.) can be queried, not just primary; placeholder filled via --param | `https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true` |
 | read | inferred | marketdata | api.robinhood.com | community-seed | `https://api.robinhood.com/quotes/` |
 | read | inferred | marketdata | api.robinhood.com | community-seed | `https://api.robinhood.com/quotes/historicals/` |
 | sensitive-read | GET | unknown | api.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/settings/education_state/{id}/` |
@@ -211,7 +213,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/p2p/treatment/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/payment_instruments/v2/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/payment_instruments/v2/debitcard/{uuid}/` |
-| write-or-sensitive | GET | money-movement, unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/paymenthub/unified_transfers/` |
+| sensitive-read | GET | money-movement, unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/paymenthub/unified_transfers/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/paymenthub/unified_transfers/{uuid}/contribution/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/portfolio/{id}/positions_v2` |
 | sensitive-read | GET | money-movement | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/portfolio/acats/bonus-promo-info/` |
@@ -265,8 +267,32 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | GET | unknown | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://nummus.robinhood.com/activations/` |
 | read | GET | marketdata, unknown | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://nummus.robinhood.com/currency_pairs/` |
 | read | GET | unknown | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://nummus.robinhood.com/holdings/` |
-| write-or-sensitive | GET | orders | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://nummus.robinhood.com/orders/` |
-| write-or-sensitive | inferred | orders | nummus.robinhood.com | community-seed | `https://nummus.robinhood.com/orders/{0}/` |
-| destructive | inferred | orders | nummus.robinhood.com | community-seed | `https://nummus.robinhood.com/orders/{0}/cancel/` |
+| sensitive-read | GET | orders | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://nummus.robinhood.com/orders/` |
+| write-mutate | POST | orders | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://nummus.robinhood.com/orders/` |
+| sensitive-read | GET | orders | nummus.robinhood.com | community-seed | `https://nummus.robinhood.com/orders/{0}/` |
+| destructive | POST | orders | nummus.robinhood.com | wire-writes 2026-05-29 | `https://nummus.robinhood.com/orders/{0}/cancel/` |
 | sensitive-read | GET | account | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://nummus.robinhood.com/portfolios/{uuid}/` |
 | sensitive-read | inferred | account | phoenix.robinhood.com | community-seed | `https://phoenix.robinhood.com/accounts/unified` |
+| write-mutate | POST | account, equity, trading | api.robinhood.com | self-extension 2026-05-28: equity order PLACEMENT (POST). Map was capture-built from reads only and lacked it; needed to place/manage stock orders. Double-gated via --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1. | `https://api.robinhood.com/orders/` |
+| write-mutate | POST | account, options, trading | api.robinhood.com | self-extension 2026-05-28: options order PLACEMENT (POST). Same reason as equity orders; supports legs[] for single/multi-leg. Double-gated. | `https://api.robinhood.com/options/orders/` |
+| read | GET | instruments, reference | api.robinhood.com | self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes | `https://api.robinhood.com/instruments/?ids={ids}` |
+| read | GET | marketdata, quotes | api.robinhood.com | self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes | `https://api.robinhood.com/marketdata/quotes/?ids={ids}` |
+| read | GET | instruments, reference | api.robinhood.com | self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution | `https://api.robinhood.com/instruments/?symbol={symbol}` |
+| read | GET | options, instruments, reference | api.robinhood.com | self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id | `https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}` |
+| sensitive-read | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/` |
+| sensitive-read | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/default/` |
+| sensitive-read | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/items/` |
+| sensitive-read | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/user_items/` |
+| sensitive-read | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/{0}/` |
+| destructive | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/` |
+| destructive | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/{0}/` |
+| destructive | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/{0}/` |
+| sensitive-read | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/?owner_type=custom` |
+| sensitive-read | GET | watchlists | api.robinhood.com | manual | `https://api.robinhood.com/discovery/lists/?owner_type=custom` |
+| destructive | PATCH,DELETE | watchlists | api.robinhood.com | manual | `https://api.robinhood.com/discovery/lists/{id}/` |
+| destructive | POST | watchlists | api.robinhood.com | manual | `https://api.robinhood.com/discovery/lists/` |
+| destructive | PATCH,DELETE | recurring | bonfire.robinhood.com | wire-writes 2026-05-29 | `https://bonfire.robinhood.com/recurring_schedules/{0}/` |
+| destructive | POST | recurring | bonfire.robinhood.com | wire-writes 2026-05-29 | `https://bonfire.robinhood.com/recurring_schedules/` |
+| sensitive-read | GET | recurring | bonfire.robinhood.com | fix-recurring-read-gate 2026-05-29 | `https://bonfire.robinhood.com/recurring_schedules/{0}/` |
+| sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-28-account-section-unique; agent-added-2026-06-02 | `https://api.robinhood.com/robinhood/agentic/` |
+| write-or-sensitive | PATCH | account | api.robinhood.com | cdp-2026-05-28-account-section-unique; agent-added-2026-06-02 | `https://api.robinhood.com/robinhood/agentic/` |

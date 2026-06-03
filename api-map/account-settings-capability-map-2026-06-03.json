@@ -1,0 +1,134 @@
+{
+  "generatedAt": "2026-06-03",
+  "purpose": "Machine-readable account-page capability map for CLI, MCP, and skill usage.",
+  "liveMutationSent": false,
+  "surfaces": [
+    {
+      "id": "account-enumeration",
+      "support": "live-read",
+      "firstClass": false,
+      "routes": [
+        "https://bonfire.robinhood.com/transfer/accounts/",
+        "https://api.robinhood.com/accounts/?default_to_all_accounts=true"
+      ],
+      "mcp": ["robinhood_brokerage_execute"],
+      "notes": "Use transfer/accounts as the complete account graph before per-account reads."
+    },
+    {
+      "id": "funding-deposit-withdraw",
+      "support": "route-map-read-and-dry-run-write",
+      "firstClass": false,
+      "routes": [
+        "https://api.robinhood.com/ach/relationships/",
+        "https://api.robinhood.com/ach/relationships/{0}/",
+        "https://api.robinhood.com/ach/relationships/{0}/unlink/",
+        "https://api.robinhood.com/ach/transfers/",
+        "https://cashier.robinhood.com/ach/relationships/",
+        "https://cashier.robinhood.com/ach/deposit_schedules/",
+        "https://bonfire.robinhood.com/payment_instruments/v2/",
+        "https://bonfire.robinhood.com/paymenthub/unified_transfers/"
+      ],
+      "mcp": ["robinhood_brokerage_routes", "robinhood_brokerage_plan", "robinhood_brokerage_execute"],
+      "notes": "Money-movement writes are high-risk. Fresh body capture and exact approval required before live use."
+    },
+    {
+      "id": "recurring-investments",
+      "support": "first-class-read-pause-resume",
+      "firstClass": true,
+      "commands": ["recurring list", "recurring pause", "recurring resume"],
+      "routes": [
+        "https://bonfire.robinhood.com/recurring_schedules/",
+        "https://bonfire.robinhood.com/recurring_schedules/{0}/",
+        "https://bonfire.robinhood.com/recurring_schedules/equity/next_investment_date/",
+        "https://bonfire.robinhood.com/recurring_tradability/equity/{uuid}/"
+      ],
+      "mcp": ["robinhood_brokerage_execute"],
+      "notes": "Create/edit amount/funding-source is route-map research until a fresh body capture verifies the payload."
+    },
+    {
+      "id": "dividend-reinvestment-drip",
+      "support": "route-map-read-and-dry-run-write",
+      "firstClass": false,
+      "routes": [
+        "GET https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
+        "PATCH https://api.robinhood.com/corp_actions/drip/enrollment/{num}/"
+      ],
+      "mcp": ["robinhood_brokerage_plan", "robinhood_brokerage_execute"],
+      "notes": "PATCH body is {\"drip_enrolled\": true|false}; verify with follow-up GET after live use."
+    },
+    {
+      "id": "high-yield-cash-sweep",
+      "support": "live-read-only",
+      "firstClass": false,
+      "routes": [
+        "https://api.robinhood.com/accounts/sweeps/",
+        "https://api.robinhood.com/accounts/sweeps/interest/",
+        "https://api.robinhood.com/accounts/sweeps/timeline_summary/",
+        "https://bonfire.robinhood.com/gold/sweep_flow_splash/"
+      ],
+      "mcp": ["robinhood_brokerage_execute"],
+      "notes": "Enable/disable route not proven in current map."
+    },
+    {
+      "id": "stock-lending",
+      "support": "live-read-only",
+      "firstClass": false,
+      "routes": ["https://api.robinhood.com/accounts/stock_loan_payments/"],
+      "browserRoutes": ["https://robinhood.com/account/stock-lending?account_number=<ACCOUNT_NUMBER>"],
+      "mcp": ["robinhood_brokerage_execute"],
+      "notes": "Enable/disable route not proven in current map."
+    },
+    {
+      "id": "options-trading-settings",
+      "support": "trading-first-class-settings-browser-observed",
+      "firstClass": true,
+      "routes": [
+        "https://api.robinhood.com/options/chains/",
+        "https://api.robinhood.com/options/orders/",
+        "https://api.robinhood.com/options/positions/",
+        "https://api.robinhood.com/options/aggregate_positions/"
+      ],
+      "mcp": ["robinhood_options_strategy_plan", "robinhood_brokerage_execute"],
+      "notes": "Order placement/cancel dry-runs are hardened. Options-level/remove-options settings need fresh mutation capture."
+    },
+    {
+      "id": "futures-trading",
+      "support": "live-read-only",
+      "firstClass": false,
+      "routes": [
+        "https://api.robinhood.com/ceres/v1/futures_account_eligibility/{num}",
+        "https://api.robinhood.com/ceres/v1/accounts",
+        "https://api.robinhood.com/ceres/v1/accounts/{id}/orders",
+        "https://api.robinhood.com/ceres/v1/user_settings"
+      ],
+      "mcp": ["robinhood_brokerage_execute"],
+      "notes": "Enable/disable route not proven in current map."
+    },
+    {
+      "id": "event-contracts",
+      "support": "live-read-only",
+      "firstClass": false,
+      "routes": [
+        "https://api.robinhood.com/options/events/",
+        "https://bonfire.robinhood.com/instruments/{uuid}/qa/event-info/",
+        "https://bonfire.robinhood.com/instruments/{uuid}/qa/events-section/"
+      ],
+      "mcp": ["robinhood_brokerage_execute"],
+      "notes": "Trading enable/disable route not proven in current map."
+    },
+    {
+      "id": "account-type-margin",
+      "support": "live-read-only",
+      "firstClass": false,
+      "routes": [
+        "https://api.robinhood.com/margin/{num}/upgrade_restrictions",
+        "https://bonfire.robinhood.com/margin/{id}/settings/",
+        "https://bonfire.robinhood.com/margin/{id}/eligibility",
+        "https://bonfire.robinhood.com/margin/{id}/investing_info/",
+        "https://bonfire.robinhood.com/margin/{id}/buying_power_hub_view"
+      ],
+      "mcp": ["robinhood_brokerage_execute"],
+      "notes": "Switching cash/margin or editing margin investing is not first-class until a mutation route/body is captured."
+    }
+  ]
+}

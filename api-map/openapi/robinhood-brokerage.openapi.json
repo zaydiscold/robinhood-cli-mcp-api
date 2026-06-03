@@ -32,8 +32,20 @@
       "description": "Auth routes from the brokerage route map."
     },
     {
+      "name": "dividends",
+      "description": "Dividends routes from the brokerage route map."
+    },
+    {
+      "name": "equity",
+      "description": "Equity routes from the brokerage route map."
+    },
+    {
       "name": "history-documents",
       "description": "History Documents routes from the brokerage route map."
+    },
+    {
+      "name": "instruments",
+      "description": "Instruments routes from the brokerage route map."
     },
     {
       "name": "marketdata",
@@ -56,8 +68,28 @@
       "description": "Orders routes from the brokerage route map."
     },
     {
+      "name": "quotes",
+      "description": "Quotes routes from the brokerage route map."
+    },
+    {
+      "name": "recurring",
+      "description": "Recurring routes from the brokerage route map."
+    },
+    {
+      "name": "reference",
+      "description": "Reference routes from the brokerage route map."
+    },
+    {
       "name": "telemetry-config",
       "description": "Telemetry Config routes from the brokerage route map."
+    },
+    {
+      "name": "trading",
+      "description": "Trading routes from the brokerage route map."
+    },
+    {
+      "name": "uncategorized",
+      "description": "Uncategorized routes from the brokerage route map."
     },
     {
       "name": "unknown",
@@ -1027,13 +1059,16 @@
         },
         "x-robinhood-risk": "sensitive-read",
         "x-robinhood-hosts": [
+          "api.robinhood.com",
           "cashier.robinhood.com"
         ],
         "x-robinhood-route-templates": [
+          "https://api.robinhood.com/ach/relationships/",
           "https://cashier.robinhood.com/ach/relationships/"
         ],
         "x-robinhood-sources": [
-          "cdp-2026-05-27-stock-account-sanitized"
+          "cdp-2026-05-27-stock-account-sanitized",
+          "community-seed"
         ],
         "x-robinhood-seen-on": [
           "account-transfers"
@@ -1071,10 +1106,10 @@
       }
     },
     "/ach/relationships/{param_0}/": {
-      "post": {
-        "operationId": "brokerage_post_ach_relationships_param_0",
+      "delete": {
+        "operationId": "brokerage_delete_ach_relationships_param_0",
         "summary": "Money Movement brokerage route",
-        "description": "Personal route map entry. Risk: write-or-sensitive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "description": "Personal route map entry. Risk: destructive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
           "money-movement"
         ],
@@ -1099,7 +1134,47 @@
             }
           }
         },
-        "x-robinhood-risk": "write-or-sensitive",
+        "x-robinhood-risk": "destructive",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/ach/relationships/{0}/"
+        ],
+        "x-robinhood-sources": [
+          "community-seed"
+        ],
+        "x-robinhood-seen-on": []
+      },
+      "get": {
+        "operationId": "brokerage_get_ach_relationships_param_0",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [
+          {
+            "name": "param_0",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder param_0. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
         "x-robinhood-hosts": [
           "api.robinhood.com"
         ],
@@ -1155,6 +1230,36 @@
       }
     },
     "/ach/transfers/": {
+      "get": {
+        "operationId": "brokerage_get_ach_transfers",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/ach/transfers/"
+        ],
+        "x-robinhood-sources": [
+          "community-seed"
+        ],
+        "x-robinhood-seen-on": []
+      },
       "post": {
         "operationId": "brokerage_post_ach_transfers",
         "summary": "Money Movement brokerage route",
@@ -2553,10 +2658,10 @@
     "/corp_actions/drip/enrollment/{num}/": {
       "get": {
         "operationId": "brokerage_get_corp_actions_drip_enrollment_num",
-        "summary": "History Documents brokerage route",
+        "summary": "Dividends brokerage route",
         "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
-          "history-documents"
+          "dividends"
         ],
         "parameters": [
           {
@@ -2580,6 +2685,49 @@
           }
         },
         "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/"
+        ],
+        "x-robinhood-sources": [
+          "cdp-2026-05-26-stock-account-sanitized",
+          "cdp-2026-05-27-stock-account-sanitized"
+        ],
+        "x-robinhood-seen-on": [
+          "account-root"
+        ]
+      },
+      "patch": {
+        "operationId": "brokerage_patch_corp_actions_drip_enrollment_num",
+        "summary": "Dividends brokerage route",
+        "description": "Personal route map entry. Risk: write-or-sensitive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "dividends"
+        ],
+        "parameters": [
+          {
+            "name": "num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder num. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "write-or-sensitive",
         "x-robinhood-hosts": [
           "api.robinhood.com"
         ],
@@ -3081,24 +3229,6 @@
         ],
         "parameters": [
           {
-            "name": "object_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
-          },
-          {
-            "name": "object_type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
-          },
-          {
             "name": "owner_type",
             "in": "query",
             "required": false,
@@ -3123,30 +3253,221 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
+          "https://api.robinhood.com/discovery/lists/",
+          "https://api.robinhood.com/discovery/lists/?owner_type=custom",
+          "https://api.robinhood.com/discovery/lists/?owner_type=custom"
+        ],
+        "x-robinhood-sources": [
+          "community-seed",
+          "manual"
+        ],
+        "x-robinhood-seen-on": []
+      },
+      "post": {
+        "operationId": "brokerage_post_discovery_lists",
+        "summary": "Watchlists brokerage route",
+        "description": "Personal route map entry. Risk: destructive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "watchlists"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "destructive",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/discovery/lists/",
           "https://api.robinhood.com/discovery/lists/"
         ],
         "x-robinhood-sources": [
-          "cdp-2026-05-26-stock-account-sanitized",
-          "cdp-2026-05-27-stock-account-sanitized"
+          "community-seed",
+          "manual"
         ],
-        "x-robinhood-seen-on": [
-          "crypto-btc",
-          "etf-qqq",
-          "etf-spy",
-          "stock-aapl",
-          "stock-hood",
-          "stock-nvda",
-          "stock-tsla"
-        ]
+        "x-robinhood-seen-on": []
+      }
+    },
+    "/discovery/lists/{id}/": {
+      "delete": {
+        "operationId": "brokerage_delete_discovery_lists_id",
+        "summary": "Watchlists brokerage route",
+        "description": "Personal route map entry. Risk: destructive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "watchlists"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "destructive",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/discovery/lists/{id}/"
+        ],
+        "x-robinhood-sources": [
+          "manual"
+        ],
+        "x-robinhood-seen-on": []
+      },
+      "patch": {
+        "operationId": "brokerage_patch_discovery_lists_id",
+        "summary": "Watchlists brokerage route",
+        "description": "Personal route map entry. Risk: destructive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "watchlists"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "destructive",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/discovery/lists/{id}/"
+        ],
+        "x-robinhood-sources": [
+          "manual"
+        ],
+        "x-robinhood-seen-on": []
+      }
+    },
+    "/discovery/lists/{param_0}/": {
+      "get": {
+        "operationId": "brokerage_get_discovery_lists_param_0",
+        "summary": "Uncategorized brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "uncategorized"
+        ],
+        "parameters": [
+          {
+            "name": "param_0",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder param_0. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/discovery/lists/{0}/"
+        ],
+        "x-robinhood-sources": [
+          "community-seed"
+        ],
+        "x-robinhood-seen-on": []
+      },
+      "post": {
+        "operationId": "brokerage_post_discovery_lists_param_0",
+        "summary": "Uncategorized brokerage route",
+        "description": "Personal route map entry. Risk: destructive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "uncategorized"
+        ],
+        "parameters": [
+          {
+            "name": "param_0",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder param_0. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "destructive",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/discovery/lists/{0}/",
+          "https://api.robinhood.com/discovery/lists/{0}/"
+        ],
+        "x-robinhood-sources": [
+          "community-seed"
+        ],
+        "x-robinhood-seen-on": []
       }
     },
     "/discovery/lists/default/": {
       "get": {
         "operationId": "brokerage_get_discovery_lists_default",
-        "summary": "Watchlists brokerage route",
+        "summary": "Uncategorized brokerage route",
         "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
-          "watchlists"
+          "uncategorized"
         ],
         "parameters": [],
         "responses": {
@@ -3167,49 +3488,20 @@
           "https://api.robinhood.com/discovery/lists/default/"
         ],
         "x-robinhood-sources": [
-          "cdp-2026-05-26-stock-account-sanitized",
-          "cdp-2026-05-27-stock-account-sanitized"
+          "community-seed"
         ],
-        "x-robinhood-seen-on": [
-          "crypto-btc",
-          "etf-qqq",
-          "etf-spy",
-          "portfolio-home",
-          "stock-aapl",
-          "stock-hood",
-          "stock-nvda",
-          "stock-tsla"
-        ]
+        "x-robinhood-seen-on": []
       }
     },
     "/discovery/lists/items/": {
       "get": {
         "operationId": "brokerage_get_discovery_lists_items",
-        "summary": "Watchlists brokerage route",
+        "summary": "Uncategorized brokerage route",
         "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
-          "watchlists"
+          "uncategorized"
         ],
-        "parameters": [
-          {
-            "name": "list_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
-          },
-          {
-            "name": "load_all_attributes",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
             "description": "Response shape not yet live-verified.",
@@ -3228,21 +3520,18 @@
           "https://api.robinhood.com/discovery/lists/items/"
         ],
         "x-robinhood-sources": [
-          "cdp-2026-05-26-stock-account-sanitized",
-          "cdp-2026-05-27-stock-account-sanitized"
+          "community-seed"
         ],
-        "x-robinhood-seen-on": [
-          "portfolio-home"
-        ]
+        "x-robinhood-seen-on": []
       }
     },
     "/discovery/lists/user_items/": {
       "get": {
         "operationId": "brokerage_get_discovery_lists_user_items",
-        "summary": "Watchlists brokerage route",
+        "summary": "Uncategorized brokerage route",
         "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
-          "watchlists"
+          "uncategorized"
         ],
         "parameters": [],
         "responses": {
@@ -3263,19 +3552,9 @@
           "https://api.robinhood.com/discovery/lists/user_items/"
         ],
         "x-robinhood-sources": [
-          "cdp-2026-05-26-stock-account-sanitized",
-          "cdp-2026-05-27-stock-account-sanitized"
+          "community-seed"
         ],
-        "x-robinhood-seen-on": [
-          "crypto-btc",
-          "etf-qqq",
-          "etf-spy",
-          "portfolio-home",
-          "stock-aapl",
-          "stock-hood",
-          "stock-nvda",
-          "stock-tsla"
-        ]
+        "x-robinhood-seen-on": []
       }
     },
     "/discovery/ratings/{id}/overview/": {
@@ -4977,10 +5256,12 @@
     "/instruments/": {
       "get": {
         "operationId": "brokerage_get_instruments",
-        "summary": "Marketdata brokerage route",
+        "summary": "Instruments brokerage route",
         "description": "Personal route map entry. Risk: read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
-          "marketdata"
+          "instruments",
+          "marketdata",
+          "reference"
         ],
         "parameters": [
           {
@@ -5026,11 +5307,15 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
-          "https://api.robinhood.com/instruments/"
+          "https://api.robinhood.com/instruments/",
+          "https://api.robinhood.com/instruments/?ids={ids}",
+          "https://api.robinhood.com/instruments/?symbol={symbol}"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
-          "cdp-2026-05-27-stock-account-sanitized"
+          "cdp-2026-05-27-stock-account-sanitized",
+          "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
+          "self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution"
         ],
         "x-robinhood-seen-on": [
           "account-history",
@@ -7258,14 +7543,18 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
+          "https://api.robinhood.com/marketdata/options/?ids={ids}",
           "https://api.robinhood.com/marketdata/options/"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
-          "cdp-2026-05-27-stock-account-sanitized"
+          "cdp-2026-05-27-stock-account-sanitized",
+          "ids key from captured queryKeys",
+          "self-extension 2026-05-28: templated ids= form of marketdata/options for single/batch option mark (adjusted_mark_price) lookup"
         ],
         "x-robinhood-seen-on": [
           "portfolio-home",
+          "portfolio-options",
           "stock-aapl",
           "stock-nvda",
           "stock-tsla"
@@ -7397,7 +7686,8 @@
         "summary": "Marketdata brokerage route",
         "description": "Personal route map entry. Risk: read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
-          "marketdata"
+          "marketdata",
+          "quotes"
         ],
         "parameters": [
           {
@@ -7452,11 +7742,13 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
-          "https://api.robinhood.com/marketdata/quotes/"
+          "https://api.robinhood.com/marketdata/quotes/",
+          "https://api.robinhood.com/marketdata/quotes/?ids={ids}"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
-          "cdp-2026-05-27-stock-account-sanitized"
+          "cdp-2026-05-27-stock-account-sanitized",
+          "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes"
         ],
         "x-robinhood-seen-on": [
           "account-root",
@@ -8984,15 +9276,53 @@
     "/options/instruments/": {
       "get": {
         "operationId": "brokerage_get_options_instruments",
-        "summary": "Marketdata brokerage route",
+        "summary": "Instruments brokerage route",
         "description": "Personal route map entry. Risk: read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
+          "instruments",
           "marketdata",
-          "options"
+          "options",
+          "reference"
         ],
         "parameters": [
           {
+            "name": "chain_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "expiration_dates",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
             "name": "ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "type",
             "in": "query",
             "required": false,
             "schema": {
@@ -9016,11 +9346,13 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
-          "https://api.robinhood.com/options/instruments/"
+          "https://api.robinhood.com/options/instruments/",
+          "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
-          "cdp-2026-05-27-stock-account-sanitized"
+          "cdp-2026-05-27-stock-account-sanitized",
+          "self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id"
         ],
         "x-robinhood-seen-on": [
           "account-history",
@@ -9151,6 +9483,39 @@
           "stock-nvda",
           "stock-tsla"
         ]
+      },
+      "post": {
+        "operationId": "brokerage_post_options_orders",
+        "summary": "Account brokerage route",
+        "description": "Personal route map entry. Risk: write-mutate. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "account",
+          "options",
+          "trading"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "write-mutate",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/options/orders/"
+        ],
+        "x-robinhood-sources": [
+          "self-extension 2026-05-28: options order PLACEMENT (POST). Same reason as equity orders",
+          "supports legs[] for single/multi-leg. Double-gated."
+        ],
+        "x-robinhood-seen-on": []
       }
     },
     "/options/orders/{param_0}/cancel/": {
@@ -9191,7 +9556,7 @@
           "https://api.robinhood.com/options/orders/{0}/cancel/"
         ],
         "x-robinhood-sources": [
-          "community-seed"
+          "wire-writes 2026-05-29"
         ],
         "x-robinhood-seen-on": []
       }
@@ -9371,7 +9736,7 @@
       "get": {
         "operationId": "brokerage_get_orders",
         "summary": "Orders brokerage route",
-        "description": "Personal route map entry. Risk: write-or-sensitive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
           "orders"
         ],
@@ -9450,7 +9815,7 @@
             }
           }
         },
-        "x-robinhood-risk": "write-or-sensitive",
+        "x-robinhood-risk": "sensitive-read",
         "x-robinhood-hosts": [
           "api.robinhood.com",
           "nummus.robinhood.com"
@@ -9474,13 +9839,90 @@
           "stock-nvda",
           "stock-tsla"
         ]
+      },
+      "post": {
+        "operationId": "brokerage_post_orders",
+        "summary": "Account brokerage route",
+        "description": "Personal route map entry. Risk: write-mutate. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "account",
+          "equity",
+          "orders",
+          "trading"
+        ],
+        "parameters": [
+          {
+            "name": "account_numbers",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "currency_pair_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "state_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "write-mutate",
+        "x-robinhood-hosts": [
+          "api.robinhood.com",
+          "nummus.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://nummus.robinhood.com/orders/",
+          "https://api.robinhood.com/orders/"
+        ],
+        "x-robinhood-sources": [
+          "cdp-2026-05-27-stock-account-sanitized",
+          "needed to place/manage stock orders. Double-gated via --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+          "self-extension 2026-05-28: equity order PLACEMENT (POST). Map was capture-built from reads only and lacked it"
+        ],
+        "x-robinhood-seen-on": [
+          "account-history",
+          "crypto-btc"
+        ]
       }
     },
     "/orders/{param_0}/": {
-      "post": {
-        "operationId": "brokerage_post_orders_param_0",
+      "get": {
+        "operationId": "brokerage_get_orders_param_0",
         "summary": "Orders brokerage route",
-        "description": "Personal route map entry. Risk: write-or-sensitive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
           "orders"
         ],
@@ -9505,7 +9947,7 @@
             }
           }
         },
-        "x-robinhood-risk": "write-or-sensitive",
+        "x-robinhood-risk": "sensitive-read",
         "x-robinhood-hosts": [
           "nummus.robinhood.com"
         ],
@@ -9557,7 +9999,7 @@
           "https://nummus.robinhood.com/orders/{0}/cancel/"
         ],
         "x-robinhood-sources": [
-          "community-seed"
+          "wire-writes 2026-05-29"
         ],
         "x-robinhood-seen-on": []
       }
@@ -9907,7 +10349,7 @@
       "get": {
         "operationId": "brokerage_get_paymenthub_unified_transfers",
         "summary": "Money Movement brokerage route",
-        "description": "Personal route map entry. Risk: write-or-sensitive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
         "tags": [
           "money-movement",
           "unknown"
@@ -9933,7 +10375,7 @@
             }
           }
         },
-        "x-robinhood-risk": "write-or-sensitive",
+        "x-robinhood-risk": "sensitive-read",
         "x-robinhood-hosts": [
           "bonfire.robinhood.com"
         ],
@@ -10587,12 +11029,15 @@
         ],
         "x-robinhood-route-templates": [
           "https://api.robinhood.com/positions/",
-          "https://api.robinhood.com/positions/?account_number="
+          "https://api.robinhood.com/positions/?account_number=",
+          "https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
           "cdp-2026-05-27-stock-account-sanitized",
-          "community-seed"
+          "community-seed",
+          "placeholder filled via --param",
+          "self-extension 2026-05-28: templated account_number form so any account (individual, Roth/IRA, etc.) can be queried, not just primary"
         ],
         "x-robinhood-seen-on": [
           "account-root",
@@ -10924,6 +11369,158 @@
           "stock-nvda",
           "stock-tsla"
         ]
+      },
+      "post": {
+        "operationId": "brokerage_post_recurring_schedules",
+        "summary": "Recurring brokerage route",
+        "description": "Personal route map entry. Risk: destructive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "recurring"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "destructive",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/recurring_schedules/"
+        ],
+        "x-robinhood-sources": [
+          "wire-writes 2026-05-29"
+        ],
+        "x-robinhood-seen-on": []
+      }
+    },
+    "/recurring_schedules/{param_0}/": {
+      "delete": {
+        "operationId": "brokerage_delete_recurring_schedules_param_0",
+        "summary": "Recurring brokerage route",
+        "description": "Personal route map entry. Risk: destructive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "recurring"
+        ],
+        "parameters": [
+          {
+            "name": "param_0",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder param_0. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "destructive",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/recurring_schedules/{0}/"
+        ],
+        "x-robinhood-sources": [
+          "wire-writes 2026-05-29"
+        ],
+        "x-robinhood-seen-on": []
+      },
+      "get": {
+        "operationId": "brokerage_get_recurring_schedules_param_0",
+        "summary": "Recurring brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "recurring"
+        ],
+        "parameters": [
+          {
+            "name": "param_0",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder param_0. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/recurring_schedules/{0}/"
+        ],
+        "x-robinhood-sources": [
+          "fix-recurring-read-gate 2026-05-29"
+        ],
+        "x-robinhood-seen-on": []
+      },
+      "patch": {
+        "operationId": "brokerage_patch_recurring_schedules_param_0",
+        "summary": "Recurring brokerage route",
+        "description": "Personal route map entry. Risk: destructive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "recurring"
+        ],
+        "parameters": [
+          {
+            "name": "param_0",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder param_0. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "destructive",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/recurring_schedules/{0}/"
+        ],
+        "x-robinhood-sources": [
+          "wire-writes 2026-05-29"
+        ],
+        "x-robinhood-seen-on": []
       }
     },
     "/recurring_schedules/equity/next_investment_date/": {
@@ -11392,6 +11989,94 @@
           "account-settings",
           "account-statements",
           "account-transfers"
+        ]
+      }
+    },
+    "/robinhood/agentic/": {
+      "get": {
+        "operationId": "brokerage_get_robinhood_agentic",
+        "summary": "Account brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "account"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/robinhood/agentic/"
+        ],
+        "x-robinhood-sources": [
+          "agent-added-2026-06-02",
+          "cdp-2026-05-28-account-section-unique"
+        ],
+        "x-robinhood-seen-on": [
+          "account-section"
+        ]
+      },
+      "patch": {
+        "operationId": "brokerage_patch_robinhood_agentic",
+        "summary": "Account brokerage route",
+        "description": "Personal route map entry. Risk: write-or-sensitive. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "account"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "write-or-sensitive",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/robinhood/agentic/"
+        ],
+        "x-robinhood-sources": [
+          "agent-added-2026-06-02",
+          "cdp-2026-05-28-account-section-unique"
+        ],
+        "x-robinhood-seen-on": [
+          "account-section"
         ]
       }
     },

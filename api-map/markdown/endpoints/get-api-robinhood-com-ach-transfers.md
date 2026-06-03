@@ -1,7 +1,7 @@
 # GET /ach/transfers/
 
-Mutation: yes
-Risk: write-or-sensitive
+Mutation: no
+Risk: sensitive-read
 
 Host: api.robinhood.com
 Categories: money-movement

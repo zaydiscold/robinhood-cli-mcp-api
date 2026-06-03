@@ -1,15 +1,15 @@
-# GET /options/orders/%7B0%7D/cancel/
+# POST /ach/relationships/%7B0%7D/unlink/
 
 Mutation: yes
 Risk: destructive
 
 Host: api.robinhood.com
-Categories: options, orders
+Categories: money-movement
 Source: community-seed
 Operation ID: n/a
 
 Route template:
 
 ```text
-https://api.robinhood.com/options/orders/{0}/cancel/
+https://api.robinhood.com/ach/relationships/{0}/unlink/
 ```

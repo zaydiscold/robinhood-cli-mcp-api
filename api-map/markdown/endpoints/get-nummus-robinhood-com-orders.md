@@ -1,7 +1,7 @@
 # GET /orders/
 
-Mutation: yes
-Risk: write-or-sensitive
+Mutation: no
+Risk: sensitive-read
 
 Host: nummus.robinhood.com
 Categories: orders

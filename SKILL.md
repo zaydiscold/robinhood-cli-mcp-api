@@ -1,6 +1,6 @@
 ---
 name: robinhood-cli
-description: Use when operating Robinhood brokerage/crypto accounts via CLI or MCP — portfolio reads, positions, orders, watchlists, options chains, recurring buys, and the full reverse-engineered API route map with safety gates.
+description: This skill should be used when the user asks to "use Robinhood", "check my Robinhood account", "show my positions", "rank my options", "quote an options spread", "build a dry-run Robinhood order", "manage recurring investments", "check account settings", "map Robinhood endpoints", "use the Robinhood CLI", or "use the Robinhood MCP". It covers brokerage/crypto reads, positions, orders, watchlists, options chains, recurring buys, account-settings route maps, and the full reverse-engineered API map with safety gates.
 version: 2.0.0
 author: Zayd (@zaydiscold)
 license: MIT
@@ -13,10 +13,33 @@ metadata:
 
 # Robinhood CLI + MCP
 
-Operate real Robinhood brokerage accounts from the terminal or via MCP tools. The CLI and MCP share one engine (`cli/src/lib.ts`) — same auth, same route map (279 brokerage/account routes as of the latest local check), same double-gate write safety.
+Operate real Robinhood brokerage accounts from the terminal or via MCP tools. The CLI and MCP share one engine (`cli/src/lib.ts`) — same auth, same route map (285 brokerage/account route entries as of the latest local check), same double-gate write safety.
 
 **Repo:** `github.com/zaydiscold/robinhood-cli`
 **Deep reference:** `AGENTS.md` in repo root — the complete API surface, worked examples, and every command. Hand that file to any agent and it's self-contained. This SKILL.md is the Hermes trigger + boot doc: quick-start, the 80/20 commands, and all the operational pitfalls learned across sessions.
+
+---
+
+## Skill Operating Model
+
+This skill is a progressive-disclosure entrypoint, not the whole repository
+loaded into context. Use it in layers:
+
+1. **Boot from this file.** Read the safety model, auth rules, account discovery
+   commands, and current read/write surface first.
+2. **Pull focused references only when needed.** Use `AGENTS.md` for end-to-end
+   operation, `docs/README.md` for the docs index, and the specific docs listed
+   below for options/account-settings/deep-link work.
+3. **Use deterministic commands over explanation.** Prefer CLI/MCP reads,
+   route plans, dry-run order bodies, and browser verification evidence over
+   hand-waving.
+4. **Keep the user in control.** Reads and dry-runs can proceed. Live trades,
+   transfers, account-setting toggles, cancels, unlinks, or margin/account-type
+   changes require exact user approval plus both write gates.
+
+For this use case, the skill teaches the workflow and guardrails; the MCP tools
+provide execution. Do not overload the prompt with all route docs unless a task
+requires a specific route family.
 
 ---
 
@@ -64,6 +87,28 @@ ROBINHOOD_BROKERAGE_TOKEN=<token>
 
 Full auth details: `AGENTS.md` §1.
 
+### Agent Preflight
+
+Run this short preflight before any account-specific operation:
+
+```bash
+date
+node cli/dist/index.js --help >/dev/null
+node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"
+node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full
+```
+
+Interpretation:
+
+- Date matters for options expirations, next-business-day staged rolls,
+  after-hours behavior, and recurring-investment timing.
+- Route count should match the current docs (`285` brokerage/account entries).
+- `transfer/accounts/` is the account graph. Use it to discover account numbers,
+  account types, deposit/withdraw eligibility, recurring-source eligibility, and
+  display labels. Never hardcode account numbers.
+- If auth fails or a read returns `401`, run `pnpm auth:refresh`, then retry the
+  same command once. Do not spin up random browser sessions.
+
 ---
 
 ## CLI Usage — The 80/20
@@ -96,13 +141,13 @@ Keep this split current when editing the skill:
 
 | Surface | Current state | Agent rule |
 |---------|---------------|------------|
-| API map | 279 brokerage/account routes plus official Crypto API routes | Rebuild after edits; runtime reads `cli/dist/api-map/` |
+| API map | 285 brokerage/account route entries plus official Crypto API routes | Rebuild after edits; runtime reads `cli/dist/api-map/` |
 | Read commands | `quote`, `positions`, `options positions`, `options expirations`, `options chain`, `watchlist list`, `recurring list`, route-map reads, crypto read plans | Live reads are allowed with caller-owned auth, but redact balances/tokens in shareable output |
 | Options research/planning | 18 strategy workflows; `options-strategy-plan` emits `reviewContract` | Planning only until exact user approval and write gates |
 | Equity/options order writes | Route-map executor against `orders/`, `options/orders/`, and cancel routes | Must use `--method`, exact body, `--live-write`, and `ROBINHOOD_ALLOW_LIVE_WRITE=1`; dry-run first |
 | Recurring investments | First-class `recurring list`, `recurring resume`, `recurring pause`; route map also has GET one schedule and POST create | Resume/pause are the verified first-class writes. Create/edit amount/funding-source are route-map research unless a fresh capture verifies body shape |
 | Money movement / funding | ACH relationships/transfers and cashier/deposit-schedule routes are mapped mostly as read or `write-or-sensitive` | Never mutate funding, ACH links, deposits, withdrawals, or transfers without a fresh route/body capture and explicit approval |
-| DRIP/options/account settings | DRIP PATCH and account-setting routes are mapped or browser-observed | Treat as account-setting writes; plan and verify reload state before any live action |
+| DRIP/options/account settings | DRIP GET/PATCH is method-split; account-setting routes are mapped or browser-observed | Treat account-setting writes as dry-run first; plan, obtain exact approval, send only with both gates, then verify reload state |
 | Crypto | Official Crypto API signing/planning/execution commands | Different auth from brokerage; crypto writes/cancels use the same double gate |
 
 Do not overclaim first-class support. If a capability is route-map-only, say so and build a dry-run body from the current route map before considering implementation.
@@ -123,10 +168,12 @@ Do not overclaim first-class support. If a capability is route-map-only, say so 
 | Options chain | `options/chains/{id}/` | Get expirations + tick rules |
 | Options instruments | `options/instruments/?chain_id={id}&expiration_dates={date}&state=active&type=call` | Find specific strikes |
 | Options orders | `options/orders/` | POST, same double-gate |
+| Stock profile page | `stock profile <symbol> --account <n> --json` | Joins quote, description, fundamentals, shorting/borrow, buying-power, and margin reads |
 | Recurring buys | `recurring` subcommand | `robinhood-cli recurring list` — dedicated command |
 | Recurring pause/resume | `recurring pause|resume` | Verified first-class writes; double-gated |
 | Recurring create/edit/funding source | `bonfire.robinhood.com/recurring_schedules/` | Route-map research only until fresh body capture verifies amount/source fields |
 | Funding sources | `cashier.robinhood.com/ach/relationships/`, `payment_instruments/v2/` | Read first; writes are high-risk and not first-class |
+| Account settings capability map | `docs/account-settings-capability-map-2026-06-03.md` | Defines what is first-class, route-map-only, browser-observed, or not yet proven |
 | Crypto market data | `crypto execute "marketdata/best_bid_ask/" --query-param symbol=BTC-USD` | Official Crypto API |
 
 ### Account Context and Strategy Maps
@@ -135,18 +182,42 @@ Do not overclaim first-class support. If a capability is route-map-only, say so 
 |------|---------|-------|
 | Browser account routing | `robinhood-cli api-map account-context` | Shows whether `?account_number=` propagates, is mixed, or is ignored on each web surface |
 | Build web workflow URL | `robinhood-cli api-map account-url <id> --account <n> ...` | Navigation/research only; prefer direct API routes for automation |
-| Options strategy catalog | `robinhood-cli api-map options-strategies` | Lists single legs, covered calls, cash-secured/naked puts, naked calls, debit/credit spreads, straddles, strangles, butterflies, iron condors |
+| Options strategy catalog | `robinhood-cli api-map options-strategies` | Lists single legs, covered calls, cash-secured/naked puts, naked calls, debit/credit spreads, straddles, strangles, butterflies, iron condors, calendar rolls |
 | Live strategy dry-run quote | `robinhood-cli options strategy-quote <id> --account <n> --symbol <s> --expiration <d> --leg leg_id=strike --json` | Resolves exact option ids, reads bid/ask/Greeks, computes natural/mid/protective limits, and fills a dry-run body; never sends |
+| Cash-account staged roll | `robinhood-cli options roll-plan --account <n> --symbol <s> --type call|put --close-expiration <d1> --close-strike <k1> --open-expiration <d2> --open-strike <k2> --cash-account --json` | Emits close-now/open-later dry-run orders with next-business-day fresh-check gates |
 | Strategy dry-run body | `robinhood-cli api-map options-strategy-plan <id> --param key=value` | Emits lookup steps + `options/orders/` body template; never sends |
 | Exact contract navigation plan | `robinhood-cli api-map options-contract-plan --account <n> --symbol <s> --expiration <d> --type call|put --side buy|sell --strike <k> --json` | Emits the tested web account shell, candidate web URL probes, API resolution steps, and dry-run single-leg handoff |
 
 Primary options references:
 
+- `docs/README.md`
 - `docs/options-greeks-strategy-research-2026-06-02.md`
 - `docs/options-quantitative-playbook-2026-06-03.md`
+- `docs/options-strategy-execution-smoke-2026-06-03.md`
 - `docs/options-contract-navigation-2026-06-03.md`
+- `docs/release-notes-2026-06-03.md`
+- `docs/account-settings-capability-map-2026-06-03.md`
 - `api-map/options-strategy-workflows-2026-06-02.json`
 - `api-map/options-contract-navigation-workflows-2026-06-03.json`
+
+### Browser Verification Rule
+
+Use API/CLI/MCP first. Use browser automation only when validating web UI state
+or discovering a UI-backed endpoint that the route map does not already cover.
+When using a browser, attach to the existing logged-in debug session instead of
+launching a new Chrome profile. Keep `?account_number=<ACCOUNT_NUMBER>` on
+account-pinnable web URLs, but treat direct API account parameters as the source
+of truth.
+
+Preferred browser role:
+
+- Verify that a stock page or option chain is logged in and on the intended
+  account.
+- Inspect visible bid/ask/mark/Greeks or account-setting UI state.
+- Capture sanitized route shapes for missing mutation bodies.
+
+Do not use browser clicks to send live financial actions unless the user gave
+exact-action approval and the CLI/MCP route is already understood.
 
 ### Options Greeks and Strategy Math
 
@@ -261,6 +332,7 @@ call, call credit spread, and naked short call before planning an order.
 | Short straddle / short strangle | Short-volatility income with undefined risk | Aggressive |
 | Long strangle | Defined-risk long-volatility trade with OTM call and OTM put | Moderate |
 | Butterfly / iron condor | Defined-risk range/pin or short-volatility structures | Moderate |
+| Calendar roll | Close one option and open another expiration/strike; compare realized close and new open risk | Moderate |
 
 Payoff checks:
 
@@ -277,6 +349,7 @@ Payoff checks:
 | Long strangle | Max loss = debit * 100; breakevens = call strike + debit and put strike - debit |
 | Short strangle | Max profit = credit * 100; undefined call-side risk and large put-side downside |
 | Iron condor | Max profit = credit * 100; max loss = widest wing - credit, scaled by 100 |
+| Calendar roll | Net = close credit - open debit; compare old and new Greeks, duration, and assignment risk |
 
 Ambiguous wording:
 
@@ -315,6 +388,9 @@ Use these rules to turn "quant talk" into reliable agent behavior:
   when the premium looks small because loss can expand nonlinearly.
 - For rolls, compare closed-leg Greeks/payoff to opened-leg Greeks/payoff and
   state whether risk increased, duration changed, or undefined exposure appeared.
+- In cash accounts, do not assume close proceeds can fund the replacement leg on
+  the same day. Use `options roll-plan --cash-account`; treat the open leg as a
+  next-business-day task that must recheck settled cash and fresh bid/ask.
 
 ### Options Review Contract
 
@@ -371,9 +447,23 @@ Use this exact planning sequence:
 3. `robinhood-cli options expirations <SYMBOL> --json` and `robinhood-cli options chain <SYMBOL> --expiration <DATE> --type call|put --json` to inspect available contracts.
 4. `robinhood-cli api-map options-strategies --json` to choose the strategy id and leg ids.
 5. For spreads/straddles/condors, run `robinhood-cli options strategy-quote <id> --account <N> --symbol <SYMBOL> --expiration <DATE> --leg <leg_id>=<strike> ... --pricing-mode mid --json`.
-6. Use `--pricing-mode safe-sell-probe` only as a dry-run control when proving a sell/credit body is far from the market.
-7. If exact ids are already known, `robinhood-cli api-map options-strategy-plan <id> --param key=value --json` can still emit the raw template body.
-8. Only after the dry-run body is exact should any live route be considered, and only with `--live-write` plus `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+6. For calendar rolls, pass per-leg expirations: `--param close_call_expiration=<old> --param open_call_expiration=<new>` or use `options roll-plan` for a two-order staged plan.
+7. Use `--pricing-mode safe-sell-probe` only as a dry-run control when proving a sell/credit body is far from the market.
+8. If exact ids are already known, `robinhood-cli api-map options-strategy-plan <id> --param key=value --json` can still emit the raw template body.
+9. Only after the dry-run body is exact should any live route be considered, and only with `--live-write` plus `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+
+Worked dry-run examples:
+
+```bash
+robinhood-cli options strategy-quote long-call --account <N> --symbol <S> --expiration <D> --leg long_call=<K> --pricing-mode mid --json
+robinhood-cli options strategy-quote naked-short-call --account <N> --symbol <S> --expiration <D> --leg naked_call=<K> --pricing-mode safe-sell-probe --json
+robinhood-cli options strategy-quote call-credit-spread --account <N> --symbol <S> --expiration <D> --leg short_call=<K1> --leg long_call=<K2> --pricing-mode safe-sell-probe --json
+robinhood-cli options strategy-quote call-debit-spread --account <N> --symbol <S> --expiration <D> --leg long_call=<K1> --leg short_call=<K2> --pricing-mode mid --json
+robinhood-cli options strategy-quote put-credit-spread --account <N> --symbol <S> --expiration <D> --leg short_put=<K1> --leg long_put=<K2> --pricing-mode safe-sell-probe --json
+robinhood-cli options strategy-quote iron-condor --account <N> --symbol <S> --expiration <D> --leg long_put_wing=<K1> --leg short_put_body=<K2> --leg short_call_body=<K3> --leg long_call_wing=<K4> --pricing-mode safe-sell-probe --json
+robinhood-cli options strategy-quote call-calendar-roll --account <N> --symbol <S> --expiration <OLD_D> --leg close_call=<OLD_K> --leg open_call=<NEW_K> --param close_call_expiration=<OLD_D> --param open_call_expiration=<NEW_D> --pricing-mode mid --json
+robinhood-cli options roll-plan --account <N> --symbol <S> --type call --close-expiration <OLD_D> --close-strike <OLD_K> --open-expiration <NEW_D> --open-strike <NEW_K> --cash-account --json
+```
 
 Required fields before a dry-run is acceptable: account, symbol, expiration,
 every strike, every option instrument id, buy/sell side, `position_effect`,
@@ -446,6 +536,7 @@ research belong in:
 
 - `docs/options-quantitative-playbook-2026-06-03.md`
 - `docs/options-greeks-strategy-research-2026-06-02.md`
+- `docs/options-strategy-execution-smoke-2026-06-03.md`
 - `docs/options-contract-navigation-2026-06-03.md`
 - `api-map/options-strategy-workflows-2026-06-02.json`
 - `api-map/options-contract-navigation-workflows-2026-06-03.json`
@@ -465,7 +556,7 @@ When updating the skill, follow progressive disclosure:
 
 ## MCP Server
 
-15 tools surfaced via Hermes MCP. Same engine -> same auth, gate, and method-aware routing as the CLI.
+17 tools surfaced via Hermes MCP. Same engine -> same auth, gate, and method-aware routing as the CLI.
 
 ### Registration
 
@@ -494,6 +585,8 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_options_strategy_workflows` | Strategy catalog with payoff and Greek posture |
 | `robinhood_options_strategy_plan` | Dry-run strategy lookup steps + order body template |
 | `robinhood_options_contract_plan` | Exact contract web navigation candidates + API resolution plan |
+| `robinhood_options_contract_link_bundle` | Account-pinned option chain/link bundle for webhook handoff research |
+| `robinhood_stock_profile` | Stock detail page quote/fundamental/borrow/margin read join |
 | `robinhood_brokerage_plan` | Create a dry-run plan (no execution) |
 | `robinhood_brokerage_execute` | Execute a brokerage request |
 | `robinhood_crypto_routes` | List official Crypto API routes |
@@ -661,7 +754,7 @@ Full details: `AGENTS.md` §9.
 - [ ] `node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full` shows all 5 accounts
 - [ ] `node cli/dist/index.js brokerage execute "portfolios/" --json --full` returns portfolio data
 - [ ] MCP server starts: `node mcp/dist/server.js` (or `hermes mcp add` registered)
-- [ ] Route map count: `node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"` returns 279
+- [ ] Route map count: `node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"` returns 285
 - [ ] Watchlists work: `node cli/dist/index.js brokerage execute "discovery/lists/?owner_type=custom" --json` returns 200
 - [ ] Dry-run gate works: a POST without `--live-write` returns `liveWriteBlocked`
 - [ ] Live write gate works: a POST with `--live-write` but without `ROBINHOOD_ALLOW_LIVE_WRITE=1` returns `liveWriteBlocked`

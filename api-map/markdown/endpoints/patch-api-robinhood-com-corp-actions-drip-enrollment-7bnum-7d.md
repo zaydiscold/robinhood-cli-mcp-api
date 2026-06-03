@@ -1,0 +1,15 @@
+# PATCH /corp_actions/drip/enrollment/%7Bnum%7D/
+
+Mutation: yes
+Risk: write-or-sensitive
+
+Host: api.robinhood.com
+Categories: dividends
+Source: cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized
+Operation ID: n/a
+
+Route template:
+
+```text
+https://api.robinhood.com/corp_actions/drip/enrollment/{num}/
+```

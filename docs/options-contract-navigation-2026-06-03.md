@@ -20,6 +20,8 @@ order instruction.
 
 ## CLI Flow
 
+Build-only navigation/API plan:
+
 ```bash
 robinhood-cli api-map options-contract-plan \
   --account <ACCOUNT_NUMBER> \
@@ -31,13 +33,34 @@ robinhood-cli api-map options-contract-plan \
   --json
 ```
 
-The command is an account-aware navigation and API-resolution planner:
+Live API resolution plus link bundle:
+
+```bash
+robinhood-cli api-map options-contract-links \
+  --account <ACCOUNT_NUMBER> \
+  --symbol DRAM \
+  --expiration 2026-12-18 \
+  --type call \
+  --side buy \
+  --strike 80 \
+  --json
+```
+
+The plan command is an account-aware navigation and API-resolution planner:
 
 - returns the observed web account shell;
 - returns candidate web query and fragment URLs for manual browser testing;
 - returns deterministic API lookup steps;
 - returns a dry-run single-leg order body template;
 - does not open a browser, launch an app, or send an order.
+
+The links command performs the authenticated live reads and adds:
+
+- exact `chain_id` and `option_instrument_id`;
+- option instrument URL and OCC symbol when available;
+- bid/ask/mark/last, Greeks, and strategy quote URL;
+- account-scoped web shell and chain-id app/web handoff links;
+- safe sell/buy dry-run pricing controls using a $200 far offset.
 
 ## Account Context
 
@@ -57,8 +80,8 @@ authority before building any order body.
 
 ## Supplementary R&D
 
-A current mobile-app source snapshot had useful hints for future testing:
-internal options navigation appears to carry fields such as account context,
-target strike, selected filter, and strategy legs. That is useful for deciding
-which browser/device probes to try next, but it is not active CLI behavior and
-is not emitted as a fallback unless it is verified in a real logged-in pass.
+Operational R&D details live in
+[`docs/deep-link/options-contract-link-bundle-2026-06-03.md`](./deep-link/options-contract-link-bundle-2026-06-03.md).
+The public rule is narrow: promote only tested, additive handoff behavior into
+CLI/API/MCP/docs; keep generated webhook builders and account-specific bundles
+inside ignored local folders.

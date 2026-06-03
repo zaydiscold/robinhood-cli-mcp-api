@@ -5,5 +5,8 @@ dist/
 .env.*
 !.env.example
 fixtures/private/
+.robinhood-webhook-lab/
+webhook-builders-private/
+.robinhood-research-lab/
 *.log
 *.tgz

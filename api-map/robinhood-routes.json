@@ -231,7 +231,30 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "summary": "List ACH bank links."
+  },
+  {
+    "url": "https://api.robinhood.com/ach/relationships/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Create an ACH bank link.",
+    "bodyKeys": [
+      "bank_routing_number",
+      "bank_account_number",
+      "bank_account_type",
+      "bank_account_holder_name"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/{0}/",
@@ -239,7 +262,23 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "summary": "Get an ACH relationship."
+  },
+  {
+    "url": "https://api.robinhood.com/ach/relationships/{0}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "destructive",
+    "methods": [
+      "DELETE"
+    ],
+    "summary": "Delete an ACH relationship."
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/{0}/unlink/",
@@ -247,7 +286,11 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "destructive"
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Unlink an ACH relationship (no body)."
   },
   {
     "url": "https://api.robinhood.com/ach/transfers/",
@@ -255,7 +298,29 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "summary": "List ACH transfers."
+  },
+  {
+    "url": "https://api.robinhood.com/ach/transfers/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Create an ACH transfer. direction=deposit moves money IN, direction=withdraw moves money OUT.",
+    "bodyKeys": [
+      "ach_relationship",
+      "amount",
+      "direction"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
     "url": "https://api.robinhood.com/banking/cross-sell/creditcard/applications/{uuid}",
@@ -618,7 +683,7 @@
     "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
     "host": "api.robinhood.com",
     "categories": [
-      "history-documents"
+      "dividends"
     ],
     "risk": "sensitive-read",
     "methods": [
@@ -631,7 +696,32 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "summary": "Read DRIP dividend-reinvestment enrollment for an account."
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "dividends"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
+      "PATCH"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
+    "seenOn": [
+      "account-root"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "summary": "Toggle DRIP dividend-reinvestment enrollment for an account. PATCH body: {\"drip_enrolled\": true|false}.",
+    "bodyKeys": [
+      "drip_enrolled"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
     "url": "https://api.robinhood.com/corp_actions/v2/split_payments/",
@@ -722,7 +812,56 @@
     ]
   },
   {
+    "url_template": "https://api.robinhood.com/discovery/lists/",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "List all watchlists",
+    "url": "https://api.robinhood.com/discovery/lists/"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/",
+    "method": "POST",
+    "risk": "destructive",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Create watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/"
+  },
+  {
     "url": "https://api.robinhood.com/discovery/lists/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Create a watchlist. Body uses display_name (NOT name), optional icon_emoji and object_type.",
+    "bodyKeys": [
+      "display_name",
+      "icon_emoji",
+      "object_type"
+    ],
+    "source": "manual",
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/?owner_type=custom",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "List all custom watchlists",
+    "url": "https://api.robinhood.com/discovery/lists/?owner_type=custom"
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/?owner_type=custom",
     "host": "api.robinhood.com",
     "categories": [
       "watchlists"
@@ -731,19 +870,8 @@
     "methods": [
       "GET"
     ],
-    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
-    "seenOn": [
-      "crypto-btc",
-      "etf-qqq",
-      "etf-spy",
-      "stock-aapl",
-      "stock-hood",
-      "stock-nvda",
-      "stock-tsla"
-    ],
+    "source": "manual",
     "queryKeys": [
-      "object_id",
-      "object_type",
       "owner_type"
     ],
     "requestTypes": [
@@ -751,78 +879,80 @@
     ]
   },
   {
-    "url": "https://api.robinhood.com/discovery/lists/default/",
+    "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Get one watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/{0}/"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
+    "method": "PATCH",
+    "risk": "destructive",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Rename watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/{0}/"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
+    "method": "DELETE",
+    "risk": "destructive",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Delete watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/{0}/"
+  },
+  {
+    "url": "https://api.robinhood.com/discovery/lists/{id}/",
     "host": "api.robinhood.com",
     "categories": [
       "watchlists"
     ],
-    "risk": "sensitive-read",
+    "risk": "destructive",
     "methods": [
-      "GET"
+      "PATCH",
+      "DELETE"
     ],
-    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
-    "seenOn": [
-      "crypto-btc",
-      "etf-qqq",
-      "etf-spy",
-      "portfolio-home",
-      "stock-aapl",
-      "stock-hood",
-      "stock-nvda",
-      "stock-tsla"
+    "summary": "Rename/edit (PATCH) or delete (DELETE) a watchlist. PATCH body uses display_name (NOT name) and optional icon_emoji.",
+    "bodyKeys": [
+      "display_name",
+      "icon_emoji"
     ],
+    "source": "manual",
     "queryKeys": [],
     "requestTypes": [
       "XHR"
     ]
   },
   {
-    "url": "https://api.robinhood.com/discovery/lists/items/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
+    "url_template": "https://api.robinhood.com/discovery/lists/default/",
+    "method": "GET",
     "risk": "sensitive-read",
-    "methods": [
-      "GET"
-    ],
-    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
-    "seenOn": [
-      "portfolio-home"
-    ],
-    "queryKeys": [
-      "list_id",
-      "load_all_attributes"
-    ],
-    "requestTypes": [
-      "XHR"
-    ]
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "Get default watchlist",
+    "url": "https://api.robinhood.com/discovery/lists/default/"
   },
   {
-    "url": "https://api.robinhood.com/discovery/lists/user_items/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
+    "url_template": "https://api.robinhood.com/discovery/lists/items/",
+    "method": "GET",
     "risk": "sensitive-read",
-    "methods": [
-      "GET"
-    ],
-    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
-    "seenOn": [
-      "crypto-btc",
-      "etf-qqq",
-      "etf-spy",
-      "portfolio-home",
-      "stock-aapl",
-      "stock-hood",
-      "stock-nvda",
-      "stock-tsla"
-    ],
-    "queryKeys": [],
-    "requestTypes": [
-      "XHR"
-    ]
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "List watchlist items",
+    "url": "https://api.robinhood.com/discovery/lists/items/"
+  },
+  {
+    "url_template": "https://api.robinhood.com/discovery/lists/user_items/",
+    "method": "GET",
+    "risk": "sensitive-read",
+    "category": "watchlists",
+    "host": "api.robinhood.com",
+    "summary": "List user watchlist items",
+    "url": "https://api.robinhood.com/discovery/lists/user_items/"
   },
   {
     "url": "https://api.robinhood.com/discovery/ratings/{id}/overview/",
@@ -1320,6 +1450,38 @@
     "queryKeys": [
       "active_instruments_only",
       "ids",
+      "symbol"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/instruments/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
+    "queryKeys": [
+      "ids"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/instruments/?symbol={symbol}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution",
+    "queryKeys": [
       "symbol"
     ]
   },
@@ -1851,6 +2013,25 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/marketdata/options/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "options"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: templated ids= form of marketdata/options for single/batch option mark (adjusted_mark_price) lookup; ids key from captured queryKeys",
+    "seenOn": [
+      "portfolio-options"
+    ],
+    "queryKeys": [
+      "ids"
+    ]
+  },
+  {
     "url": "https://api.robinhood.com/marketdata/options/historicals/{0}/",
     "host": "api.robinhood.com",
     "categories": [
@@ -1917,6 +2098,22 @@
     ],
     "requestTypes": [
       "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/quotes/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "quotes"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
+    "queryKeys": [
+      "ids"
     ]
   },
   {
@@ -2012,16 +2209,6 @@
     "requestTypes": [
       "XHR"
     ]
-  },
-  {
-    "url": "https://api.robinhood.com/discovery/lists/{id}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "watchlists"
-    ],
-    "risk": "destructive",
-    "method": "DELETE",
-    "category": "watchlists"
   },
   {
     "url": "https://api.robinhood.com/midlands/lists/default/",
@@ -2483,6 +2670,25 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id",
+    "queryKeys": [
+      "chain_id",
+      "expiration_dates",
+      "type"
+    ]
+  },
+  {
     "url": "https://api.robinhood.com/options/instruments/{0}/",
     "host": "api.robinhood.com",
     "categories": [
@@ -2524,13 +2730,44 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/options/orders/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "options",
+      "trading"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "source": "self-extension 2026-05-28: options order PLACEMENT (POST). Same reason as equity orders; supports legs[] for single/multi-leg. Double-gated.",
+    "bodyKeys": [
+      "account",
+      "direction",
+      "time_in_force",
+      "trigger",
+      "type",
+      "price",
+      "quantity",
+      "legs",
+      "ref_id",
+      "override_day_trade_checks"
+    ]
+  },
+  {
     "url": "https://api.robinhood.com/options/orders/{0}/cancel/",
     "host": "api.robinhood.com",
     "categories": [
       "options",
       "orders"
     ],
-    "risk": "destructive"
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Cancel an order (no body).",
+    "source": "wire-writes 2026-05-29"
   },
   {
     "url": "https://api.robinhood.com/options/positions/",
@@ -2645,12 +2882,43 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/orders/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "equity",
+      "trading"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "source": "self-extension 2026-05-28: equity order PLACEMENT (POST). Map was capture-built from reads only and lacked it; needed to place/manage stock orders. Double-gated via --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    "bodyKeys": [
+      "account",
+      "instrument",
+      "symbol",
+      "type",
+      "time_in_force",
+      "trigger",
+      "price",
+      "quantity",
+      "side",
+      "ref_id"
+    ]
+  },
+  {
     "url": "https://api.robinhood.com/orders/{0}/cancel/",
     "host": "api.robinhood.com",
     "categories": [
       "orders"
     ],
-    "risk": "destructive"
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Cancel an order (no body).",
+    "source": "wire-writes 2026-05-29"
   },
   {
     "url": "https://api.robinhood.com/orders/session/",
@@ -2898,6 +3166,22 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: templated account_number form so any account (individual, Roth/IRA, etc.) can be queried, not just primary; placeholder filled via --param",
+    "queryKeys": [
+      "account_number",
+      "nonzero"
+    ]
+  },
+  {
     "url": "https://api.robinhood.com/quotes/",
     "host": "api.robinhood.com",
     "categories": [
@@ -2912,6 +3196,48 @@
       "marketdata"
     ],
     "risk": "read"
+  },
+  {
+    "url": "https://api.robinhood.com/robinhood/agentic/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-05-28-account-section-unique; agent-added-2026-06-02",
+    "seenOn": [
+      "account-section"
+    ],
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://api.robinhood.com/robinhood/agentic/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
+      "PATCH"
+    ],
+    "source": "cdp-2026-05-28-account-section-unique; agent-added-2026-06-02",
+    "seenOn": [
+      "account-section"
+    ],
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
   },
   {
     "url": "https://api.robinhood.com/settings/education_state/{id}/",
@@ -4302,7 +4628,7 @@
       "money-movement",
       "unknown"
     ],
-    "risk": "write-or-sensitive",
+    "risk": "sensitive-read",
     "methods": [
       "GET"
     ],
@@ -4581,6 +4907,59 @@
     "requestTypes": [
       "XHR"
     ]
+  },
+  {
+    "url": "https://bonfire.robinhood.com/recurring_schedules/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "recurring"
+    ],
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Create a recurring buy.",
+    "bodyKeys": [
+      "amount",
+      "frequency",
+      "investment_target",
+      "source_of_funds",
+      "start_date",
+      "account_number"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "source": "wire-writes 2026-05-29"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/recurring_schedules/{0}/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "recurring"
+    ],
+    "risk": "destructive",
+    "methods": [
+      "PATCH",
+      "DELETE"
+    ],
+    "summary": "Resume/pause a recurring buy (PATCH {\"state\":\"active\"} to resume, {\"state\":\"paused\"} to pause) or DELETE it. Resume/pause reversible; DELETE is not.",
+    "bodyKeys": [
+      "state"
+    ],
+    "note": "VERIFIED 2026-05-29: PATCH {\"state\":\"active\"} resumes (200, next_investment_date populates); state field round-trips. DELETE unverified.",
+    "source": "wire-writes 2026-05-29"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/recurring_schedules/{0}/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "recurring"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "summary": "Get one recurring schedule (state, next_investment_date, amount).",
+    "source": "fix-recurring-read-gate 2026-05-29"
   },
   {
     "url": "https://bonfire.robinhood.com/recurring_schedules/equity/next_investment_date/",
@@ -5639,7 +6018,7 @@
     "categories": [
       "orders"
     ],
-    "risk": "write-or-sensitive",
+    "risk": "sensitive-read",
     "methods": [
       "GET"
     ],
@@ -5653,7 +6032,41 @@
       "currency_pair_id",
       "page_size",
       "state_group"
-    ]
+    ],
+    "summary": "List crypto orders."
+  },
+  {
+    "url": "https://nummus.robinhood.com/orders/",
+    "host": "nummus.robinhood.com",
+    "categories": [
+      "orders"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "source": "cdp-2026-05-27-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "crypto-btc"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "currency_pair_id",
+      "page_size",
+      "state_group"
+    ],
+    "summary": "Place a crypto order.",
+    "bodyKeys": [
+      "account_id",
+      "currency_pair_id",
+      "side",
+      "type",
+      "quantity",
+      "price",
+      "time_in_force"
+    ],
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
     "url": "https://nummus.robinhood.com/orders/{0}/",
@@ -5661,7 +6074,11 @@
     "categories": [
       "orders"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "summary": "Get a single crypto order."
   },
   {
     "url": "https://nummus.robinhood.com/orders/{0}/cancel/",
@@ -5669,7 +6086,12 @@
     "categories": [
       "orders"
     ],
-    "risk": "destructive"
+    "risk": "destructive",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Cancel an order (no body).",
+    "source": "wire-writes 2026-05-29"
   },
   {
     "url": "https://nummus.robinhood.com/portfolios/{uuid}/",

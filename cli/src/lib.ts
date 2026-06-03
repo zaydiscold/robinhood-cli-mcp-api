@@ -258,6 +258,85 @@ export interface OptionsContractNavigationPlan {
   }>;
 }
 
+export interface OptionsContractLinkBundleInput extends OptionsContractNavigationInput {
+  underlyingInstrumentId?: string;
+  optionInstrumentUrl?: string;
+  occSymbol?: string;
+  quote?: {
+    bid?: number | string | null;
+    ask?: number | string | null;
+    mark?: number | string | null;
+    last?: number | string | null;
+    delta?: number | string | null;
+    gamma?: number | string | null;
+    theta?: number | string | null;
+    vega?: number | string | null;
+    rho?: number | string | null;
+    impliedVolatility?: number | string | null;
+    volume?: number | string | null;
+    openInterest?: number | string | null;
+  };
+  strategyQuoteUrl?: string;
+  strategyQuote?: unknown;
+  farLimitOffset?: number;
+}
+
+export interface OptionsContractLinkBundle {
+  mode: "dry_run";
+  risk: "write-mutate";
+  exactUiSelectionProven: false;
+  exactApiResolutionProven: boolean;
+  selector: OptionsContractNavigationPlan["selector"] & {
+    underlyingInstrumentId?: string;
+    optionInstrumentUrl?: string;
+    occSymbol?: string;
+  };
+  resolvedContract?: {
+    chainId?: string;
+    underlyingInstrumentId?: string;
+    optionInstrumentId?: string;
+    optionInstrumentUrl?: string;
+    occSymbol?: string;
+  };
+  links: {
+    accountScopedWebShell: string;
+    appChainById?: string;
+    webChainById?: string;
+    browserAccountSwitcherChain?: string;
+    candidateExactWebQueries: Array<{
+      id: string;
+      url: string;
+      confidence: "candidate";
+    }>;
+  };
+  webhookHandoff: {
+    recommendedFlow: string[];
+    copyPastePrimary: string;
+    payload: Record<string, unknown>;
+  };
+  quote?: OptionsContractLinkBundleInput["quote"] & {
+    naturalPrice?: number;
+    midPrice?: number;
+    bidAskWidth?: number;
+  };
+  pricingControls: {
+    naturalPrice?: number;
+    midPrice?: number;
+    safeSellProbeLimit?: number;
+    safeBuyProbeLimit?: number;
+    farLimitOffset: number;
+    rule: string;
+  };
+  strategyQuoteUrl?: string;
+  strategyQuote?: unknown;
+  navigationPlan: OptionsContractNavigationPlan;
+  warnings: string[];
+  evidence: Array<{
+    source: string;
+    finding: string;
+  }>;
+}
+
 export interface OptionsQuantReviewContract {
   intent: "open" | "close" | "roll" | "analyze";
   requiredFields: string[];
@@ -713,10 +792,12 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
   const fragment = new URLSearchParams(
     Object.fromEntries(Object.entries(contractQuery).filter((entry): entry is [string, string] => Boolean(entry[1])))
   ).toString();
+  const strategyQuoteType = side === "sell" ? "short" : "long";
   const strategyQuoteUrl = apiUrl("/marketdata/options/strategy/quotes/", {
     ids: optionInstrumentToken,
     ratios: "1",
-    types: side
+    types: strategyQuoteType,
+    include_all_sessions: "true"
   });
   const direction = side === "buy" ? "debit" : "credit";
 
@@ -895,6 +976,156 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       {
         source: "api-map/account-context-browser-workflows-2026-06-02.json",
         finding: "The options-chain web shell accepted account_number as mixed account-context routing; exact contract fields were not encoded in the location bar."
+      }
+    ]
+  };
+}
+
+export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleInput): OptionsContractLinkBundle {
+  const navigationPlan = buildOptionsContractNavigationPlan(input);
+  const selector = navigationPlan.selector;
+  const source = selector.source || "robinhood-cli-contract-links";
+  const chainId = selector.chainId;
+  const optionInstrumentId = selector.optionInstrumentId;
+  const optionInstrumentUrl =
+    input.optionInstrumentUrl ??
+    (optionInstrumentId ? `https://api.robinhood.com/options/instruments/${optionInstrumentId}/` : undefined);
+  const farLimitOffset = input.farLimitOffset ?? 200;
+  const accountScopedWebShell =
+    navigationPlan.webNavigation.find((link) => link.id === "options-chain-account-shell")?.url ??
+    webUrl(`/options/chains/${encodeURIComponent(selector.symbol || "{symbol}")}`, { account_number: selector.accountNumber });
+
+  const quote = input.quote;
+  const bid = finitePrice(quote?.bid);
+  const ask = finitePrice(quote?.ask);
+  const mark = finitePrice(quote?.mark);
+  const last = finitePrice(quote?.last);
+  const hasBidAsk = Number.isFinite(bid) && Number.isFinite(ask) && ask >= bid && ask > 0;
+  const naturalPrice =
+    selector.side === "sell" ? firstFinite(bid, mark, last, ask) : firstFinite(ask, mark, last, bid);
+  const midPrice = hasBidAsk ? (bid + ask) / 2 : firstFinite(mark, last, selector.side === "sell" ? bid : ask);
+  const bidAskWidth = Number.isFinite(bid) && Number.isFinite(ask) ? ask - bid : Number.NaN;
+  const normalizedQuote = quote
+    ? {
+        ...quote,
+        naturalPrice: roundOptionMoney(naturalPrice),
+        midPrice: roundOptionMoney(midPrice),
+        bidAskWidth: roundOptionMoney(bidAskWidth)
+      }
+    : undefined;
+
+  const appChainById = chainId
+    ? `robinhood://option_chain?chain_id=${encodeURIComponent(chainId)}&source=${encodeURIComponent(source)}`
+    : undefined;
+  const webChainById = chainId
+    ? `https://robinhood.com/option_chain?chain_id=${encodeURIComponent(chainId)}&source=${encodeURIComponent(source)}`
+    : undefined;
+  const browserAccountSwitcherChain = chainId
+    ? `https://bonfire.robinhood.com/account_switcher/option_chain/${encodeURIComponent(chainId)}`
+    : undefined;
+  const candidateExactWebQueries = navigationPlan.webNavigation
+    .filter((link) => link.confidence === "candidate")
+    .map((link) => ({ id: link.id, url: link.url, confidence: "candidate" as const }));
+  const exactApiResolutionProven = Boolean(
+    selector.accountNumber &&
+      selector.symbol &&
+      selector.expiration &&
+      selector.optionType &&
+      selector.side &&
+      selector.strike &&
+      chainId &&
+      optionInstrumentId
+  );
+
+  const warnings = [
+    "No universal URL is proven to open an unopened Robinhood option with expiration, strike, call/put, side, and account already selected.",
+    "This bundle is for dry-run navigation and webhook R&D. It does not send an order.",
+    "Use the exact API contract id as the source of truth; use links only as navigation handoffs.",
+    ...navigationPlan.warnings
+  ];
+  if (appChainById) {
+    warnings.push("The app-scheme chain link is chain-id scoped, not proven exact-contract scoped.");
+  }
+  if (!exactApiResolutionProven) {
+    warnings.push("Exact API resolution is incomplete until chain_id and option_instrument_id are present.");
+  }
+  if (normalizedQuote && Number.isFinite(normalizedQuote.bidAskWidth) && normalizedQuote.bidAskWidth > 1) {
+    warnings.push(`Bid/ask width is wide (${normalizedQuote.bidAskWidth.toFixed(2)}); do not tighten pricing without a fresh quote.`);
+  }
+
+  return {
+    mode: "dry_run",
+    risk: "write-mutate",
+    exactUiSelectionProven: false,
+    exactApiResolutionProven,
+    selector: {
+      ...selector,
+      underlyingInstrumentId: input.underlyingInstrumentId,
+      optionInstrumentUrl,
+      occSymbol: input.occSymbol
+    },
+    resolvedContract: {
+      chainId,
+      underlyingInstrumentId: input.underlyingInstrumentId,
+      optionInstrumentId,
+      optionInstrumentUrl,
+      occSymbol: input.occSymbol
+    },
+    links: {
+      accountScopedWebShell,
+      appChainById,
+      webChainById,
+      browserAccountSwitcherChain,
+      candidateExactWebQueries
+    },
+    webhookHandoff: {
+      recommendedFlow: [
+        "Resolve symbol, account, expiration, option type, and strike through the API.",
+        "Verify the returned option_instrument_id, OCC symbol, bid/ask/mark/Greeks, and expiration.",
+        "Open the account-scoped web shell or chain-id app handoff for user navigation.",
+        "If ordering is desired, build a dry-run options/orders body from the exact option_instrument_id; do not trust URL state as the order source."
+      ],
+      copyPastePrimary: appChainById ?? accountScopedWebShell,
+      payload: {
+        accountNumber: selector.accountNumber,
+        symbol: selector.symbol,
+        expiration: selector.expiration,
+        optionType: selector.optionType,
+        side: selector.side,
+        strike: selector.strike,
+        chainId,
+        optionInstrumentId,
+        optionInstrumentUrl,
+        occSymbol: input.occSymbol,
+        accountScopedWebShell,
+        appChainById,
+        webChainById
+      }
+    },
+    quote: normalizedQuote,
+    pricingControls: {
+      naturalPrice: Number.isFinite(naturalPrice) ? roundOptionMoney(naturalPrice) : undefined,
+      midPrice: Number.isFinite(midPrice) ? roundOptionMoney(midPrice) : undefined,
+      safeSellProbeLimit: Number.isFinite(naturalPrice) ? roundOptionMoney(naturalPrice + farLimitOffset) : undefined,
+      safeBuyProbeLimit: Number.isFinite(naturalPrice) ? roundOptionMoney(Math.max(0.01, naturalPrice - farLimitOffset)) : undefined,
+      farLimitOffset,
+      rule: "For sell/credit dry-run probes, use natural sell credit plus the far offset; for buy/debit probes, use max(0.01, natural debit minus the far offset)."
+    },
+    strategyQuoteUrl: input.strategyQuoteUrl,
+    strategyQuote: input.strategyQuote,
+    navigationPlan,
+    warnings,
+    evidence: [
+      ...navigationPlan.evidence,
+      {
+        source: "app-link-route-research",
+        finding:
+          "External option-chain navigation accepts chain_id and source. Exact strike/expiration/side fields remain API-resolved, not proven external URL params."
+      },
+      {
+        source: "api-map/browser-cdp-routes-2026-06-02.json",
+        finding:
+          "Browser-captured routes include account-context options chain APIs and an account_switcher/option_chain/{chain_uuid} surface useful for navigation research."
       }
     ]
   };

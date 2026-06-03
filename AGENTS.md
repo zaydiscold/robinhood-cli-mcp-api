@@ -17,8 +17,8 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
 
 **The four moving parts:**
 
-1. **The route map** (`api-map/brokerage-routes.json`) — a catalog of 279 real Robinhood
-   API endpoints, reverse-engineered from the authenticated web app. Each entry records the
+1. **The route map** (`api-map/brokerage-routes.json`) — a catalog of 285 real Robinhood
+   brokerage/account route entries, reverse-engineered from the authenticated web app. Each entry records the
    URL, the HTTP method(s), and a **risk level** (`read` … `destructive`). The CLI/MCP only
    ever calls endpoints that are in this map; it is the allow-list and the safety taxonomy
    in one file.
@@ -35,7 +35,7 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
    manual login. (Details in §1.)
 
 4. **Two front doors** — the **CLI** (`cli/dist/index.js`, for humans/scripts) and the
-   **MCP server** (`mcp/dist/server.js`, 14 tools for agents). Both are thin wrappers over
+   **MCP server** (`mcp/dist/server.js`, 17 tools for agents). Both are thin wrappers over
    the engine.
 
 **How a single call flows:** you give a query string → the engine substring-matches it
@@ -124,7 +124,7 @@ runtime until you rebuild:
 ```bash
 pnpm --filter @zaydiscold/robinhood-cli build       # CLI
 pnpm --filter @zaydiscold/robinhood-cli-mcp build   # MCP
-# verify (currently 279 routes):
+# verify (currently 285 route entries):
 node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"
 ```
 
@@ -413,6 +413,10 @@ These write surfaces are mapped. **Bodies marked `inferred` in the route's `note
 are unverified — confirm against a live capture before trusting them, and never run a
 live money write on an unverified body.**
 
+For the consolidated account-page matrix, use
+`docs/account-settings-capability-map-2026-06-03.md`. It records which account
+settings are first-class, route-map-only, browser-observed, or not yet proven.
+
 ### First-class read commands: quote / positions / options / watchlist
 
 Common reads have dedicated commands so you don't assemble multi-step joins by hand. All
@@ -512,8 +516,8 @@ settings/permissions, never print the token value.
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` (14 tools: route inspection, browser/account
-context, options strategy workflows/plans, brokerage plan/execute, and crypto
-routes/sign/plan/execute). Same engine → same auth, gate, and method-aware routing
-as the CLI. The MCP mirrors the CLI gate: `liveWrite: true` plus
+Tools surface as `mcp__robinhood-cli__*` (17 tools: route inspection, browser/account
+context, options strategy workflows/plans, exact-contract link bundles, stock
+profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute).
+Same engine → same auth, gate, and method-aware routing as the CLI. The MCP mirrors the CLI gate: `liveWrite: true` plus
 `ROBINHOOD_ALLOW_LIVE_WRITE=1` to send a write; otherwise forced dry-run.

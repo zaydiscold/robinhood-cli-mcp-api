@@ -231,12 +231,23 @@
     "categories": [
       "money-movement"
     ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "summary": "List ACH bank links."
+  },
+  {
+    "url": "https://api.robinhood.com/ach/relationships/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
     "risk": "write-or-sensitive",
     "methods": [
-      "GET",
       "POST"
     ],
-    "summary": "List (GET) or create (POST) an ACH bank link.",
+    "summary": "Create an ACH bank link.",
     "bodyKeys": [
       "bank_routing_number",
       "bank_account_number",
@@ -251,12 +262,23 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "write-or-sensitive",
+    "risk": "sensitive-read",
     "methods": [
-      "GET",
+      "GET"
+    ],
+    "summary": "Get an ACH relationship."
+  },
+  {
+    "url": "https://api.robinhood.com/ach/relationships/{0}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "destructive",
+    "methods": [
       "DELETE"
     ],
-    "summary": "Get (GET) or delete (DELETE) an ACH relationship."
+    "summary": "Delete an ACH relationship."
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/{0}/unlink/",
@@ -276,12 +298,23 @@
     "categories": [
       "money-movement"
     ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "summary": "List ACH transfers."
+  },
+  {
+    "url": "https://api.robinhood.com/ach/transfers/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
     "risk": "write-or-sensitive",
     "methods": [
-      "GET",
       "POST"
     ],
-    "summary": "List (GET) or create (POST) an ACH transfer. direction=deposit moves money IN, direction=withdraw moves money OUT.",
+    "summary": "Create an ACH transfer. direction=deposit moves money IN, direction=withdraw moves money OUT.",
     "bodyKeys": [
       "ach_relationship",
       "amount",
@@ -654,7 +687,26 @@
     ],
     "risk": "sensitive-read",
     "methods": [
-      "GET",
+      "GET"
+    ],
+    "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
+    "seenOn": [
+      "account-root"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "summary": "Read DRIP dividend-reinvestment enrollment for an account."
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "dividends"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
       "PATCH"
     ],
     "source": "cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized",
@@ -665,7 +717,7 @@
     "requestTypes": [
       "XHR"
     ],
-    "summary": "Read (GET) or toggle (PATCH) DRIP dividend-reinvestment enrollment for an account. PATCH body: {\"drip_enrolled\": true|false}.",
+    "summary": "Toggle DRIP dividend-reinvestment enrollment for an account. PATCH body: {\"drip_enrolled\": true|false}.",
     "bodyKeys": [
       "drip_enrolled"
     ],
@@ -4272,7 +4324,7 @@
       "money-movement",
       "unknown"
     ],
-    "risk": "write-or-sensitive",
+    "risk": "sensitive-read",
     "methods": [
       "GET"
     ],
@@ -5609,9 +5661,31 @@
     "categories": [
       "orders"
     ],
-    "risk": "write-or-sensitive",
+    "risk": "sensitive-read",
     "methods": [
-      "GET",
+      "GET"
+    ],
+    "source": "cdp-2026-05-27-stock-account-sanitized",
+    "seenOn": [
+      "account-history",
+      "crypto-btc"
+    ],
+    "queryKeys": [
+      "account_numbers",
+      "currency_pair_id",
+      "page_size",
+      "state_group"
+    ],
+    "summary": "List crypto orders."
+  },
+  {
+    "url": "https://nummus.robinhood.com/orders/",
+    "host": "nummus.robinhood.com",
+    "categories": [
+      "orders"
+    ],
+    "risk": "write-mutate",
+    "methods": [
       "POST"
     ],
     "source": "cdp-2026-05-27-stock-account-sanitized",
@@ -5625,7 +5699,7 @@
       "page_size",
       "state_group"
     ],
-    "summary": "List (GET) or place (POST) a crypto order.",
+    "summary": "Place a crypto order.",
     "bodyKeys": [
       "account_id",
       "currency_pair_id",
@@ -5643,7 +5717,7 @@
     "categories": [
       "orders"
     ],
-    "risk": "write-or-sensitive",
+    "risk": "sensitive-read",
     "methods": [
       "GET"
     ],
@@ -6027,7 +6101,18 @@
     "host": "api.robinhood.com",
     "categories": ["account"],
     "risk": "sensitive-read",
-    "methods": ["GET", "PATCH"],
+    "methods": ["GET"],
+    "source": "cdp-2026-05-28-account-section-unique; agent-added-2026-06-02",
+    "seenOn": ["account-section"],
+    "queryKeys": ["account_number"],
+    "requestTypes": ["XHR"]
+  },
+  {
+    "url": "https://api.robinhood.com/robinhood/agentic/",
+    "host": "api.robinhood.com",
+    "categories": ["account"],
+    "risk": "write-or-sensitive",
+    "methods": ["PATCH"],
     "source": "cdp-2026-05-28-account-section-unique; agent-added-2026-06-02",
     "seenOn": ["account-section"],
     "queryKeys": ["account_number"],

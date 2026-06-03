@@ -42,7 +42,7 @@ The follow-up authenticated CDP pass visited 19 surfaces:
 
 Raw route observations: 621 sanitized route templates. Actionable XHR/fetch merge: 217 latest browser route templates across `api.robinhood.com`, `bonfire.robinhood.com`, `cashier.robinhood.com`, `dora.robinhood.com`, `identi.robinhood.com`, `minerva.robinhood.com`, and `nummus.robinhood.com`.
 
-The merged personal API map now has 275 unified route entries after mixing in Robinhood's official Crypto OpenAPI, plus 259 brokerage/account route templates. The unified OpenAPI has 263 paths and 266 operations. It also writes 275 per-endpoint Markdown files under `api-map/markdown/endpoints/`; each starts with `Mutation: yes` or `Mutation: no`.
+At the time of this capture, the merged personal API map had 275 unified route entries after mixing in Robinhood's official Crypto OpenAPI, plus 259 brokerage/account route templates. Later passes expanded and method-split the map; use `docs/undocumented-surface.md` for current counts.
 
 Deep proof:
 

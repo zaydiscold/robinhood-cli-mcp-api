@@ -1,11 +1,11 @@
-# GET /orders/%7B0%7D/cancel/
+# POST /orders/%7B0%7D/cancel/
 
 Mutation: yes
 Risk: destructive
 
 Host: nummus.robinhood.com
 Categories: orders
-Source: community-seed
+Source: wire-writes 2026-05-29
 Operation ID: n/a
 
 Route template:

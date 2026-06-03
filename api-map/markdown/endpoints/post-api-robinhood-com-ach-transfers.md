@@ -1,7 +1,7 @@
-# GET /ach/relationships/%7B0%7D/unlink/
+# POST /ach/transfers/
 
 Mutation: yes
-Risk: destructive
+Risk: write-or-sensitive
 
 Host: api.robinhood.com
 Categories: money-movement
@@ -11,5 +11,5 @@ Operation ID: n/a
 Route template:
 
 ```text
-https://api.robinhood.com/ach/relationships/{0}/unlink/
+https://api.robinhood.com/ach/transfers/
 ```

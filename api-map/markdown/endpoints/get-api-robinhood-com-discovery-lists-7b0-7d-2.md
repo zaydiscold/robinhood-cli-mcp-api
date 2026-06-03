@@ -1,15 +1,15 @@
-# GET /orders/%7B0%7D/cancel/
+# GET /discovery/lists/%7B0%7D/
 
 Mutation: yes
 Risk: destructive
 
 Host: api.robinhood.com
-Categories: orders
+Categories: uncategorized
 Source: community-seed
 Operation ID: n/a
 
 Route template:
 
 ```text
-https://api.robinhood.com/orders/{0}/cancel/
+https://api.robinhood.com/discovery/lists/{0}/
 ```

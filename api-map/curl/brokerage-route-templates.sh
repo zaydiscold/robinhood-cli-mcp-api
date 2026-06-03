@@ -36,14 +36,23 @@
 # read GET https://api.robinhood.com/ach/received/transfers/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/received/transfers/'
 
+# sensitive-read GET https://api.robinhood.com/ach/relationships/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/relationships/'
+
 # write-or-sensitive POST https://api.robinhood.com/ach/relationships/
 # curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/relationships/'
 
-# write-or-sensitive POST https://api.robinhood.com/ach/relationships/{0}/
-# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/relationships/{0}/'
+# sensitive-read GET https://api.robinhood.com/ach/relationships/{0}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/relationships/{0}/'
+
+# destructive DELETE https://api.robinhood.com/ach/relationships/{0}/
+# curl -sS -X DELETE -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/relationships/{0}/'
 
 # destructive POST https://api.robinhood.com/ach/relationships/{0}/unlink/
 # curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/relationships/{0}/unlink/'
+
+# sensitive-read GET https://api.robinhood.com/ach/transfers/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/transfers/'
 
 # write-or-sensitive POST https://api.robinhood.com/ach/transfers/
 # curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/ach/transfers/'
@@ -99,6 +108,9 @@
 # sensitive-read GET https://api.robinhood.com/corp_actions/drip/enrollment/{num}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/corp_actions/drip/enrollment/{num}/'
 
+# write-or-sensitive PATCH https://api.robinhood.com/corp_actions/drip/enrollment/{num}/
+# curl -sS -X PATCH -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/corp_actions/drip/enrollment/{num}/'
+
 # sensitive-read GET https://api.robinhood.com/corp_actions/v2/split_payments/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/corp_actions/v2/split_payments/'
 
@@ -110,18 +122,6 @@
 
 # sensitive-read GET https://api.robinhood.com/devices/disable_remove_device/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/devices/disable_remove_device/'
-
-# sensitive-read GET https://api.robinhood.com/discovery/lists/
-# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/'
-
-# sensitive-read GET https://api.robinhood.com/discovery/lists/default/
-# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/default/'
-
-# sensitive-read GET https://api.robinhood.com/discovery/lists/items/
-# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/items/'
-
-# sensitive-read GET https://api.robinhood.com/discovery/lists/user_items/
-# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/user_items/'
 
 # read GET https://api.robinhood.com/discovery/ratings/{id}/overview/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/ratings/{id}/overview/'
@@ -245,6 +245,9 @@
 
 # read GET https://api.robinhood.com/marketdata/insiders/transactions/{id}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/insiders/transactions/{id}/'
+
+# read GET https://api.robinhood.com/marketdata/options/?ids={ids}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/options/?ids={ids}'
 
 # read GET https://api.robinhood.com/marketdata/options/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/options/'
@@ -413,6 +416,9 @@
 
 # sensitive-read GET https://api.robinhood.com/positions/?account_number=
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/positions/?account_number='
+
+# sensitive-read GET https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true'
 
 # read GET https://api.robinhood.com/quotes/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/quotes/'
@@ -603,7 +609,7 @@
 # sensitive-read GET https://bonfire.robinhood.com/payment_instruments/v2/debitcard/{uuid}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/payment_instruments/v2/debitcard/{uuid}/'
 
-# write-or-sensitive GET https://bonfire.robinhood.com/paymenthub/unified_transfers/
+# sensitive-read GET https://bonfire.robinhood.com/paymenthub/unified_transfers/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/paymenthub/unified_transfers/'
 
 # sensitive-read GET https://bonfire.robinhood.com/paymenthub/unified_transfers/{uuid}/contribution/
@@ -765,11 +771,14 @@
 # read GET https://nummus.robinhood.com/holdings/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://nummus.robinhood.com/holdings/'
 
-# write-or-sensitive GET https://nummus.robinhood.com/orders/
+# sensitive-read GET https://nummus.robinhood.com/orders/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://nummus.robinhood.com/orders/'
 
-# write-or-sensitive POST https://nummus.robinhood.com/orders/{0}/
-# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://nummus.robinhood.com/orders/{0}/'
+# write-mutate POST https://nummus.robinhood.com/orders/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://nummus.robinhood.com/orders/'
+
+# sensitive-read GET https://nummus.robinhood.com/orders/{0}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://nummus.robinhood.com/orders/{0}/'
 
 # destructive POST https://nummus.robinhood.com/orders/{0}/cancel/
 # curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://nummus.robinhood.com/orders/{0}/cancel/'
@@ -779,3 +788,72 @@
 
 # sensitive-read GET https://phoenix.robinhood.com/accounts/unified
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://phoenix.robinhood.com/accounts/unified'
+
+# write-mutate POST https://api.robinhood.com/orders/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/orders/'
+
+# write-mutate POST https://api.robinhood.com/options/orders/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/orders/'
+
+# read GET https://api.robinhood.com/instruments/?ids={ids}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/instruments/?ids={ids}'
+
+# read GET https://api.robinhood.com/marketdata/quotes/?ids={ids}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/quotes/?ids={ids}'
+
+# read GET https://api.robinhood.com/instruments/?symbol={symbol}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/instruments/?symbol={symbol}'
+
+# read GET https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}'
+
+# sensitive-read GET https://api.robinhood.com/discovery/lists/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/'
+
+# sensitive-read GET https://api.robinhood.com/discovery/lists/default/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/default/'
+
+# sensitive-read GET https://api.robinhood.com/discovery/lists/items/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/items/'
+
+# sensitive-read GET https://api.robinhood.com/discovery/lists/user_items/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/user_items/'
+
+# sensitive-read GET https://api.robinhood.com/discovery/lists/{0}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/{0}/'
+
+# destructive POST https://api.robinhood.com/discovery/lists/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/'
+
+# destructive POST https://api.robinhood.com/discovery/lists/{0}/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/{0}/'
+
+# destructive POST https://api.robinhood.com/discovery/lists/{0}/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/{0}/'
+
+# sensitive-read GET https://api.robinhood.com/discovery/lists/?owner_type=custom
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/?owner_type=custom'
+
+# sensitive-read GET https://api.robinhood.com/discovery/lists/?owner_type=custom
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/?owner_type=custom'
+
+# destructive PATCH https://api.robinhood.com/discovery/lists/{id}/
+# curl -sS -X PATCH -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/{id}/'
+
+# destructive POST https://api.robinhood.com/discovery/lists/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/'
+
+# destructive PATCH https://bonfire.robinhood.com/recurring_schedules/{0}/
+# curl -sS -X PATCH -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/recurring_schedules/{0}/'
+
+# destructive POST https://bonfire.robinhood.com/recurring_schedules/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/recurring_schedules/'
+
+# sensitive-read GET https://bonfire.robinhood.com/recurring_schedules/{0}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/recurring_schedules/{0}/'
+
+# sensitive-read GET https://api.robinhood.com/robinhood/agentic/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/robinhood/agentic/'
+
+# write-or-sensitive PATCH https://api.robinhood.com/robinhood/agentic/
+# curl -sS -X PATCH -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/robinhood/agentic/'

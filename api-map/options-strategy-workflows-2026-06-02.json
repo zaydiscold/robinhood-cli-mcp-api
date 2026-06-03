@@ -438,7 +438,7 @@
     "lookupSteps": [
       "GET https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol={symbol}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=call",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?legs={strategy_legs}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -519,7 +519,7 @@
     "lookupSteps": [
       "GET https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol={symbol}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=put",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?legs={strategy_legs}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -600,7 +600,7 @@
       "GET https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol={symbol}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=call",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=put",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?legs={strategy_legs}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -682,7 +682,7 @@
       "GET https://api.robinhood.com/options/option_settings/{account_number}/",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=call",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=put",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?legs={strategy_legs}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -770,7 +770,7 @@
     ],
     "lookupSteps": [
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=call",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?legs={strategy_legs}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -875,7 +875,7 @@
       "GET https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol={symbol}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=put",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=call",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?legs={strategy_legs}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -968,7 +968,7 @@
     "lookupSteps": [
       "GET https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol={symbol}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=call",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -1048,7 +1048,7 @@
     "lookupSteps": [
       "GET https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol={symbol}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=put",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -1261,7 +1261,7 @@
       "GET https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol={symbol}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=put",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=call",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -1343,7 +1343,7 @@
       "GET https://api.robinhood.com/options/chains/{chain_id}/collateral/?account_number={account_number}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=put",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type=call",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}"
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
     ],
     "orderTemplate": {
       "account": "https://api.robinhood.com/accounts/{account_number}/",
@@ -1374,6 +1374,172 @@
       "Requires explicit user confirmation of naked short option exposure."
     ],
     "cliGuidance": "Prefer iron condor if the user wants a defined-risk alternative; keep short strangle exact-approval only.",
+    "sources": [
+      "https://www.finra.org/investors/investing/investment-products/options",
+      "https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document"
+    ]
+  },
+  {
+    "id": "call-calendar-roll",
+    "title": "Call calendar roll",
+    "category": "position-management",
+    "marketView": "Move call exposure from one expiration/strike to another, usually by closing the existing call and opening a later-dated call.",
+    "volatilityView": "Depends on the close/open legs; later-dated long calls usually add duration and vega.",
+    "aggressiveness": "moderate",
+    "definedRisk": true,
+    "requiresMargin": false,
+    "requiresUnderlying": false,
+    "payoff": {
+      "maxProfit": "Depends on the replacement call after the close leg; compute from the net debit or credit.",
+      "maxLoss": "For a buy-to-open replacement call, max opening loss is the net debit paid after close proceeds.",
+      "breakevens": ["open_call_strike + net_roll_debit", "close_leg_cost_basis for realized P/L"]
+    },
+    "greekProfile": {
+      "delta": "Compare closed call delta to opened call delta; rolling up usually reduces delta, rolling down usually increases it.",
+      "gamma": "Closing a near-term call reduces near-term gamma; opening a later call usually adds lower gamma.",
+      "theta": "Often reduces near-term theta burn but keeps negative theta if the replacement is long.",
+      "vega": "Usually increases duration/vega when rolling to a later expiration.",
+      "rho": "Small positive net exposure for long replacement calls."
+    },
+    "legs": [
+      {
+        "id": "close_call",
+        "action": "sell",
+        "optionType": "call",
+        "strikeRole": "close_call_strike",
+        "positionEffect": "close",
+        "ratioQuantity": 1,
+        "optionPlaceholder": "close_call_option_id"
+      },
+      {
+        "id": "open_call",
+        "action": "buy",
+        "optionType": "call",
+        "strikeRole": "open_call_strike",
+        "positionEffect": "open",
+        "ratioQuantity": 1,
+        "optionPlaceholder": "open_call_option_id"
+      }
+    ],
+    "lookupSteps": [
+      "GET https://api.robinhood.com/options/aggregate_positions/?account_numbers={account_number}&nonzero=True",
+      "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={close_call_expiration}&state=active&type=call",
+      "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={open_call_expiration}&state=active&type=call",
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
+    ],
+    "orderTemplate": {
+      "account": "https://api.robinhood.com/accounts/{account_number}/",
+      "direction": "{roll_direction}",
+      "legs": [
+        {
+          "side": "sell",
+          "option": "https://api.robinhood.com/options/instruments/{close_call_option_id}/",
+          "position_effect": "close",
+          "ratio_quantity": 1
+        },
+        {
+          "side": "buy",
+          "option": "https://api.robinhood.com/options/instruments/{open_call_option_id}/",
+          "position_effect": "open",
+          "ratio_quantity": 1
+        }
+      ],
+      "type": "limit",
+      "time_in_force": "{time_in_force}",
+      "trigger": "immediate",
+      "price": "{limit_price}",
+      "quantity": "{quantity}",
+      "ref_id": "{ref_id}"
+    },
+    "riskNotes": [
+      "Verify the close leg is actually held before calling this a roll.",
+      "For cash accounts, same-ticket or same-day replacement may fail if close proceeds are not settled; use options roll-plan --cash-account for a staged delayed roll.",
+      "Rolling can increase risk by adding duration, changing strike, or turning a closing trade into new opening exposure."
+    ],
+    "cliGuidance": "Use options strategy-quote call-calendar-roll with --expiration as the default plus --param close_call_expiration=<old date> --param open_call_expiration=<new date>, or use options roll-plan --cash-account for staged close-today/open-next-business-day dry-runs.",
+    "sources": [
+      "https://www.finra.org/investors/investing/investment-products/options",
+      "https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document"
+    ]
+  },
+  {
+    "id": "put-calendar-roll",
+    "title": "Put calendar roll",
+    "category": "position-management",
+    "marketView": "Move put exposure from one expiration/strike to another, usually by closing the existing put and opening a later-dated put.",
+    "volatilityView": "Depends on the close/open legs; later-dated long puts usually add duration and vega.",
+    "aggressiveness": "moderate",
+    "definedRisk": true,
+    "requiresMargin": false,
+    "requiresUnderlying": false,
+    "payoff": {
+      "maxProfit": "Depends on the replacement put after the close leg; compute from the net debit or credit.",
+      "maxLoss": "For a buy-to-open replacement put, max opening loss is the net debit paid after close proceeds.",
+      "breakevens": ["open_put_strike - net_roll_debit", "close_leg_cost_basis for realized P/L"]
+    },
+    "greekProfile": {
+      "delta": "Compare closed put delta to opened put delta; replacement puts usually keep negative directional exposure.",
+      "gamma": "Closing a near-term put reduces near-term gamma; opening a later put usually adds lower gamma.",
+      "theta": "Often reduces near-term theta burn but keeps negative theta if the replacement is long.",
+      "vega": "Usually increases duration/vega when rolling to a later expiration.",
+      "rho": "Small negative net exposure for long replacement puts."
+    },
+    "legs": [
+      {
+        "id": "close_put",
+        "action": "sell",
+        "optionType": "put",
+        "strikeRole": "close_put_strike",
+        "positionEffect": "close",
+        "ratioQuantity": 1,
+        "optionPlaceholder": "close_put_option_id"
+      },
+      {
+        "id": "open_put",
+        "action": "buy",
+        "optionType": "put",
+        "strikeRole": "open_put_strike",
+        "positionEffect": "open",
+        "ratioQuantity": 1,
+        "optionPlaceholder": "open_put_option_id"
+      }
+    ],
+    "lookupSteps": [
+      "GET https://api.robinhood.com/options/aggregate_positions/?account_numbers={account_number}&nonzero=True",
+      "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={close_put_expiration}&state=active&type=put",
+      "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={open_put_expiration}&state=active&type=put",
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={strategy_ids}&ratios={ratios}&types={types}&include_all_sessions=true"
+    ],
+    "orderTemplate": {
+      "account": "https://api.robinhood.com/accounts/{account_number}/",
+      "direction": "{roll_direction}",
+      "legs": [
+        {
+          "side": "sell",
+          "option": "https://api.robinhood.com/options/instruments/{close_put_option_id}/",
+          "position_effect": "close",
+          "ratio_quantity": 1
+        },
+        {
+          "side": "buy",
+          "option": "https://api.robinhood.com/options/instruments/{open_put_option_id}/",
+          "position_effect": "open",
+          "ratio_quantity": 1
+        }
+      ],
+      "type": "limit",
+      "time_in_force": "{time_in_force}",
+      "trigger": "immediate",
+      "price": "{limit_price}",
+      "quantity": "{quantity}",
+      "ref_id": "{ref_id}"
+    },
+    "riskNotes": [
+      "Verify the close leg is actually held before calling this a roll.",
+      "For cash accounts, same-ticket or same-day replacement may fail if close proceeds are not settled; use options roll-plan --cash-account for a staged delayed roll.",
+      "Rolling can increase risk by adding duration, changing strike, or turning a closing trade into new opening exposure."
+    ],
+    "cliGuidance": "Use options strategy-quote put-calendar-roll with --expiration as the default plus --param close_put_expiration=<old date> --param open_put_expiration=<new date>, or use options roll-plan --cash-account for staged close-today/open-next-business-day dry-runs.",
     "sources": [
       "https://www.finra.org/investors/investing/investment-products/options",
       "https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document"

@@ -1,7 +1,7 @@
 # GET /paymenthub/unified_transfers/
 
-Mutation: yes
-Risk: write-or-sensitive
+Mutation: no
+Risk: sensitive-read
 
 Host: bonfire.robinhood.com
 Categories: money-movement, unknown

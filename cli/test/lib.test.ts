@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAccountContextUrl,
+  buildOptionsContractLinkBundle,
   buildOptionsContractNavigationPlan,
   buildOptionsStrategyPricingSummary,
   buildOptionsStrategyOrderPlan,
@@ -40,13 +41,13 @@ const robinhoodPublishedExampleApiKey = () =>
 describe("Robinhood API map", () => {
   it("loads the brokerage route map with conservative risk counts", () => {
     const routes = loadBrokerageRoutes();
-    expect(routes.length).toBeGreaterThanOrEqual(259);
-    // 11 genuinely destructive routes: ACH unlink, 3× order cancel, watchlist
+    expect(routes.length).toBeGreaterThanOrEqual(285);
+    // 12 genuinely destructive routes: ACH relationship delete/unlink, 3× order cancel, watchlist
     // create/rename/delete (the url_template→url repair in c2dd79f made the legacy
     // discovery/lists stubs countable again), recurring create/delete. Bump
     // deliberately after auditing so a misclassification can't slip in as "just
     // another count change".
-    expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(11);
+    expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(12);
     expect(filterBrokerageRoutes(routes, { risk: "write-safe" }).length).toBeGreaterThanOrEqual(4);
     expect(filterBrokerageRoutes(routes, { category: "options" }).length).toBeGreaterThanOrEqual(11);
     expect(filterBrokerageRoutes(routes, { query: "ach/relationships" }).length).toBeGreaterThan(0);
@@ -54,23 +55,44 @@ describe("Robinhood API map", () => {
     expect(filterBrokerageRoutes(routes, { host: "bonfire.robinhood.com" }).length).toBeGreaterThanOrEqual(80);
   });
 
+  it("keeps read and write methods split so writes cannot inherit read-level risk", () => {
+    const routes = loadBrokerageRoutes();
+    const writeMethods = new Set(["POST", "PATCH", "PUT", "DELETE"]);
+    const writeRisks = new Set(["write-safe", "write-mutate", "write-or-sensitive", "destructive"]);
+    const offenders = routes.filter((route) => {
+      const methods = (route.methods ?? ["GET"]).map((method) => method.toUpperCase());
+      return methods.some((method) => writeMethods.has(method)) && !writeRisks.has(route.risk);
+    });
+    const mixedReadWrite = routes.filter((route) => {
+      const methods = (route.methods ?? ["GET"]).map((method) => method.toUpperCase());
+      return methods.includes("GET") && methods.some((method) => writeMethods.has(method));
+    });
+    const explicitGetOnlyWriteRisk = routes.filter((route) => {
+      const methods = route.methods?.map((method) => method.toUpperCase()) ?? [];
+      return methods.length === 1 && methods[0] === "GET" && writeRisks.has(route.risk);
+    });
+    expect(offenders).toEqual([]);
+    expect(mixedReadWrite).toEqual([]);
+    expect(explicitGetOnlyWriteRisk).toEqual([]);
+  });
+
   it("summarizes the official Crypto OpenAPI and brokerage map", () => {
     const summary = summarizeApiMap();
-    expect(summary.unified.routes).toBeGreaterThanOrEqual(275);
-    expect(summary.unified.openapiOperations).toBeGreaterThanOrEqual(266);
+    expect(summary.unified.routes).toBeGreaterThanOrEqual(301);
+    expect(summary.unified.openapiOperations).toBeGreaterThanOrEqual(282);
     expect(summary.unified.hosts["trading.robinhood.com"]).toBe(16);
     expect(summary.crypto.paths).toBe(14);
     expect(summary.crypto.operations).toBe(16);
-    expect(summary.brokerage.routes).toBeGreaterThanOrEqual(259);
+    expect(summary.brokerage.routes).toBeGreaterThanOrEqual(285);
     expect(summary.brokerage.browserRoutes).toBeGreaterThanOrEqual(217);
-    expect(summary.brokerage.openapiPaths).toBeGreaterThanOrEqual(249);
-    expect(summary.brokerage.openapiOperations).toBeGreaterThanOrEqual(250);
+    expect(summary.brokerage.openapiPaths).toBeGreaterThanOrEqual(253);
+    expect(summary.brokerage.openapiOperations).toBeGreaterThanOrEqual(266);
     expect(summary.brokerage.byRisk["sensitive-read"]).toBeGreaterThanOrEqual(71);
   });
 
   it("mixes Robinhood-published Crypto routes into the unified API map", () => {
     const routes = loadRobinhoodRoutes();
-    expect(routes.length).toBeGreaterThanOrEqual(275);
+    expect(routes.length).toBeGreaterThanOrEqual(301);
     expect(filterRobinhoodRoutes(routes, { host: "trading.robinhood.com" })).toHaveLength(16);
     expect(filterRobinhoodRoutes(routes, { category: "crypto" })).toHaveLength(16);
     expect(filterRobinhoodRoutes(routes, { query: "https://trading.robinhood.com/api/v2/crypto/trading/orders/" })).toHaveLength(3);
@@ -134,6 +156,9 @@ describe("Robinhood API map", () => {
     expect(filterOptionsStrategyWorkflows(workflows, { query: "strangle" }).map((workflow) => workflow.id)).toContain(
       "short-strangle"
     );
+    expect(filterOptionsStrategyWorkflows(workflows, { query: "roll" }).map((workflow) => workflow.id)).toEqual(
+      expect.arrayContaining(["call-calendar-roll", "put-calendar-roll"])
+    );
     expect(filterOptionsStrategyWorkflows(workflows, { query: "covered short put" }).map((workflow) => workflow.id)).toEqual(
       expect.arrayContaining(["cash-secured-short-put", "covered-put"])
     );
@@ -147,6 +172,9 @@ describe("Robinhood API map", () => {
       strategy_legs: "short_call,long_call",
       short_call_option_id: "short-call-id",
       long_call_option_id: "long-call-id",
+      strategy_ids: "short-call-id,long-call-id",
+      ratios: "1,1",
+      types: "short,long",
       limit_price: "4.00",
       quantity: "1",
       time_in_force: "gfd",
@@ -163,6 +191,38 @@ describe("Robinhood API map", () => {
     );
     expect(plan.reviewContract.hardBlockers).toContain("missing option instrument id for any leg");
     expect(JSON.stringify(workflows)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
+  });
+
+  it("builds dry-run roll templates with explicit close/open expirations and computed direction", () => {
+    const workflows = loadOptionsStrategyWorkflows();
+    const roll = workflows.find((workflow) => workflow.id === "call-calendar-roll");
+    expect(roll).toBeTruthy();
+    const plan = buildOptionsStrategyOrderPlan(roll!, {
+      account_number: "ACCOUNT_TEST",
+      chain_id: "chain-id",
+      symbol: "DRAM",
+      expiration: "2026-06-26",
+      close_call_expiration: "2026-06-26",
+      open_call_expiration: "2026-12-18",
+      close_call_strike: "70",
+      open_call_strike: "80",
+      close_call_option_id: "close-call-id",
+      open_call_option_id: "open-call-id",
+      strategy_ids: "close-call-id,open-call-id",
+      ratios: "1,1",
+      types: "short,long",
+      roll_direction: "debit",
+      limit_price: "1.25",
+      quantity: "1",
+      time_in_force: "gfd",
+      ref_id: "00000000-0000-4000-8000-000000000002"
+    });
+    expect(plan.mode).toBe("dry_run");
+    expect(plan.missingParams).toEqual([]);
+    expect((plan.order as any).direction).toBe("debit");
+    expect(JSON.stringify(plan.order)).toContain("https://api.robinhood.com/options/instruments/close-call-id/");
+    expect(JSON.stringify(plan.order)).toContain("https://api.robinhood.com/options/instruments/open-call-id/");
+    expect(plan.warnings.join("\n")).toContain("cash accounts");
   });
 
   it("prices option credit spreads from side-aware bid/ask and builds a far sell probe", () => {
@@ -257,9 +317,50 @@ describe("Robinhood API map", () => {
     expect(plan.apiResolutionSteps.find((step) => step.id === "quote-single-contract")?.url).toBe(
       "https://api.robinhood.com/marketdata/options/?ids=OPTION_TEST&include_all_sessions=true"
     );
+    expect(plan.orderHandoff.strategyQuoteUrl).toBe(
+      "https://api.robinhood.com/marketdata/options/strategy/quotes/?ids=OPTION_TEST&ratios=1&types=long&include_all_sessions=true"
+    );
     expect(JSON.stringify(plan.orderHandoff.orderTemplate)).toContain("https://api.robinhood.com/options/instruments/OPTION_TEST/");
     expect(plan.warnings.join("\n")).toContain("candidate probe keys");
     expect(JSON.stringify(plan)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
+  });
+
+  it("builds exact-contract link bundles with explicit API-vs-UI confidence and far pricing controls", () => {
+    const bundle = buildOptionsContractLinkBundle({
+      accountNumber: "ACCOUNT_TEST",
+      symbol: "dram",
+      expiration: "2026-12-18",
+      optionType: "call",
+      side: "buy",
+      strike: "80",
+      chainId: "CHAIN_TEST",
+      underlyingInstrumentId: "UNDERLYING_TEST",
+      optionInstrumentId: "OPTION_TEST",
+      optionInstrumentUrl: "https://api.robinhood.com/options/instruments/OPTION_TEST/",
+      occSymbol: "DRAM  261218C00080000",
+      quote: {
+        bid: "13.35",
+        ask: "14.50",
+        mark: "13.93",
+        last: "13.90",
+        delta: "0.5472"
+      },
+      strategyQuoteUrl:
+        "https://api.robinhood.com/marketdata/options/strategy/quotes/?ids=OPTION_TEST&ratios=1&types=long&include_all_sessions=true"
+    });
+    expect(bundle.mode).toBe("dry_run");
+    expect(bundle.exactApiResolutionProven).toBe(true);
+    expect(bundle.exactUiSelectionProven).toBe(false);
+    expect(bundle.links.accountScopedWebShell).toBe("https://robinhood.com/options/chains/DRAM?account_number=ACCOUNT_TEST");
+    expect(bundle.links.appChainById).toBe("robinhood://option_chain?chain_id=CHAIN_TEST&source=robinhood-cli-contract-plan");
+    expect(bundle.webhookHandoff.copyPastePrimary).toBe(bundle.links.appChainById);
+    expect(bundle.resolvedContract?.optionInstrumentId).toBe("OPTION_TEST");
+    expect(bundle.quote?.naturalPrice).toBeCloseTo(14.5);
+    expect(bundle.quote?.midPrice).toBeCloseTo(13.93);
+    expect(bundle.pricingControls.safeSellProbeLimit).toBeCloseTo(214.5);
+    expect(bundle.pricingControls.safeBuyProbeLimit).toBeCloseTo(0.01);
+    expect(bundle.warnings.join("\n")).toContain("No universal URL is proven");
+    expect(JSON.stringify(bundle)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
 
   it("lists official Crypto routes without counting OpenAPI metadata keys as methods", () => {

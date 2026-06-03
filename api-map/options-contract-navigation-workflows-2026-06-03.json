@@ -17,7 +17,7 @@
       "GET https://api.robinhood.com/options/chains/?account_number={account_number}&equity_instrument_id={equity_instrument_id}",
       "GET https://api.robinhood.com/options/instruments/?account_number={account_number}&chain_id={chain_id}&expiration_dates={expiration}&state=active&type={call_or_put}",
       "GET https://api.robinhood.com/marketdata/options/?ids={option_instrument_id}&include_all_sessions=true",
-      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={option_instrument_id}&ratios=1&types={buy_or_sell}",
+      "GET https://api.robinhood.com/marketdata/options/strategy/quotes/?ids={option_instrument_id}&ratios=1&types={long_or_short}&include_all_sessions=true",
       "GET https://api.robinhood.com/options/chains/{chain_id}/collateral/?account_number={account_number}",
       "POST https://api.robinhood.com/options/orders/"
     ],
@@ -27,6 +27,7 @@
       "api-map/browser-cdp-routes-2026-06-02.json"
     ],
     "cliCommand": "robinhood-cli api-map options-contract-plan --account <ACCOUNT_NUMBER> --symbol XBI --expiration 2026-06-26 --type call --side buy --strike 127 --json",
+    "liveResolutionCommand": "robinhood-cli api-map options-contract-links --account <ACCOUNT_NUMBER> --symbol DRAM --expiration 2026-12-18 --type call --side buy --strike 80 --json",
     "warnings": [
       "The workflow is API/navigation-first.",
       "Only account_number on the web options-chain shell is browser-observed.",

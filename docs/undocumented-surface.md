@@ -4,20 +4,20 @@ The full Robinhood route map combines Robinhood's official Crypto OpenAPI with c
 
 Official Crypto routes are first-class executable routes in the personal CLI and MCP server. Use `crypto execute` / `robinhood_crypto_execute` for `trading.robinhood.com` routes; use `brokerage execute` / `robinhood_brokerage_execute` for browser-backed brokerage/account routes.
 
-Current counts after the 2026-06-02 account-context and XBI options-chain browser pass:
+Current counts after the 2026-06-03 options/account-settings hardening pass:
 
-- 275 unified route entries.
+- 301 unified route entries.
 - 16 official Crypto route entries from Robinhood's published OpenAPI.
-- 259 brokerage/account route templates.
+- 285 brokerage/account route entries.
 - 250 latest authenticated browser route templates.
-- 263 normalized unified OpenAPI paths and 266 unified operations in `api-map/openapi/robinhood-unified.openapi.json`.
-- 249 normalized OpenAPI paths and 250 operations in `api-map/openapi/robinhood-brokerage.openapi.json`.
-- 72 read.
-- 182 sensitive-read.
+- 267 normalized unified OpenAPI paths and 282 unified operations in `api-map/openapi/robinhood-unified.openapi.json`.
+- 253 normalized brokerage OpenAPI paths and 266 brokerage operations in `api-map/openapi/robinhood-brokerage.openapi.json`.
+- 77 read.
+- 194 sensitive-read.
 - 4 write-safe.
-- 3 write-mutate.
-- 8 write-or-sensitive.
-- 6 destructive.
+- 6 write-mutate.
+- 6 write-or-sensitive.
+- 14 destructive.
 
 2026-05-26 CDP capture:
 
@@ -35,7 +35,7 @@ Current counts after the 2026-06-02 account-context and XBI options-chain browse
 - Pages: NVDA/AAPL/TSLA/HOOD/SPY/QQQ ticker pages, NVDA options, portfolio home, account root/history/settings/contact/security/notifications/documents/statements/transfers, BTC crypto, and markets.
 - Raw route observations: 621 route templates.
 - Actionable XHR/fetch merge: 217 latest browser routes across `api.robinhood.com`, `bonfire.robinhood.com`, `cashier.robinhood.com`, `dora.robinhood.com`, `identi.robinhood.com`, `minerva.robinhood.com`, and `nummus.robinhood.com`.
-- Per-endpoint docs: 275 files in `api-map/markdown/endpoints/`, each with a top-level `Mutation: yes|no` field.
+- Per-endpoint docs: 301 files in `api-map/markdown/endpoints/`, each with a top-level `Mutation: yes|no` field.
 
 2026-06-02 account-context and XBI options-chain pass:
 

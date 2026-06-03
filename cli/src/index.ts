@@ -1787,6 +1787,56 @@ program
     for (const row of rows) process.stdout.write(`\n${row.accountNumber} (${row.class}): ${row.capabilityNote}\n`);
   });
 
+// Unified account history: /account/history in the web app aggregates several
+// sources client-side (there is no single transactions endpoint). This command
+// merges equity orders, options orders, crypto orders, and ACH transfers into one
+// time-sorted, date-filtered view. Read-only.
+program
+  .command("history")
+  .description("Unified transaction history (equity + options + crypto orders + ACH transfers), newest first. Read.")
+  .option("--days <n>", "include the last N days (default 3)", "3")
+  .option("--account <account_number>", "filter equity/options to one account")
+  .option("--json", "emit JSON")
+  .action(async (opts: { days?: string; account?: string; json?: boolean }) => {
+    const days = Math.max(1, Number(opts.days ?? "3"));
+    const cutoffMs = Date.now() - days * 86400000;
+    const inWindow = (ts: unknown): boolean => {
+      const t = Date.parse(String(ts ?? ""));
+      return Number.isFinite(t) && t >= cutoffMs;
+    };
+    const events: Array<{ time: string; kind: string; summary: string; state: string }> = [];
+    const acctQuery = opts.account ? `?account_numbers=${encodeURIComponent(opts.account)}` : "";
+
+    const eq = await tryBrokerageGetJson(`https://api.robinhood.com/orders/${opts.account ? `?account_number=${encodeURIComponent(opts.account)}` : ""}`);
+    if (eq.ok) for (const r of ((eq.data as any)?.results ?? [])) {
+      const t = r.updated_at ?? r.created_at;
+      if (inWindow(t)) events.push({ time: String(t), kind: "equity", summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`, state: String(r.state ?? "?") });
+    }
+    const op = await tryBrokerageGetJson(`https://api.robinhood.com/options/orders/${acctQuery}`);
+    if (op.ok) for (const r of ((op.data as any)?.results ?? [])) {
+      const t = r.updated_at ?? r.created_at;
+      if (inWindow(t)) events.push({ time: String(t), kind: "option", summary: `${r.chain_symbol ?? "?"} ${r.opening_strategy ?? r.closing_strategy ?? ""} ${r.direction ?? ""} ${r.quantity ?? ""} @ ${r.price ?? "?"}`.trim(), state: String(r.state ?? "?") });
+    }
+    const cx = await tryBrokerageGetJson("https://nummus.robinhood.com/orders/");
+    if (cx.ok) for (const r of ((cx.data as any)?.results ?? [])) {
+      const t = r.updated_at ?? r.created_at;
+      if (inWindow(t)) events.push({ time: String(t), kind: "crypto", summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`, state: String(r.state ?? "?") });
+    }
+    const ach = await tryBrokerageGetJson("https://api.robinhood.com/ach/transfers/");
+    if (ach.ok) for (const r of ((ach.data as any)?.results ?? [])) {
+      const t = r.updated_at ?? r.created_at;
+      if (inWindow(t)) events.push({ time: String(t), kind: "transfer", summary: `${r.direction ?? "?"} ${r.amount ?? "?"}`, state: String(r.state ?? "?") });
+    }
+    events.sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
+    if (opts.json) { printJson(events); return; }
+    if (events.length === 0) { process.stdout.write(`No transactions in the last ${days} day(s).\n`); return; }
+    printTable(
+      events.map((e) => ({ when: e.time.slice(0, 19).replace("T", " "), type: e.kind, state: e.state, detail: e.summary })),
+      ["when", "type", "state", "detail"]
+    );
+    process.stdout.write(`\n${events.length} transaction(s) in the last ${days} day(s).\n`);
+  });
+
 const stock = new Command("stock").description("Stock/ETF detail reads from Robinhood stock pages");
 
 stock

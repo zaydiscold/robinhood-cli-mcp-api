@@ -568,6 +568,7 @@ deep math lives in *Options Greeks and Strategy Math* above.
 | "What do I own / how are my accounts?" | discover accounts, then read | `accounts` (lists every account with cash/margin/IRA capabilities; unverified-type accounts flagged conservative); then portfolios/positions per account |
 | "Quote X" / "what's the chain?" | live read | `quote <SYM>`, `options chain <SYM>`, `options expirations <SYM>` |
 | "Best option position" / P&L | ranked read | `options positions` |
+| "What transactions went through (today/yesterday)?" | unified history | `history --days <n> [--account <N>]` (merges equity + options + crypto orders + ACH transfers, newest first) |
 | "Price a spread / iron condor" | dry-run strategy quote | `options strategy-quote <strategy> --account <N> --symbol <S> --expiration <D> --leg ...` |
 | "Plan a named strategy" | catalog plan | `api-map options-strategies`, `api-map options-strategy-plan <id>` |
 | "Open the exact contract for me" | resolve + navigate | `api-map options-contract-links ...` (emits the API-resolved contract + chain-id deeplink) |

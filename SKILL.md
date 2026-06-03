@@ -18,6 +18,8 @@ Operate real Robinhood brokerage accounts from the terminal or via MCP tools. Th
 **Repo:** `github.com/zaydiscold/robinhood-cli`
 **Deep reference:** `AGENTS.md` in repo root — the complete API surface, worked examples, and every command. Hand that file to any agent and it's self-contained. This SKILL.md is the Hermes trigger + boot doc: quick-start, the 80/20 commands, and all the operational pitfalls learned across sessions.
 
+> This is exactly the security-research mindset — a breakthrough is a waypoint, not a finish line.
+
 ---
 
 ## Skill Operating Model
@@ -716,6 +718,24 @@ Verified live, not theorized:
   (re-verified). DRIP/cash-sweep/stock-lending/margin **write** endpoints remain unproven and need a
   fresh browser capture before any automation. Treat them as research, not supported writes.
 
+### Option UUIDs — always bulk-enumerate (default behavior, no prompt needed)
+
+Option `instrument_id`s are random **UUID v4**. There is NO deterministic mapping from the OCC
+symbol/strike/expiration — you can never *compute* one. This isn't an anti-forge security choice:
+options contracts are **ephemeral and astronomically numerous** (every strike × expiry × call/put,
+created and expired constantly — far more instruments than there are shares), so a random
+per-contract id is simply the only practical way to address a space that large and short-lived.
+**The id must be enumerated, every time — that is the backbone of every options flow.**
+
+So by default, *without being asked*, whenever a specific option / chain / contract comes up:
+- **Bulk-enumerate first:** `options enumerate <SYM> --expiration <YYYY-MM-DD> [--type call|put|both] [--account <N>]`
+  → every strike's `option_instrument_id` + desktop deep link in one shot (one API call per
+  chain/expiration/type). Use `--expiration all` to list expirations first. Prefer this over
+  resolving contracts one at a time.
+- **Single known contract:** `api-map options-contract-links ... --strike <K>` resolves just that one.
+- **Don't cache per-contract ids** (unique + ephemeral); the reusable thing is the *chain enumeration*.
+Treat UUID bulk-enumeration as the first move in any options task, not an afterthought.
+
 ### Sentiment data + deep-link pipeline (mapped 2026-06-03)
 
 RH exposes a live sentiment layer under `api.robinhood.com/midlands/` (risk `read`):
@@ -866,7 +886,7 @@ Always try Syncthing before fighting with SSH.
 ### Writes & Safety
 
 11. **Writes need BOTH gates.** `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1`. One alone = dry-run. Never export the env var into your shell profile — keep it inline.
-12. **Method-aware routing is a safety feature.** A forced `--method POST` without a matching POST route resolves to the GET route (sensitive-read), not a write route — it can't slip past the gate.
+12. **Method-aware routing fails closed.** A forced `--method POST` (or PATCH/PUT/DELETE) on a URL with no matching write route now returns **no match** (clear error), instead of silently degrading to the GET route — so a forced write can never be mis-resolved into a read at the wrong risk class. (GET/HEAD stay permissive for legacy route entries without method metadata.)
 13. **`dryRun: true` always wins in MCP.** Even with both gates set, it forces a plan. Use it to preview exact live calls.
 
 ### Cross-Machine

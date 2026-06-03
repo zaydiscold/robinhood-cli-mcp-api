@@ -1,4 +1,4 @@
-# robinhood-cli
+# Robinhood CLI
 
 > Trading at the speed of inference.
 
@@ -18,6 +18,13 @@ An unofficial Robinhood API map, CLI, and MCP server for operating a real Robinh
 
 This repo is not the official Robinhood agent sandbox. It drives the account you already have, across the browser-backed brokerage API surface, with reads live by default and every write behind a dry-run/live-write gate.
 
+```bash
+git clone https://github.com/zaydiscold/robinhood-cli.git
+cd robinhood-cli
+pnpm install && pnpm build
+node cli/dist/index.js --help
+```
+
 ## What This Includes
 
 | Surface | Current state |
@@ -27,6 +34,8 @@ This repo is not the official Robinhood agent sandbox. It drives the account you
 | MCP | 17 tools exposing the same auth, route map, and write gate to agents |
 | Auth | Browser-session bearer token loaded from local `.env`, with one-shot self-heal on `401` |
 | Safety | Reads run live; writes require both `--live-write` and `ROBINHOOD_ALLOW_LIVE_WRITE=1` |
+
+This is a pretty damn American piece of software: local control, account-owner agency, dry-run rights, and a command surface that lets people, scripts, and agents work the same Robinhood account without pretending the browser is the product.
 
 ## Coverage
 
@@ -107,7 +116,7 @@ robinhood-cli api-map account-context                # browser-tested account_nu
 robinhood-cli api-map options-strategies             # options payoff/Greek strategy catalog
 robinhood-cli api-map options-strategy-plan iron-condor --json
 robinhood-cli api-map options-strategy-plan naked-short-put --json
-robinhood-cli recurring list                          # flagship: recurring buys + state
+robinhood-cli recurring list                          # recurring buys + state
 robinhood-cli quote MRVL NVDA AAPL                    # live quotes for one+ symbols
 robinhood-cli positions                               # equity holdings ranked by return
 robinhood-cli options positions                       # rank open options by % return
@@ -426,7 +435,7 @@ The repo is built to grow. If an endpoint is missing:
 
 The loop is: capture, document, expose, rebuild, test.
 
-Built on the trio pattern (CLI + skill + MCP) pioneered by [Matt Van Horn's Printing Press](https://github.com/mvanhorn/cli-printing-press).
+Pattern: CLI + skill + MCP. Capture the surface once, expose it cleanly everywhere.
 
 ---
 

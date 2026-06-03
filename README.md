@@ -327,7 +327,9 @@ Treat the API lookup as the source of truth: resolve `chain_id`, filter
 
 No universal unopened-contract URL is claimed. Expiration, strike, side, and
 type URL params are probe candidates until validated in a logged-in browser pass
-across multiple symbols and expirations.
+across multiple symbols and expirations. The `chain_id` app deeplink reliably
+opens the right underlying's chain (device-verified); exact-contract selection
+still comes from the API-resolved `option_instrument_id`.
 
 Operational details live in
 [`docs/options-contract-navigation-2026-06-03.md`](./docs/options-contract-navigation-2026-06-03.md)

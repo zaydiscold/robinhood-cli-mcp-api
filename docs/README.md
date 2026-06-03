@@ -19,6 +19,7 @@ folder stays local and is never pushed.
 | `security-research-account-number-context-routing-2026-06-03.md` | Security-research notes for account-number context routing |
 | `options-quantitative-playbook-2026-06-03.md` | Greeks, pricing, spread math, and strategy posture |
 | `options-strategy-execution-smoke-2026-06-03.md` | Dry-run strategy quote smoke evidence |
+| `live-write-verification-2026-06-03.md` | Live recurring pause/resume round-trip + DRIP write-method correction (405) |
 | `options-contract-navigation-2026-06-03.md` | Exact-contract API resolution and account-pinned chain navigation |
 | `stock-page-profile-2026-06-03.md` | Stock detail page endpoint mapping |
 | `browser-capture-2026-05-26.md` | Older browser capture notes |

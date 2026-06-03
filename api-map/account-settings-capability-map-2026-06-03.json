@@ -47,14 +47,14 @@
     },
     {
       "id": "dividend-reinvestment-drip",
-      "support": "route-map-read-and-dry-run-write",
+      "support": "live-read-only (write method unverified)",
       "firstClass": false,
       "routes": [
         "GET https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
-        "PATCH https://api.robinhood.com/corp_actions/drip/enrollment/{num}/"
+        "GET https://api.robinhood.com/corp_actions/drip/account_settings/{account_number}/"
       ],
-      "mcp": ["robinhood_brokerage_plan", "robinhood_brokerage_execute"],
-      "notes": "PATCH body is {\"drip_enrolled\": true|false}; verify with follow-up GET after live use."
+      "mcp": ["robinhood_brokerage_execute"],
+      "notes": "READ is verified: GET enrollment returns {\"drip_enrolled\": bool, \"account_number\": \"...\"}. WRITE method is NOT yet known: a live test on 2026-06-03 showed PATCH/POST/PUT on .../drip/enrollment/{num}/ all return HTTP 405 Method Not Allowed, so the earlier 'PATCH {drip_enrolled}' note was WRONG. The real toggle likely lives at corp_actions/drip/account_settings/ and must be confirmed by capturing the request the web UI sends when the user flips the dividend-reinvestment toggle. Do NOT claim a working DRIP write until that capture exists."
     },
     {
       "id": "high-yield-cash-sweep",

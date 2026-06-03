@@ -717,7 +717,7 @@
     "requestTypes": [
       "XHR"
     ],
-    "summary": "Toggle DRIP dividend-reinvestment enrollment for an account. PATCH body: {\"drip_enrolled\": true|false}.",
+    "summary": "DRIP enrollment. GET is verified (reads {drip_enrolled, account_number}). WARNING: PATCH/POST/PUT here all return HTTP 405 (verified live 2026-06-03) — this is NOT the write endpoint. The real toggle is likely corp_actions/drip/account_settings/ and must be captured from the web UI before use.",
     "bodyKeys": [
       "drip_enrolled"
     ],

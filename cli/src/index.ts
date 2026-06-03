@@ -79,7 +79,16 @@ function selectRouteByQueryAndMethod<T extends { url: string; methods?: string[]
   const pool = candidates.length > 0 ? candidates : matches;
   if (method) {
     const requested = method.toUpperCase();
-    return pool.find((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested)) ?? pool[0];
+    const exact = pool.find((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested));
+    if (exact) return exact;
+    // No route in the pool advertises the requested method. For WRITE verbs, FAIL CLOSED:
+    // silently degrading a forced POST/PATCH/PUT/DELETE to a GET route would send the wrong
+    // verb at the wrong (read) risk class — a mis-resolution that *looks* safe. Only fall
+    // back when the pool has method metadata to trust; legacy entries without methods keep
+    // the permissive fallback so reads don't break.
+    const isWrite = requested !== "GET" && requested !== "HEAD";
+    if (isWrite && pool.some((candidate) => candidate.methods?.length)) return undefined;
+    return pool[0];
   }
   return pool[0];
 }
@@ -1261,6 +1270,56 @@ options
     );
     if (expirations.length > 1) {
       process.stdout.write(`\nOther expirations: ${expirations.slice(0, 8).join(", ")}${expirations.length > 8 ? " …" : ""}\n`);
+    }
+  });
+
+options
+  .command("enumerate")
+  .description("Bulk-enumerate EVERY option contract (strike + option_instrument_id + desktop deep link) for a symbol/expiration. Option UUIDs are random v4 — enumeration is the ONLY way to get them; one call per (chain, expiration, type). This is the canonical UUID-resolution path.")
+  .argument("<symbol>", "underlying ticker, e.g. ARKG")
+  .option("--expiration <date>", "YYYY-MM-DD; default nearest. Pass 'all' to list every expiration first.")
+  .option("--type <call|put|both>", "contract type", "both")
+  .option("--quotes", "also fetch bid/ask/mark per contract (extra calls)")
+  .option("--account <account_number>", "pin the desktop deep links to an account")
+  .option("--json", "emit JSON")
+  .action(async (symbolArg: string, opts: { expiration?: string; type?: string; quotes?: boolean; account?: string; json?: boolean }) => {
+    const symbol = symbolArg.toUpperCase();
+    const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
+    if (!instrument) throw new Error(`No equity instrument for ${symbol} — check the ticker via 'brokerage search'.`);
+    const chainId = instrument.tradable_chain_id;
+    if (!chainId) throw new Error(`${symbol} has no tradable options chain.`);
+    const expirations: string[] = (await brokerageGetJson(OPTIONS_CHAIN_URL, { id: chainId })).expiration_dates ?? [];
+    if (expirations.length === 0) throw new Error(`${symbol} chain has no listed expirations.`);
+    if (opts.expiration === "all") {
+      if (opts.json) { printJson({ symbol, chainId, expirations }); return; }
+      process.stdout.write(`${symbol} expirations (chain ${chainId}):\n  ${expirations.join("\n  ")}\n`);
+      return;
+    }
+    const expiration = opts.expiration && expirations.includes(opts.expiration) ? opts.expiration : expirations[0];
+    const types = opts.type === "call" ? ["call"] : opts.type === "put" ? ["put"] : ["call", "put"];
+    const acct = opts.account;
+    const contracts: any[] = [];
+    for (const type of types) {
+      const rows: any[] =
+        (await brokerageGetJson(OPTIONS_INSTRUMENTS_URL, { chain_id: chainId, expiration_dates: expiration, type })).results ?? [];
+      const marks = opts.quotes ? await fetchOptionMarks(rows.map((r) => r.id)) : new Map();
+      for (const row of rows) {
+        const m = marks.get(row.id) ?? {};
+        contracts.push({
+          type,
+          strike: num(row.strike_price),
+          optionInstrumentId: row.id,
+          deepLink: `https://robinhood.com/options/instruments/${row.id}/${acct ? `?account_number=${acct}` : ""}`,
+          ...(opts.quotes ? { bid: num(m.bid_price), ask: num(m.ask_price), mark: num(m.adjusted_mark_price) } : {})
+        });
+      }
+    }
+    contracts.sort((a, b) => (a.type === b.type ? a.strike - b.strike : a.type < b.type ? -1 : 1));
+    if (opts.json) { printJson({ symbol, chainId, expiration, count: contracts.length, contracts }); return; }
+    process.stdout.write(`${symbol} — exp ${expiration} — ${contracts.length} contracts (chain ${chainId})\n`);
+    for (const c of contracts) {
+      const q = opts.quotes ? ` bid ${usd(c.bid)}/ask ${usd(c.ask)}` : "";
+      process.stdout.write(`  ${c.type.padEnd(4)} ${c.strike.toFixed(2).padStart(9)}  ${c.optionInstrumentId}${q}\n`);
     }
   });
 

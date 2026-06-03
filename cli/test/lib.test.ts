@@ -359,7 +359,8 @@ describe("Robinhood API map", () => {
     expect(bundle.quote?.midPrice).toBeCloseTo(13.93);
     expect(bundle.pricingControls.safeSellProbeLimit).toBeCloseTo(214.5);
     expect(bundle.pricingControls.safeBuyProbeLimit).toBeCloseTo(0.01);
-    expect(bundle.warnings.join("\n")).toContain("No universal URL is proven");
+    expect(bundle.warnings.join("\n")).toContain("No single URL preselects side+account");
+    expect(bundle.links.webContractPageDesktop).toBe("https://robinhood.com/options/instruments/OPTION_TEST/");
     expect(JSON.stringify(bundle)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
 

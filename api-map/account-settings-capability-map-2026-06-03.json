@@ -80,16 +80,18 @@
     },
     {
       "id": "options-trading-settings",
-      "support": "trading-first-class-settings-browser-observed",
+      "support": "trading-first-class; one settings WRITE verified",
       "firstClass": true,
       "routes": [
         "https://api.robinhood.com/options/chains/",
         "https://api.robinhood.com/options/orders/",
         "https://api.robinhood.com/options/positions/",
-        "https://api.robinhood.com/options/aggregate_positions/"
+        "https://api.robinhood.com/options/aggregate_positions/",
+        "GET  https://api.robinhood.com/options/option_settings/{num}/",
+        "PATCH https://api.robinhood.com/options/option_settings/{num}/"
       ],
       "mcp": ["robinhood_options_strategy_plan", "robinhood_brokerage_execute"],
-      "notes": "Order placement/cancel dry-runs are hardened. Options-level/remove-options settings need fresh mutation capture."
+      "notes": "Order placement (live 201) + cancel (live 200) VERIFIED 2026-06-03. options/option_settings/{num}/ WRITE VERIFIED via web-UI capture 2026-06-03: PATCH {\"trading_on_expiration_state\":\"enabled\"|\"disabled\"} (toggled off+on, state restored). This is the template for the remaining settings toggles — capture each via the web-UI fetch interceptor, then promote."
     },
     {
       "id": "futures-trading",

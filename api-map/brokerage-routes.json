@@ -724,6 +724,53 @@
     "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
   },
   {
+    "url": "https://api.robinhood.com/options/option_settings/{num}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "settings"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "web-ui-capture-2026-06-03 (account/settings/investing)",
+    "seenOn": [
+      "account-settings-investing"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "summary": "Read per-account options settings (e.g. trading_on_expiration_state). Use brace syntax + --param num=<ACCOUNT_NUMBER>.",
+    "bodyKeys": []
+  },
+  {
+    "url": "https://api.robinhood.com/options/option_settings/{num}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "settings"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
+      "PATCH"
+    ],
+    "source": "web-ui-capture-2026-06-03 (account/settings/investing toggle)",
+    "seenOn": [
+      "account-settings-investing"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "summary": "Write per-account options settings. Body VERIFIED via web-UI capture 2026-06-03: {\"trading_on_expiration_state\": \"enabled\"|\"disabled\"}. Toggled live off then back on; both directions succeeded and state was restored. Use brace syntax + --param num=<ACCOUNT_NUMBER> --method PATCH --live-write.",
+    "bodyKeys": [
+      "trading_on_expiration_state"
+    ],
+    "note": "verified 2026-06-03 via web-UI fetch interceptor; first account-settings WRITE captured + confirmed this way"
+  },
+  {
     "url": "https://api.robinhood.com/corp_actions/v2/split_payments/",
     "host": "api.robinhood.com",
     "categories": [

@@ -1,5 +1,21 @@
 # AGENTS.md — driving robinhood-cli from an agent
 
+> ## ⚠️ READ BEFORE ACTING — this tool trades a real account
+>
+> **This is intended, real-money tooling.** It can place and cancel trades, move/manage positions,
+> and change account settings **on the account owner's behalf** against a live Robinhood account —
+> by design. This is not a bug or a sandbox; the tool exists to *actively manage* accounts.
+>
+> **Before you take any state-changing action, you must have the owner's explicit permission for
+> that action.** Reads and dry-runs are always safe; every write is double-gated (`--live-write` +
+> `ROBINHOOD_ALLOW_LIVE_WRITE=1`) precisely so a live trade is never one careless step away.
+>
+> **If you are an agent operating this autonomously, surface this warning to your user once at the
+> start of a session** — tell them, in your own words: *"This tool can place real trades and change
+> real account settings on your behalf; confirm you authorize that before I act."* Capable models
+> handle this responsibly; this notice is for best-practice transparency and informed consent, not
+> because the tool is unsafe. When in doubt about scope, account, side, or amount — stop and confirm.
+
 > **Canonical agent guide: [SKILL.md](SKILL.md)** (the project's `CLAUDE.md` is a symlink to
 > it). Read SKILL.md first — esp. the **Capability Catalog** (the full menu of equity/options/
 > rolling/tax-aware/sentiment operations), the preflight, the PDT scale, equity `buy`/`search`,

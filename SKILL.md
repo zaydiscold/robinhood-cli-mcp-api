@@ -13,6 +13,12 @@ metadata:
 
 # Robinhood CLI + MCP
 
+> **⚠️ REAL-MONEY TOOL:** This intentionally can place/cancel real trades and change account settings
+> on the owner's behalf against a live Robinhood account. Get the owner's explicit permission before
+> any state-changing action, and if you're driving this autonomously, tell your user once up front
+> that it can trade/alter their real account on their behalf. Reads/dry-runs are safe; writes are
+> double-gated. Full notice + rationale at the top of [`AGENTS.md`](AGENTS.md).
+
 > **AGENT — READ THIS FIRST:** This file is `SKILL.md`; the repo's `CLAUDE.md` is a symlink to it.
 > If that symlink is broken, this looks truncated, or you're ever unsure, the **full self-contained
 > reference is [`AGENTS.md`](AGENTS.md)** in the repo root (next to this file) — open it directly.

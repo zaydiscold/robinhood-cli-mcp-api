@@ -6,5 +6,6 @@ dist/
 !.env.example
 fixtures/private/
 info/
+PLAN.local.md
 *.log
 *.tgz

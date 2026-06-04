@@ -7,5 +7,6 @@ dist/
 fixtures/private/
 info/
 PLAN.local.md
+ARCHITECTURE.local.md
 *.log
 *.tgz

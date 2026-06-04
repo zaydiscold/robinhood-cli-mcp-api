@@ -65,7 +65,7 @@ requires a specific route family.
 Load this skill when:
 - The user asks about Robinhood — portfolio, positions, orders, watchlists, options chains
 - You need to query account data (balances, positions, orders, watchlists, dividends)
-- The user mentions their managed accounts (Agentic, Agentic-long) or any of their 5 accounts
+- The user mentions any of their accounts (the Agentic-nicknamed ones, the Roth, or any of the 5)
 - You need to place or preview a trade (equity, options), cancel orders, resume/pause recurring buys
 - The user mentions tickers, symbols, stock prices, or market data
 - You're debugging the route map, the CLI, or the MCP server
@@ -1170,14 +1170,18 @@ Full details: `AGENTS.md` §6, §11.
 
 ## Accounts
 
-The user's Robinhood login has 5 accounts across individual brokerage, Roth IRA, and crypto. Two are designated as primary managed accounts:
+The user's Robinhood login has 5 accounts across individual brokerage, Roth IRA, and crypto. The
+**funded accounts hold the portfolio and are where real trading happens** — discover which those are
+at runtime by reading buying power; never assume. Two accounts are nicknamed "Agentic"/"Agentic-long":
 
-| Nickname | Type | Purpose |
-|----------|------|---------|
-| Agentic | individual | Primary trade account |
-| Agentic-long | individual | Primary long-term hold account |
+| Nickname | Type | Note |
+|----------|------|------|
+| Agentic | individual | Just an account — NOT a main/primary trading account; typically ~$0 |
+| Agentic-long | individual | Just an account — NOT a main/primary trading account; typically ~$0 |
 
-**Never hardcode account numbers.** Discover them at runtime (§2 of AGENTS.md). The funded accounts have the bulk of the portfolio; Agentic accounts start at $0 and are built up through trading.
+**Never hardcode account numbers, and never assume which account is "primary."** Discover them at
+runtime (§2 of AGENTS.md) and read buying power to see which are funded. The Agentic-nicknamed accounts
+are ordinary accounts that usually sit near $0 — they are not the main trading accounts.
 
 ---
 

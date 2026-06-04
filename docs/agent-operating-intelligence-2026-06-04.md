@@ -133,10 +133,12 @@ The login has **5 trading accounts** (masked, types from the live graph):
 | …9911 | rhs / individual margin | near-zero BP |
 | …7523 | rhs / individual margin | near-zero BP |
 
-Plus funding-only accounts (`ach`/`dcf`) that are NOT trading accounts. **Near-zero
-buying power is the normal resting state** of these accounts — the funded value sits
-where it sits, and the Agentic accounts are built up through trading. This directly
-shapes what orders will clear (see §3: $0 accounts reject overnight-BP buys).
+Plus funding-only accounts (`ach`/`dcf`) that are NOT trading accounts. The **funded
+accounts hold the portfolio and are where real trading happens** — read buying power to
+find them; never assume which is "primary." The Agentic-nicknamed accounts are ordinary
+accounts that usually sit near $0 — they are NOT main/primary trading accounts. Near-zero
+BP is just their resting state. This directly shapes what orders will clear (see §3: $0
+accounts reject overnight-BP buys).
 
 **The trap, stated precisely:** `accounts/` (bare) **under-reports — it showed ~2 of
 the 5** in a real session and caused a genuine miss. The **complete** list comes only

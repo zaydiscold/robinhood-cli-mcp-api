@@ -579,6 +579,10 @@ brokerage
   .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
     if (opts.dollars && opts.shares) throw new Error("Pass only one of --dollars or --shares.");
+    if (opts.dollars && !(Number(opts.dollars) > 0)) throw new Error(`--dollars must be a positive number (got "${opts.dollars}").`);
+    if (opts.shares && !(Number(opts.shares) > 0)) throw new Error(`--shares must be a positive number (got "${opts.shares}").`);
+    if (opts.limit && !(Number(opts.limit) > 0)) throw new Error(`--limit must be a positive number (got "${opts.limit}").`);
+    const acctLabel = await assertOwnedAccount(opts.account);
     const inst = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
     if (!inst) throw new Error(`No instrument for ${symbol} — check the ticker (use 'brokerage search').`);
     const q = (await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: inst.id })).results?.[0] ?? {};
@@ -609,6 +613,11 @@ brokerage
       body.dollar_based_amount = { amount: Number(opts.dollars).toFixed(2), currency_code: "USD" };
     } else {
       body.quantity = String(opts.shares);
+      // The auto-collar uses the live ask; guard against a null/empty/zero ask becoming the
+      // order price/collar (halted name, bad quote). An explicit --limit bypasses the ask entirely.
+      if (!opts.limit && !(Number(q.ask_price) > 0)) {
+        throw new Error(`${inst.symbol}: no usable ask price from the quote (ask=${JSON.stringify(q.ask_price)}). Pass an explicit --limit <price> or retry during market hours.`);
+      }
       if (opts.limit || otc) {
         body.type = "limit";
         body.price = opts.limit ?? q.ask_price;
@@ -645,11 +654,12 @@ brokerage
     const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: true });
 
     const kind = opts.dollars ? `$${Number(opts.dollars).toFixed(2)} fractional/market` : `${opts.shares}sh ${body.type}${otc ? " (OTC)" : ""}`;
+    const acctTag = acctLabel ? `${opts.account} (${acctLabel})` : opts.account;
     if (opts.json) {
-      printJson({ symbol: inst.symbol, account: opts.account, otc, kind, dryRun: effectiveDryRun, status: result.status, body: result.body });
+      printJson({ symbol: inst.symbol, account: opts.account, accountLabel: acctLabel, otc, kind, dryRun: effectiveDryRun, status: result.status, body: result.body });
       return;
     }
-    process.stdout.write(`${effectiveDryRun ? "DRY-RUN" : result.status + " " + result.statusText} buy ${inst.symbol} ${kind} acct ${opts.account}\n`);
+    process.stdout.write(`${effectiveDryRun ? "DRY-RUN" : result.status + " " + result.statusText} buy ${inst.symbol} ${kind} acct ${acctTag}\n`);
     process.stdout.write(result.body ? `${result.body}\n` : "");
   });
 
@@ -870,6 +880,47 @@ async function brokerageGetJson(
   const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true });
   if (result.status !== 200) throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
   return JSON.parse(result.body || "{}");
+}
+
+// Owned-account validation. The #1 money-loss risk is acting on the WRONG account — a typo'd or
+// hallucinated account number otherwise templates straight into a live order body. We resolve the
+// real account set once (from transfer/accounts/, the COMPLETE graph) and refuse a write to an
+// account the token doesn't own. If the lookup itself fails (offline / mid-refresh) we WARN but do
+// not hard-block, so a transient read failure can't wedge every write.
+let _ownedAccountsCache: { numbers: Set<string>; labels: Map<string, string> } | null = null;
+async function loadOwnedAccounts(): Promise<{ numbers: Set<string>; labels: Map<string, string> } | null> {
+  if (_ownedAccountsCache) return _ownedAccountsCache;
+  try {
+    const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
+    const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+    const numbers = new Set<string>();
+    const labels = new Map<string, string>();
+    for (const a of rows) {
+      if (a?.type !== "rhs" && a?.type !== "ira_roth") continue; // trading accounts only
+      if (!a.account_number) continue;
+      numbers.add(String(a.account_number));
+      labels.set(String(a.account_number), a.account_name || a.display_title || "");
+    }
+    if (numbers.size === 0) return null;
+    _ownedAccountsCache = { numbers, labels };
+    return _ownedAccountsCache;
+  } catch {
+    return null;
+  }
+}
+async function assertOwnedAccount(accountNumber: string): Promise<string | undefined> {
+  const owned = await loadOwnedAccounts();
+  if (!owned) {
+    process.stderr.write(`⚠️  Could not verify account ${accountNumber} against your owned accounts (lookup failed). Proceeding — double-check the number.\n`);
+    return undefined;
+  }
+  if (!owned.numbers.has(String(accountNumber))) {
+    throw new Error(
+      `Account ${accountNumber} is not one of your trading accounts (${[...owned.numbers].map((n) => "…" + n.slice(-4)).join(", ")}). ` +
+        `Refusing to act on an unowned/typo'd account.`
+    );
+  }
+  return owned.labels.get(String(accountNumber)) || "";
 }
 
 const num = (value: unknown): number => Number(value);

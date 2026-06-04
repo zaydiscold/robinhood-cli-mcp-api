@@ -1762,6 +1762,47 @@ export async function executeBrokerageRequest(
   };
 }
 
+/**
+ * GET a mapped brokerage route and return parsed JSON. Resolves the route (GET), substitutes path
+ * params, applies extra query params, and throws on non-200. Shared by the CLI and the MCP server so
+ * the live-read layer can't diverge (it was duplicated in both before). Reads only — no write gate.
+ */
+export async function brokerageGetJson(
+  url: string,
+  params: Record<string, string> = {},
+  query: Record<string, string> = {},
+  options: ExecuteBrokerageOptions = {}
+): Promise<any> {
+  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: url });
+  const route = selectRouteByQueryAndMethod(matches, url, "GET");
+  if (!route) throw new Error(`Route missing from map: ${url} — rebuild the map (AGENTS.md §3).`);
+  const plan = planBrokerageRequest({ route, method: "GET", params, dryRun: false });
+  if (plan.missingParams.length > 0) {
+    throw new Error(`Missing params for ${url}: ${plan.missingParams.join(", ")}`);
+  }
+  if (Object.keys(query).length > 0) {
+    const parsed = new URL(plan.url);
+    for (const [key, value] of Object.entries(query)) parsed.searchParams.set(key, value);
+    plan.url = parsed.toString();
+  }
+  const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true, ...options });
+  if (result.status !== 200) throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
+  return JSON.parse(result.body || "{}");
+}
+
+/** Non-throwing brokerageGetJson — returns {ok:false,error} instead of throwing. */
+export async function tryBrokerageGetJson(
+  url: string,
+  params: Record<string, string> = {},
+  query: Record<string, string> = {}
+): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
+  try {
+    return { ok: true, data: await brokerageGetJson(url, params, query) };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
 export async function executeCryptoRequest(
   plan: PlannedCryptoRequest,
   options: ExecuteCryptoOptions = {}

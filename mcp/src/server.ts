@@ -24,6 +24,8 @@ import {
   planCryptoRequest,
   resolveLiveWriteGate,
   selectRouteByQueryAndMethod,
+  brokerageGetJson,
+  tryBrokerageGetJson,
   signCryptoRequest,
   summarizeApiMap
 } from "@zaydiscold/robinhood-cli/lib";
@@ -62,39 +64,7 @@ const INSTRUMENT_SHORTING_URL = "https://api.robinhood.com/instruments/{id}/shor
 const INSTRUMENT_BUYING_POWER_URL = "https://bonfire.robinhood.com/accounts/{id}/instrument_buying_power/{uuid}/";
 const INSTRUMENT_MARGIN_REQUIREMENTS_URL = "https://bonfire.robinhood.com/instruments/{uuid}/margin-requirements/";
 
-async function brokerageGetJson(
-  url: string,
-  params: Record<string, string> = {},
-  query: Record<string, string> = {}
-): Promise<any> {
-  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: url });
-  const route = selectRouteByQueryAndMethod(matches, url, "GET");
-  if (!route) throw new Error(`Route missing from map: ${url}`);
-  const plan = planBrokerageRequest({ route, method: "GET", params, dryRun: false });
-  if (plan.missingParams.length > 0) {
-    throw new Error(`Missing params for ${url}: ${plan.missingParams.join(", ")}`);
-  }
-  if (Object.keys(query).length > 0) {
-    const parsed = new URL(plan.url);
-    for (const [key, value] of Object.entries(query)) parsed.searchParams.set(key, value);
-    plan.url = parsed.toString();
-  }
-  const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true });
-  if (result.status !== 200) throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
-  return JSON.parse(result.body || "{}");
-}
-
-async function tryBrokerageGetJson(
-  url: string,
-  params: Record<string, string> = {},
-  query: Record<string, string> = {}
-): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
-  try {
-    return { ok: true, data: await brokerageGetJson(url, params, query) };
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-}
+// brokerageGetJson + tryBrokerageGetJson are imported from the shared lib (same as the CLI).
 
 function finiteNumber(value: unknown): number {
   const parsed = Number(value);

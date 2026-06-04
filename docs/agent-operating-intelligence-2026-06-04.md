@@ -158,6 +158,32 @@ from you* and lets you act on a default you didn't choose.
   margin: rolls/spreads/shorts, PDT if <$25k; Roth: long + defined-risk + CC/CSP, no
   margin/naked). The first-class `accounts` command annotates this for you.
 
+### Buying power is NOT one number (especially on margin accounts)
+
+The headline balance is a mirage — never assume "$X showing" is what's available for an options
+order. On a **margin** account, `cash` can be **negative** (a margin loan), total `equity` is the net
+liquidation value, and the *spendable* figure is a small **buying-power** number — and even that splits
+by purpose. Verified live 2026-06-04 on the 9-month margin account (…0497): equity ≈ **$9.5k**, market
+value ≈ **$12.9k**, `cash` ≈ **−$3.4k** (margin debit), but actual `buying_power` ≈ **$163.51**.
+
+**The pathway (read these before sizing any order):**
+- `accounts/{acct}/` → top-level **`buying_power`** + the **`margin_balances`** sub-object, which holds
+  the real breakdown: **`day_trade_buying_power`** (intraday), **`overnight_buying_power`** (the one that
+  **gates a GTC option open held overnight** — a GTC buy-to-open can 400 "not enough overnight buying
+  power" even when intraday BP looks fine), **`cash_held_for_options_collateral`** (cash locked behind
+  short puts/CSPs — reduces what's free), `crypto_buying_power`, `gold_equity_requirement`,
+  `marked_pattern_day_trader_date`.
+- `bonfire.robinhood.com/accounts/{acct}/currency_buying_power/USD/` → the canonical spendable USD
+  `buying_power` (this is what the engine checks for cash-secured/affordability).
+- `portfolios/{acct}/` → `equity`, `market_value`, `withdrawable_amount`, **`excess_margin`** (negative
+  = at/over the initial-margin line, can't open more on margin), **`excess_maintenance`** (cushion
+  before a margin call).
+
+**Rule:** before a live options order, read the buying-power family — *options/overnight BP*, not the
+headline — and state which figure gates the order. A `$300`-looking account with `excess_margin` ≈ −$40
+and BP ≈ $163 cannot freely open new margin/options positions. (See SKILL failure modes #9 overnight-BP,
+#16 collateral.)
+
 ---
 
 ## 3. Order lifecycle + after-hours vs market-hours behavior

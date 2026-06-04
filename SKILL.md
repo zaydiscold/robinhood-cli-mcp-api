@@ -13,6 +13,11 @@ metadata:
 
 # Robinhood CLI + MCP
 
+> **AGENT — READ THIS FIRST:** This file is `SKILL.md`; the repo's `CLAUDE.md` is a symlink to it.
+> If that symlink is broken, this looks truncated, or you're ever unsure, the **full self-contained
+> reference is [`AGENTS.md`](AGENTS.md)** in the repo root (next to this file) — open it directly.
+> When in doubt, read BOTH `AGENTS.md` and `SKILL.md` before acting. Don't guess; the docs are there.
+
 Operate real Robinhood brokerage accounts from the terminal or via MCP tools. The CLI and MCP share one engine (`cli/src/lib.ts`) — same auth, same route map (~300 brokerage/account route entries and growing — run `brokerage routes --json` for the live count, never trust a hardcoded number), same double-gate write safety.
 
 **Repo:** `github.com/zaydiscold/robinhood-cli`
@@ -176,6 +181,8 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
    after map edits — runtime reads `dist`.
 15. **Classify "sell a call/put" BEFORE building** — sell-to-close vs covered call vs credit spread vs
    naked short are different orders + risk. Ask if ambiguous; never default into naked/undefined-risk exposure.
+   For exact per-strategy leg topology (side/position_effect/ratio/direction) see
+   `docs/options-strategy-order-templates-2026-06-03.md` — hard templates so you can't botch the legs.
 16. **Coverage/collateral up front:** covered call needs 100 shares in the SAME account; CSP needs the
    cash. Verify before building, not after a reject.
 17. **Cash-account rolls are T+1:** close today, open next business day with settled cash

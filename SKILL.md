@@ -233,6 +233,15 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
 18. **Crypto API uses separate auth** (API key + ed25519 signing), not the brokerage bearer.
 19. **PDT $25k is *current* law** (proposals ~$5k pending) — re-verify if the user flags a change.
 
+**EXECUTION EVIDENCE — what counts as proof an order happened**
+
+20. **Brokerage order history is the source of truth.** An order *happened* only if it appears in the
+   order history (`orders/`, `options/orders/`) as filled/pending/rejected/cancelled, or you see a
+   position / cash / buying-power change. If **no** such record exists, treat the attempted action as
+   **non-executed** — don't claim or imply it placed. Screenshots, UI/review screens, "the button was
+   clicked", app state, or agent logs are **not** proof. (Lived this session: a "nothing executed"
+   scare resolved by reading the orders list — and the place→cancel tests were confirmed the same way.)
+
 > Golden rule: reads are free and live; **every write is dry-run until you deliberately pass both gates**.
 > When unsure about account, side, position_effect, or amount — stop and confirm. A wrong write is real money.
 
@@ -960,17 +969,63 @@ a tool in the kit — not a mandate to be cautious. Risk and sizing are the oper
   real time is legitimate due diligence.
 - **Twitter's edge is conditional: fastest pulse AND fastest misinformation.** The high
   signal-to-noise only holds *if you know whom to read* — which accounts have earned signal vs. which
-  are hype/promotion. The "who" is operator-specific and **private**: it lives in a future
-  `Ball Knowledge.md` (gitignored), never in this public skill. Until then, weight known, track-record
-  sources over anonymous virality, and corroborate a single post before leaning on it.
+  are hype/promotion. The "who" is operator-specific and lives in the **Ball Knowledge** ledger
+  (`ball-knowledge.md`, see its own section below) as source-lead entries; the committed file stays
+  generic, and sensitive/personal source lists are the operator's discretion. Weight known,
+  track-record sources over anonymous virality, and corroborate a single post before leaning on it.
 - **Signal → (optional) validation → action.** Any feed — RH `midlands/*` or external X/Reddit — is a
   *direction input*. You *can* corroborate against live market data (bid/ask, Greeks, volume/OI,
   `quote`) before acting; presented as available reasoning, not a requirement. RH's own feeds sit at
   the *confirmer* end of this; the off-platform pulse leads.
 
 > RH `midlands/news|ratings|tags` is the slow, broker-native layer. Lead due diligence with the
-> real-time pulse (X/Reddit) and let RH's feeds confirm — not the reverse. (Personalized trusted
-> sources → future private `Ball Knowledge.md`.)
+> real-time pulse (X/Reddit) and let RH's feeds confirm — not the reverse. (Trusted sources + themes
+> accumulate in **Ball Knowledge** — see below.)
+
+### Ball Knowledge — the operator's investing-memory ledger (`ball-knowledge.md`)
+
+The repo root holds **`ball-knowledge.md`**, a living, chronological, append-only ledger of broad
+investing context the operator (Zayd) intentionally wants remembered. Read it on any finance task; it
+is the project's "market brain" memory layer. It is **context, not authority** — the rules below are
+binding for this skill; the ledger file itself stays deliberately messy and unlabeled.
+
+- **What it holds (broad basket):** alpha, thesis fragments, hot sectors, tickers, hunches, rumors,
+  source leads / X accounts, analysts, earnings & investor-day notes, macro, catalysts, trading-style
+  notes, dividend/income preferences, risk appetite, watchlist ideas — down to a single ticker or
+  `@handle`. Rough/shorthand/speculative entries are valid.
+- **Binding rule:** anything in the file was *intentionally added* → treat it as **important investing
+  context**, even if rough. "Important context" = pay attention, frame analysis, prioritize research,
+  remember themes/sources/preferences. It does **not** mean blindly obey.
+- **Classify by type before using it** (the file is unlabeled — you infer): rumor → *consider, then
+  verify before relying on it*; bare sector/ticker → *keep on the radar*; `@handle`/newsletter →
+  *source lead, not verified truth*; "0DTE / balls-to-the-wall" → *high-risk style note — surface the
+  risk plainly, don't normalize it as default*; "QDTE / dividend" → *income preference — weigh yield
+  sustainability, taxes, downside*; "user wants X" → *preference/profile, reconfirm specifics*.
+- **Minor recency bias only.** Newer entries are slightly more relevant; older ones still matter unless
+  contradicted, marked obsolete, clearly stale, or removed. A timeline, not an expiring feed.
+- **Influences vs. cannot do.** *Influences:* which sectors/tickers/sources/risks/catalysts the agent
+  attends to, how it frames a thesis, what it researches. *Cannot:* authorize/place/cancel a trade,
+  prove a rumor or thesis, or override user confirmation, live market data, or brokerage order history.
+- **Neutral, not preachy.** Reflect the operator's own posture; surface risk where an entry implies it,
+  but don't impose caution or sizing the operator didn't ask for (same stance as "Signal sourcing").
+- **Adding entries — append-only, preserve the messy spirit.** Append to the **bottom**, in date order;
+  never rewrite/delete older entries unless asked. Exact format:
+
+  ```
+  === BEGIN BALL KNOWLEDGE ENTRY
+  DATE:    YYYY-MM-DD
+  SUBJECT: <short>
+  ===
+  INVESTING NOTES:
+  """
+  <the note — a ticker, sector, person, @handle, rumor, thesis, strategy, preference, or thought>
+  """
+  === END BALL KNOWLEDGE ENTRY
+  ```
+- **When Ball Knowledge shapes an answer, say so plainly** ("your Ball Knowledge already flags
+  semiconductors, so I'd start the universe at NVDA/TSMC/…"; "that reads as a source lead, not a
+  verified thesis yet"). **Public file — keep committed entries generic;** sensitive/personal source
+  lists are the operator's discretion (or a future private overlay), not the committed seed.
 
 ## Research Methodology — mapping a no-official-API surface
 

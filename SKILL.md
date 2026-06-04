@@ -13,7 +13,7 @@ metadata:
 
 # Robinhood CLI + MCP
 
-Operate real Robinhood brokerage accounts from the terminal or via MCP tools. The CLI and MCP share one engine (`cli/src/lib.ts`) — same auth, same route map (285 brokerage/account route entries as of the latest local check), same double-gate write safety.
+Operate real Robinhood brokerage accounts from the terminal or via MCP tools. The CLI and MCP share one engine (`cli/src/lib.ts`) — same auth, same route map (~300 brokerage/account route entries and growing — run `brokerage routes --json` for the live count, never trust a hardcoded number), same double-gate write safety.
 
 **Repo:** `github.com/zaydiscold/robinhood-cli`
 **Deep reference:** `AGENTS.md` in repo root — the complete API surface, worked examples, and every command. Hand that file to any agent and it's self-contained. This SKILL.md is the Hermes trigger + boot doc: quick-start, the 80/20 commands, and all the operational pitfalls learned across sessions.
@@ -163,7 +163,9 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
    does NOT mean the order clears.
 10. **DRIP write = `PATCH corp_actions/drip/account_settings/{account}/` (account-wide) or
    `.../drip/instrument_settings/{account}/{instrument_id}/` (per-stock), body `{"drip_enabled":bool}`** —
-   NOT `drip/enrollment/` (that's GET-only, 405 on writes).
+   NOT `drip/enrollment/` (that's GET-only, 405 on writes). Before any settings write
+   (DRIP/options/margin/sweep/lending), check `docs/account-settings-capability-map-2026-06-03.md`
+   for which are **verified-live** vs **route-map-research-only** — don't claim an unproven write works.
 
 **MEDIUM — silent misreads / classification**
 11. Positions return instrument **UUIDs, not tickers** — resolve via `instruments/?ids=`; quotes need tickers.
@@ -233,7 +235,7 @@ Interpretation:
   account op so you fail fast instead of mid-batch. On FAIL → `pnpm auth:refresh`, retry once.
   Do NOT spin up random browser sessions.
 - Date matters for options expirations, staged rolls, after-hours behavior, recurring timing.
-- Route count should match current docs (`288` brokerage/account entries incl. `midlands/search`).
+- Route count: trust the live `brokerage routes --json` count (~300 and growing); the exact number changes as routes are captured, so never assert a hardcoded figure.
 - Discover accounts via `transfer/accounts/` (full graph: numbers, types, deposit/recurring
   eligibility, labels). **Never hardcode account numbers.** Note: the bare `accounts/` endpoint
   may only return a subset for a given token — the full set comes from `transfer/accounts/` or
@@ -271,7 +273,7 @@ Keep this split current when editing the skill:
 
 | Surface | Current state | Agent rule |
 |---------|---------------|------------|
-| API map | 285 brokerage/account route entries plus official Crypto API routes | Rebuild after edits; runtime reads `cli/dist/api-map/` |
+| API map | ~300 brokerage/account route entries (live count via `brokerage routes --json`) plus official Crypto API routes | Rebuild after edits; runtime reads `cli/dist/api-map/` |
 | Read commands | `quote`, `positions`, `options positions`, `options expirations`, `options chain`, `watchlist list`, `recurring list`, route-map reads, crypto read plans | Live reads are allowed with caller-owned auth, but redact balances/tokens in shareable output |
 | Options research/planning | 18 strategy workflows; `options-strategy-plan` emits `reviewContract` | Planning only until exact user approval and write gates |
 | Equity/options order writes | Route-map executor against `orders/`, `options/orders/`, and cancel routes | Must use `--method`, exact body, `--live-write`, and `ROBINHOOD_ALLOW_LIVE_WRITE=1`; dry-run first |

@@ -52,14 +52,18 @@ node cli/dist/index.js recurring list --json
 node cli/dist/index.js recurring pause --id <SCHEDULE_ID> --json
 node cli/dist/index.js recurring resume --id <SCHEDULE_ID> --json
 
-# DRIP read and dry-run toggle plan.
+# DRIP read + toggle — the REAL endpoint (the old corp_actions/drip/enrollment/{num}/ is GET-only;
+# PATCH/POST/PUT there return 405). Account-wide:
 node cli/dist/index.js brokerage execute \
-  "corp_actions/drip/enrollment/{num}/" --method GET \
-  --param num=<ACCOUNT_NUMBER> --json --full
+  "corp_actions/drip/account_settings/{account}/" --method GET --param account=<ACCOUNT_NUMBER> --json --full
 node cli/dist/index.js brokerage execute \
-  "corp_actions/drip/enrollment/{num}/" --method PATCH \
-  --param num=<ACCOUNT_NUMBER> \
-  --body-json '{"drip_enrolled":true}' --json --full
+  "corp_actions/drip/account_settings/{account}/" --method PATCH --param account=<ACCOUNT_NUMBER> \
+  --body-json '{"drip_enabled":true}' --live-write --json --full
+# Per-stock toggle:
+node cli/dist/index.js brokerage execute \
+  "corp_actions/drip/instrument_settings/{account}/{instrument_id}/" --method PATCH \
+  --param account=<ACCOUNT_NUMBER> --param instrument_id=<INSTRUMENT_ID> \
+  --body-json '{"drip_enabled":true}' --live-write --json --full
 
 # Margin/account type read surface.
 node cli/dist/index.js brokerage routes --query "margin" --json

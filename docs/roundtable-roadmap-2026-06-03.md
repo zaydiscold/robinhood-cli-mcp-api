@@ -5,11 +5,14 @@ and converged on a clear picture. This is the synthesized, prioritized roadmap.
 
 ## The consensus (where ≥2 lenses agreed)
 
-1. **`api-streaming.robinhood.com` is the #1 untapped capability** (architecture + security top-pick).
-   The entire map is REST/poll-only; RH's web app uses an envoy WebSocket for live quotes/greeks.
-   Capturing the ws handshake (subprotocol, auth ticket, subscribe/heartbeat frames) and adding a
-   `stream` reader turns the tool from snapshot → live, dodges the fractional 429 throttle, and
-   delivers on the "speed of inference" tagline. **Effort L** (new transport).
+1. **Real-time data — but it's gRPC, not a plain WebSocket** (architecture + security top-pick;
+   **corrected by 2026-06-03 deep dive**). RH's realtime layer is its **"microgram" transport
+   running gRPC `server_streaming` RPCs inside a Web Worker** — not an envoy WS with a JSON URL.
+   Stock pages actually live-tick via **`marketdata/quotes` HTTP polling** (~26 calls/13s), which
+   the CLI already uses. Mapping the gRPC stream is an **XL protobuf-RE + worker-CDP-attach
+   project** (the endpoint is runtime-constructed; no static `wss://` in any bundle), NOT a
+   one-shot handshake capture. **Practical move: lean on rate-limit-aware quote polling; treat
+   the gRPC stream as a separate research track.** See `info/robinhood-research/streaming-microgram-grpc-rd-2026-06-03.md`.
 
 2. **Wire the sentiment → contract pipeline into a runnable command** (options + product, 4 ideas).
    The signal→deeplink→order loop is sold in prose but isn't a command. The pieces all exist

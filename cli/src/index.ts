@@ -1310,8 +1310,10 @@ options
         bid: usd(row.bid),
         ask: usd(row.ask),
         mark: usd(row.mark),
-        delta: Number.isFinite(row.delta) ? row.delta.toFixed(2) : "—",
-        iv: Number.isFinite(row.ivPct) ? `${row.ivPct.toFixed(0)}%` : "—",
+        // RH returns literal 0 for absent greeks; delta AND iv both exactly 0 = stale/missing
+        // (a real quoted option never has both), so render — rather than a misleading 0.00.
+        delta: Number.isFinite(row.delta) && !(row.delta === 0 && row.ivPct === 0) ? row.delta.toFixed(2) : "—",
+        iv: Number.isFinite(row.ivPct) && !(row.delta === 0 && row.ivPct === 0) ? `${row.ivPct.toFixed(0)}%` : "—",
         vol: Number.isFinite(row.volume) ? row.volume : "—",
         oi: Number.isFinite(row.openInterest) ? row.openInterest : "—",
         money: row.moneyness
@@ -2027,7 +2029,7 @@ program
     const op = await tryBrokerageGetJson(`https://api.robinhood.com/options/orders/${acctQuery}`);
     if (op.ok) for (const r of ((op.data as any)?.results ?? [])) {
       const t = r.updated_at ?? r.created_at;
-      if (inWindow(t)) events.push({ time: String(t), kind: "option", summary: `${r.chain_symbol ?? "?"} ${r.opening_strategy ?? r.closing_strategy ?? ""} ${r.direction ?? ""} ${r.quantity ?? ""} @ ${r.price ?? "?"}`.trim(), state: String(r.state ?? "?") });
+      if (inWindow(t)) events.push({ time: String(t), kind: "option", summary: `${r.chain_symbol ?? "?"} ${r.opening_strategy ?? r.closing_strategy ?? ""} ${r.direction ? `(${r.direction})` : ""} ${r.quantity ?? ""} @ ${r.price ?? "?"}`.trim(), state: String(r.state ?? "?") });
     }
     const cx = await tryBrokerageGetJson("https://nummus.robinhood.com/orders/");
     if (cx.ok) for (const r of ((cx.data as any)?.results ?? [])) {

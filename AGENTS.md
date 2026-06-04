@@ -604,8 +604,8 @@ This is a hard rule, not a nicety — divergence here has already caused a write
 - **One engine, no duplication.** Shared logic lives in `cli/src/lib.ts`; the CLI (`cli/src/index.ts`)
   and the MCP (`mcp/src/server.ts`) both import it. Never copy a function into both files — they drift.
   (The route resolver `selectRouteByQueryAndMethod` once diverged: the MCP copy silently degraded forced
-  writes to GET while the CLI failed closed. Now hoisted to lib.ts. `brokerageGetJson`/`finiteNumber`/
-  `percentChange`/stock-profile read-join are still duplicated and slated to be hoisted next.)
+  writes to GET while the CLI failed closed. Now hoisted to lib.ts — as are `brokerageGetJson` /
+  `tryBrokerageGetJson`. Only the 3-line numeric helpers (`finiteNumber`/`quoteLast`) remain local.)
 - **Rebuild after api-map edits.** The runtime reads `cli/dist/api-map/`, not the source JSON. A source
   edit without `pnpm --filter @zaydiscold/robinhood-cli build` is a silent no-op.
 - **Resolver refuses to guess.** Forced writes with no matching write route fail closed (return nothing);
@@ -613,3 +613,23 @@ This is a hard rule, not a nicety — divergence here has already caused a write
   Pass exact URLs for writes.
 - **New capability → wire all three places** (route in api-map, command in CLI, tool in MCP) and keep the
   double gate intact. Reads live by default; every write dry-run until both gates.
+
+---
+
+## 13. Signal sourcing & due diligence (descriptive — NOT risk guidance)
+
+How to think about *where research signal comes from* and how much to trust it. A decision framework,
+not a mandate — risk and sizing are the operator's call. Full version in SKILL.md "Signal sourcing".
+
+- **News:** slow (lags the move by hours-to-a-day) but authoritative for **key/binary events**
+  (earnings, M&A, Fed, halts, guidance) — being *right* beats being *first*. Late, not useless.
+- **Twitter/X + Reddit:** noisy, but the **best signal-to-noise**, and **X is the fastest pulse** —
+  ahead of any article. First-class DD sources (`bird search`, the `last30days` skill, r/options ·
+  r/thetagang · r/stocks), not gossip to dismiss. X's edge is conditional: fastest pulse *and* fastest
+  misinformation — high signal-to-noise only **if you know whom to read**, so corroborate a lone post.
+- **RH `midlands/news|ratings|tags`:** the **slow, broker-native confirmer** — it trails the
+  off-platform pulse. Lead DD with X/Reddit; let RH's feeds confirm, not the reverse.
+- **Signal → optional validation → action:** any feed is a *direction input*; you *can* corroborate
+  against live market data (bid/ask, Greeks, volume/OI) before acting — available reasoning, not a rule.
+- **Personalized trusted sources** (specific accounts/communities the owner relies on) are
+  operator-specific and **private** — a future gitignored `Ball Knowledge.md`, never this public doc.

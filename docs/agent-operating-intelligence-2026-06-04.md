@@ -85,6 +85,21 @@ Practical corollaries:
 - Pass exact URLs for writes; let the resolver's fail-closed/fail-loud behavior catch
   ambiguity rather than guessing past it.
 
+### Signal is a surface too — not gospel, and not where you think
+
+The same "verify, don't assume" instinct applies to *research signal*, not just routes. Where signal
+comes from changes how much it's worth — and the platform's own feed is the *slowest* view:
+- **RH `midlands/news|ratings|tags` is the slow, broker-native confirmer**, not the leading signal.
+  It trails the real-time off-platform pulse by hours-to-a-day.
+- **The real-time pulse lives on Twitter/X + Reddit** — noisy, but the best signal-to-noise, and X is
+  fastest. First-class due-diligence sources (`bird`, the `last30days` skill, r/options · r/thetagang),
+  *if you know whom to read* (X is fastest pulse AND fastest misinformation — corroborate a lone post).
+- **News** is laggy but authoritative for **key/binary events** (earnings, M&A, Fed, halts) — right
+  beats first there. Lead DD with X/Reddit; let news + RH feeds confirm.
+- This is a *framework for sourcing*, not a sizing/risk rule — the operator decides what to do with it.
+  Personalized "who I trust" is a private future `Ball Knowledge.md` (gitignored), never the public skill.
+  Full version: SKILL.md "Signal sourcing"; AGENTS.md §13.
+
 ---
 
 ## 2. Account model + the wrong-account trap
@@ -196,6 +211,7 @@ misuse, not a broken tool — read the actual error first.
 | "Order placed!" but the response was a **list** | Omitted `--method` on a write; GET and POST share the URL → you ran the read | Always pass `--method` for writes; confirm the response is a write result (201 + order `id`), not a list. |
 | Route-map edit had no effect | Runtime reads `cli/dist/`, not source | `pnpm --filter @zaydiscold/robinhood-cli build`, then re-verify count. |
 | `ceres.robinhood.com` / futures order endpoint won't connect (TLS handshake fail) | App-only TLS allowlist; not reachable from any non-app client | Not fixable from here. Futures trading is unsupported (§5). Don't re-probe; don't treat it as a transient network error. |
+| Leaning on RH `midlands/news`/`ratings` as the *primary* signal | That's the slow, broker-native confirmer — it trails the real-time pulse | Lead DD with the off-platform pulse (X/Reddit via `bird` / `last30days`); use RH feeds + news to confirm, not to discover. News is authoritative only for key/binary events (§1 "Signal is a surface"). Sourcing framework, not a sizing rule. |
 | 401 mid-session | Token expired (~7.8d life) | Engine self-heals once; if it fails, `pnpm auth:refresh`. Don't open browser sessions. |
 
 ---

@@ -61,6 +61,58 @@ Do NOT load for: general investing advice (that's not what this tool does), pape
 
 ---
 
+## Capability Catalog — what this CLI/API/MCP can actually do
+
+Read this first: it is the menu of supported operations so an agent has full context *before*
+scanning the route map. (Far exceeds what one user would manually do.) Reads are live; every write
+is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
+
+**Equity**
+- Buy by dollar-notional (fractional, market) or by shares (`brokerage buy`); OTC names auto-limit
+  at the ask (whole shares only).
+- Sell (shares / dollar), search the universe (`brokerage search`), live quotes, positions,
+  unified history (equity+options+crypto+transfers), stock profile.
+
+**Options — single-leg (the four primitives)**
+- **Buy to open** — long call or long put (`side:buy, position_effect:open`).
+- **Sell to close** — close a long (`side:sell, position_effect:close`).
+- **Sell to open** — short call or short put / naked (`side:sell, position_effect:open`; needs option level + BP).
+- **Buy to close** — cover a short (`side:buy, position_effect:close`).
+
+**Options — multi-leg / strategies** (`options strategy-quote`, `api-map options-strategies`; 18+ workflows)
+- Vertical spreads: call/put **debit** and **credit** spreads.
+- **Covered call (CC)** and **cash-secured put (CSP)** (coverage/collateral checked); covered put.
+- Straddles / strangles (long & short), butterflies, iron condors, calendars / diagonals.
+
+**Rolling** (close one leg, open another — the tax/▸cash nuance matters)
+- **Regular roll (margin):** close + open a new expiration/strike, single or staged (`options roll-plan`).
+- **Kosher roll (cash accounts):** close **now** → open **next business day** with *settled* cash (T+1),
+  to avoid good-faith violations (`options roll-plan --cash-account`). Cash can't fund the new leg same-day.
+- **Roll a CSP / CC:** roll out (later expiry), up/down (strike) for a net credit; assignment- and
+  ex-dividend-aware. Rolling a tested short is the core income-management move.
+- Roll enumeration: bulk-enumerate **both** the near (close) and far (open) expirations — see
+  "Option UUIDs — always bulk-enumerate".
+
+**Tax-advantaged / account-aware knowledge** (surface this when planning)
+- Account gating: **cash** (no margin/naked, T+1, good-faith) vs **margin** (rolls/spreads/shorts, PDT
+  if <$25k) vs **Roth IRA** (long options + defined-risk + CC/CSP; no margin/naked). See the
+  account-capability table + the PDT scale below.
+- **Wash sale:** rolling a *losing* leg (or re-buying within 30d) can trigger a wash sale in a taxable
+  account — flag it. In an **IRA** wash-sale tracking is moot but there's no tax-loss harvest either.
+- **LEAPS** (>1yr) for long-term capital-gains treatment; rolling short-dated premium is ordinary income.
+- DRIP (read), recurring buys (list/pause/resume).
+
+**Sentiment / discovery** — `midlands/news`, `midlands/ratings` (analyst buy/hold/sell),
+`midlands/tags/tag/{100-most-popular|top-movers|upcoming-earnings|technology|etf|...}`,
+`midlands/movers/{index}/`, `marketdata/earnings/`. Feeds the signal→deeplink→order pipeline.
+
+**Crypto** — official signed Crypto Trading API (separate Ed25519 auth).
+
+> Anything not listed as a verified first-class command is route-map research until a fresh capture
+> proves the write body (see the account-settings capability map). Don't claim unproven writes.
+
+---
+
 ## Quick Start
 
 ```bash

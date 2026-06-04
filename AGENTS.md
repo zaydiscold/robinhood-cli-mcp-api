@@ -1,9 +1,10 @@
 # AGENTS.md — driving robinhood-cli from an agent
 
 > **Canonical agent guide: [SKILL.md](SKILL.md)** (the project's `CLAUDE.md` is a symlink to
-> it). Read SKILL.md first for the operating model, preflight, PDT scale, equity `buy`/`search`,
-> and rate-limit discipline. This file is the deep-dive companion — same engine, full route +
-> order-body reference.
+> it). Read SKILL.md first — esp. the **Capability Catalog** (the full menu of equity/options/
+> rolling/tax-aware/sentiment operations), the preflight, the PDT scale, equity `buy`/`search`,
+> `options enumerate`, and rate-limit discipline. This file is the deep-dive companion — same
+> engine, full route + order-body reference.
 
 This repo drives a **real Robinhood account** (not the official agent sandbox) via a
 TypeScript CLI and a paired MCP server. Both share one engine (`cli/src/lib.ts`), so

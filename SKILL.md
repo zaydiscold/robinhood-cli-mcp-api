@@ -130,6 +130,62 @@ write carries the account in the path (`drip/account_settings/{account}/`,
 
 ---
 
+## ⚠️ Failure modes — hard rules (read before ANY write; this is where a weak agent loses money)
+
+Ranked by money-loss. Each is a real way an agent has tripped or would. Follow the rule, not the vibe.
+
+**CRITICAL — real money / wrong account**
+1. **Wrong account is the #1 risk.** Bare endpoints + the web UI default to the *individual* account,
+   NOT the one you intend. Enumerate via `transfer/accounts/` (the bare `accounts/` under-reports —
+   shows ~2 of 5), then pass `?account_number=` / the `{account}` segment on **every** op. Before any
+   write, echo the resolved `account_number` + nickname and confirm it's the intended account.
+2. **`--method` on writes, always.** `GET` and `POST` share a URL; omitting `--method POST` silently
+   runs the **read** and returns a LIST — and a careless agent then reports "order placed" when nothing
+   was sent. Pass `--method` for every write and confirm the response is a write result (e.g. `201` +
+   an order `id`), not a list.
+3. **Never export the live-write gate.** Do NOT put `ROBINHOOD_ALLOW_LIVE_WRITE=1` in your shell
+   profile/`.bashrc`/`.zshrc`. Keep it **inline on the single command**. A persistent env var turns
+   every later `--live-write` into a real send — including "tests." Two gates, per command, every time.
+4. **OTC / non-fractional guard.** Before a dollar order, read `fractional_tradability`. If it's
+   `position_closing_only` (OTC, e.g. RNECY) or anything ≠ `tradable`, a "$X of <ticker>" order is
+   **impossible** — switch to whole shares + a marketable limit; don't retry the dollar body.
+5. **Equity orders need `order_form_version: 7`** (+ the web headers the engine sends) or they 400
+   "app version missing important stock trading updates." Add the field; don't spin on the vague error.
+
+**HIGH — wrong/failed orders, unintended state**
+6. **Bulk-enumerate option UUIDs FIRST.** `strategy-quote`/orders need the real `option_instrument_id`,
+   never a strike or a guessed UUID. Run `options enumerate <SYM> --expiration <D>` before quoting/ordering.
+7. **`recurring --all` is state-scoped:** `pause --all` only pauses *active* schedules; `resume --all`
+   only resumes *paused* ones. Report what actually changed, not "all paused."
+8. **Per-chain min-tick:** option limits below the chain's `cutoff_price` (~$3) must use `below_tick`
+   (ARKG = $0.05). `$0.01` → 400. Read `options/chains/{id}` `min_ticks` first.
+9. **GTC option opens are gated by *overnight* buying power**, not regular BP — regular BP looking fine
+   does NOT mean the order clears.
+10. **DRIP write = `PATCH corp_actions/drip/account_settings/{account}/` (account-wide) or
+   `.../drip/instrument_settings/{account}/{instrument_id}/` (per-stock), body `{"drip_enabled":bool}`** —
+   NOT `drip/enrollment/` (that's GET-only, 405 on writes).
+
+**MEDIUM — silent misreads / classification**
+11. Positions return instrument **UUIDs, not tickers** — resolve via `instruments/?ids=`; quotes need tickers.
+12. Watchlist reads require `owner_type=custom`; rename uses `display_name` (sending `name` = silent 200 no-op).
+13. On **429**: sleep the server-directed seconds, retry the **same `ref_id`** (a new ref_id risks a
+   duplicate order). Don't fixed-sleep, don't give up after one.
+14. Route map: use `{placeholder}` + `--param`, never raw values (substring match); rebuild (`pnpm build`)
+   after map edits — runtime reads `dist`.
+15. **Classify "sell a call/put" BEFORE building** — sell-to-close vs covered call vs credit spread vs
+   naked short are different orders + risk. Ask if ambiguous; never default into naked/undefined-risk exposure.
+16. **Coverage/collateral up front:** covered call needs 100 shares in the SAME account; CSP needs the
+   cash. Verify before building, not after a reject.
+17. **Cash-account rolls are T+1:** close today, open next business day with settled cash
+   (`options roll-plan --cash-account`); same-day open = good-faith violation.
+18. **Crypto API uses separate auth** (API key + ed25519 signing), not the brokerage bearer.
+19. **PDT $25k is *current* law** (proposals ~$5k pending) — re-verify if the user flags a change.
+
+> Golden rule: reads are free and live; **every write is dry-run until you deliberately pass both gates**.
+> When unsure about account, side, position_effect, or amount — stop and confirm. A wrong write is real money.
+
+---
+
 ## Quick Start
 
 ```bash

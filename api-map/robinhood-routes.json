@@ -6698,5 +6698,35 @@
     ],
     "source": "settings-capture-2026-06-03",
     "summary": "Sign a Robinhood agreement. POST {agreement_id,sha256}. Used by enroll flows."
+  },
+  {
+    "url": "https://bonfire.robinhood.com/options/orders/review",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "options",
+      "trading",
+      "preview"
+    ],
+    "risk": "write-safe",
+    "methods": [
+      "POST"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Server-side options order REVIEW/validation, no placement. Multi-leg body {account,direction,legs[{option,position_effect,ratio_quantity,side}],client_ask/bid_at_submission,form_source}."
+  },
+  {
+    "url": "https://bonfire.robinhood.com/options/orders/marketability/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "options",
+      "trading",
+      "preview"
+    ],
+    "risk": "write-safe",
+    "methods": [
+      "POST"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Options order marketability check, no placement. Same multi-leg body as review."
   }
 ]

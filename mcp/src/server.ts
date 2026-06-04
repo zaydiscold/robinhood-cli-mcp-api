@@ -23,6 +23,7 @@ import {
   planBrokerageRequest,
   planCryptoRequest,
   resolveLiveWriteGate,
+  selectRouteByQueryAndMethod,
   signCryptoRequest,
   summarizeApiMap
 } from "@zaydiscold/robinhood-cli/lib";
@@ -51,25 +52,8 @@ function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
   } as any;
 }
 
-function selectRouteByQueryAndMethod<T extends { url: string; methods?: string[] }>(
-  matches: T[],
-  query: string,
-  method?: string
-): T | undefined {
-  const candidates = matches.filter((candidate) => candidate.url === query);
-  const pool = candidates.length > 0 ? candidates : matches;
-  if (method) {
-    const requested = method.toUpperCase();
-    const exact = pool.find((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested));
-    if (exact) return exact;
-    // FAIL CLOSED on write verbs: a forced POST/PATCH/PUT/DELETE with no matching write route must
-    // NOT silently degrade to a GET (read) route at the wrong risk class. Mirrors the CLI resolver.
-    const isWrite = requested !== "GET" && requested !== "HEAD";
-    if (isWrite && pool.some((candidate) => candidate.methods?.length)) return undefined;
-    return pool[0];
-  }
-  return pool[0];
-}
+// selectRouteByQueryAndMethod is imported from the shared lib — single source of truth with the
+// CLI so the two resolvers can never diverge on write safety again.
 
 const INSTRUMENTS_SYMBOL_URL = "https://api.robinhood.com/instruments/?symbol={symbol}";
 const MARKETDATA_QUOTES_URL = "https://api.robinhood.com/marketdata/quotes/?ids={ids}";

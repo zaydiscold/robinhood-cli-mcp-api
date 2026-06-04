@@ -7,6 +7,7 @@ import {
   buildOptionsStrategyOrderPlan,
   classifyMoneyness,
   collarSanity,
+  selectRouteByQueryAndMethod,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -644,5 +645,27 @@ describe("Options analytics helpers", () => {
     // Threshold is configurable: a 30% gap is stale at the default 25 but not at 50.
     expect(collarSanity({ ask_price: "13", last_trade_price: "10" }).stale).toBe(true);
     expect(collarSanity({ ask_price: "13", last_trade_price: "10" }, 50).stale).toBe(false);
+  });
+
+  it("resolves routes by URL+method and FAILS CLOSED on a forced write with no write route", () => {
+    const ordersGet = { url: "https://api.robinhood.com/orders/", methods: ["GET"] };
+    const ordersPost = { url: "https://api.robinhood.com/orders/", methods: ["POST"] };
+    const pool = [ordersGet, ordersPost];
+
+    // Exact method match wins regardless of order in the pool.
+    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "POST")).toBe(ordersPost);
+    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "GET")).toBe(ordersGet);
+
+    // Forced WRITE verb with only a GET route in a method-aware pool -> undefined (NOT the GET route).
+    // This is the regression guard for the CLI/MCP resolver divergence that mis-routed writes to reads.
+    expect(selectRouteByQueryAndMethod([ordersGet], "https://api.robinhood.com/orders/", "POST")).toBeUndefined();
+    expect(selectRouteByQueryAndMethod([ordersGet], "https://api.robinhood.com/orders/", "DELETE")).toBeUndefined();
+
+    // GET stays permissive against a method-aware pool (reads must not break).
+    expect(selectRouteByQueryAndMethod([ordersPost], "https://api.robinhood.com/orders/", "GET")).toBe(ordersPost);
+
+    // Legacy entries without `methods` keep the permissive fallback even for a write verb.
+    const legacy = [{ url: "https://api.robinhood.com/legacy/" }];
+    expect(selectRouteByQueryAndMethod(legacy, "https://api.robinhood.com/legacy/", "POST")).toBe(legacy[0]);
   });
 });

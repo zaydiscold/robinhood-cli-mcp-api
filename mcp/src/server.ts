@@ -528,7 +528,7 @@ server.registerTool(
   "robinhood_brokerage_execute",
   {
     title: "Robinhood Brokerage Execute",
-    description: "Execute a Robinhood brokerage/account request using caller-owned auth env. Reads run live; writes are dry-run by default and require liveWrite=true plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan.",
+    description: "Execute a Robinhood brokerage/account request using caller-owned auth env. Reads run live; writes are dry-run by default and require liveWrite=true plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan. After any live write, append a trading-log.md entry (intent + strategy thread); brokerage order history is the only proof an order happened (order-evidence rule).",
     annotations: toolAnnotations(false, "write-or-sensitive"),
     inputSchema: z.object({
       query: z.string(),
@@ -776,7 +776,7 @@ server.registerTool(
   "robinhood_settings",
   {
     title: "Robinhood Account Settings",
-    description: "Read or toggle account settings (double-gated). action=show reads all; drip/expiration/pdt/lending/sweep toggle the corresponding setting. Writes are dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Cash-sweep only supports disable (enroll needs the agreement-sign flow).",
+    description: "Read or toggle account settings (double-gated). action=show reads all; drip/expiration/pdt/lending/sweep toggle the corresponding setting. Writes are dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Cash-sweep only supports disable (enroll needs the agreement-sign flow). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
     inputSchema: z.object({
       account_number: z.string(),
       action: z.enum(["show", "drip", "expiration", "pdt", "lending", "sweep"]),
@@ -823,7 +823,7 @@ server.registerTool(
   "robinhood_recurring",
   {
     title: "Robinhood Recurring Schedules",
-    description: "List or mutate recurring investment schedules (double-gated writes). action=list reads all; create/edit/end mutate. Writes dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    description: "List or mutate recurring investment schedules (double-gated writes). action=list reads all; create/edit/end mutate. Writes dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
     inputSchema: z.object({
       action: z.enum(["list", "create", "edit", "end"]),
       id: z.string().optional(),
@@ -863,6 +863,82 @@ server.registerTool(
     } else { body = { state: "deleted" }; } // end
     const r = await gatedBrokerageWrite({ url: ITEM, method: "PATCH", params: { "0": id }, body, dryRun, liveWrite });
     return jsonResponse(r.dryRun && r.reason ? { ...r, liveWriteBlocked: r.reason } : r);
+  }
+);
+
+server.registerTool(
+  "robinhood_quote",
+  {
+    title: "Robinhood Quote",
+    description: "Live quote(s) for one or more equity/ETF symbols (last, bid, ask, previous close). Read.",
+    inputSchema: z.object({ symbols: z.array(z.string()).min(1) }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ symbols }) => {
+    const ids: string[] = [];
+    for (const s of symbols) {
+      const inst = (await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: s.toUpperCase() })).results?.[0];
+      if (inst?.id) ids.push(inst.id);
+    }
+    if (ids.length === 0) return jsonResponse({ quotes: [] });
+    const q = (await brokerageGetJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: ids.join(",") })).results ?? [];
+    return jsonResponse({ quotes: q.filter(Boolean).map((r: any) => ({ symbol: r.symbol, last: n(r.last_trade_price), bid: n(r.bid_price), ask: n(r.ask_price), previousClose: n(r.previous_close) })) });
+  }
+);
+
+server.registerTool(
+  "robinhood_history",
+  {
+    title: "Robinhood Transaction History",
+    description: "Recent equity + options order history (newest first). Order history is the source of truth for whether a trade happened (see the order-evidence rule). Pass account_number to scope equity orders.",
+    inputSchema: z.object({ account_number: z.string().optional(), limit: z.number().default(20) }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number, limit }) => {
+    const eqUrl = "https://api.robinhood.com/orders/";
+    const eq = await tryBrokerageGetJson(eqUrl, {}, account_number ? { account_number } : {});
+    const opt = await tryBrokerageGetJson("https://api.robinhood.com/options/orders/");
+    return jsonResponse({
+      equityOrders: eq.ok ? (eq.data.results ?? []).slice(0, limit) : { error: eq.error },
+      optionOrders: opt.ok ? (opt.data.results ?? []).slice(0, limit) : { error: opt.error }
+    });
+  }
+);
+
+server.registerTool(
+  "robinhood_watchlist",
+  {
+    title: "Robinhood Watchlists",
+    description: "Your custom watchlists (owner_type=custom is mandatory). Read.",
+    inputSchema: z.object({}),
+    annotations: toolAnnotations(true, "read")
+  },
+  async () => jsonResponse(await brokerageGetJson("https://api.robinhood.com/discovery/lists/?owner_type=custom", {}, { owner_type: "custom" }))
+);
+
+server.registerTool(
+  "robinhood_options_enumerate",
+  {
+    title: "Robinhood Options Enumerate",
+    description: "Bulk-enumerate EVERY option contract (strike + option_instrument_id + desktop link) for a symbol/expiration. Option UUIDs are random v4 — enumeration is the ONLY way to resolve them; this is the canonical UUID resolver before quoting/ordering or inspecting.",
+    inputSchema: z.object({ symbol: z.string(), expiration: z.string().optional(), type: z.enum(["call", "put", "both"]).default("both") }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ symbol, expiration, type }) => {
+    const inst = (await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: symbol.toUpperCase() })).results?.[0];
+    if (!inst?.tradable_chain_id) throw new Error(`No options chain for ${symbol}.`);
+    const chainId = inst.tradable_chain_id;
+    const exps: string[] = (await brokerageGetJson("https://api.robinhood.com/options/chains/{id}/", { id: chainId })).expiration_dates ?? [];
+    if (exps.length === 0) throw new Error(`${symbol} chain has no listed expirations.`);
+    const exp = expiration && exps.includes(expiration) ? expiration : exps[0];
+    const types = type === "both" ? ["call", "put"] : [type];
+    const contracts: any[] = [];
+    for (const t of types) {
+      const rows = (await brokerageGetJson("https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}", { chain_id: chainId, expiration_dates: exp, type: t })).results ?? [];
+      for (const r of rows) contracts.push({ type: t, strike: n(r.strike_price), optionInstrumentId: r.id, link: `https://robinhood.com/options/instruments/${r.id}/` });
+    }
+    contracts.sort((a, b) => (a.type === b.type ? a.strike - b.strike : a.type < b.type ? -1 : 1));
+    return jsonResponse({ symbol: symbol.toUpperCase(), chainId, expiration: exp, count: contracts.length, contracts });
   }
 );
 

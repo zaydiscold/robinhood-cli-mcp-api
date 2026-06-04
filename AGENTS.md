@@ -58,7 +58,8 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
    manual login. (Details in §1.)
 
 4. **Two front doors** — the **CLI** (`cli/dist/index.js`, for humans/scripts) and the
-   **MCP server** (`mcp/dist/server.js`, 23 tools for agents incl. first-class parity tools). Both are thin wrappers over
+   **MCP server** (`mcp/dist/server.js`, 27 tools for agents incl. first-class parity tools — reload a
+   running server with `/reload-mcp` after pulling, or it advertises its old count). Both are thin wrappers over
    the engine.
 
 **How a single call flows:** you give a query string → the engine substring-matches it
@@ -590,9 +591,10 @@ settings/permissions, never print the token value.
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` (23 tools incl. accounts/positions/options-holdings/options-inspect/settings/recurring parity: route inspection, browser/account
+Tools surface as `mcp__robinhood-cli__*` (27 tools incl. accounts/positions/options-holdings/options-inspect/settings/recurring/quote/history/watchlist/options-enumerate parity: route inspection, browser/account
 context, options strategy workflows/plans, exact-contract link bundles, stock
-profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute).
+profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute). A running server advertises
+its old count until reloaded — `/reload-mcp` after pulling.
 Same engine → same auth, gate, and method-aware routing as the CLI. The MCP mirrors the CLI gate: `liveWrite: true` plus
 `ROBINHOOD_ALLOW_LIVE_WRITE=1` to send a write; otherwise forced dry-run.
 
@@ -630,6 +632,17 @@ not a mandate — risk and sizing are the operator's call. Full version in SKILL
   misinformation — high signal-to-noise only **if you know whom to read**, so corroborate a lone post.
 - **RH `midlands/news|ratings|tags`:** the **slow, broker-native confirmer** — it trails the
   off-platform pulse. Lead DD with X/Reddit; let RH's feeds confirm, not the reverse.
+- **Institutional research — the regime/thesis layer:** BlackRock / Vanguard / J.P. Morgan / Goldman /
+  Morgan Stanley year-ahead outlooks + long-term capital market assumptions. Low-frequency framing of
+  "what regime are we in"; a house view is still a view (they talk their book). Synthesis lives in
+  `docs/institutional-outlook-2026-06-04.md` — info, not mandate; refresh each cycle.
+- **Academic / dissertation-level math — the "why it works" foundation:** for any strategy reasoned
+  about deeply, go past prose to the quant (BS derivations, N(d₂) assignment prob, VRP edge, Greeks
+  calculus, sizing math). The strategy deep-dives carry rigorous Quant appendices
+  (`docs/strategy-deep-dive-the-wheel-2026-06-04.md`, `docs/strategy-deep-dive-rolling-options-2026-06-04.md`).
+  A model is a model — every result rides assumptions that break in practice; the appendices say where.
+- **None is gospel** — pulse, house views, and math are inputs to weigh by reliability, all subordinate
+  to live market data + brokerage order history. Rough ladder: X/Reddit pulse → institutional → academic.
 - **Signal → optional validation → action:** any feed is a *direction input*; you *can* corroborate
   against live market data (bid/ask, Greeks, volume/OI) before acting — available reasoning, not a rule.
 - **Personalized trusted sources** (specific accounts/communities the owner relies on) accumulate as

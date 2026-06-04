@@ -109,9 +109,9 @@ is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
   "Option UUIDs — always bulk-enumerate".
 
 **Tax-advantaged / account-aware knowledge** (surface this when planning)
-- Account gating: **cash** (no margin/naked, T+1, good-faith) vs **margin** (rolls/spreads/shorts, PDT
-  if <$25k) vs **Roth IRA** (long options + defined-risk + CC/CSP; no margin/naked). See the
-  account-capability table + the PDT scale below.
+- Account gating: **cash** (no margin/naked, T+1, good-faith) vs **margin** (rolls/spreads/shorts;
+  PDT lifted on RH — no $25k cap) vs **Roth IRA** (long options + defined-risk + CC/CSP; no
+  margin/naked). See the account-capability table + the PDT scale below.
 - **Wash sale:** rolling a *losing* leg (or re-buying within 30d) can trigger a wash sale in a taxable
   account — flag it. In an **IRA** wash-sale tracking is moot but there's no tax-loss harvest either.
 - **LEAPS** (>1yr) for long-term capital-gains treatment; rolling short-dated premium is ordinary income.
@@ -231,7 +231,9 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
 17. **Cash-account rolls are T+1:** close today, open next business day with settled cash
    (`options roll-plan --cash-account`); same-day open = good-faith violation.
 18. **Crypto API uses separate auth** (API key + ed25519 signing), not the brokerage bearer.
-19. **PDT $25k is *current* law** (proposals ~$5k pending) — re-verify if the user flags a change.
+19. **PDT lifted on Robinhood — no $25k day-trade cap.** FINRA eliminated the PDT designation + $25k
+   minimum (Reg Notice 26-10, 2026-06-04) and RH has implemented it; margin accounts day-trade freely
+   under dynamic intraday margin. (Cash accounts: T+1 / good-faith still apply.)
 
 **EXECUTION EVIDENCE — what counts as proof an order happened**
 
@@ -383,6 +385,9 @@ Primary references:
 
 - `docs/README.md` (docs index) and `docs/agent-operating-intelligence-2026-06-04.md` (**boot-smart KB — read first**)
 - `ball-knowledge.md` (repo root) — the operator's investing-memory ledger; see SKILL "Ball Knowledge" + "Signal sourcing"
+- `trading-log.md` (repo root) — execution + intent history; see SKILL "Trading log"
+- `docs/strategy-deep-dive-the-wheel-2026-06-04.md`, `docs/strategy-deep-dive-rolling-options-2026-06-04.md` — multi-POV strategy deep-dives with dissertation-level Quant appendices
+- `docs/institutional-outlook-2026-06-04.md` — year-ahead + CMA regime synthesis (info, not mandate; refresh each cycle)
 - `docs/options-greeks-strategy-research-2026-06-02.md`
 - `docs/options-quantitative-playbook-2026-06-03.md`
 - `docs/options-strategy-execution-smoke-2026-06-03.md`
@@ -813,7 +818,7 @@ allowed actions differ:
 | Account type | Can | Cannot / caution |
 |--------------|-----|------------------|
 | `cash` | buy/sell, cash-secured puts, covered calls, debit spreads | no margin borrowing, no naked/undefined-risk shorts, **rolling that needs margin won't work**, unsettled-cash (T+1) limits, watch good-faith violations |
-| `margin` (individual) | the above + margin, rolls, spreads requiring buying power | PDT rule (<$25k → ≤3 day trades/5d), maintenance margin |
+| `margin` (individual) | the above + margin, rolls, spreads requiring buying power | **PDT lifted on RH — no $25k day-trade cap** (FINRA eliminated it 2026-06-04); maintenance margin still applies |
 | `ira_roth` | long options, defined-risk spreads, covered calls | no margin, no naked shorts; contribution/withdrawal rules out of scope |
 
 When a requested action is impossible for the account type, **say so and stop**:
@@ -823,26 +828,14 @@ state from `bonfire.robinhood.com/margin/{id}/investing_info/` and
 `.../settings/`; read cash/sweep from `accounts/sweeps/`. Surface the constraint
 in the plan output, the way the tool already reports buying power.
 
-### Pattern Day Trading (PDT) — check per account, every time
+### Pattern Day Trading (PDT) — lifted on Robinhood (no $25k cap)
 
-Before any plan that could involve a same-day **round trip** (buy then sell, or sell then
-buy the same security in one session), read the account and apply the PDT scale. **Buys
-alone never trigger PDT** — only *day trades* (round trips) count. Decide per account from
-`get_portfolio` (`total_value` + `buying_power`) and `account.type`:
-
-- **`cash` account:** PDT does not apply (no margin day-trading). But T+1 settlement and
-  good-faith violations do — selling unsettled funds can flag it.
-- **`margin` account, total value ≥ $25,000:** PDT lifted — effectively unlimited day
-  trades. (The user's Roth ≈ $40k and the 9mo are margin ⇒ PDT moot there.)
-- **`margin` account, total value < $25,000:** classic PDT — **≤ 3 day trades / 5 rolling
-  business days**, else flagged ~90 days.
-
-So each time you look at a new account, ask: *cash (n/a) or margin? if margin, total ≥ $25k?*
-and state which branch applies in the plan.
-
-> Rule-change watch: there is active movement to lower/restructure the $25k threshold
-> (proposals around ~$5k). Treat $25k as current law; re-verify if the user flags a change,
-> and keep this number easy to update.
+**FINRA eliminated the PDT designation, the day-trade count, and the $25k minimum** (Reg Notice 26-10,
+effective 2026-06-04), replaced by dynamic intraday margin on real-time margin excess (standard margin
+minimum $2,000). **Robinhood has implemented it** — so on RH margin accounts there is **no $25k
+day-trade cap**; day-trade freely within margin / buying-power limits. (Buys alone never counted
+anyway — only round trips did.) **Cash accounts are unchanged:** PDT never applied, but T+1 settlement
+and good-faith violations still do — selling unsettled funds can flag it.
 
 ## Live Write & Order Lifecycle (verified 2026-06-03)
 
@@ -1110,7 +1103,11 @@ documented. To extend it safely:
 
 ## MCP Server
 
-23 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+27 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+
+> **Count note:** the *source/dist* registers 27 tools. A *running* MCP process started before the
+> last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
+> the server) after pulling, then confirm the client lists all 27.
 
 ### Registration
 
@@ -1147,6 +1144,16 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_crypto_sign` | Generate Crypto API auth headers |
 | `robinhood_crypto_plan` | Dry-run plan for Crypto API |
 | `robinhood_crypto_execute` | Execute a Crypto API request |
+| `robinhood_accounts` | List every account (full graph via `transfer/accounts/`) with type/capabilities |
+| `robinhood_positions` | Equity positions for an account (UUIDs resolved to tickers + quotes) |
+| `robinhood_options_holdings` | Every held option contract (UUID + strike + bid/ask/last + qty + link) |
+| `robinhood_options_inspect` | Full detail on one owned contract (metadata, Greeks, fills, buy/sell handoff) |
+| `robinhood_settings` | Read/toggle account settings: DRIP, trade-on-expiration, PDT-protection, lending, sweep (double-gated) |
+| `robinhood_recurring` | List/create/edit/end recurring investment schedules (double-gated writes) |
+| `robinhood_quote` | Live quote(s) for one or more equity/ETF symbols |
+| `robinhood_history` | Unified history (equity + options + crypto orders + transfers), newest first |
+| `robinhood_watchlist` | Read custom watchlists (`owner_type=custom`) |
+| `robinhood_options_enumerate` | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration |
 
 ### MCP Safety Gates
 

@@ -155,7 +155,7 @@ from you* and lets you act on a default you didn't choose.
   the same class of error as a wrong trade.
 - Read `account.type` / `brokerage_account_type` and state what the account can and
   cannot do *before* planning a write (cash: no margin/naked, T+1, good-faith;
-  margin: rolls/spreads/shorts, PDT if <$25k; Roth: long + defined-risk + CC/CSP, no
+  margin: rolls/spreads/shorts, PDT lifted on RH — no $25k cap; Roth: long + defined-risk + CC/CSP, no
   margin/naked). The first-class `accounts` command annotates this for you.
 
 ### Buying power is NOT one number (especially on margin accounts)
@@ -373,8 +373,8 @@ Ranked by leverage (hardening first, then growth). Each is concrete enough to st
 7. **Own-the-market wedge — keep CLI/MCP/api-map aligned and lean into the niche.**
    RH's own "Agentic Trading" (launched 2026-05-27) is equities-only and sandboxed;
    this tool's wedge is **options + crypto + every owned account + an auditable
-   double-gate**. The PDT $25k rule was eliminated 2026-06-04, which widens what
-   margin accounts can do (update the PDT scale and the "≥$25k" branches accordingly).
+   double-gate**. PDT is lifted on RH — the $25k day-trade cap is gone (FINRA eliminated
+   it 2026-06-04, RH implemented), so margin accounts day-trade freely.
    The durable advantage is breadth + auditability, so the maintenance invariant (no
    duplicated logic, gate intact across all three surfaces) is also the product moat —
    protect it.

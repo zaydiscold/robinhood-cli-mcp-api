@@ -2216,7 +2216,7 @@ function accountCapabilities(account: Record<string, any>): {
       canMarginBorrow: true,
       canRollOnMargin: true,
       canNakedShort: true,
-      note: "Margin: can borrow, roll, and run spreads/shorts that need buying power. Watch the PDT rule (<$25k equity -> <=3 day trades/5 sessions) and maintenance margin."
+      note: "Margin: can borrow, roll, and run spreads/shorts that need buying power. PDT lifted on RH - no $25k day-trade cap (FINRA eliminated it 2026-06-04); maintenance margin still applies."
     };
   }
   return {

@@ -17,6 +17,7 @@ import {
   buildOptionsStrategyOrderPlan,
   classifyMoneyness,
   collarSanity,
+  selectRouteByQueryAndMethod,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -71,28 +72,8 @@ function parseBodyString(options: { body?: string; bodyJson?: string }): string 
   return undefined;
 }
 
-function selectRouteByQueryAndMethod<T extends { url: string; methods?: string[] }>(
-  matches: T[],
-  query: string,
-  method?: string
-): T | undefined {
-  const candidates = matches.filter((candidate) => candidate.url === query);
-  const pool = candidates.length > 0 ? candidates : matches;
-  if (method) {
-    const requested = method.toUpperCase();
-    const exact = pool.find((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested));
-    if (exact) return exact;
-    // No route in the pool advertises the requested method. For WRITE verbs, FAIL CLOSED:
-    // silently degrading a forced POST/PATCH/PUT/DELETE to a GET route would send the wrong
-    // verb at the wrong (read) risk class — a mis-resolution that *looks* safe. Only fall
-    // back when the pool has method metadata to trust; legacy entries without methods keep
-    // the permissive fallback so reads don't break.
-    const isWrite = requested !== "GET" && requested !== "HEAD";
-    if (isWrite && pool.some((candidate) => candidate.methods?.length)) return undefined;
-    return pool[0];
-  }
-  return pool[0];
-}
+// selectRouteByQueryAndMethod is imported from ./lib.js — single source of truth shared with
+// the MCP server so the two resolvers can never diverge on write safety (they once did).
 
 const apiMap = new Command("api-map").description("Inspect bundled API maps");
 

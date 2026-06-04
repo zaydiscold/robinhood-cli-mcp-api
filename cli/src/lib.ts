@@ -1373,6 +1373,35 @@ export function inferBrokerageMethod(route: BrokerageRoute): string {
   return "GET";
 }
 
+/**
+ * Resolve a single route from a match list, preferring an exact URL match and then the
+ * method. Shared by the CLI and the MCP server so the two can never diverge on write safety
+ * (they once did — the MCP copy silently degraded forced writes to GET while the CLI failed
+ * closed; that divergence is exactly why this lives in one place now).
+ *
+ * For WRITE verbs (anything but GET/HEAD) with no matching write route, FAIL CLOSED: returning
+ * the GET route would send the wrong verb at the wrong (read) risk class — a mis-resolution
+ * that *looks* safe. Only fall back when the pool has method metadata to trust; legacy entries
+ * without `methods` keep the permissive fallback so reads don't break.
+ */
+export function selectRouteByQueryAndMethod<T extends { url: string; methods?: string[] }>(
+  matches: T[],
+  query: string,
+  method?: string
+): T | undefined {
+  const candidates = matches.filter((candidate) => candidate.url === query);
+  const pool = candidates.length > 0 ? candidates : matches;
+  if (method) {
+    const requested = method.toUpperCase();
+    const exact = pool.find((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested));
+    if (exact) return exact;
+    const isWrite = requested !== "GET" && requested !== "HEAD";
+    if (isWrite && pool.some((candidate) => candidate.methods?.length)) return undefined;
+    return pool[0];
+  }
+  return pool[0];
+}
+
 export function riskMutatesAccount(risk: RouteRisk): boolean {
   return risk === "write-mutate" || risk === "write-or-sensitive" || risk === "destructive";
 }

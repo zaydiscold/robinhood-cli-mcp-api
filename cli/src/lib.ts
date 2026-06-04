@@ -1461,10 +1461,18 @@ export function resolveLiveWriteGate(input: {
   risk: RouteRisk;
   dryRun: boolean;
   liveWrite: boolean;
+  /** HTTP method — when it's a write verb, the gate engages even if `risk` is mis-classified as read. */
+  method?: string;
   env?: NodeJS.ProcessEnv;
 }): LiveWriteGate {
   const env = input.env ?? process.env;
-  if (input.dryRun || !riskIsWrite(input.risk)) {
+  // VERB FLOOR: a write verb (anything but GET/HEAD) is treated as a write regardless of the route's
+  // hand-classified risk. This closes the hole where a route mis-labeled "read" but called with POST
+  // would skip the gate entirely. risk-based write-detection still applies for legacy method-less routes.
+  const m = input.method?.toUpperCase();
+  const methodIsWrite = m !== undefined && m !== "GET" && m !== "HEAD";
+  const isWrite = riskIsWrite(input.risk) || methodIsWrite;
+  if (input.dryRun || !isWrite) {
     return { allowed: true, forcedDryRun: false };
   }
   const envAllows = env.ROBINHOOD_ALLOW_LIVE_WRITE === "1";

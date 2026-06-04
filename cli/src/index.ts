@@ -533,6 +533,7 @@ brokerage
     }
     const gate = resolveLiveWriteGate({
       risk: route.risk,
+      method: options.method,
       dryRun: Boolean(options.dryRun),
       liveWrite: Boolean(options.liveWrite)
     });
@@ -642,7 +643,7 @@ brokerage
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: ORDERS_URL });
     const route = selectRouteByQueryAndMethod(matches, ORDERS_URL, "POST");
     if (!route) throw new Error("orders/ POST route missing from map — rebuild (AGENTS.md §3).");
-    const gate = resolveLiveWriteGate({ risk: route.risk, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
+    const gate = resolveLiveWriteGate({ risk: route.risk, method: "POST", dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
     if (gate.forcedDryRun && gate.reason) process.stderr.write(`${gate.reason}\n`);
     const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
     // Block a LIVE send on a stale collar; warn (still inspectable) on a dry-run.
@@ -720,7 +721,7 @@ async function setRecurringState(
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: RECURRING_ITEM_URL });
   const route = selectRouteByQueryAndMethod(matches, RECURRING_ITEM_URL, "PATCH");
   if (!route) throw new Error("recurring_schedules/{0}/ PATCH route missing from map — rebuild (AGENTS.md §3).");
-  const gate = resolveLiveWriteGate({ risk: route.risk, dryRun: Boolean(options.dryRun), liveWrite: Boolean(options.liveWrite) });
+  const gate = resolveLiveWriteGate({ risk: route.risk, method: "PATCH", dryRun: Boolean(options.dryRun), liveWrite: Boolean(options.liveWrite) });
   const effectiveDryRun = Boolean(options.dryRun) || gate.forcedDryRun;
   const body = { state };
   const plan = planBrokerageRequest({ route, method: "PATCH", params: { "0": id }, body, dryRun: effectiveDryRun });
@@ -746,7 +747,7 @@ async function gatedBrokerageWrite(opts: {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
   const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
   if (!route) throw new Error(`No ${opts.method} route for ${opts.url} — check the map / rebuild (AGENTS.md §3).`);
-  const gate = resolveLiveWriteGate({ risk: route.risk, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
+  const gate = resolveLiveWriteGate({ risk: route.risk, method: opts.method, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
   const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
   const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
   const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
@@ -2713,6 +2714,7 @@ crypto
       }
       const gate = resolveLiveWriteGate({
         risk: route.risk,
+        method: options.method,
         dryRun: Boolean(options.dryRun),
         liveWrite: Boolean(options.liveWrite)
       });

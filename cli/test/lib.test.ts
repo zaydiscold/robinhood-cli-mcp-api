@@ -577,6 +577,29 @@ describe("Robinhood API map", () => {
       })
     ).toEqual({ allowed: true, forcedDryRun: false });
   });
+
+  it("VERB FLOOR: a write method gates even when the route risk is mis-classified as read", () => {
+    // Route says "read" but we call it with POST → must still be gated (not run live).
+    const gated = resolveLiveWriteGate({ risk: "read", method: "POST", dryRun: false, liveWrite: false, env: {} });
+    expect(gated.allowed).toBe(false);
+    expect(gated.forcedDryRun).toBe(true);
+    // GET on a read route still runs live.
+    expect(resolveLiveWriteGate({ risk: "read", method: "GET", dryRun: false, liveWrite: false, env: {} }).allowed).toBe(true);
+    // Write verb + both gates → live allowed.
+    expect(resolveLiveWriteGate({ risk: "read", method: "POST", dryRun: false, liveWrite: true, env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" } }).allowed).toBe(true);
+  });
+
+  it("MAP INTEGRITY: every write-only route carries a write-class risk", () => {
+    const writeRisks = new Set(["write-safe", "write-mutate", "write-or-sensitive", "destructive"]);
+    const readVerbs = new Set(["GET", "HEAD"]);
+    const offenders = loadBrokerageRoutes().filter((r) => {
+      const methods = (r.methods ?? []).map((m) => m.toUpperCase());
+      if (methods.length === 0) return false; // legacy method-less entries are exempt
+      const allWrite = methods.every((m) => !readVerbs.has(m));
+      return allWrite && !writeRisks.has(r.risk);
+    }).map((r) => `${r.methods?.join("/")} ${r.url} [risk=${r.risk}]`);
+    expect(offenders, `write-verb routes mis-classified as non-write:\n${offenders.join("\n")}`).toEqual([]);
+  });
 });
 
 describe("Options analytics helpers", () => {

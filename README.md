@@ -9,7 +9,13 @@
 
 An unofficial Robinhood API map, CLI, and MCP server for operating a real Robinhood account from a terminal or an agent. It covers brokerage/account routes, options chains and strategies, recurring investments, transfers, dividends, watchlists, stock detail pages, and official Robinhood Crypto API signing/execution.
 
-This repo is not the official Robinhood agent sandbox. this is so much much better. light years better, this provides a management plane fo your entire robinhood accounts(s) for all their features. own the trade. agent access to the account is freedom and equity of knowledge letting the brainstorming and idea and research to execution pipeline all one pipe. robinhood please hire me this is what love for the game produces. It drives the account you already have, across the browser-backed brokerage API surface, with reads live by default and every write behind a dry-run/live-write gate.
+This repo is not the official Robinhood agent sandbox. 
+
+this is so much much better. this makes their "agentic" control release whatever look like childs play. seriously. this is how trading is supposed to feel. light years better, this provides a management plane fo your entire robinhood accounts(s) for all their features. own the trade. agent access to the account is freedom and equity of knowledge letting the brainstorming and idea and research to execution pipeline all one pipe. 
+
+robinhood please hire me this is what love for the game produces. 
+
+It drives the account you already have, across the browser-backed brokerage API surface, with reads live by default and every write behind a dry-run/live-write gate.
 
 ```bash
 git clone https://github.com/zaydiscold/robinhood-cli.git

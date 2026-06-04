@@ -111,7 +111,26 @@ is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
 `midlands/tags/tag/{100-most-popular|top-movers|upcoming-earnings|technology|etf|...}`,
 `midlands/movers/{index}/`, `marketdata/earnings/`. Feeds the signal→deeplink→order pipeline.
 
+**Index options (verified 2026-06-04 — RH DOES offer these)** — true cash-settled, **§1256 60/40**
+index options exist on RH: **SPX, SPXW (0DTE), XSP, NDX, VIX, RUT**. The consumer `search` bar and
+`instruments/?symbol=` HIDE them (return only ETF proxies); they live under
+`options/chains/?underlying_symbol=SPX` (`underlying_type:"index"`, empty `underlying_instruments` =
+cash-settled). Opening may need an index-options entitlement tier. Picking SPX over SPY is the live
+choice that gets §1256 + European-style box financing. Full evidence:
+`docs/index-options-1256-conclusion-2026-06-04.md`.
+
+**Futures / FX / commodities (verified 2026-06-04)** — **read/enumerate only, NOT placeable.** Real CME
+futures (`/ESM26`, `/MGCQ26`, …) quote via `midlands/lists/items/`, but the futures host
+`ceres.robinhood.com` refuses the TLS handshake (app-only cert allowlist) and the login has no
+onboarded futures account. **No spot FX** (`currency_pairs` empty; DXY not tradable). **Commodities**
+only via ETF proxies (USO/UVXY/BITO — normal equities, placeable via `brokerage buy`). Full evidence:
+`docs/futures-fx-commodities-surface-2026-06-04.md`.
+
 **Crypto** — official signed Crypto Trading API (separate Ed25519 auth).
+
+**Owned-contract inspection** — `options holdings [--account N]` lists every held contract (UUID +
+strike + bid/ask/last + qty + link) across accounts; `options inspect <uuid>` opens one contract's
+full detail (metadata, Greeks, fill history, rare tax-timing note, buy/sell handoff).
 
 ### Strategy & tax knowledge (background — neutral, NOT risk guidance)
 Reference docs that give the agent broad options/tax background to reason about ANY strategy a user

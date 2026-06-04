@@ -578,3 +578,22 @@ context, options strategy workflows/plans, exact-contract link bundles, stock
 profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute).
 Same engine → same auth, gate, and method-aware routing as the CLI. The MCP mirrors the CLI gate: `liveWrite: true` plus
 `ROBINHOOD_ALLOW_LIVE_WRITE=1` to send a write; otherwise forced dry-run.
+
+---
+
+## 12. Maintenance invariants (keep CLI + MCP + api-map aligned)
+
+This is a hard rule, not a nicety — divergence here has already caused a write-safety bug.
+
+- **One engine, no duplication.** Shared logic lives in `cli/src/lib.ts`; the CLI (`cli/src/index.ts`)
+  and the MCP (`mcp/src/server.ts`) both import it. Never copy a function into both files — they drift.
+  (The route resolver `selectRouteByQueryAndMethod` once diverged: the MCP copy silently degraded forced
+  writes to GET while the CLI failed closed. Now hoisted to lib.ts. `brokerageGetJson`/`finiteNumber`/
+  `percentChange`/stock-profile read-join are still duplicated and slated to be hoisted next.)
+- **Rebuild after api-map edits.** The runtime reads `cli/dist/api-map/`, not the source JSON. A source
+  edit without `pnpm --filter @zaydiscold/robinhood-cli build` is a silent no-op.
+- **Resolver refuses to guess.** Forced writes with no matching write route fail closed (return nothing);
+  an ambiguous substring query (>1 distinct route) throws `AmbiguousRouteError` with the candidate list.
+  Pass exact URLs for writes.
+- **New capability → wire all three places** (route in api-map, command in CLI, tool in MCP) and keep the
+  double gate intact. Reads live by default; every write dry-run until both gates.

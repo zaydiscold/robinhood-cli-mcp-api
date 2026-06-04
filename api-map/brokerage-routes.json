@@ -6386,5 +6386,95 @@
     ],
     "source": "settings-capture-2026-06-03",
     "summary": "Options order marketability check, no placement. Same multi-leg body as review."
+  },
+  {
+    "url": "https://bonfire.robinhood.com/slip/{account}/status/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "stock-lending"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Stock Lending Income Program (SLIP) status for an account {is_enabled,was_ever_enabled}. PUT {\"account_number\":..,\"is_enabled\":bool,\"was_ever_enabled\":bool} to toggle (write-mutate)."
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/account_settings/{account}/",
+    "methods": [
+      "PATCH"
+    ],
+    "risk": "write-mutate",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "dividends"
+    ],
+    "summary": "Toggle account-wide DRIP. PATCH {\"drip_enabled\":bool}.",
+    "source": "settings-capture-2026-06-03"
+  },
+  {
+    "url": "https://api.robinhood.com/options/option_settings/{account}/",
+    "methods": [
+      "PATCH"
+    ],
+    "risk": "write-mutate",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "options"
+    ],
+    "summary": "Set options settings. PATCH {\"trading_on_expiration_state\":\"enabled|disabled\"}.",
+    "source": "settings-capture-2026-06-03"
+  },
+  {
+    "url": "https://api.robinhood.com/settings/margin/{account}/",
+    "methods": [
+      "PUT"
+    ],
+    "risk": "write-mutate",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "margin"
+    ],
+    "summary": "Set margin/PDT. PUT {\"day_trades_protection\":bool}.",
+    "source": "settings-capture-2026-06-03"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/slip/{account}/status/",
+    "methods": [
+      "PUT"
+    ],
+    "risk": "write-mutate",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "stock-lending"
+    ],
+    "summary": "Toggle stock lending (SLIP). PUT {\"account_number\":..,\"is_enabled\":bool,\"was_ever_enabled\":bool}.",
+    "source": "settings-capture-2026-06-03"
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/",
+    "methods": [
+      "POST"
+    ],
+    "risk": "write-mutate",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "cash"
+    ],
+    "summary": "Disable cash sweep. POST {\"sweep_enrollment_action\":\"unenroll\"}.",
+    "source": "settings-capture-2026-06-03"
   }
 ]

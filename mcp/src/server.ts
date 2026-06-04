@@ -60,7 +60,13 @@ function selectRouteByQueryAndMethod<T extends { url: string; methods?: string[]
   const pool = candidates.length > 0 ? candidates : matches;
   if (method) {
     const requested = method.toUpperCase();
-    return pool.find((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested)) ?? pool[0];
+    const exact = pool.find((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested));
+    if (exact) return exact;
+    // FAIL CLOSED on write verbs: a forced POST/PATCH/PUT/DELETE with no matching write route must
+    // NOT silently degrade to a GET (read) route at the wrong risk class. Mirrors the CLI resolver.
+    const isWrite = requested !== "GET" && requested !== "HEAD";
+    if (isWrite && pool.some((candidate) => candidate.methods?.length)) return undefined;
+    return pool[0];
   }
   return pool[0];
 }

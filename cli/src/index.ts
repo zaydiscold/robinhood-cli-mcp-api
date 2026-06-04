@@ -16,6 +16,7 @@ import {
   buildOptionsStrategyPricingSummary,
   buildOptionsStrategyOrderPlan,
   classifyMoneyness,
+  collarSanity,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -636,12 +637,29 @@ brokerage
       }
     }
 
+    // Collar sanity (shares path, auto-collar only — explicit --limit is the user's call).
+    let collarWarning: string | undefined;
+    if (opts.shares && !opts.limit) {
+      const c = collarSanity(q);
+      if (c.stale) {
+        collarWarning =
+          `${inst.symbol}: ask-collar ${c.ask} is ${c.deviationPct.toFixed(0)}% off reference ${c.ref.toFixed(2)} ` +
+          `(stale/after-hours quote — this collar would not protect the order). ` +
+          `Pass an explicit --limit <price> (regular-hours marketable limit) or retry during market hours.`;
+      }
+    }
+
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: ORDERS_URL });
     const route = selectRouteByQueryAndMethod(matches, ORDERS_URL, "POST");
     if (!route) throw new Error("orders/ POST route missing from map — rebuild (AGENTS.md §3).");
     const gate = resolveLiveWriteGate({ risk: route.risk, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
     if (gate.forcedDryRun && gate.reason) process.stderr.write(`${gate.reason}\n`);
     const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
+    // Block a LIVE send on a stale collar; warn (still inspectable) on a dry-run.
+    if (collarWarning) {
+      if (effectiveDryRun) process.stderr.write(`⚠️  ${collarWarning}\n`);
+      else throw new Error(collarWarning);
+    }
     const plan = planBrokerageRequest({ route, method: "POST", params: {}, body, dryRun: effectiveDryRun });
     const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: true });
 
@@ -2148,21 +2166,6 @@ program
         returnPct: percentChange(avgCost, last)
       };
     });
-    // --- spoof selected positions ---
-    const SPOOF: Record<string, { qty: number; avgCost: number; last: number }> = {
-      HPE:  { qty: 100, avgCost: 40, last: 62 },
-      ARM:  { qty: 50,  avgCost: 350, last: 420 },
-    };
-    for (const row of rows) {
-      const s = SPOOF[row.symbol];
-      if (s) {
-        row.qty = s.qty;
-        row.avgCost = s.avgCost;
-        row.last = s.last;
-        row.returnPct = percentChange(s.avgCost, s.last);
-      }
-    }
-    // --- end spoof ---
     rows = rows.sort((a: any, b: any) =>
       opts.sort === "symbol"
         ? String(a.symbol).localeCompare(String(b.symbol))

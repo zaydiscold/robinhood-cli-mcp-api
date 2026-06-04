@@ -6,6 +6,7 @@ import {
   buildOptionsStrategyPricingSummary,
   buildOptionsStrategyOrderPlan,
   classifyMoneyness,
+  collarSanity,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -610,5 +611,38 @@ describe("Options analytics helpers", () => {
     expect(near.map((row) => row.strike)).toEqual([210, 215, 220, 225, 230]);
     // Unknown spot returns the full ladder (sorted), not an empty window
     expect(selectNearStrikes(ladder, 0, 2)).toHaveLength(ladder.length);
+  });
+
+  it("flags a stale/after-hours ask-collar but passes a tight live quote", () => {
+    // The real ARKG after-hours capture: ask $92.80 against a ~$33.82 reference -> stale.
+    const stale = collarSanity({ ask_price: "92.800000", bid_price: "0.010000", last_trade_price: "33.820000" });
+    expect(stale.stale).toBe(true);
+    expect(stale.ref).toBeCloseTo(33.82, 2);
+    expect(stale.deviationPct).toBeCloseTo(174.4, 0);
+
+    // A normal tight market quote (ask ~0.1% over last) is NOT stale.
+    const tight = collarSanity({ ask_price: "34.02", bid_price: "33.98", last_trade_price: "34.00" });
+    expect(tight.stale).toBe(false);
+    expect(tight.deviationPct).toBeLessThan(1);
+  });
+
+  it("prefers extended-hours last, falls back to mid, and never blocks on a missing quote", () => {
+    // Extended-hours last beats the (older) regular last as the reference.
+    const eh = collarSanity({ ask_price: "40", last_extended_hours_trade_price: "39", last_trade_price: "10" });
+    expect(eh.ref).toBe(39);
+    expect(eh.stale).toBe(false);
+
+    // No last at all -> reference is the bid/ask mid.
+    const mid = collarSanity({ ask_price: "10", bid_price: "8" });
+    expect(mid.ref).toBe(9);
+
+    // No usable reference (no last, no bid) -> NaN deviation, never stale (won't block an order).
+    const missing = collarSanity({ ask_price: "10" });
+    expect(missing.stale).toBe(false);
+    expect(missing.deviationPct).toBeNaN();
+
+    // Threshold is configurable: a 30% gap is stale at the default 25 but not at 50.
+    expect(collarSanity({ ask_price: "13", last_trade_price: "10" }).stale).toBe(true);
+    expect(collarSanity({ ask_price: "13", last_trade_price: "10" }, 50).stale).toBe(false);
   });
 });

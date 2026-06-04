@@ -1833,6 +1833,42 @@ export function percentChange(base: number, current: number): number {
   return ((current - base) / base) * 100;
 }
 
+export interface CollarSanity {
+  ref: number;
+  ask: number;
+  deviationPct: number;
+  stale: boolean;
+}
+
+/**
+ * Sanity-check the auto ask-collar used by a shares (market/OTC-limit) equity order.
+ * The web order body carries the live ask as a price collar; after hours / on a halt the
+ * marketdata ask goes stale and wide (observed: ARKG ask $92.80 vs a ~$33 stock), so baking
+ * it as the collar protects nothing. Compare the ask to a robust reference — extended-hours
+ * last → regular last → bid/ask mid — and flag an egregious gap (default >25%).
+ *
+ * Descriptive, not prescriptive: this only catches a broken quote, never a legitimately
+ * aggressive price. Returns NaN deviation + stale:false when there's no usable reference,
+ * so a missing quote never blocks an order on its own. Callers warn on dry-run, block live.
+ */
+export function collarSanity(
+  quote: Record<string, unknown>,
+  thresholdPct = 25
+): CollarSanity {
+  const num = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : Number.NaN;
+  };
+  const ask = num(quote.ask_price);
+  const bid = num(quote.bid_price);
+  const last = num(quote.last_extended_hours_trade_price) || num(quote.last_trade_price);
+  const mid = Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : Number.NaN;
+  const ref = Number.isFinite(last) ? last : mid;
+  if (!Number.isFinite(ref) || !Number.isFinite(ask)) return { ref, ask, deviationPct: Number.NaN, stale: false };
+  const deviationPct = (Math.abs(ask - ref) / ref) * 100;
+  return { ref, ask, deviationPct, stale: deviationPct > thresholdPct };
+}
+
 export type Moneyness = "ITM" | "ATM" | "OTM";
 
 /** Classify a strike relative to spot for a call or put. Equality (or no spot) is ATM. */

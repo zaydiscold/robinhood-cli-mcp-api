@@ -35,7 +35,9 @@ folder stays local and is never pushed.
 | File | Use it for |
 |------|------------|
 | `../ball-knowledge.md` | **Ball Knowledge** — the operator's living, append-only investing-memory ledger (themes, tickers, sources, hunches). Read on finance tasks; rules in `SKILL.md` "Ball Knowledge". |
+| `../trading-log.md` | **Trading log** — append-only execution + **intent** history (the strategy thread / "what we're rolling from"). Rules in `SKILL.md` "Trading log". |
 | `../SKILL.md` "Signal sourcing" | Source-quality / due-diligence doctrine (news = slow; X/Reddit = best signal-to-noise; X = fastest pulse; RH `midlands/*` = slow confirmer) |
+| `strategy-deep-dive-the-wheel-2026-06-04.md` / `strategy-deep-dive-rolling-options-2026-06-04.md` | Advanced multi-perspective deep dives (mechanics, Greeks, tax, current sentiment, decision rules, failure modes) extending the strategy KB |
 
 ## Naming Rule
 

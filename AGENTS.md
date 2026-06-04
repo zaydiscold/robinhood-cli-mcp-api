@@ -650,3 +650,19 @@ to, and how it frames analysis. Read it on finance tasks.
   neutrally without imposing caution. **Full rules + the exact append format: SKILL.md "Ball Knowledge".**
 - Order-execution evidence (canonical in **SKILL.md failure mode #20** + the boot KB §1): *brokerage
   order history is the source of truth; no record = treat as non-executed; screenshots/UI/logs are not proof.*
+
+---
+
+## 15. Trading log (`trading-log.md`) — execution + intent history
+
+The repo root holds **`trading-log.md`**, an append-only, dated log of what the agent *executes*, with
+the **intent** and **strategy thread** behind each trade. The pairing: Ball Knowledge (§14) = market
+context/beliefs; the trading log = execution + intent history.
+
+- **After any execution via CLI/MCP** (order, cancel, settings change, recurring pause/resume),
+  **append a log entry** — what + intent + the strategy thread; on a wheel/roll, record what you're
+  rolling *from*. Append at the bottom; never rewrite prior entries.
+- **Status honesty:** mark `executed` only if **order history confirms** it (order-evidence rule above);
+  otherwise `dry-run`/`queued`/`cancelled`/`rejected`. Order history has the mechanics; this log adds
+  the *why* so the agent isn't re-deriving strategy state from raw fills.
+- Public + committed → keep entries generic (account masked). **Full rules + format: SKILL.md "Trading log".**

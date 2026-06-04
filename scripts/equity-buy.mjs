@@ -82,7 +82,7 @@ async function resolveInstrument(symbol) {
   const r = await get(`https://api.robinhood.com/instruments/?symbol=${encodeURIComponent(symbol)}`);
   const inst = r.body?.results?.[0];
   if (!inst) throw new Error(`no instrument for ${symbol}`);
-  return inst; // .id, .fractional_tradability, .tradeability, .tradable, .symbol
+  return inst; // .id, .fractional_tradability, .tradability, .otc_market_tier, .tradable, .symbol
 }
 async function quote(instrumentId) {
   const r = await get(`https://api.robinhood.com/marketdata/quotes/?ids=${instrumentId}`);
@@ -110,7 +110,9 @@ function baseBody({ account, instrumentId, symbol, q }) {
 // Build the order body, applying the OTC / fractional guard.
 function buildOrder({ account, inst, q, dollars, shares }) {
   const frac = inst.fractional_tradability; // 'tradable' | 'position_closing_only' | 'untradable'
-  const otc = (inst.tradeability && inst.tradeability !== "tradable") || frac === "position_closing_only";
+  // OTC signal mirrors the CLI: otc_market_tier populated, the (correctly-spelled) tradability flag,
+  // or fractional being close-only. NOTE: the API field is `tradability`, NOT `tradeability`.
+  const otc = Boolean(inst.otc_market_tier) || (inst.tradability && inst.tradability !== "tradable") || frac === "position_closing_only";
   const body = baseBody({ account, instrumentId: inst.id, symbol: inst.symbol, q });
 
   if (dollars != null) {

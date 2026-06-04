@@ -668,4 +668,23 @@ describe("Options analytics helpers", () => {
     const legacy = [{ url: "https://api.robinhood.com/legacy/" }];
     expect(selectRouteByQueryAndMethod(legacy, "https://api.robinhood.com/legacy/", "POST")).toBe(legacy[0]);
   });
+
+  it("FAILS LOUD on an ambiguous substring match spanning multiple distinct routes", () => {
+    // "orders/" substring matches several distinct routes across hosts/risk classes.
+    const pool = [
+      { url: "https://api.robinhood.com/orders/", methods: ["GET", "POST"] },
+      { url: "https://api.robinhood.com/options/orders/", methods: ["GET", "POST"] },
+      { url: "https://nummus.robinhood.com/orders/", methods: ["GET"] }
+    ];
+    // A substring query (no exact URL match) that resolves to >1 distinct URL must throw, not guess.
+    expect(() => selectRouteByQueryAndMethod(pool, "orders/", "GET")).toThrow(/Ambiguous route/);
+    // An EXACT URL match disambiguates even though the substring would have been ambiguous.
+    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "POST").url).toBe("https://api.robinhood.com/orders/");
+    // Method filtering can also disambiguate: only one route advertises POST here.
+    const pool2 = [
+      { url: "https://api.robinhood.com/orders/", methods: ["POST"] },
+      { url: "https://api.robinhood.com/orders/reads/", methods: ["GET"] }
+    ];
+    expect(selectRouteByQueryAndMethod(pool2, "orders", "POST").url).toBe("https://api.robinhood.com/orders/");
+  });
 });

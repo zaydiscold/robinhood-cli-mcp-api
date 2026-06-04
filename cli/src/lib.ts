@@ -1790,6 +1790,41 @@ export async function brokerageGetJson(
   return JSON.parse(result.body || "{}");
 }
 
+/**
+ * Paginated read: follows Robinhood's `next` cursor and returns ALL `results` across pages.
+ *
+ * Robinhood list endpoints (notably `options/instruments/`) page at ~100 rows and expose a
+ * `next` URL carrying a `cursor` param. Reading only page 1 silently truncates wide chains —
+ * e.g. a SPY LEAPS chain returns the lowest ~100 strikes and DROPS every at/above-the-money
+ * strike, which breaks both enumeration and single-strike/leg resolution. We can't re-feed the
+ * raw `next` URL to brokerageGetJson (it builds the request from the route template, not the
+ * passed URL), so we extract the `cursor` and re-issue the same route+params with `+cursor`.
+ */
+export async function brokerageGetAllResults(
+  url: string,
+  params: Record<string, string> = {},
+  query: Record<string, string> = {},
+  options: ExecuteBrokerageOptions & { maxPages?: number } = {}
+): Promise<any[]> {
+  const maxPages = options.maxPages ?? 50;
+  const all: any[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const pageQuery = cursor ? { ...query, cursor } : query;
+    const data = await brokerageGetJson(url, params, pageQuery, options);
+    if (Array.isArray(data?.results)) all.push(...data.results);
+    const next: string | undefined = data?.next ?? undefined;
+    if (!next) return all;
+    try {
+      cursor = new URL(next).searchParams.get("cursor") ?? undefined;
+    } catch {
+      cursor = undefined;
+    }
+    if (!cursor) return all; // unparseable/missing cursor — stop rather than loop forever
+  }
+  return all; // hit maxPages guard; return what we have (caller decides if that's suspicious)
+}
+
 /** Non-throwing brokerageGetJson — returns {ok:false,error} instead of throwing. */
 export async function tryBrokerageGetJson(
   url: string,

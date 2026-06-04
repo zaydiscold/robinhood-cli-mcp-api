@@ -1373,16 +1373,35 @@ export function inferBrokerageMethod(route: BrokerageRoute): string {
   return "GET";
 }
 
+export class AmbiguousRouteError extends Error {
+  code = "AMBIGUOUS_ROUTE";
+  candidates: string[];
+  constructor(query: string, candidates: string[]) {
+    super(
+      `Ambiguous route: "${query}" matches ${candidates.length} different routes ` +
+        `(${candidates.slice(0, 8).join(", ")}${candidates.length > 8 ? ", …" : ""}). ` +
+        `Pass a more specific/exact URL — refusing to guess which one to act on.`
+    );
+    this.name = "AmbiguousRouteError";
+    this.candidates = candidates;
+  }
+}
+
 /**
  * Resolve a single route from a match list, preferring an exact URL match and then the
  * method. Shared by the CLI and the MCP server so the two can never diverge on write safety
  * (they once did — the MCP copy silently degraded forced writes to GET while the CLI failed
  * closed; that divergence is exactly why this lives in one place now).
  *
- * For WRITE verbs (anything but GET/HEAD) with no matching write route, FAIL CLOSED: returning
- * the GET route would send the wrong verb at the wrong (read) risk class — a mis-resolution
- * that *looks* safe. Only fall back when the pool has method metadata to trust; legacy entries
- * without `methods` keep the permissive fallback so reads don't break.
+ * Two ways this refuses to guess rather than pick the wrong route:
+ *  - FAIL CLOSED on write verbs: a forced POST/PATCH/PUT/DELETE with no matching write route
+ *    returns undefined, never silently degrades to the GET route at the wrong risk class.
+ *    (Legacy entries without `methods` keep the permissive fallback so reads don't break.)
+ *  - FAIL LOUD on ambiguity: a substring query like "orders/" matches many distinct routes
+ *    across hosts/risk classes (read, write-mutate, destructive). Returning the first by JSON
+ *    order is a silent mis-route — the documented #1 money-loss risk. If, after method
+ *    filtering, the eligible set spans more than one distinct URL, throw AmbiguousRouteError
+ *    with the candidate list instead of guessing pool[0].
  */
 export function selectRouteByQueryAndMethod<T extends { url: string; methods?: string[] }>(
   matches: T[],
@@ -1391,15 +1410,22 @@ export function selectRouteByQueryAndMethod<T extends { url: string; methods?: s
 ): T | undefined {
   const candidates = matches.filter((candidate) => candidate.url === query);
   const pool = candidates.length > 0 ? candidates : matches;
+  let eligible = pool;
   if (method) {
     const requested = method.toUpperCase();
-    const exact = pool.find((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested));
-    if (exact) return exact;
-    const isWrite = requested !== "GET" && requested !== "HEAD";
-    if (isWrite && pool.some((candidate) => candidate.methods?.length)) return undefined;
-    return pool[0];
+    const exact = pool.filter((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested));
+    if (exact.length > 0) {
+      eligible = exact;
+    } else {
+      const isWrite = requested !== "GET" && requested !== "HEAD";
+      if (isWrite && pool.some((candidate) => candidate.methods?.length)) return undefined;
+      eligible = pool;
+    }
   }
-  return pool[0];
+  if (eligible.length === 0) return undefined;
+  const distinctUrls = [...new Set(eligible.map((candidate) => candidate.url))];
+  if (distinctUrls.length > 1) throw new AmbiguousRouteError(query, distinctUrls);
+  return eligible[0];
 }
 
 export function riskMutatesAccount(risk: RouteRisk): boolean {

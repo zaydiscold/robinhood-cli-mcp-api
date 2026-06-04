@@ -113,6 +113,18 @@ is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
 
 **Crypto** — official signed Crypto Trading API (separate Ed25519 auth).
 
+### Strategy & tax knowledge (background — neutral, NOT risk guidance)
+Reference docs that give the agent broad options/tax background to reason about ANY strategy a user
+asks for. **Descriptive, not prescriptive** — they do NOT push a risk tolerance or steer toward "safe"
+vs "aggressive." Risk is the user's call: surface the mechanics/options, then do what the user asks
+(within the dry-run/live-write gates). Don't be timid and don't impose caution the user didn't ask for.
+- `docs/options-strategies-knowledge-base-2026-06-03.md` — mechanics + use + payoff + Greeks across the
+  full menu (directional, covered-call family, Wheel, PMCC, verticals, condors/flies, ratio/backspread,
+  straddles, covered-call ETFs, 0DTE/QDTE income, box spreads) + a cross-cutting Greek mental model.
+- `docs/tax-aware-options-strategies.md` — tax angles (CC rolling/deferral, qualified-covered-call
+  holding-period taint, §1256 60/40 on SPX/XSP, box-spread financing, LEAPS, wash-sale, constructive sale).
+- `docs/options-strategy-order-templates-2026-06-03.md` — exact per-strategy order bodies (live-validated 2026-06).
+
 > Anything not listed as a verified first-class command is route-map research until a fresh capture
 > proves the write body (see the account-settings capability map). Don't claim unproven writes.
 

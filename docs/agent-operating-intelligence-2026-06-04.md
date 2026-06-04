@@ -141,7 +141,7 @@ shapes what orders will clear (see §3: $0 accounts reject overnight-BP buys).
 **The trap, stated precisely:** `accounts/` (bare) **under-reports — it showed ~2 of
 the 5** in a real session and caused a genuine miss. The **complete** list comes only
 from `bonfire.robinhood.com/transfer/accounts/` (or the first-class
-`node cli/dist/index.js accounts`, or MCP `get_accounts`). Writes still work against
+`node cli/dist/index.js accounts`, or the MCP `robinhood_accounts` tool). Writes still work against
 any owned account by number — so under-reporting doesn't block you, it *hides options
 from you* and lets you act on a default you didn't choose.
 

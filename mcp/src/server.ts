@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   buildAccountContextUrl,
@@ -26,6 +27,7 @@ import {
   selectRouteByQueryAndMethod,
   brokerageGetJson,
   tryBrokerageGetJson,
+  gatedBrokerageWrite,
   signCryptoRequest,
   summarizeApiMap
 } from "@zaydiscold/robinhood-cli/lib";
@@ -668,6 +670,199 @@ server.registerTool(
     });
     const result = await executeCryptoRequest(plan, { body, dryRun: effectiveDryRun, fullBody });
     return jsonResponse(gate.forcedDryRun ? { ...result, liveWriteBlocked: gate.reason } : result);
+  }
+);
+
+// --- Parity tools: mirror the CLI's first-class verbs, all via the SHARED engine -----------------
+// Reads use brokerageGetJson; writes use the hoisted gatedBrokerageWrite (same gated path as the CLI).
+const n = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x : Number.NaN; };
+
+server.registerTool(
+  "robinhood_accounts",
+  {
+    title: "Robinhood Accounts",
+    description: "List every trading account (the COMPLETE graph via transfer/accounts/ — the bare accounts/ endpoint under-reports). Returns account_number, type, name. Use this to discover accounts; never hardcode account numbers.",
+    inputSchema: z.object({}),
+    annotations: toolAnnotations(true, "read")
+  },
+  async () => {
+    const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
+    const rows = (Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [])
+      .filter((a: any) => a?.type === "rhs" || a?.type === "ira_roth")
+      .map((a: any) => ({ account_number: a.account_number, type: a.type, name: a.account_name ?? a.display_title ?? "" }));
+    return jsonResponse({ count: rows.length, accounts: rows });
+  }
+);
+
+server.registerTool(
+  "robinhood_positions",
+  {
+    title: "Robinhood Equity Positions",
+    description: "Open equity positions (live read). Returns symbol, quantity, average_buy_price, instrument_id. Pass account_number to scope to one account (else all).",
+    inputSchema: z.object({ account_number: z.string().optional() }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number }) => {
+    const query: Record<string, string> = { nonzero: "true" };
+    if (account_number) query.account_number = account_number;
+    const data = await brokerageGetJson("https://api.robinhood.com/positions/", {}, query);
+    const held = (Array.isArray(data.results) ? data.results : []).filter((p: any) => n(p.quantity) > 0);
+    return jsonResponse({ count: held.length, positions: held.map((p: any) => ({ symbol: p.symbol, quantity: n(p.quantity), average_buy_price: n(p.average_buy_price), instrument_id: p.instrument_id })) });
+  }
+);
+
+server.registerTool(
+  "robinhood_options_holdings",
+  {
+    title: "Robinhood Options Holdings",
+    description: "Every held option contract across accounts (or one), each with its option_instrument_id (UUID) + contract link, symbol, qty, average_open_price. The owned-contract map.",
+    inputSchema: z.object({ account_number: z.string().optional() }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number }) => {
+    let accounts: string[];
+    const labels = new Map<string, string>();
+    if (account_number) accounts = [account_number];
+    else {
+      const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
+      const rows = (Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : []).filter((a: any) => a?.type === "rhs" || a?.type === "ira_roth");
+      accounts = rows.map((a: any) => String(a.account_number));
+      for (const a of rows) labels.set(String(a.account_number), a.account_name ?? "");
+    }
+    const all: any[] = [];
+    for (const acct of accounts) {
+      const positions = (await brokerageGetJson("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" })).results ?? [];
+      for (const p of positions) {
+        const oid = String((p.legs?.[0]?.option ?? "").split("/options/instruments/")[1] ?? "").replace(/\//g, "");
+        all.push({ account: acct, accountLabel: labels.get(acct) ?? "", symbol: p.symbol, optionInstrumentId: oid, quantity: n(p.quantity), averageOpenPrice: n(p.average_open_price), strategy: p.strategy, link: `https://robinhood.com/options/${oid}?account_number=${acct}` });
+      }
+    }
+    return jsonResponse({ count: all.length, holdings: all });
+  }
+);
+
+server.registerTool(
+  "robinhood_options_inspect",
+  {
+    title: "Robinhood Option Inspect",
+    description: "Full detail for ONE owned/known option contract by its UUID: metadata, live Greeks/quote, and fill history (side/effect/qty/price/date). Tolerates the web _L1 leg suffix. Read.",
+    inputSchema: z.object({ option_instrument_id: z.string() }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ option_instrument_id }) => {
+    const id = option_instrument_id.replace(/_L\d+$/i, "").trim();
+    const meta = await brokerageGetJson("https://api.robinhood.com/options/instruments/{0}/", { "0": id });
+    const mark = (await brokerageGetJson("https://api.robinhood.com/marketdata/options/?ids={ids}", { ids: id })).results?.[0] ?? {};
+    const fills: any[] = [];
+    if (meta.chain_id) {
+      const orders = (await brokerageGetJson("https://api.robinhood.com/options/orders/", {}, { chain_ids: meta.chain_id, states: "filled" })).results ?? [];
+      for (const o of orders) for (const leg of o.legs ?? []) {
+        if (!String(leg.option ?? "").includes(id)) continue;
+        for (const ex of leg.executions ?? []) fills.push({ side: leg.side, positionEffect: leg.position_effect, quantity: n(ex.quantity), price: n(ex.price), timestamp: ex.timestamp });
+      }
+      fills.sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+    }
+    return jsonResponse({
+      optionInstrumentId: id, symbol: meta.chain_symbol, strike: n(meta.strike_price), type: meta.type, expiration: meta.expiration_date, state: meta.state, chainId: meta.chain_id,
+      quote: { bid: n(mark.bid_price), ask: n(mark.ask_price), mark: n(mark.adjusted_mark_price), last: n(mark.last_trade_price), ivPct: n(mark.implied_volatility) * 100 },
+      greeks: { delta: n(mark.delta), gamma: n(mark.gamma), theta: n(mark.theta), vega: n(mark.vega), rho: n(mark.rho) },
+      openInterest: n(mark.open_interest), volume: n(mark.volume), fills,
+      link: `https://robinhood.com/options/${id}`
+    });
+  }
+);
+
+server.registerTool(
+  "robinhood_settings",
+  {
+    title: "Robinhood Account Settings",
+    description: "Read or toggle account settings (double-gated). action=show reads all; drip/expiration/pdt/lending/sweep toggle the corresponding setting. Writes are dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Cash-sweep only supports disable (enroll needs the agreement-sign flow).",
+    inputSchema: z.object({
+      account_number: z.string(),
+      action: z.enum(["show", "drip", "expiration", "pdt", "lending", "sweep"]),
+      enable: z.boolean().optional(),
+      instrument_id: z.string().optional(),
+      dryRun: z.boolean().default(false),
+      liveWrite: z.boolean().default(false)
+    }),
+    annotations: toolAnnotations(false, "write-mutate")
+  },
+  async ({ account_number, action, enable, instrument_id, dryRun, liveWrite }) => {
+    if (action === "show") {
+      const get = async (url: string) => { try { return await brokerageGetJson(url, { account: account_number }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
+      const [drip, opt, margin, sweep, lending] = await Promise.all([
+        get("https://api.robinhood.com/corp_actions/drip/account_settings/{account}/"),
+        get("https://api.robinhood.com/options/option_settings/{account}/"),
+        get("https://api.robinhood.com/settings/margin/{account}/"),
+        get("https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/"),
+        get("https://bonfire.robinhood.com/slip/{account}/status/")
+      ]);
+      return jsonResponse({ account: account_number, dripEnabled: drip?.drip_enabled, tradingOnExpiration: opt?.trading_on_expiration_state, dayTradesProtection: margin?.day_trades_protection, sweepEnrolled: sweep?.sweep_enrolled, stockLendingEnabled: lending?.is_enabled });
+    }
+    let url: string, method: string, params: Record<string, string> = { account: account_number }, body: unknown;
+    if (action === "drip") {
+      url = instrument_id ? "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account}/{instrument_id}/" : "https://api.robinhood.com/corp_actions/drip/account_settings/{account}/";
+      if (instrument_id) params.instrument_id = instrument_id;
+      method = "PATCH"; body = { drip_enabled: Boolean(enable) };
+    } else if (action === "expiration") {
+      url = "https://api.robinhood.com/options/option_settings/{account}/"; method = "PATCH"; body = { trading_on_expiration_state: enable ? "enabled" : "disabled" };
+    } else if (action === "pdt") {
+      url = "https://api.robinhood.com/settings/margin/{account}/"; method = "PUT"; body = { day_trades_protection: Boolean(enable) };
+    } else if (action === "lending") {
+      url = "https://bonfire.robinhood.com/slip/{account}/status/"; method = "PUT"; body = { is_enabled: Boolean(enable), was_ever_enabled: true };
+    } else { // sweep
+      if (enable) throw new Error("Only sweep disable is automated; enroll needs the agreement-sign flow.");
+      url = "https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/"; method = "POST"; body = { sweep_enrollment_action: "unenroll" };
+    }
+    const r = await gatedBrokerageWrite({ url, method, params, body, dryRun, liveWrite });
+    return jsonResponse(r.dryRun && r.reason ? { ...r, liveWriteBlocked: r.reason } : r);
+  }
+);
+
+server.registerTool(
+  "robinhood_recurring",
+  {
+    title: "Robinhood Recurring Schedules",
+    description: "List or mutate recurring investment schedules (double-gated writes). action=list reads all; create/edit/end mutate. Writes dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    inputSchema: z.object({
+      action: z.enum(["list", "create", "edit", "end"]),
+      id: z.string().optional(),
+      account_number: z.string().optional(),
+      symbol: z.string().optional(),
+      amount: z.number().optional(),
+      frequency: z.enum(["weekly", "biweekly", "monthly"]).optional(),
+      start_date: z.string().optional(),
+      dryRun: z.boolean().default(false),
+      liveWrite: z.boolean().default(false)
+    }),
+    annotations: toolAnnotations(false, "write-mutate")
+  },
+  async ({ action, id, account_number, symbol, amount, frequency, start_date, dryRun, liveWrite }) => {
+    const LIST = "https://bonfire.robinhood.com/recurring_schedules/";
+    const ITEM = "https://bonfire.robinhood.com/recurring_schedules/{0}/";
+    if (action === "list") {
+      const data = await brokerageGetJson(LIST);
+      return jsonResponse(data);
+    }
+    if (action === "create") {
+      if (!account_number || !symbol || !(Number(amount) > 0)) throw new Error("create needs account_number, symbol, and a positive amount.");
+      const inst = (await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: symbol.toUpperCase() })).results?.[0];
+      if (!inst) throw new Error(`No instrument for ${symbol}.`);
+      const body = { account_number, amount: { amount: Number(amount).toFixed(2), currency_code: "USD" }, frequency: frequency ?? "weekly", investment_asset: { asset_id: inst.id, asset_symbol: inst.symbol, asset_type: "equity" }, source_of_funds: "buying_power", start_date: start_date ?? new Date(Date.now() + 86400000).toISOString().slice(0, 10), ref_id: randomUUID() };
+      const r = await gatedBrokerageWrite({ url: LIST, method: "POST", body, dryRun, liveWrite });
+      return jsonResponse(r.dryRun && r.reason ? { ...r, liveWriteBlocked: r.reason } : r);
+    }
+    if (!id) throw new Error(`${action} needs a schedule id.`);
+    let body: unknown;
+    if (action === "edit") {
+      const b: Record<string, unknown> = {};
+      if (Number(amount) > 0) b.amount = { amount: Number(amount).toFixed(2), currency_code: "USD" };
+      if (frequency) b.frequency = frequency;
+      if (Object.keys(b).length === 0) throw new Error("edit needs amount and/or frequency.");
+      body = b;
+    } else { body = { state: "deleted" }; } // end
+    const r = await gatedBrokerageWrite({ url: ITEM, method: "PATCH", params: { "0": id }, body, dryRun, liveWrite });
+    return jsonResponse(r.dryRun && r.reason ? { ...r, liveWriteBlocked: r.reason } : r);
   }
 );
 

@@ -58,7 +58,7 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
    manual login. (Details in §1.)
 
 4. **Two front doors** — the **CLI** (`cli/dist/index.js`, for humans/scripts) and the
-   **MCP server** (`mcp/dist/server.js`, 17 tools for agents). Both are thin wrappers over
+   **MCP server** (`mcp/dist/server.js`, 23 tools for agents incl. first-class parity tools). Both are thin wrappers over
    the engine.
 
 **How a single call flows:** you give a query string → the engine substring-matches it
@@ -590,7 +590,7 @@ settings/permissions, never print the token value.
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` (17 tools: route inspection, browser/account
+Tools surface as `mcp__robinhood-cli__*` (23 tools incl. accounts/positions/options-holdings/options-inspect/settings/recurring parity: route inspection, browser/account
 context, options strategy workflows/plans, exact-contract link bundles, stock
 profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute).
 Same engine → same auth, gate, and method-aware routing as the CLI. The MCP mirrors the CLI gate: `liveWrite: true` plus

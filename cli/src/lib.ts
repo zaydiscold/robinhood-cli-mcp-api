@@ -1803,6 +1803,31 @@ export async function tryBrokerageGetJson(
   }
 }
 
+/**
+ * Generic double-gated brokerage write, shared by the CLI and the MCP server. Pass the EXACT templated
+ * URL (with {placeholders}) so the resolver matches one route and the ambiguity guard can't fire. The
+ * gate engages on write verbs even if a route's risk is mis-classified (verb floor). Dry-run by default;
+ * a live send needs liveWrite:true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Hoisted here so the write path
+ * (the dangerous one to duplicate) is single-source across both surfaces.
+ */
+export async function gatedBrokerageWrite(opts: {
+  url: string;
+  method: string;
+  params?: Record<string, string>;
+  body?: unknown;
+  dryRun?: boolean;
+  liveWrite?: boolean;
+}): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
+  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
+  const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
+  if (!route) throw new Error(`No ${opts.method} route for ${opts.url} — check the map / rebuild (AGENTS.md §3).`);
+  const gate = resolveLiveWriteGate({ risk: route.risk, method: opts.method, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
+  const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
+  const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
+  const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
+  return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason, body: result.body };
+}
+
 export async function executeCryptoRequest(
   plan: PlannedCryptoRequest,
   options: ExecuteCryptoOptions = {}

@@ -20,6 +20,7 @@ import {
   selectRouteByQueryAndMethod,
   brokerageGetJson,
   tryBrokerageGetJson,
+  gatedBrokerageWrite,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -742,23 +743,7 @@ function collectId(value: string, previous: string[] = []): string[] {
 // Generic double-gated brokerage write. Pass the EXACT templated URL (with {placeholders}) so the
 // resolver matches one route and the ambiguity guard can't fire. Dry-run by default; a live send
 // needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Returns status + the (dry-run or live) body.
-async function gatedBrokerageWrite(opts: {
-  url: string;
-  method: string;
-  params?: Record<string, string>;
-  body?: unknown;
-  dryRun?: boolean;
-  liveWrite?: boolean;
-}): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
-  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
-  const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
-  if (!route) throw new Error(`No ${opts.method} route for ${opts.url} — check the map / rebuild (AGENTS.md §3).`);
-  const gate = resolveLiveWriteGate({ risk: route.risk, method: opts.method, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
-  const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
-  const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
-  const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
-  return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason, body: result.body };
-}
+// gatedBrokerageWrite is imported from ./lib.js — shared write executor (CLI + MCP).
 
 async function runRecurringSet(
   desired: "active" | "paused",

@@ -19,6 +19,7 @@ import {
   collarSanity,
   selectRouteByQueryAndMethod,
   brokerageGetJson,
+  brokerageGetAllResults,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   executeBrokerageRequest,
@@ -1274,12 +1275,11 @@ async function resolveExactContractLinkBundle(input: {
     throw new Error(`${symbol} chain does not list ${input.expiration}. First expirations: ${expirations.slice(0, 12).join(", ")}`);
   }
 
-  const data = await brokerageGetJson(
+  const instruments: any[] = await brokerageGetAllResults(
     OPTIONS_INSTRUMENTS_URL,
     { chain_id: chainId, expiration_dates: input.expiration, type: input.optionType },
     { account_number: account }
   );
-  const instruments: any[] = Array.isArray(data.results) ? data.results : [];
   const match = instruments.find((row: any) => sameStrike(row?.strike_price, input.strike));
   if (!match) {
     throw new Error(
@@ -1451,7 +1451,7 @@ options
     const expiration = opts.expiration && expirations.includes(opts.expiration) ? opts.expiration : expirations[0];
 
     const instruments: any[] =
-      (await brokerageGetJson(OPTIONS_INSTRUMENTS_URL, { chain_id: chainId, expiration_dates: expiration, type })).results ?? [];
+      await brokerageGetAllResults(OPTIONS_INSTRUMENTS_URL, { chain_id: chainId, expiration_dates: expiration, type });
     const ladder = instruments
       .map((row) => ({ strike: num(row.strike_price), id: row.id }))
       .filter((row) => Number.isFinite(row.strike) && row.id);
@@ -1529,7 +1529,7 @@ options
     const contracts: any[] = [];
     for (const type of types) {
       const rows: any[] =
-        (await brokerageGetJson(OPTIONS_INSTRUMENTS_URL, { chain_id: chainId, expiration_dates: expiration, type })).results ?? [];
+        await brokerageGetAllResults(OPTIONS_INSTRUMENTS_URL, { chain_id: chainId, expiration_dates: expiration, type });
       const marks = opts.quotes ? await fetchOptionMarks(rows.map((r) => r.id)) : new Map();
       for (const row of rows) {
         const m = marks.get(row.id) ?? {};
@@ -1747,12 +1747,12 @@ options
       ];
       for (const key of neededExpirationTypes) {
         const [legExpiration, type] = key.split("|") as [string, "call" | "put"];
-        const data = await brokerageGetJson(
+        const legInstruments = await brokerageGetAllResults(
           OPTIONS_INSTRUMENTS_URL,
           { chain_id: chainId, expiration_dates: legExpiration, type },
           { account_number: account }
         );
-        instrumentsByExpirationAndType.set(key, Array.isArray(data.results) ? data.results : []);
+        instrumentsByExpirationAndType.set(key, legInstruments);
       }
 
       const resolvedLegs = workflow.legs.map((leg) => {

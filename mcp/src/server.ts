@@ -26,6 +26,7 @@ import {
   resolveLiveWriteGate,
   selectRouteByQueryAndMethod,
   brokerageGetJson,
+  brokerageGetAllResults,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   signCryptoRequest,
@@ -934,7 +935,7 @@ server.registerTool(
     const types = type === "both" ? ["call", "put"] : [type];
     const contracts: any[] = [];
     for (const t of types) {
-      const rows = (await brokerageGetJson("https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}", { chain_id: chainId, expiration_dates: exp, type: t })).results ?? [];
+      const rows = await brokerageGetAllResults("https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}", { chain_id: chainId, expiration_dates: exp, type: t });
       for (const r of rows) contracts.push({ type: t, strike: n(r.strike_price), optionInstrumentId: r.id, link: `https://robinhood.com/options/instruments/${r.id}/` });
     }
     contracts.sort((a, b) => (a.type === b.type ? a.strike - b.strike : a.type < b.type ? -1 : 1));

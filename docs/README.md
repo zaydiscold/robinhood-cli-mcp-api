@@ -18,6 +18,11 @@ folder stays local and is never pushed.
 | `account-context-routing-2026-06-02.md` | Browser `?account_number=` routing behavior |
 | `security-research-account-number-context-routing-2026-06-03.md` | Security-research notes for account-number context routing |
 | `options-quantitative-playbook-2026-06-03.md` | Greeks, pricing, spread math, and strategy posture |
+| `options-strategies-knowledge-base-2026-06-03.md` | The strategy catalog (CSP/CC/Wheel/spreads/condors/rolling…) with payoff + Greek posture |
+| `options-strategy-order-templates-2026-06-03.md` | Hard per-strategy leg templates (side/position_effect/ratio) so you can't botch the legs |
+| `options-greeks-strategy-research-2026-06-02.md` | Greeks deep research + the aggressive-vs-defined-risk scoring heuristic |
+| `tax-aware-options-strategies.md` | Tax angles: CC rolling/deferral, qualified-covered-call taint, §1256 60/40, wash sale, constructive sale |
+| `strategy-deep-dive-the-wheel-2026-06-04.md` / `strategy-deep-dive-rolling-options-2026-06-04.md` | Advanced multi-lens deep dives (mechanics/Greeks/tax/sentiment/failure modes) + dissertation-level Quant appendices |
 | `options-strategy-execution-smoke-2026-06-03.md` | Dry-run strategy quote smoke evidence |
 | `live-write-verification-2026-06-03.md` | Live recurring pause/resume round-trip + DRIP write-method correction (405) |
 | `options-contract-navigation-2026-06-03.md` | Exact-contract API resolution and account-pinned chain navigation |

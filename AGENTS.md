@@ -39,8 +39,9 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
 
 **The four moving parts:**
 
-1. **The route map** (`api-map/brokerage-routes.json`) — a catalog of 285 real Robinhood
-   brokerage/account route entries, reverse-engineered from the authenticated web app. Each entry records the
+1. **The route map** (`api-map/brokerage-routes.json`) — a catalog of ~300 real Robinhood
+   brokerage/account route entries (live count via `brokerage routes --json` — never hardcode it),
+   reverse-engineered from the authenticated web app. Each entry records the
    URL, the HTTP method(s), and a **risk level** (`read` … `destructive`). The CLI/MCP only
    ever calls endpoints that are in this map; it is the allow-list and the safety taxonomy
    in one file.
@@ -146,7 +147,7 @@ runtime until you rebuild:
 ```bash
 pnpm --filter @zaydiscold/robinhood-cli build       # CLI
 pnpm --filter @zaydiscold/robinhood-cli-mcp build   # MCP
-# verify (currently 285 route entries):
+# verify (prints the live route-entry count — don't assert a fixed number):
 node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"
 ```
 

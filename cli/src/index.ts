@@ -804,7 +804,7 @@ async function runRecurringSet(
   if (results.some((r) => r.mode === "live" && r.status !== 200)) process.exitCode = 1;
 }
 
-const recurring = new Command("recurring").description("Manage recurring investment schedules (list / resume / pause)");
+const recurring = new Command("recurring").description("Manage recurring investment schedules (list / resume / pause / create / edit / end)");
 
 recurring
   .command("list")

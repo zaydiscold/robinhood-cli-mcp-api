@@ -28,13 +28,33 @@ node cli/dist/index.js --help
 
 | Surface | Current state |
 |---------|---------------|
-| API map | 290 brokerage/account route entries (incl. instrument search + the `midlands/` sentiment layer), 16 official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates |
-| CLI | TypeScript command-line tool for live reads, route planning, dry-run/gated writes, equity dollar/share buys (OTC-aware), instrument search, full options-chain UUID enumeration, options strategy quoting + rolling, sentiment reads (news/ratings/crowd), account-context URLs, and stock profile joins |
-| MCP | 17 tools exposing the same auth, route map, and write gate to agents |
+| API map | ~300 brokerage/account route entries (incl. instrument search + the `midlands/` sentiment layer) + the official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates. Trust the live count (`brokerage routes --json`), never a hardcoded number. |
+| CLI | TypeScript command-line tool: live reads (`quote`, `positions`, `accounts`, `history`, `options positions/chain/enumerate/inspect/holdings`, `stock profile`, `watchlist`), equity dollar/share buys (OTC-aware), options strategy quoting + rolling, first-class `settings` (DRIP/expiration/PDT/lending/sweep) and `recurring` (list/pause/resume/create/edit/end) — all writes double-gated — plus route planning and dry-run order bodies. |
+| MCP | Agent tools sharing the same engine, auth, route map, and write gate (parity with the CLI verb surface is being completed). |
+| Memory | `ball-knowledge.md` (market beliefs/themes/sources) + `trading-log.md` (execution + intent history) — the agent's cross-session brain. |
+| Research | A source-quality doctrine (X/Reddit pulse → news/`midlands` confirmer → institutional outlook → academic math, none gospel) + strategy deep-dives (Wheel, rolling, with quant appendices), institutional CMAs, tax-aware notes. |
 | Auth | Browser-session bearer token loaded from local `.env`, with one-shot self-heal on `401` |
-| Safety | Reads run live; writes require both `--live-write` and `ROBINHOOD_ALLOW_LIVE_WRITE=1` |
+| Safety | Reads run live; every write needs both `--live-write` and `ROBINHOOD_ALLOW_LIVE_WRITE=1`. Resolver fails closed/loud; order-evidence rule = order history is the only proof a trade happened. |
 
 This is a pretty damn American piece of software: local control, account-owner agency, dry-run rights, and a command surface that lets people, scripts, and agents work the same Robinhood account without pretending the browser is the product.
+
+## How it fits together — the agentic loop
+
+It's not a pile of commands; it's one loop an agent runs, with memory and a research stack:
+
+```
+boot (read the operating-intelligence KB → memory → doctrine)
+  → research a thesis  (signal sourcing: X/Reddit pulse → news/midlands → institutional outlook → academic math)
+  → read the account truthfully  (accounts + the buying-power family — overnight/options BP, not the headline)
+  → plan the order  (options strategy-quote / roll-plan / contract resolution → exact dry-run body)
+  → gate it  (dry-run by default; live only with BOTH gates + echoed account/side/qty/price)
+  → execute  (one engine; 429-retry, min-tick, collar guards)
+  → verify it happened  (order history is the only proof — not the UI, not a 201 alone)
+  → log it  (trading-log.md: what + intent + the strategy thread / "what we're rolling from")
+  → update memory  (ball-knowledge.md) → the thread continues next session
+```
+
+The layers an agent reads to do that: **`SKILL.md`** (trigger + 80/20 + all the pitfalls) → **`AGENTS.md`** (self-contained deep reference) → **`docs/agent-operating-intelligence-2026-06-04.md`** (the boot-smart KB: cardinal rule, account/order/signal decision frameworks, failure→fix tree) → the **memory** files → the **research** docs (`docs/strategy-deep-dive-*`, `institutional-outlook-*`, `tax-aware-options-strategies`, `options-strategies-knowledge-base`). Everything is engine-backed (`cli/src/lib.ts`) and double-gated.
 
 ## Coverage
 
@@ -47,7 +67,10 @@ This is a pretty damn American piece of software: local control, account-owner a
 - **Orders** — equity and options order history, status, placement, and cancellation.
 - **Watchlists** — list, add, remove.
 - **Margin** — status, maintenance requirements, margin balance.
-- **Recurring investments** — first-class list, pause, and resume; mapped create/edit/cancel routes remain dry-run research until the body shape is freshly captured.
+- **Recurring investments** — first-class list, pause, resume, **create, edit, and end** (all double-gated; create/edit body shapes verified live).
+- **Account settings** — first-class `settings` group: DRIP (account-wide + per-stock), trade-on-expiration, PDT protection, stock lending, cash-sweep unenroll — double-gated, several verified live.
+- **Index options** — RH **does** offer cash-settled §1256 index options (SPX/SPXW/XSP/NDX/VIX/RUT), hidden from the search bar but live under `options/chains/?underlying_symbol=` (see `docs/index-options-1256-conclusion-2026-06-04.md`). Futures are read-only (ceres TLS-walled); FX none; commodities via ETF proxies.
+- **Memory + research** — `ball-knowledge.md` / `trading-log.md` (cross-session brain) and the signal-sourcing doctrine + strategy deep-dives + institutional outlook (the research→decision layer).
 
 ## Agent Examples
 
@@ -164,7 +187,7 @@ Tools surface as `mcp__robinhood-cli__*` and inherit the identical auth, route m
 
 ### Current Update
 
-See [`docs/release-notes-2026-06-03.md`](./docs/release-notes-2026-06-03.md) for the current patch notes. This pass adds options strategy dry-run quoting, roll planning, exact-contract link bundles, stock profile reads, method-split account-setting routes, and account-page capability docs.
+See [`docs/release-notes-2026-06-04.md`](./docs/release-notes-2026-06-04.md) for the current patch notes (the prior cycle is [`release-notes-2026-06-03.md`](./docs/release-notes-2026-06-03.md)). The 06-04 cycle adds: the signal-sourcing doctrine + Ball Knowledge ledger + Trading log (memory layers), the order-execution-evidence rule, first-class `settings` + `recurring create/edit/end` commands, `options inspect`/`holdings`, the boot-smart operating-intelligence KB, strategy deep-dives (Wheel + rolling, with quant appendices), the institutional-outlook layer, and the index-options/§1256 correction — plus safety hardening (ambiguity guard, account-ownership validation, verb-floor gate, 429 retry).
 
 ### 6. Options analytics — positions & chains
 
@@ -369,16 +392,16 @@ robinhood-cli brokerage routes --query "margin" --json
 
 Current state:
 
-- Recurring investments have first-class `recurring list`, `recurring pause`,
-  and `recurring resume`; create/edit/funding-source routes are mapped but need a
-  fresh body capture before being treated as hardened automation.
-- DRIP is mapped as separate `GET` and `PATCH` routes so reads stay live and the
-  toggle stays double-gated.
-- Funding, deposits, withdrawals, stock lending, cash sweep, futures, event
-  contracts, account type, and margin settings are documented as route-map or
-  browser-observed surfaces. Known reads are callable through CLI/MCP; live
-  mutations stay blocked behind dry-run planning until the exact route/body is
-  captured and approved.
+- Recurring investments are first-class: `recurring list / pause / resume / create / edit / end`
+  (create + edit body shapes verified live; all double-gated).
+- A first-class **`settings`** group ships double-gated writes for the surfaces whose bodies were
+  captured + verified: **DRIP** (account-wide + per-stock), **trade-on-expiration**, **PDT protection**,
+  **stock lending**, and **cash-sweep unenroll**. `settings show` reads them all. (Cash-sweep *enroll*
+  needs the agreement-sign flow and stays manual; see the capability map.)
+- Funding, deposits, withdrawals, futures, event contracts, account-type, and margin settings that
+  haven't had a fresh body capture remain route-map/browser-observed — reads are callable; live
+  mutations stay dry-run until the route/body is captured and approved. The capability map marks each
+  as verified-live vs. research.
 
 See [`docs/account-settings-capability-map-2026-06-03.md`](./docs/account-settings-capability-map-2026-06-03.md)
 and [`api-map/account-settings-capability-map-2026-06-03.json`](./api-map/account-settings-capability-map-2026-06-03.json).

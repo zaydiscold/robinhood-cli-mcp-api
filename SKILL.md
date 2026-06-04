@@ -1308,7 +1308,7 @@ Full details: `AGENTS.md` §9.
 - [ ] `node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full` shows all 5 accounts
 - [ ] `node cli/dist/index.js brokerage execute "portfolios/" --json --full` returns portfolio data
 - [ ] MCP server starts: `node mcp/dist/server.js` (or `hermes mcp add` registered)
-- [ ] Route map count: `node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"` returns 285
+- [ ] Route map count: `node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"` returns the live count (~300+ and growing — do NOT assert a hardcoded number; the count drifts as routes are captured)
 - [ ] Watchlists work: `node cli/dist/index.js brokerage execute "discovery/lists/?owner_type=custom" --json` returns 200
 - [ ] Dry-run gate works: a POST without `--live-write` returns `liveWriteBlocked`
 - [ ] Live write gate works: a POST with `--live-write` but without `ROBINHOOD_ALLOW_LIVE_WRITE=1` returns `liveWriteBlocked`

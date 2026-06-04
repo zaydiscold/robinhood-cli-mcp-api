@@ -18,6 +18,8 @@ import {
   classifyMoneyness,
   collarSanity,
   selectRouteByQueryAndMethod,
+  brokerageGetJson,
+  tryBrokerageGetJson,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -1081,27 +1083,7 @@ const INSTRUMENT_MARGIN_REQUIREMENTS_URL = "https://bonfire.robinhood.com/instru
 // params and optional query-string params appended after substitution (for
 // filters like ?nonzero=true or ?owner_type=custom that aren't route slots).
 // Returns parsed JSON; throws on a missing route, unfilled placeholder, or non-200.
-async function brokerageGetJson(
-  url: string,
-  params: Record<string, string> = {},
-  query: Record<string, string> = {}
-): Promise<any> {
-  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: url });
-  const route = selectRouteByQueryAndMethod(matches, url, "GET");
-  if (!route) throw new Error(`Route missing from map: ${url} — rebuild the map (AGENTS.md §3).`);
-  const plan = planBrokerageRequest({ route, method: "GET", params, dryRun: false });
-  if (plan.missingParams.length > 0) {
-    throw new Error(`Missing params for ${url}: ${plan.missingParams.join(", ")}`);
-  }
-  if (Object.keys(query).length > 0) {
-    const parsed = new URL(plan.url);
-    for (const [key, value] of Object.entries(query)) parsed.searchParams.set(key, value);
-    plan.url = parsed.toString();
-  }
-  const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true });
-  if (result.status !== 200) throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
-  return JSON.parse(result.body || "{}");
-}
+// brokerageGetJson + tryBrokerageGetJson are imported from ./lib.js — shared with the MCP server.
 
 // Owned-account validation. The #1 money-loss risk is acting on the WRONG account — a typo'd or
 // hallucinated account number otherwise templates straight into a live order body. We resolve the
@@ -1154,18 +1136,6 @@ const compactNumber = (value: number): string =>
         maximumFractionDigits: 2
       }).format(value)
     : "—";
-
-async function tryBrokerageGetJson(
-  url: string,
-  params: Record<string, string> = {},
-  query: Record<string, string> = {}
-): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
-  try {
-    return { ok: true, data: await brokerageGetJson(url, params, query) };
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-}
 
 interface OpenOptionPosition {
   symbol: string;

@@ -215,73 +215,77 @@ apiMap
     }
   );
 
+// Shared planning actions — registered under BOTH `api-map options-*` (original names) and the
+// consolidated `options` group (`options strategies` / `options plan`) so planning + live options
+// commands live together. One action body, no duplication.
+function runOptionsStrategies(options: {
+  category?: string;
+  aggressiveness?: string;
+  definedRisk?: boolean;
+  undefinedRisk?: boolean;
+  query?: string;
+  json?: boolean;
+}): void {
+  const definedRisk = options.definedRisk ? true : options.undefinedRisk ? false : undefined;
+  const workflows = filterOptionsStrategyWorkflows(loadOptionsStrategyWorkflows(), {
+    category: options.category,
+    aggressiveness: options.aggressiveness,
+    definedRisk,
+    query: options.query
+  });
+  if (options.json) {
+    printJson({ count: workflows.length, workflows });
+    return;
+  }
+  printTable(
+    workflows.map((workflow) => ({
+      risk: workflow.definedRisk ? "defined" : "undefined",
+      aggression: workflow.aggressiveness,
+      category: workflow.category,
+      margin: workflow.requiresMargin ? "yes" : "no",
+      id: workflow.id,
+      title: workflow.title
+    })),
+    ["risk", "aggression", "category", "margin", "id", "title"]
+  );
+}
+
+function runOptionsStrategyPlan(id: string, options: { param?: string[]; json?: boolean }): void {
+  const workflow = loadOptionsStrategyWorkflows().find((candidate) => candidate.id === id);
+  if (!workflow) throw new Error(`No options strategy workflow matched id: ${id}`);
+  const plan = buildOptionsStrategyOrderPlan(workflow, parseParamAssignments(options.param));
+  if (options.json) {
+    printJson(plan);
+    return;
+  }
+  process.stdout.write(`${workflow.title} (${workflow.id})\n`);
+  process.stdout.write(`mode: ${plan.mode}\nrisk: ${plan.risk}\n\nlookup steps:\n`);
+  for (const step of plan.lookupSteps) process.stdout.write(`- ${step}\n`);
+  process.stdout.write(`\norder body:\n${JSON.stringify(plan.order, null, 2)}\n`);
+  for (const warning of plan.warnings) process.stderr.write(`warning: ${warning}\n`);
+  if (plan.missingParams.length > 0) process.stderr.write(`missing params: ${plan.missingParams.join(", ")}\n`);
+}
+
+const paramCollector = (value: string, previous: string[] = []): string[] => [...previous, value];
+
 apiMap
   .command("options-strategies")
-  .description("List options strategy workflow templates with payoff and Greek posture")
+  .description("List options strategy workflow templates with payoff and Greek posture (alias: `options strategies`)")
   .option("--category <category>", "filter by category")
   .option("--aggressiveness <level>", "conservative, moderate, or aggressive")
   .option("--defined-risk", "only defined-risk strategies")
   .option("--undefined-risk", "only undefined-risk strategies")
   .option("--query <text>", "substring filter")
   .option("--json", "emit JSON")
-  .action(
-    (options: {
-      category?: string;
-      aggressiveness?: string;
-      definedRisk?: boolean;
-      undefinedRisk?: boolean;
-      query?: string;
-      json?: boolean;
-    }) => {
-      const definedRisk = options.definedRisk ? true : options.undefinedRisk ? false : undefined;
-      const workflows = filterOptionsStrategyWorkflows(loadOptionsStrategyWorkflows(), {
-        category: options.category,
-        aggressiveness: options.aggressiveness,
-        definedRisk,
-        query: options.query
-      });
-      if (options.json) {
-        printJson({ count: workflows.length, workflows });
-        return;
-      }
-      printTable(
-        workflows.map((workflow) => ({
-          risk: workflow.definedRisk ? "defined" : "undefined",
-          aggression: workflow.aggressiveness,
-          category: workflow.category,
-          margin: workflow.requiresMargin ? "yes" : "no",
-          id: workflow.id,
-          title: workflow.title
-        })),
-        ["risk", "aggression", "category", "margin", "id", "title"]
-      );
-    }
-  );
+  .action(runOptionsStrategies);
 
 apiMap
   .command("options-strategy-plan")
-  .description("Build a dry-run options order body template for a strategy workflow")
+  .description("Build a dry-run options order body template for a strategy workflow (alias: `options plan`)")
   .argument("<id>", "strategy id, e.g. iron-condor")
-  .option("--param <name=value>", "fill a strategy placeholder; repeatable", (value: string, previous: string[] = []) => [
-    ...previous,
-    value
-  ])
+  .option("--param <name=value>", "fill a strategy placeholder; repeatable", paramCollector)
   .option("--json", "emit JSON")
-  .action((id: string, options: { param?: string[]; json?: boolean }) => {
-    const workflow = loadOptionsStrategyWorkflows().find((candidate) => candidate.id === id);
-    if (!workflow) throw new Error(`No options strategy workflow matched id: ${id}`);
-    const plan = buildOptionsStrategyOrderPlan(workflow, parseParamAssignments(options.param));
-    if (options.json) {
-      printJson(plan);
-      return;
-    }
-    process.stdout.write(`${workflow.title} (${workflow.id})\n`);
-    process.stdout.write(`mode: ${plan.mode}\nrisk: ${plan.risk}\n\nlookup steps:\n`);
-    for (const step of plan.lookupSteps) process.stdout.write(`- ${step}\n`);
-    process.stdout.write(`\norder body:\n${JSON.stringify(plan.order, null, 2)}\n`);
-    for (const warning of plan.warnings) process.stderr.write(`warning: ${warning}\n`);
-    if (plan.missingParams.length > 0) process.stderr.write(`missing params: ${plan.missingParams.join(", ")}\n`);
-  });
+  .action(runOptionsStrategyPlan);
 
 apiMap
   .command("options-contract-plan")
@@ -1684,6 +1688,27 @@ options
     }
     process.stdout.write(`\n${all.length} contracts across ${accounts.length} account(s).\n`);
   });
+
+// Consolidated planning commands under `options` (same actions as `api-map options-*`, kept there
+// as aliases). Puts strategy catalog + planning next to the live options commands.
+options
+  .command("strategies")
+  .description("List options strategy templates with payoff + Greek posture (same as `api-map options-strategies`)")
+  .option("--category <category>", "filter by category")
+  .option("--aggressiveness <level>", "conservative, moderate, or aggressive")
+  .option("--defined-risk", "only defined-risk strategies")
+  .option("--undefined-risk", "only undefined-risk strategies")
+  .option("--query <text>", "substring filter")
+  .option("--json", "emit JSON")
+  .action(runOptionsStrategies);
+
+options
+  .command("plan")
+  .description("Dry-run options order-body template for a strategy id (same as `api-map options-strategy-plan`)")
+  .argument("<id>", "strategy id, e.g. iron-condor")
+  .option("--param <name=value>", "fill a strategy placeholder; repeatable", paramCollector)
+  .option("--json", "emit JSON")
+  .action(runOptionsStrategyPlan);
 
 options
   .command("strategy-quote")

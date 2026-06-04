@@ -22,8 +22,8 @@ node cli/dist/index.js --help
 
 | Surface | Current state |
 |---------|---------------|
-| API map | 285 brokerage/account route entries, 16 official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates |
-| CLI | TypeScript command-line tool for live reads, route planning, dry-run writes, options strategy quoting, account-context URL building, and stock profile joins |
+| API map | 290 brokerage/account route entries (incl. instrument search + the `midlands/` sentiment layer), 16 official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates |
+| CLI | TypeScript command-line tool for live reads, route planning, dry-run/gated writes, equity dollar/share buys (OTC-aware), instrument search, full options-chain UUID enumeration, options strategy quoting + rolling, sentiment reads (news/ratings/crowd), account-context URLs, and stock profile joins |
 | MCP | 17 tools exposing the same auth, route map, and write gate to agents |
 | Auth | Browser-session bearer token loaded from local `.env`, with one-shot self-heal on `401` |
 | Safety | Reads run live; writes require both `--live-write` and `ROBINHOOD_ALLOW_LIVE_WRITE=1` |

@@ -120,6 +120,8 @@ is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
 **Sentiment / discovery** — `midlands/news`, `midlands/ratings` (analyst buy/hold/sell),
 `midlands/tags/tag/{100-most-popular|top-movers|upcoming-earnings|technology|etf|...}`,
 `midlands/movers/{index}/`, `marketdata/earnings/`. Feeds the signal→deeplink→order pipeline.
+These RH-native feeds are the **slow, account-aware confirmer** — see "Signal sourcing" below: the
+real-time pulse lives off-platform (X/Reddit), RH `midlands/*` trails it.
 
 **Index options (verified 2026-06-04 — RH DOES offer these)** — true cash-settled, **§1256 60/40**
 index options exist on RH: **SPX, SPXW (0DTE), XSP, NDX, VIX, RUT**. The consumer `search` bar and
@@ -926,7 +928,9 @@ To pull "all the info" on a contract you hold (the option-detail page surface), 
 
 ### Sentiment data + deep-link pipeline (mapped 2026-06-03)
 
-RH exposes a live sentiment layer under `api.robinhood.com/midlands/` (risk `read`):
+RH exposes a live sentiment layer under `api.robinhood.com/midlands/` (risk `read`). Read it as the
+**slow, account-native confirmer**, not the leading signal — it trails the real-time off-platform
+pulse (see "Signal sourcing" below):
 - `midlands/news/?symbol=<SYM>` — news articles per ticker.
 - `midlands/ratings/{instrument_id}/` — analyst buy/hold/sell summary + dated texts.
 - `midlands/tags/tag/{100-most-popular|top-movers|...}/` — crowd / momentum instrument lists.
@@ -940,6 +944,33 @@ Internal hosts `news./youfeed./charted./ai-realtime.` have no public TLS; `midla
 to pin). **Option UUIDs are random v4 — not generatable; bulk-enumerate a chain/expiration in one
 call.** The URL carries no side; set `side`+`position_effect` in the `options/orders/` body
 (buy/open, sell/close, sell/open, buy/close) for the agentic order.
+
+### Signal sourcing — where due-diligence signal comes from (descriptive, NOT risk guidance)
+
+A research-grade view of *where to look* and *how much to trust it*. This is a decision framework —
+a tool in the kit — not a mandate to be cautious. Risk and sizing are the operator's call.
+
+- **News is slow but authoritative for key/binary events.** Articles lag the real move by ~hours to
+  a day; their value is the discrete, confirmable event — earnings, M&A, Fed, halts, guidance — where
+  being *right* matters more than being *first*. Useful, just late. Don't treat it as early signal.
+- **Every feed is noisy — but Twitter/X and Reddit carry the best signal-to-noise**, and **Twitter is
+  the fastest finger on the pulse**, ahead of any news article. For DD on a thesis, a narrative, or an
+  unfolding move, X/Reddit are first-class research sources (`bird search`, the `last30days` skill,
+  r/options · r/thetagang · r/stocks), not gossip to wave off. Cross-checking the crowd's read in
+  real time is legitimate due diligence.
+- **Twitter's edge is conditional: fastest pulse AND fastest misinformation.** The high
+  signal-to-noise only holds *if you know whom to read* — which accounts have earned signal vs. which
+  are hype/promotion. The "who" is operator-specific and **private**: it lives in a future
+  `Ball Knowledge.md` (gitignored), never in this public skill. Until then, weight known, track-record
+  sources over anonymous virality, and corroborate a single post before leaning on it.
+- **Signal → (optional) validation → action.** Any feed — RH `midlands/*` or external X/Reddit — is a
+  *direction input*. You *can* corroborate against live market data (bid/ask, Greeks, volume/OI,
+  `quote`) before acting; presented as available reasoning, not a requirement. RH's own feeds sit at
+  the *confirmer* end of this; the off-platform pulse leads.
+
+> RH `midlands/news|ratings|tags` is the slow, broker-native layer. Lead due diligence with the
+> real-time pulse (X/Reddit) and let RH's feeds confirm — not the reverse. (Personalized trusted
+> sources → future private `Ball Knowledge.md`.)
 
 ## Research Methodology — mapping a no-official-API surface
 

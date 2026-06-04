@@ -851,6 +851,8 @@ const OPTIONS_CHAIN_URL = "https://api.robinhood.com/options/chains/{id}/";
 const OPTIONS_INSTRUMENTS_URL =
   "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}";
 const MARKETDATA_QUOTES_URL = "https://api.robinhood.com/marketdata/quotes/?ids={ids}";
+const OPTION_INSTRUMENT_URL = "https://api.robinhood.com/options/instruments/{0}/";
+const OPTIONS_ORDERS_GET_URL = "https://api.robinhood.com/options/orders/";
 const MARKETDATA_FUNDAMENTALS_URL = "https://api.robinhood.com/marketdata/fundamentals/{id}/";
 const INSTRUMENT_SHORTING_URL = "https://api.robinhood.com/instruments/{id}/shorting/";
 const INSTRUMENT_BUYING_POWER_URL = "https://bonfire.robinhood.com/accounts/{id}/instrument_buying_power/{uuid}/";
@@ -1373,6 +1375,99 @@ options
       const q = opts.quotes ? ` bid ${usd(c.bid)}/ask ${usd(c.ask)}` : "";
       process.stdout.write(`  ${c.type.padEnd(4)} ${c.strike.toFixed(2).padStart(9)}  ${c.optionInstrumentId}${q}\n`);
     }
+  });
+
+// --- Owned-option inspection: the "click the contract, read everything" flow ---
+// Pulls the full option-detail page surface for ONE contract by its option_instrument_id (uuid):
+// metadata + live Greeks/quote + the fill history (bought/sold, price, date, qty) + a rare
+// tax-timing note + the exact buy/sell handoff. Mirrors what the web contract page shows.
+options
+  .command("inspect")
+  .description("Inspect ONE owned/known option contract by its UUID: metadata, live Greeks, fill history (bought/sold/price/date/qty), tax-timing note, and the buy/sell handoff. The 'click the contract, read everything, trade from there' flow.")
+  .argument("<option_instrument_id>", "the option contract UUID (from 'options enumerate' / 'options holdings')")
+  .option("--account <account_number>", "pin the contract link to an account")
+  .option("--json", "emit JSON")
+  .action(async (optionId: string, opts: { account?: string; json?: boolean }) => {
+    const id = optionId.replace(/_L\d+$/i, "").trim(); // tolerate the web _L1 leg suffix
+    const meta = await brokerageGetJson(OPTION_INSTRUMENT_URL, { "0": id });
+    const mark = (await brokerageGetJson(MARKETDATA_OPTIONS_URL, { ids: id })).results?.[0] ?? {};
+    // Fills: pull filled orders on this chain, keep only legs that reference THIS contract.
+    let fills: any[] = [];
+    if (meta.chain_id) {
+      const orders = (await brokerageGetJson(OPTIONS_ORDERS_GET_URL, {}, { chain_ids: meta.chain_id, states: "filled" })).results ?? [];
+      for (const o of orders) {
+        for (const leg of o.legs ?? []) {
+          if (!String(leg.option ?? "").includes(id)) continue;
+          for (const ex of leg.executions ?? []) {
+            fills.push({ side: leg.side, positionEffect: leg.position_effect, quantity: num(ex.quantity), price: num(ex.price), timestamp: ex.timestamp, orderId: o.id });
+          }
+        }
+      }
+      fills.sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+    }
+    // Tax-timing: ONLY flag when a still-open buy is within ~30 days of the 1-year short→long line
+    // (or already long-term). Usually silent — holding period rarely matters and shouldn't be raised.
+    let taxNote: string | undefined;
+    const firstOpen = fills.find((f) => f.positionEffect === "open" && f.side === "buy");
+    if (firstOpen?.timestamp) {
+      const held = Math.floor((Date.parse("2026-06-04T00:00:00Z") - Date.parse(firstOpen.timestamp)) / 86400000);
+      const toLT = 365 - held;
+      if (toLT > 0 && toLT <= 30) taxNote = `Held ${held}d — ${toLT}d short of the 1-year long-term capital-gains line (crosses ~${new Date(Date.parse(firstOpen.timestamp) + 366 * 86400000).toISOString().slice(0, 10)}). Closing after that date taxes the gain at long-term rates.`;
+    }
+    const link = `https://robinhood.com/options/${id}${opts.account ? `?account_number=${opts.account}` : ""}`;
+    const out = {
+      optionInstrumentId: id,
+      symbol: meta.chain_symbol, strike: num(meta.strike_price), type: meta.type, expiration: meta.expiration_date, state: meta.state, chainId: meta.chain_id,
+      quote: { bid: num(mark.bid_price), ask: num(mark.ask_price), mark: num(mark.adjusted_mark_price), last: num(mark.last_trade_price), ivPct: num(mark.implied_volatility) * 100 },
+      greeks: { delta: num(mark.delta), gamma: num(mark.gamma), theta: num(mark.theta), vega: num(mark.vega), rho: num(mark.rho) },
+      openInterest: num(mark.open_interest), volume: num(mark.volume),
+      fills, taxNote, link,
+      handoff: "Sell-to-close: options/orders/ {side:sell, position_effect:close}. Buy-to-open: {side:buy, position_effect:open}. Dry-run via 'options strategy-quote', live needs both write gates."
+    };
+    if (opts.json) { printJson(out); return; }
+    process.stdout.write(`${out.symbol} $${out.strike.toFixed(2)}${String(out.type)[0].toUpperCase()} exp ${out.expiration} (${out.state})\n`);
+    process.stdout.write(`  quote: bid ${usd(out.quote.bid)} / ask ${usd(out.quote.ask)} / mark ${usd(out.quote.mark)} / last ${usd(out.quote.last)} / IV ${Number.isFinite(out.quote.ivPct) ? out.quote.ivPct.toFixed(0) + "%" : "—"}\n`);
+    process.stdout.write(`  greeks: Δ ${out.greeks.delta.toFixed(3)} Γ ${out.greeks.gamma.toFixed(4)} Θ ${out.greeks.theta.toFixed(3)} ν ${out.greeks.vega.toFixed(3)} ρ ${out.greeks.rho.toFixed(3)}  | OI ${out.openInterest} vol ${out.volume}\n`);
+    if (fills.length) {
+      process.stdout.write(`  fills (${fills.length}):\n`);
+      for (const f of fills) process.stdout.write(`    ${f.side}/${f.positionEffect} ${f.quantity} @ $${f.price.toFixed(2)}  ${String(f.timestamp).slice(0, 19)}\n`);
+    } else process.stdout.write(`  fills: none on this chain\n`);
+    if (taxNote) process.stdout.write(`  ⚠️  tax: ${taxNote}\n`);
+    process.stdout.write(`  link: ${link}\n`);
+  });
+
+// --- All held option contracts across accounts, with UUIDs + links (the enumeration deliverable) ---
+options
+  .command("holdings")
+  .description("List EVERY held option contract across your accounts (or one) with its UUID, strike/expiry, live bid/ask/last, quantity, and contract link. The all-accounts owned-contract map.")
+  .option("--account <account_number>", "limit to one account (default: all trading accounts)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; json?: boolean }) => {
+    let accounts: string[];
+    if (opts.account) accounts = [opts.account];
+    else {
+      const owned = await loadOwnedAccounts();
+      accounts = owned ? [...owned.numbers] : [];
+      if (!owned) throw new Error("Could not list accounts (transfer/accounts lookup failed).");
+    }
+    const labels = (await loadOwnedAccounts())?.labels ?? new Map();
+    const all: any[] = [];
+    for (const acct of accounts) {
+      const positions = (await brokerageGetJson(AGG_POSITIONS_URL, {}, { account_numbers: acct, nonzero: "true" })).results ?? [];
+      const rows = positions.map((p: any) => ({ acct, oid: String((p.legs?.[0]?.option ?? "").split("/options/instruments/")[1] ?? "").replace(/\//g, ""), symbol: p.symbol, qty: num(p.quantity), avg: num(p.average_open_price), strategy: p.strategy }));
+      const marks = await fetchOptionMarks(rows.map((r: any) => r.oid).filter(Boolean));
+      for (const r of rows) {
+        const m = marks.get(r.oid) ?? {};
+        all.push({ account: r.acct, accountLabel: labels.get(r.acct) ?? "", symbol: r.symbol, optionInstrumentId: r.oid, qty: r.qty, avgOpen: r.avg, strategy: r.strategy, bid: num(m.bid_price), ask: num(m.ask_price), last: num(m.last_trade_price), link: `https://robinhood.com/options/${r.oid}?account_number=${r.acct}` });
+      }
+    }
+    if (opts.json) { printJson({ count: all.length, holdings: all }); return; }
+    let lastAcct = "";
+    for (const h of all) {
+      if (h.account !== lastAcct) { process.stdout.write(`\n${h.account} (${h.accountLabel}) — ${all.filter((x) => x.account === h.account).length} contracts\n`); lastAcct = h.account; }
+      process.stdout.write(`  ${h.symbol.padEnd(6)} qty ${String(h.qty).padStart(3)}  bid ${usd(h.bid)}/ask ${usd(h.ask)}  ${h.optionInstrumentId}\n`);
+    }
+    process.stdout.write(`\n${all.length} contracts across ${accounts.length} account(s).\n`);
   });
 
 options

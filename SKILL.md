@@ -969,6 +969,26 @@ a tool in the kit — not a mandate to be cautious. Risk and sizing are the oper
   unfolding move, X/Reddit are first-class research sources (`bird search`, the `last30days` skill,
   r/options · r/thetagang · r/stocks), not gossip to wave off. Cross-checking the crowd's read in
   real time is legitimate due diligence.
+- **Institutional research — the slow, regime-thesis layer.** Major firms publish a steady stream worth
+  tapping: **BlackRock Investment Institute** (year-ahead outlook + "mega forces"), **Vanguard / J.P.
+  Morgan / Goldman / Morgan Stanley** year-ahead theses and **long-term capital market assumptions**
+  (1-yr and 5–10-yr expected returns by asset class). Lower frequency than the pulse — useful for the
+  "what regime are we in / what's the decade thesis" frame. But a house view is **still a view**: these
+  firms are routinely wrong and talk their book. It *informs* sector/ticker attention and feeds Ball
+  Knowledge; it never dictates. Current synthesis: `docs/institutional-outlook-2026-06-04.md` (refresh
+  each cycle — year-ahead drops Nov–Dec, CMAs annually).
+- **Academic + dissertation-level math — the "why it works" foundation.** For any strategy the agent
+  reasons about deeply, go past prose to the actual quant (Black-Scholes derivations, EV under the
+  variance-risk-premium, N(d₂) assignment probability, Greeks calculus, management/sizing math) grounded
+  in peer-reviewed / SSRN work. The strategy deep-dives carry rigorous **Quant appendices** for this —
+  but a model is a *model*: every result rides assumptions (lognormal, constant σ, no early exercise,
+  frictionless) that break in practice; the appendices say where. Math explains the *structure* of an
+  edge, not a guarantee it persists.
+- **None of these is gospel — they are information *on deck*.** The pulse, the house views, and the math
+  are all *inputs to weigh by reliability*, never authority or permission to act. Same stance as Ball
+  Knowledge: weigh them, cross-check, and decide — don't obey any of them. Rough ladder by
+  speed-vs-conviction: **X/Reddit pulse → institutional outlooks → academic math**, all subordinate to
+  live market data and brokerage order history for anything that touches a real trade.
 - **Twitter's edge is conditional: fastest pulse AND fastest misinformation.** The high
   signal-to-noise only holds *if you know whom to read* — which accounts have earned signal vs. which
   are hype/promotion. The "who" is operator-specific and lives in the **Ball Knowledge** ledger

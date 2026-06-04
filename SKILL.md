@@ -1029,6 +1029,38 @@ binding for this skill; the ledger file itself stays deliberately messy and unla
   verified thesis yet"). **Public file — keep committed entries generic;** sensitive/personal source
   lists are the operator's discretion (or a future private overlay), not the committed seed.
 
+> **Two memory layers:** *Ball Knowledge* (`ball-knowledge.md`) = market context/beliefs;
+> *Trading log* (`trading-log.md`, below) = execution + intent history. Read both on finance tasks.
+
+### Trading log — execution + intent history (`trading-log.md`)
+
+The repo root holds **`trading-log.md`**, an append-only, dated log of what the agent *executes*, with
+the **intent** and the **strategy thread** behind each trade. Order history has price/qty/time; this
+log adds the *why* and links legs into a thread, so the agent can reconstruct **what it's rolling
+*from*** (e.g. a Wheel: CSP → assignment → CC → roll) instead of re-deriving it from raw history.
+
+- **Log every execution** the agent performs via CLI/MCP — orders, cancels, settings changes, recurring
+  pause/resume. **Append at the bottom** (newest last); never rewrite or delete prior entries.
+- **Status is honest (order-evidence rule, failure mode #20):** mark a trade `executed` **only if
+  brokerage order history confirms** it (filled/pending/cancelled record, or a position/cash/BP
+  change). UI/screenshots/"clicked it" are not proof — if there's no record, it's `dry-run`/`rejected`/
+  non-executed, and say so.
+- **Always capture INTENT + THREAD.** On a wheel/roll, record what you're rolling *from* (prior leg,
+  assignment date, old strike/DTE). This is the field that makes the log worth more than order history.
+- **Entry format** (mirror `trading-log.md`'s header):
+
+  ```
+  === TRADE LOG ENTRY
+  WHEN: YYYY-MM-DD HH:MM TZ | ACCOUNT: …<last4> | ACTION: <buy/sell/cancel/setting> <symbol/contract> (side/effect, type, TIF)
+  SIZE: <qty> @ <price> | ORDER-ID: <id|n/a> | STATUS: executed|queued|cancelled|rejected|dry-run (order-history-confirmed?)
+  INTENT: <why, 1-2 lines>
+  THREAD: <strategy thread, e.g. "Wheel on F: leg 2 CC after CSP assigned YYYY-MM-DD; rolling from $K">
+  === END
+  ```
+- **Public + committed — keep entries generic** (account masked to last-4). Real, sensitive personal
+  logs stay generic here or in a gitignored private overlay (committed entries push to GitHub). Same
+  neutral stance as Ball Knowledge: record faithfully, don't impose caution.
+
 ## Research Methodology — mapping a no-official-API surface
 
 Because there is no official brokerage API, the surface is discovered, not

@@ -21,6 +21,14 @@
   cash-settled §1256 index options (SPX/SPXW/XSP/NDX/VIX/RUT) under `options/chains/?underlying_symbol=`;
   hidden from the consumer search bar. **`futures-fx-commodities-surface-2026-06-04.md`** — futures
   read-only (ceres TLS-walled), no spot FX, commodities via ETF proxies only.
+- **Trading log** (`trading-log.md`, repo root) — append-only execution + **intent** history; logs what
+  the agent executes with the *why* and the strategy thread ("what we're rolling from"), so wheel/roll
+  state survives beyond raw order history. Instruction-driven (SKILL.md "Trading log" + AGENTS §15 +
+  KB §0 step 7); status `executed` only if order history confirms (ties to failure-mode #20). Seeded
+  with masked `[EXAMPLE]` entries. (Code auto-logger parked as a future idea.)
+- **Strategy deep-dives** (`strategy-deep-dive-the-wheel-2026-06-04.md`,
+  `strategy-deep-dive-rolling-options-2026-06-04.md`) — advanced multi-perspective study (mechanics,
+  Greeks, tax, current practitioner sentiment, decision rules, failure modes) extending the strategy KB.
 - **First-class commands:** `options inspect <uuid>` (metadata + Greeks + fills + tax-timing + handoff),
   `options holdings` (all held contracts + UUIDs across accounts), `options strategies` / `options plan`
   (planning consolidated under `options`, `api-map` names kept as aliases), `settings show|drip|

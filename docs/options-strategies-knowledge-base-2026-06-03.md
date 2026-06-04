@@ -25,7 +25,8 @@ gamma/vega, long theta**.
 - **Cash-Secured Put (CSP)** — sell a put, hold cash for assignment; get paid to set a buy limit. Entry leg of the Wheel. +delta, +theta, −vega; synthetically = a covered call.
 - **Covered Call** — own 100 sh + sell 1 call; income + small cushion, caps upside. The classic buy-write overlay. +theta, −vega.
 - **CC rolling (out/up/down for credit)** — buy back the short call, sell a new one: out=later expiry, up=higher strike (raises cap), down=lower strike (more premium). "Roll up-and-out for a credit" = let the stock keep running while still getting paid.
-- **The Wheel** — sell CSPs → get assigned → sell covered calls → get called away → repeat. Continuous theta harvest; weakness is holding a falling stock after assignment. Persistently +theta/−vega.
+- **The Wheel** — sell CSPs → get assigned → sell covered calls → get called away → repeat. Continuous theta harvest; weakness is holding a falling stock after assignment. Persistently +theta/−vega. → **Deep-dive:** `strategy-deep-dive-the-wheel-2026-06-04.md` (mechanics, Greeks, quant levers, tax, current sentiment, failure modes).
+- **Rolling (out/up/down, for a credit)** — close a leg + open a replacement to defend/extend/follow the underlying. → **Deep-dive:** `strategy-deep-dive-rolling-options-2026-06-04.md` (variants, when-to-roll-vs-close-vs-assign, the wash-sale-on-losing-leg trap, SPX-rolls-have-no-wash-sale, cash-account kosher roll, current sentiment).
 - **Collar (incl. zero-cost)** — stock + protective put + short call to finance it. Bounds outcomes (floor + ceiling); used by concentrated holders/insiders to protect gains without a taxable sale.
 
 ## Diagonal / time-based

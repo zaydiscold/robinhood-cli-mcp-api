@@ -111,6 +111,23 @@ is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
 > Anything not listed as a verified first-class command is route-map research until a fresh capture
 > proves the write body (see the account-settings capability map). Don't claim unproven writes.
 
+### `?account_number=` — the universal account selector (verified 2026-06-03)
+
+Almost every Robinhood surface is account-scoped, and **`?account_number=<ACCT>` (web) / the
+`{account}` path segment (API) selects WHICH account it acts on — even where the UI hides the
+selector.** Verified: appending `?account_number=` to `/account/investing` forces that account's
+settings to render (Roth param → Roth IRA; 9mo param → far 9mo plus), and every per-account settings
+write carries the account in the path (`drip/account_settings/{account}/`,
+`options/option_settings/{account}/`, `settings/margin/{account}/`).
+
+**Apply by default — do not wait to be told:**
+- Enumerate accounts first (`transfer/accounts/` or `get_accounts`), then **always pass the account**
+  (`?account_number=` on web URLs, the `{account}` path/param on API routes). The UI/bare endpoints
+  often default to the *individual* account — not the one you intend.
+- `/accounts/` (no id) = all accounts; `/accounts/{id}/…` or `?account_number={id}` = one account.
+- This is the single biggest "which account am I acting on?" lever. Get it wrong and a trade or a
+  settings change lands on the wrong account. When in doubt, set it explicitly.
+
 ---
 
 ## Quick Start

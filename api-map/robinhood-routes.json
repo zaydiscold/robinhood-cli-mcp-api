@@ -6579,5 +6579,124 @@
     ],
     "source": "sentiment-rd-2026-06-03",
     "summary": "Crowd/discovery lists: 100-most-popular, top-movers, etc."
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/account_settings/{account}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "dividends"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Account-wide DRIP state {drip_enabled}. PATCH {\"drip_enabled\":bool} to toggle (write-mutate)."
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "dividends"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Per-instrument DRIP settings list for an account (results[])."
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account}/{instrument_id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "dividends"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "PATCH"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Per-stock DRIP toggle. PATCH {\"drip_enabled\":bool}."
+  },
+  {
+    "url": "https://api.robinhood.com/options/option_settings/{account}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "options"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Options settings {trading_on_expiration_state,default_price,...}. PATCH to change (write-mutate)."
+  },
+  {
+    "url": "https://api.robinhood.com/settings/margin/{account}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "margin"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Margin/PDT settings {leverage,day_trades,advanced_buying_power}. PUT {\"day_trades_protection\":bool} for PDT protection (write-mutate)."
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "cash"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "High-yield cash sweep state {sweep_enrolled}. POST {\"sweep_enrollment_action\":\"unenroll\"} to disable (write-mutate)."
+  },
+  {
+    "url": "https://bonfire.robinhood.com/sms/sweep/agree_and_enroll",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "cash"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Enroll high-yield cash sweep. POST {\"account_number\":\"...\"} (pairs with an agreements/v2/sign)."
+  },
+  {
+    "url": "https://identi.robinhood.com/user_info/agreements/v2/sign/",
+    "host": "identi.robinhood.com",
+    "categories": [
+      "account",
+      "agreements"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
+      "POST"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Sign a Robinhood agreement. POST {agreement_id,sha256}. Used by enroll flows."
   }
 ]

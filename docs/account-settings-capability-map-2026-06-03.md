@@ -26,7 +26,7 @@ research. No live account-setting mutation is recorded here.
 | Account enumeration | Live read, first-class route-map use | `bonfire.robinhood.com/transfer/accounts/`, `accounts/?default_to_all_accounts=true` | Read-only |
 | Deposit / withdraw / funding sources | Live reads mapped; transfer/link writes are route-map dry-runs only | `ach/relationships/`, `ach/transfers/`, `cashier.robinhood.com/ach/relationships/`, `cashier.robinhood.com/ach/deposit_schedules/`, `payment_instruments/v2/`, `paymenthub/unified_transfers/` | Never mutate without fresh body capture and exact user approval |
 | Recurring investments | First-class list/pause/resume; create/edit/delete route-map only | `recurring list`, `recurring pause`, `recurring resume`, `bonfire.robinhood.com/recurring_schedules/` | Pause/resume are hardened double-gated writes; create/edit amount/funding source needs fresh body capture |
-| Dividend reinvestment | Live **read only**; write **NOT proven** | `corp_actions/drip/enrollment/{num}/` `GET` works | **PATCH/POST/PUT all return `405` (GET-only)** — re-verified live 2026-06-03. The real DRIP toggle endpoint needs a fresh browser capture; do not claim toggle support |
+| Dividend reinvestment | **Read + write PROVEN** (browser-captured 2026-06-03) | account-wide: `corp_actions/drip/account_settings/{account}/` (GET + PATCH); per-stock: `corp_actions/drip/instrument_settings/{account}/` (GET list) and `.../{account}/{instrument_id}/` (PATCH) | `PATCH {"drip_enabled":bool}` double-gated; verify with GET. NOTE: the old `corp_actions/drip/enrollment/{num}/` is GET-only (405 on writes) — wrong endpoint; the two above are the real ones |
 | High-yield cash / sweep | Live reads mapped; enable/disable route not proven | `accounts/sweeps/`, `accounts/sweeps/interest/`, `accounts/sweeps/timeline_summary/`, `gold/sweep_flow_splash/` | Do not claim toggle support until a fresh browser capture provides the mutation route/body |
 | Stock lending | Payment/status reads mapped; enable/disable route not proven | `accounts/stock_loan_payments/`; browser page `/account/stock-lending` has mixed account query behavior | Do not toggle until capture proves the write route/body |
 | Options trading settings | Trading/position/order surfaces mapped; settings toggles are browser-observed only | `options/chains/`, `options/orders/`, `options/positions/`, `options/aggregate_positions/`, browser `/account/settings/investing?account_number=...` | Option orders use the hardened order gate; options-level/remove-options toggles need fresh capture |
@@ -78,6 +78,35 @@ The dry-run examples above send nothing unless both live-write gates are present
 - `robinhood_brokerage_plan` builds a dry-run request shape without sending.
 - `robinhood_brokerage_execute` runs reads live; writes are forced dry-run unless
   `liveWrite: true` and `ROBINHOOD_ALLOW_LIVE_WRITE=1` are both set.
+
+## Browser-captured write endpoints (PROVEN 2026-06-03)
+
+Captured live via an in-page fetch/XHR interceptor (`Page.addScriptToEvaluateOnNewDocument`,
+persisted to `sessionStorage`) while toggling settings across the cash, Roth, and 9mo accounts.
+All are writes (double-gated); the account is in the path, so `?account_number=` / `{account}`
+selects which account they hit.
+
+| Setting | Method + route | Body |
+|---|---|---|
+| DRIP account-wide | `PATCH corp_actions/drip/account_settings/{account}/` | `{"drip_enabled":bool}` |
+| DRIP per-stock | `PATCH corp_actions/drip/instrument_settings/{account}/{instrument_id}/` | `{"drip_enabled":bool}` |
+| Options trade-on-expiration | `PATCH options/option_settings/{account}/` | `{"trading_on_expiration_state":"enabled"\|"disabled"}` |
+| PDT protection | `PUT settings/margin/{account}/` | `{"day_trades_protection":bool}` |
+| Cash sweep enroll | `POST bonfire…/sms/sweep/agree_and_enroll` | `{"account_number":"…"}` (pairs w/ agreement sign) |
+| Cash sweep disable | `POST accounts/{account}/sweep_enrollment_state/` | `{"sweep_enrollment_action":"unenroll"}` |
+| Agreement sign | `POST identi…/user_info/agreements/v2/sign/` | `{"agreement_id":…,"sha256":…}` |
+| PDT resolution flow | `POST pathfinder/user_machine/` | `{"flow":"brokerage.pdt-resolution",…}` |
+| Support chat open / end | `POST pathfinder/support_chats/[{id}/]` | `{"originating_app":"brokerage"}` / `{"operation":"end"}` |
+
+**Read counterparts (GET, all 200):** `drip/account_settings/{account}/` → `{drip_enabled}`;
+`drip/instrument_settings/{account}/` → per-stock `results[]`; `options/option_settings/{account}/` →
+`{trading_on_expiration_state,default_price,short_shares_on_option_events_enabled,…}`;
+`settings/margin/{account}/` → `{leverage,day_trades,advanced_buying_power,…}`;
+`accounts/{account}/sweep_enrollment_state/` → `{sweep_enrolled}`. Together these are a full
+per-account settings **read+write** surface. Raw capture (with real ids) in gitignored
+`info/robinhood-research/settings-writes-raw-2026-06-03.json`.
+
+**Still unproven:** stock-lending toggle (`/account/stock-lending`), account-type switch.
 
 ## Current Boundary
 

@@ -169,7 +169,7 @@ write carries the account in the path (`drip/account_settings/{account}/`,
 `options/option_settings/{account}/`, `settings/margin/{account}/`).
 
 **Apply by default — do not wait to be told:**
-- Enumerate accounts first (`transfer/accounts/` or `get_accounts`), then **always pass the account**
+- Enumerate accounts first (`accounts` CLI / `robinhood_accounts` MCP / `transfer/accounts/`), then **always pass the account**
   (`?account_number=` on web URLs, the `{account}` path/param on API routes). The UI/bare endpoints
   often default to the *individual* account — not the one you intend.
 - `/accounts/` (no id) = all accounts; `/accounts/{id}/…` or `?account_number={id}` = one account.
@@ -298,7 +298,7 @@ Interpretation:
 - Discover accounts via `transfer/accounts/` (full graph: numbers, types, deposit/recurring
   eligibility, labels). **Never hardcode account numbers.** Note: the bare `accounts/` endpoint
   may only return a subset for a given token — the full set comes from `transfer/accounts/` or
-  the MCP `get_accounts`; writes still work against any owned account by its number.
+  the MCP `robinhood_accounts` tool; writes still work against any owned account by its number.
 
 ---
 
@@ -1110,7 +1110,7 @@ documented. To extend it safely:
 
 ## MCP Server
 
-17 tools surfaced via Hermes MCP. Same engine -> same auth, gate, and method-aware routing as the CLI.
+23 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
 ### Registration
 

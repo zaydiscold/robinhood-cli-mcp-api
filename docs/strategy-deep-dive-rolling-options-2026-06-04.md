@@ -167,3 +167,353 @@ Reg. §1.1092(c)-1 (Option Samurai, Days-to-Expiry, OptionsTaxGuy, Fidelity, CBO
 X handles dated above; tastytrade 21-DTE/50% material; options-education syntheses of the r/thetagang
 consensus. Multi-agent study, 2026-06-04. (Reddit bodies were not directly indexable this run; X posts
 are primary/dated, education-site syntheses secondary.)
+
+---
+
+## Appendix A — Quantitative anatomy of a roll (dissertation-level)
+
+> Rigorous, derivation-first treatment of the roll as a pair of Black–Scholes-priced transactions.
+> Read-only research math; not advice, not a fill estimate, not permission to send an order. All
+> closed-form claims below are stated under the stated BS assumptions; §A.7 documents exactly where
+> those assumptions break against the live RH surface this repo trades.
+
+### A.0 Symbols, conventions, and assumptions
+
+| Symbol | Meaning | Units |
+|--------|---------|-------|
+| $S$ | underlying spot | $ |
+| $K$ | strike | $ |
+| $T$ | time to expiry (year-fraction, ACT/365) | yr |
+| $r$ | continuously-compounded risk-free rate | /yr |
+| $q$ | continuous dividend yield | /yr |
+| $\sigma$ | (implied) volatility, per $\sqrt{\text{yr}}$ | /$\sqrt{\text{yr}}$ |
+| $\tau$ | calendar time (so $T$ decreases as $\tau$ advances) | yr |
+| $N(\cdot),\ \varphi(\cdot)$ | standard normal CDF and pdf | — |
+| $V$ | BS option value (call $C$ / put $P$) | $ |
+| $m$ | log-moneyness $\ln(S/K)$ | — |
+
+**Sign convention for the operator.** A *credit* is cash received (positive to the account); a *debit*
+is cash paid. For a **short** premium position (CC, CSP, credit spread — the dominant rolling context),
+**buy-to-close (BTC) the near leg pays a debit equal to its market value**, and **sell-to-open (STO) the
+far/restruck leg receives a credit equal to its market value.**
+
+Black–Scholes price (with carry $b \equiv r-q$):
+$$
+C = S e^{-qT}N(d_1) - K e^{-rT}N(d_2),\qquad
+P = K e^{-rT}N(-d_2) - S e^{-qT}N(-d_1),
+$$
+$$
+d_1=\frac{\ln(S/K)+(r-q+\tfrac12\sigma^2)T}{\sigma\sqrt T},\qquad d_2=d_1-\sigma\sqrt T .
+$$
+
+**BS assumptions in force** (and where they fail — §A.7): GBM underlying with constant $\sigma$ over
+the life of each leg; frictionless, continuous trading; one constant $r$; continuous proportional
+dividends $q$; European exercise; a continuum of strikes/maturities; no bid/ask. The roll instruments
+this repo touches are **American** (equity/ETF options) — only **index options (SPX/XSP/NDX/RUT/VIX)**
+are truly European and cash-settled (see `index-options-1256-conclusion-2026-06-04.md`).
+
+### A.1 Net credit/debit of a roll, formally
+
+Let the **near (closed) leg** be priced $V_{\text{near}}=V(S,K_1,T_1,\sigma_1)$ and the **far/restruck
+(opened) leg** $V_{\text{far}}=V(S,K_2,T_2,\sigma_2)$, with $T_2>T_1$ for a roll *out* and
+$K_2\neq K_1$ for a roll up/down. For a short-premium roll:
+$$
+\boxed{\ \text{Net}\;=\;\underbrace{V_{\text{far}}}_{\text{STO credit (open)}}\;-\;\underbrace{V_{\text{near}}}_{\text{BTC cost (close)}}\ }
+$$
+$\text{Net}>0 \Rightarrow$ **net credit**; $\text{Net}<0 \Rightarrow$ **net debit**. This matches the repo
+engine exactly: `net = closeContribution + openContribution` with each leg contributing $+\text{limit}$
+when sold and $-\text{limit}$ when bought, so for a short roll $\text{closeContribution}=-V_{\text{near}}$
+(buying) and $\text{openContribution}=+V_{\text{far}}$ (selling).
+
+Decompose each option into **intrinsic** $I$ and **extrinsic (time) value** $X\ge 0$:
+$V = I + X$, with $I_{\text{call}}=(S-K)^+$, $I_{\text{put}}=(K-S)^+$. Then
+$$
+\text{Net} = \big(I_{\text{far}}-I_{\text{near}}\big) + \big(X_{\text{far}}-X_{\text{near}}\big).
+$$
+
+**Pure roll-out (same strike, $K_2=K_1=K$, $\sigma$ flat).** Intrinsic is identical ($I_{\text{far}}=I_{\text{near}}$),
+so the entire net is the **extrinsic increment**:
+$$
+\text{Net}_{\text{out}} = X(S,K,T_2,\sigma)-X(S,K,T_1,\sigma) \;>\;0 .
+$$
+This is **strictly positive** whenever $T_2>T_1$, because BS extrinsic value is **strictly increasing in
+maturity** for fixed $(S,K,\sigma,r,q)$. Proof sketch: extrinsic value equals the price of the
+corresponding *out-of-the-money-side* optionality, $X=V-I$, and $\partial V/\partial T = \Theta_{\text{cal}}>0$
+in calendar-to-expiry terms for a vanilla option with non-negative carry on the relevant side; equivalently,
+a longer option dominates a shorter one by the no-arbitrage calendar-spread bound
+$V(T_2)\ge V(T_1)$ for $T_2\ge T_1$ (a long calendar can never have negative value under continuous
+dividends with $r\ge q$; the rare $r<q$ deep-ITM exception is noted in §A.7). **Hence a roll *out* for the
+same strike is essentially always a net credit** — the structural reason "always roll for a credit" is
+even *achievable* as a default.
+
+**ATM scaling — the $\sqrt T$ law.** At the money ($S=Ke^{-(r-q)T}$, so $d_1=\tfrac12\sigma\sqrt T$,
+$d_2=-\tfrac12\sigma\sqrt T$), the BS value is approximately
+$$
+V_{\text{ATM}} \approx S e^{-qT}\,\big[N(d_1)-N(d_2)\big] \approx \frac{S e^{-qT}\sigma\sqrt T}{\sqrt{2\pi}}\;\;\Longrightarrow\;\; X_{\text{ATM}}\;\propto\;\sigma\sqrt T .
+$$
+(Using $N(x)-N(-x)\approx 2x\varphi(0)=x\sqrt{2/\pi}$ for small $x$.) Therefore the credit from rolling an
+ATM short out from $T_1$ to $T_2$ is
+$$
+\text{Net}_{\text{out,ATM}} \approx \frac{S\sigma}{\sqrt{2\pi}}\big(\sqrt{T_2}-\sqrt{T_1}\big)\;>\;0 .
+$$
+**Concavity in $\sqrt T$** is the key practitioner fact: extrinsic added per unit of *extra calendar time*
+shrinks the farther out you already are ($d(\sqrt T)/dT = 1/(2\sqrt T)$). A 30→60 DTE roll adds far more
+credit per added day than a 300→330 DTE roll. This is the mathematical seed of the deferral problem (§A.5):
+to *keep* manufacturing a fixed-dollar credit on a position moving against you, each successive roll must
+reach disproportionately farther out in time.
+
+**Roll up/down with the move (changing $K$).** Restriking changes intrinsic *and* extrinsic. For a short
+call rolled **up** ($K_2>K_1$) while the stock rallied, $I_{\text{far}}<I_{\text{near}}$ (less intrinsic
+bought back is offset by the higher strike), and the credit condition becomes a horse-race between the
+**extrinsic gained from duration** and the **intrinsic + extrinsic given up by moving the strike OTM**:
+$$
+\text{Net}\;=\;\underbrace{(X_{\text{far}}-X_{\text{near}})}_{\ge 0\ \text{if } T_2>T_1,\ \text{often}<0\ \text{if } K_2\ \text{far OTM}}\;+\;\underbrace{(I_{\text{far}}-I_{\text{near}})}_{\le 0\ \text{for short call rolled up}} .
+$$
+**Net-credit condition (general):**
+$$
+\boxed{\ V(S,K_2,T_2,\sigma_2)\;\ge\;V(S,K_1,T_1,\sigma_1)\ }
+$$
+i.e. *the new leg you sell must be worth at least the old leg you buy back.* Rolling **out** relaxes this
+(adds $T$, which adds value); rolling **up a short call** or **down a short put** tightens it (moves the
+strike away from the money, which subtracts value). The two compose: **up-and-out / down-and-out** is the
+practitioner default precisely because the duration term ($+$) is used to *fund* the strike move ($-$) and
+still clear $\text{Net}\ge 0$. Quantitatively, the maximum strike-distance you can roll while staying a
+credit grows with $\Delta T$ via the $\sigma\sqrt{T_2}$ extrinsic budget.
+
+### A.2 Greeks delta of the roll (new leg minus old leg)
+
+Define the **roll Greek** as the post-roll book sensitivity minus the pre-roll one. For a short position
+(the book holds $-1$ contract), the *position* Greek is $-\mathcal{G}$; rolling swaps $-\mathcal{G}_{\text{near}}\to-\mathcal{G}_{\text{far}}$,
+so the change in the **position** Greek is $\Delta\mathcal{G}^{\text{pos}} = -(\mathcal{G}_{\text{far}}-\mathcal{G}_{\text{near}})$.
+We report the **per-contract leg** deltas $\Delta\mathcal G \equiv \mathcal G_{\text{far}}-\mathcal G_{\text{near}}$ and let
+the operator apply the $-1$ for a short and the $\times 100$ multiplier. BS Greeks:
+$$
+\Delta_{\text{call}}=e^{-qT}N(d_1),\quad
+\Gamma=\frac{e^{-qT}\varphi(d_1)}{S\sigma\sqrt T},\quad
+\nu=S e^{-qT}\varphi(d_1)\sqrt T,\quad
+\Theta_{\text{call}}=-\frac{S e^{-qT}\varphi(d_1)\sigma}{2\sqrt T}-rK e^{-rT}N(d_2)+qSe^{-qT}N(d_1).
+$$
+
+**Theta — decreases (in magnitude) rolling out. $|\Theta|\propto 1/\sqrt T$ (ATM).** The dominant
+(decay) term is $-\dfrac{Se^{-qT}\varphi(d_1)\sigma}{2\sqrt T}$. At the money $\varphi(d_1)\approx\varphi(0)$
+is roughly $T$-independent, so
+$$
+|\Theta_{\text{ATM}}|\;\approx\;\frac{S\sigma\varphi(0)}{2\sqrt T}\;\propto\;\frac{1}{\sqrt T}\;\;\Longrightarrow\;\;
+\frac{|\Theta_{\text{far}}|}{|\Theta_{\text{near}}|}\approx\sqrt{\frac{T_1}{T_2}}<1 .
+$$
+Rolling 30→60 DTE roughly **multiplies per-day theta by $\sqrt{30/60}\approx0.71$** — you collect ~29% less
+decay *per day* but over a longer runway. This is the exact mechanism behind **21-DTE management**: theta
+is *steepest* in the final weeks, so a short harvested there earns decay fastest but also lives in the
+highest-gamma zone. Consistent with Tannous & Zhang (2008), who show the time-value of at/near-the-money
+options decays at a rate that **decreases over (calendar) time** — i.e. the decay rate is front-loaded —
+which is the put-rolling analogue of the $1/\sqrt T$ statement.
+
+**Vega — increases rolling out. $\nu\propto\sqrt T$ (ATM).** With $\varphi(d_1)\approx\varphi(0)$,
+$$
+\nu_{\text{ATM}}\approx S e^{-qT}\varphi(0)\sqrt T\;\propto\;\sqrt T\;\;\Longrightarrow\;\;\frac{\nu_{\text{far}}}{\nu_{\text{near}}}\approx\sqrt{\frac{T_2}{T_1}}>1 .
+$$
+Rolling 30→60 DTE roughly **multiplies vega by $\sqrt{2}\approx1.41$.** For a *short*, position vega is
+$-\nu$, so rolling out makes the book **more short vega** — better if IV is rich and mean-reverts (you sold
+more vol), worse if IV spikes after the roll (mark-to-market pain scales with the larger $\nu$). This is the
+quantitative content of "rolling out increases IV sensitivity."
+
+**Gamma — decreases rolling out. $\Gamma\propto 1/\sqrt T$ (ATM).**
+$$
+\Gamma_{\text{ATM}}\approx\frac{e^{-qT}\varphi(0)}{S\sigma\sqrt T}\;\propto\;\frac{1}{\sqrt T}\;\;\Longrightarrow\;\;\frac{\Gamma_{\text{far}}}{\Gamma_{\text{near}}}\approx\sqrt{\frac{T_1}{T_2}}<1 .
+$$
+Gamma peaks ATM near expiry and collapses with maturity; rolling out is precisely the act of **stepping out
+of the high-gamma terminal zone.** A short is short gamma (position $-\Gamma$); rolling out *reduces* the
+magnitude of that short-gamma risk per contract. Note the tight coupling $\Theta \approx -\tfrac12\sigma^2 S^2\Gamma$
+(the BS PDE's gamma–theta identity at $r=q=0$): the same $1/\sqrt T$ factor governs both, so **you cannot
+shed terminal gamma without simultaneously surrendering peak theta** — they are two faces of one quantity.
+
+**Delta of the roll.** For a pure roll-out (same $K$), $\Delta_{\text{far}}-\Delta_{\text{near}}$ is second-order
+(both legs share $S,K$); the dominant delta change comes from **restriking**. Rolling a short call **up**
+($K_2>K_1$) lowers $N(d_1)$, so $\Delta_{\text{far}}<\Delta_{\text{near}}$ and the leg is *less* positive-delta;
+for the short book (position $-\Delta$) this **reduces the negative delta drag** — the position is less hurt
+by continued upside. Symmetrically, rolling a short put **down** moves it further OTM, $|\Delta|$ falls, and
+assignment pressure eases. This is the formal version of "roll up/down to cut directional exposure."
+
+Summary table (ATM, roll *out* $T_1\to T_2$, per contract):
+
+| Greek | Scaling | Far/near ratio | Effect on a short book |
+|-------|---------|----------------|------------------------|
+| Extrinsic $X$ | $\propto\sqrt T$ | $\sqrt{T_2/T_1}>1$ | more credit to collect (good) |
+| Theta $|\Theta|$ | $\propto 1/\sqrt T$ | $\sqrt{T_1/T_2}<1$ | slower decay/day (the cost of duration) |
+| Vega $\nu$ | $\propto\sqrt T$ | $\sqrt{T_2/T_1}>1$ | more short-vega exposure |
+| Gamma $\Gamma$ | $\propto 1/\sqrt T$ | $\sqrt{T_1/T_2}<1$ | less short-gamma risk (good) |
+
+### A.3 The variance/volatility risk premium — why the credit has positive expectancy *at all*
+
+A short-premium roll only carries positive expected value because option **implied** variance trades
+systematically *above* subsequently **realized** variance — the **variance risk premium (VRP)**. Formally,
+the VRP is
+$$
+\text{VRP}\;=\;\mathbb{E}^{\mathbb P}\!\big[\sigma_{\text{realized}}^2\big]\;-\;\mathbb{E}^{\mathbb Q}\!\big[\sigma^2\big]\;<\;0,
+$$
+i.e. the risk-neutral ($\mathbb Q$) expected variance embedded in option prices exceeds the physical
+($\mathbb P$) expectation, so the *seller* of variance earns the (negative-of-VRP) premium on average.
+Carr & Wu (2009, *Review of Financial Studies*, "Variance Risk Premia") document this is large and
+significantly negative for the S&P 500 — the synthetic variance-swap rate sits well above realized variance —
+and Bakshi & Kapadia (2003) show delta-hedged option positions earn negative average returns consistent with
+a priced volatility risk. This premium is the entire *edge* a short-premium roll defers or harvests: the
+roll keeps the operator *in* the variance-selling trade. Han & Zhou and the broader literature show VRP also
+prices the cross-section of equity returns. **Caveat the model must carry:** the premium is time-varying and
+has compressed materially in the post-2010 sample (Dew-Becker & Giglio document a decline in the traded VRP;
+option alphas have drifted toward zero), so the assumption "rolling keeps me in a positive-EV trade" is
+*conditional*, not a constant.
+
+### A.4 Roll vs. close vs. hold as an expected-value decision
+
+Frame the choice at the moment a short leg is tested. Let $L\ge 0$ be the **realized loss if closed now**
+(current BTC cost minus the credit originally collected). Define two mutually exclusive policies over the
+horizon $\Delta T = T_2-T_1$ (the extra time the roll buys):
+
+**(a) Close now + redeploy.** Realize $-L$, free the collateral $\mathcal{C}$ (CSP cash or CC share value /
+margin), and redeploy it at the per-period premium-selling edge. Let $\mu_e$ be the expected
+profit *per unit collateral per unit time* from a *fresh* short-premium trade (the VRP edge of §A.3, net of
+costs). Over $\Delta T$:
+$$
+\mathbb E[\Pi_{\text{close}}] \;=\; -L \;+\; \mu_e\,\mathcal{C}\,\Delta T .
+$$
+
+**(b) Roll out for a credit + hold the larger, longer position.** Collect the roll credit
+$c=\text{Net}>0$ (§A.1), but keep the (now larger-notional, longer-duration) risk on the *same* tested
+underlying. Let $g$ be the expected P&L *per unit time* of continuing to hold that specific position
+(its own carry/decay net of expected adverse drift on a thesis that is, by assumption, already under
+stress), and keep the collateral $\mathcal{C}'\ge\mathcal{C}$ tied up:
+$$
+\mathbb E[\Pi_{\text{roll}}] \;=\; c \;+\; g\,\Delta T .
+$$
+
+**Decision rule (roll is EV-superior iff):**
+$$
+\boxed{\ c + g\,\Delta T \;>\; -L + \mu_e\,\mathcal{C}\,\Delta T\ }
+\quad\Longleftrightarrow\quad
+\underbrace{(c+L)}_{\text{cash + loss not yet realized}} \;>\; \underbrace{(\mu_e\,\mathcal{C}-g)\,\Delta T}_{\text{opportunity cost of the trapped collateral}} .
+$$
+
+The right-hand term is the **capital-opportunity-cost** of the roll: every unit of time the collateral
+$\mathcal{C}$ stays pinned to a stressed position is time it *cannot* earn the fresh VRP edge $\mu_e$
+elsewhere. **This is the formal statement of "a far-out credit roll just defers the loss."** Observe:
+
+- The credit $c$ is **bounded by the extrinsic budget** $\sim S\sigma(\sqrt{T_2}-\sqrt{T_1})$ (§A.1) — and
+  by concavity in $\sqrt T$, buying a *given* $c$ costs **ever more $\Delta T$** the farther out you already
+  are.
+- The opportunity-cost term **grows linearly in $\Delta T$**. So a roll that must reach far out to clear a
+  credit (large $\Delta T$ for small $c$) inflates the right side faster than the left: **the credit roll
+  can be EV-negative even though $c>0$** (it "brings in cash"). The cash is real; the EV is not, once the
+  forgone $\mu_e\,\mathcal C\,\Delta T$ is charged against it.
+- Equivalently: rolling is loss-**deferral**, not loss-**avoidance** — the loss $L$ does not disappear, it is
+  rolled into the basis of a position whose expected forward edge $g$ must now *beat* the clean redeployment
+  alternative $\mu_e\mathcal C$. If the thesis is impaired, $g\le 0$ and the inequality almost surely fails.
+
+**Break-even maximum tenor.** Setting the inequality to equality and solving for the longest $\Delta T$ that
+still justifies a roll:
+$$
+\Delta T^\star \;=\; \frac{c+L}{\mu_e\,\mathcal{C}-g}\qquad(\text{valid when }\mu_e\mathcal C>g).
+$$
+Rolls requiring $\Delta T>\Delta T^\star$ are **negative-EV loss deferral**. This is the rigorous form of the
+practitioner stop-rule "if a credit is only available 90–120 days out, take the loss" — that heuristic is an
+estimate of $\Delta T^\star$ with $\mu_e\mathcal C$ standing in for "what else this capital could earn."
+
+### A.5 "Always roll for a credit" under the model — when it holds, when it fails
+
+The heuristic decomposes into two distinct claims:
+
+1. **Achievability.** *A credit roll is almost always obtainable for a roll out.* **True** under the model
+   (§A.1): $\text{Net}_{\text{out}}=X_{\text{far}}-X_{\text{near}}>0$ for $T_2>T_1$. The extrinsic-from-duration
+   term funds it. **Holds robustly** for ATM/near-the-money shorts in liquid chains.
+
+2. **Optimality.** *Therefore one should always roll for a credit rather than close.* **Conditional, and
+   fails in two regimes:**
+   - **Deferral regime (§A.4).** When $\Delta T>\Delta T^\star$ — the credit is only reachable far out, the
+     trapped-collateral opportunity cost $\mu_e\mathcal C\,\Delta T$ exceeds $c+L$, and $g\le 0$ on an impaired
+     thesis. The roll books cash and *destroys* expected value. "Rolling for a credit" here is a behavioral
+     loss-realization dodge, not an edge.
+   - **Runaway-trend regime.** When the underlying trends through strikes faster than the extrinsic budget can
+     restrike-and-still-credit. Formally, the strike move that keeps pace, $\Delta K = K_2-K_1$, must satisfy
+     the credit constraint $V(S,K_2,T_2,\sigma_2)\ge V(S,K_1,T_1,\sigma_1)$; but the **maximum credit-preserving
+     strike step is capped by the extrinsic added**, $\sim S\sigma(\sqrt{T_2}-\sqrt{T_1})$, while the spot can
+     move an *unbounded* amount. Once $|S-K_1|$ growth outruns that budget, each successive roll yields a
+     **shrinking credit, then a forced debit** (the "chasing a runaway short" failure mode). The chain of
+     credits is a *bounded* sum financed by a *possibly unbounded* adverse move — the structural reason
+     successive rolls "can't keep pace." A debit roll to stay in then violates claim (1) outright and is the
+     #1 ranked failure mode (§8).
+
+**Net:** "always roll for a credit" is a sound *achievability default* (you can almost always get the credit
+out) but an unreliable *optimality rule* (the credit can be negative-EV). The model says: roll for a credit
+**when $\Delta T\le\Delta T^\star$ and the strike move keeps pace within the extrinsic budget**; otherwise the
+credit is deferral and the EV-maximizing action is to close and redeploy at $\mu_e$.
+
+### A.6 Worked numeric sanity check (illustrative, not a quote)
+
+$S=100$, ATM short call, $\sigma=0.30$, $r=q=0$. Roll 30 DTE → 60 DTE, same strike $K=100$.
+Using $X_{\text{ATM}}\approx S\sigma\sqrt T/\sqrt{2\pi}$ with $\sqrt{2\pi}\approx2.5066$:
+$$
+X_{30}\approx \frac{100\cdot0.30\cdot\sqrt{30/365}}{2.5066}\approx \$3.43,\quad
+X_{60}\approx \frac{100\cdot0.30\cdot\sqrt{60/365}}{2.5066}\approx \$4.85.
+$$
+**Credit** $\approx X_{60}-X_{30}\approx\$1.42$ (× 100 = $142/contract). **Theta ratio**
+$\sqrt{30/60}\approx0.71$ (29% less decay/day). **Vega ratio** $\sqrt{60/30}\approx1.41$ (41% more vega).
+**Gamma ratio** $\approx0.71$. All four signs match §A.2. (The $\sqrt T$ approximations are accurate to a few
+percent ATM; use the live RH Greeks from `marketdata/options/` for any actual decision — §A.7.)
+
+### A.7 Where the Black–Scholes model breaks against the live RH surface
+
+- **Early assignment (American exercise + dividends).** The closed-form credit assumes European exercise.
+  An **ITM short call whose extrinsic value $X<$ the upcoming dividend** is a rational early-exercise target
+  the night before ex-div — the shares are called away *before* the planned roll executes, voiding the roll
+  entirely. Quant test: flag any ITM short call where $X_{\text{near}} < D\,e^{-r\,t_{\text{ex}}}$ near
+  ex-dividend. Equity/ETF options on RH are American; only SPX/XSP/NDX/RUT/VIX are European and immune.
+- **Discrete strikes.** $\Delta K$ is not continuous — the "credit-preserving strike step" of §A.5 must be
+  rounded to the chain's listed strikes, and the per-chain `min_ticks`/`cutoff_price` (≈$3) constrain the
+  achievable limit price. The continuum-of-strikes assumption (also underlying the VRP variance-swap
+  replication of §A.3) is an approximation.
+- **Transaction costs / bid-ask.** The frictionless net of §A.1 uses mid prices. Real fills cross the spread
+  **twice** (BTC at/above ask on the near leg, STO at/below bid on the far leg), so the *realized* credit is
+  $\text{Net}_{\text{mid}} - \tfrac12(\text{spread}_{\text{near}}+\text{spread}_{\text{far}})$. Far-month strikes
+  are illiquid (wide spreads) — the repo's `mid` dry-run can look like a credit that the live fill turns into a
+  debit (failure mode #4). The $\mu_e$ edge in §A.4 is *net of* these costs, which have risen in relative terms
+  as the VRP compressed (§A.3) — a double reason the EV calculus is tighter than the gross credit suggests.
+- **Constant-vol / flat-smile.** $\sigma_1\neq\sigma_2$ in reality: term structure and skew mean the far leg's
+  IV differs from the near leg's, and a roll *down* (short put) typically sells *higher* IV (put skew), which
+  *adds* to the credit beyond the duration term — a tailwind the flat-$\sigma$ derivation omits. Use the
+  per-leg live IVs, not one $\sigma$.
+- **Single $r$, no term premium.** Negligible intraday but matters for LEAP-tenor rolls (PMCC long-leg rolls),
+  where rho and the carry term $b=r-q$ are non-trivial.
+
+### A.8 References (academic + index research)
+
+- Carr, P. & Wu, L. (2009). *Variance Risk Premia.* **Review of Financial Studies** 22(3), 1311–1341.
+  [PDF](https://engineering.nyu.edu/sites/default/files/2019-01/CarrReviewofFinStudiesMarch2009-a.pdf) —
+  the variance-swap rate vs. realized variance; large, significantly negative S&P 500 VRP (the seller's edge).
+- Bakshi, G. & Kapadia, N. (2003). *Delta-Hedged Gains and the Negative Market Volatility Risk Premium.*
+  **Review of Financial Studies** 16(2) — delta-hedged option positions earn negative average returns ⇒ priced
+  volatility risk; the micro-foundation of short-premium expectancy.
+- Han, B. & Zhou, Y. *Variance Risk Premium and the Cross-Section of Stock Returns.* SSRN
+  [#1785540](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1785540) — VRP prices expected returns
+  (~2%/month top-vs-bottom decile).
+- Tannous, G. & Zhang, J. (2008). *Expected Time Value Decay of Options: Implications for Put-Rolling
+  Strategies.* **The Financial Review** 43(3)
+  [link](https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6288.2008.00191.x) — time value of at/near-the-money
+  options decays at a rate that **decreases over time** (front-loaded decay), the put-rolling analogue of the
+  $|\Theta|\propto 1/\sqrt T$ result; informs *when* to roll a put.
+- Dew-Becker, I. & Giglio, S. *The Decline of the Variance Risk Premium: Evidence from Traded and Synthetic
+  Options.* SSRN [#5525882](https://papers.ssrn.com/sol3/Delivery.cfm/5525882.pdf?abstractid=5525882) — the VRP
+  has compressed post-2010; option alphas drift toward zero (why §A.3's edge is conditional, not constant).
+- Heston, S., Jones, C. & Khorram, M. *Option Momentum.*
+  [PDF](http://faculty.marshall.usc.edu/Christopher-Jones/pdf/opmom.pdf) — cross-sectional dynamics of option
+  returns relevant to dynamic (rolling) option management.
+- Whaley, R. et al. — CBOE **BXM** (BuyWrite) and **PUT** (PutWrite) index methodology & reviews
+  ([BXM methodology](https://cdn.cboe.com/api/global/us_indices/governance/BXM_Methodology.pdf);
+  [Callan review](https://cdn.cboe.com/resources/education/research_publications/Callan_CBOE.pdf)) — the
+  canonical *mechanical monthly roll* of ATM index calls/puts: BXM ≈ S&P total return at ~⅔ the volatility
+  (1988–2006), the empirical realization of a disciplined credit-roll program and its bull-market drag.
+
+> **Operator takeaway (neutral):** the math says rolling *out* almost always yields a credit ($\sqrt T$ extrinsic),
+> shifts the book to lower theta / higher vega / lower gamma, and keeps the operator in a (historically, but no
+> longer reliably) positive-VRP trade. Whether that credit is *worth taking* is the §A.4 inequality —
+> $c+L$ vs. the trapped-collateral opportunity cost $(\mu_e\mathcal C-g)\Delta T$ — not the sign of the cash. Surface
+> the credit, the change in capital at risk, $\Delta T$ vs. $\Delta T^\star$, and whether the strike move stays inside
+> the extrinsic budget; then do what the operator asks.

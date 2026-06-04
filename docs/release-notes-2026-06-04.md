@@ -28,7 +28,15 @@
   with masked `[EXAMPLE]` entries. (Code auto-logger parked as a future idea.)
 - **Strategy deep-dives** (`strategy-deep-dive-the-wheel-2026-06-04.md`,
   `strategy-deep-dive-rolling-options-2026-06-04.md`) — advanced multi-perspective study (mechanics,
-  Greeks, tax, current practitioner sentiment, decision rules, failure modes) extending the strategy KB.
+  Greeks, tax, current practitioner sentiment, decision rules, failure modes) extending the strategy KB,
+  each with a **dissertation-level Quant appendix** (BS derivations, N(−d₂) assignment prob, VRP-as-edge,
+  the gamma-theta identity, fractional-Kelly sizing; for rolling, the EV inequality for *when a credit-roll
+  is just loss deferral*) — cited to Carr-Wu / Bakshi-Kapadia / Bondarenko / PUT-BXM index studies.
+- **Institutional outlook layer** (`institutional-outlook-2026-06-04.md`) — major-firm regime view
+  (BlackRock/Vanguard/JPM/GS/MS year-ahead + 5–10yr CMAs), synthesized consensus vs divergence + mega
+  forces. Added to the **Signal sourcing** doctrine as the slow institutional tier. **All sources framed
+  as information on deck — inputs to weigh by reliability, never gospel or permission** (pulse →
+  institutional → academic math, all subordinate to live market data + order history).
 - **First-class commands:** `options inspect <uuid>` (metadata + Greeks + fills + tax-timing + handoff),
   `options holdings` (all held contracts + UUIDs across accounts), `options strategies` / `options plan`
   (planning consolidated under `options`, `api-map` names kept as aliases), `settings show|drip|

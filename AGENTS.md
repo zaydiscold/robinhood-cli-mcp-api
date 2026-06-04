@@ -631,5 +631,22 @@ not a mandate — risk and sizing are the operator's call. Full version in SKILL
   off-platform pulse. Lead DD with X/Reddit; let RH's feeds confirm, not the reverse.
 - **Signal → optional validation → action:** any feed is a *direction input*; you *can* corroborate
   against live market data (bid/ask, Greeks, volume/OI) before acting — available reasoning, not a rule.
-- **Personalized trusted sources** (specific accounts/communities the owner relies on) are
-  operator-specific and **private** — a future gitignored `Ball Knowledge.md`, never this public doc.
+- **Personalized trusted sources** (specific accounts/communities the owner relies on) accumulate as
+  source-lead entries in **Ball Knowledge** (`ball-knowledge.md`, §14); keep committed entries generic.
+
+---
+
+## 14. Ball Knowledge (`ball-knowledge.md`) — the investing-memory ledger
+
+The repo root holds **`ball-knowledge.md`**, a living, chronological, append-only ledger of broad
+investing context the operator intentionally wants remembered — it **influences the general
+investing-thesis direction and trading-style notes**, the sectors/tickers/sources the agent attends
+to, and how it frames analysis. Read it on finance tasks.
+
+- It is **context, not authority**: never proof of a rumor, never permission to place/cancel a trade,
+  never an override of confirmation, live market data, or order history. Treat entries as *intentional
+  and important*, classify each by type (rumor → verify; `@handle` → source lead; "0DTE" → high-risk
+  style note; "dividend/QDTE" → income preference), apply only a minor recency bias, and surface risk
+  neutrally without imposing caution. **Full rules + the exact append format: SKILL.md "Ball Knowledge".**
+- Order-execution evidence: see §13-adjacent rule — *brokerage order history is the source of truth; no
+  record = treat as non-executed; screenshots/UI/logs are not proof* (also in SKILL.md failure modes #20).

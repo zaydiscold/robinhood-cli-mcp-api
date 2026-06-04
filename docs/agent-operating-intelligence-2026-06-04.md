@@ -97,8 +97,16 @@ comes from changes how much it's worth — and the platform's own feed is the *s
 - **News** is laggy but authoritative for **key/binary events** (earnings, M&A, Fed, halts) — right
   beats first there. Lead DD with X/Reddit; let news + RH feeds confirm.
 - This is a *framework for sourcing*, not a sizing/risk rule — the operator decides what to do with it.
-  Personalized "who I trust" is a private future `Ball Knowledge.md` (gitignored), never the public skill.
-  Full version: SKILL.md "Signal sourcing"; AGENTS.md §13.
+  Themes + trusted sources accumulate in the **Ball Knowledge** ledger (`ball-knowledge.md`) — read it
+  on finance tasks as the operator's investing-memory layer (context, not permission; classify entries
+  by type; minor recency bias). Full version: SKILL.md "Signal sourcing" + "Ball Knowledge"; AGENTS §13/§14.
+
+**And the same instinct applies to whether an order happened.** An order *exists* only if the brokerage
+**order history** shows it (filled/pending/rejected/cancelled) or a position/cash/buying-power change
+confirms it. No record → treat the attempt as **non-executed**; screenshots, UI/review screens, "the
+button was clicked", or agent logs are **not** proof. (This session: a "nothing executed" scare was
+resolved by reading the orders list; the place→cancel tests were confirmed the same way.) Read
+`orders/` / `options/orders/` / positions before ever claiming a trade went through.
 
 ---
 
@@ -212,6 +220,7 @@ misuse, not a broken tool — read the actual error first.
 | Route-map edit had no effect | Runtime reads `cli/dist/`, not source | `pnpm --filter @zaydiscold/robinhood-cli build`, then re-verify count. |
 | `ceres.robinhood.com` / futures order endpoint won't connect (TLS handshake fail) | App-only TLS allowlist; not reachable from any non-app client | Not fixable from here. Futures trading is unsupported (§5). Don't re-probe; don't treat it as a transient network error. |
 | Leaning on RH `midlands/news`/`ratings` as the *primary* signal | That's the slow, broker-native confirmer — it trails the real-time pulse | Lead DD with the off-platform pulse (X/Reddit via `bird` / `last30days`); use RH feeds + news to confirm, not to discover. News is authoritative only for key/binary events (§1 "Signal is a surface"). Sourcing framework, not a sizing rule. |
+| About to report "order placed/executed" | The only proof is the **order record** — UI/screenshots/logs are not | Read `orders/` / `options/orders/` (or a position/cash/buying-power change). No filled/pending/rejected/cancelled record → it did **not** execute; say so, don't imply otherwise (§1 "whether an order happened"). |
 | 401 mid-session | Token expired (~7.8d life) | Engine self-heals once; if it fails, `pnpm auth:refresh`. Don't open browser sessions. |
 
 ---

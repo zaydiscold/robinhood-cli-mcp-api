@@ -6,6 +6,7 @@ import {
   buildOptionsStrategyPricingSummary,
   buildOptionsStrategyOrderPlan,
   classifyMoneyness,
+  classifyRobinhoodError,
   collarSanity,
   selectRouteByQueryAndMethod,
   executeBrokerageRequest,
@@ -667,6 +668,38 @@ describe("Options analytics helpers", () => {
     // Legacy entries without `methods` keep the permissive fallback even for a write verb.
     const legacy = [{ url: "https://api.robinhood.com/legacy/" }];
     expect(selectRouteByQueryAndMethod(legacy, "https://api.robinhood.com/legacy/", "POST")).toBe(legacy[0]);
+  });
+
+  it("classifies Robinhood error bodies into the retry/remedy taxonomy", () => {
+    expect(classifyRobinhoodError(200, "{}").kind).toBe("ok");
+    const rl = classifyRobinhoodError(429, JSON.stringify({ detail: "Too many requests. Try again in 48 seconds." }));
+    expect(rl.kind).toBe("rate_limited");
+    expect(rl.retryable).toBe(true);
+    expect(rl.retryAfterMs).toBe(50000); // 48 + 2s, in ms
+    expect(classifyRobinhoodError(400, JSON.stringify({ detail: "You do not have enough overnight buying power to place this order." })).kind).toBe("overnight_buying_power");
+    expect(classifyRobinhoodError(400, JSON.stringify({ detail: "Price does not satisfy the min tick value." })).kind).toBe("below_min_tick");
+    expect(classifyRobinhoodError(400, JSON.stringify({ detail: "Your app version is missing important stock trading updates." })).kind).toBe("app_version_gate");
+    expect(classifyRobinhoodError(401, "{}").kind).toBe("unauthorized");
+    expect(classifyRobinhoodError(401, "{}").retryable).toBe(true);
+  });
+
+  it("retries a 429 with the server-directed cooldown, then succeeds (same request)", async () => {
+    const route = loadBrokerageRoutes().find((candidate) => candidate.url === "https://api.robinhood.com/accounts/");
+    const plan = planBrokerageRequest({ route: route! });
+    let calls = 0;
+    const slept: number[] = [];
+    const result = await executeBrokerageRequest(plan, {
+      token: "t",
+      sleepImpl: async (ms) => { slept.push(ms); },
+      fetchImpl: async () => {
+        calls++;
+        if (calls < 3) return new Response(JSON.stringify({ detail: "Too many requests. Try again in 10 seconds." }), { status: 429 });
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    });
+    expect(calls).toBe(3); // 429, 429, then 200
+    expect(slept).toEqual([12000, 12000]); // 10 + 2s each, in ms — no real waiting
+    expect(result.status).toBe(200);
   });
 
   it("FAILS LOUD on an ambiguous substring match spanning multiple distinct routes", () => {

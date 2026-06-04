@@ -442,6 +442,12 @@ export interface ExecuteBrokerageOptions {
   fetchImpl?: typeof fetch;
   /** Set false to disable the on-401 browser-free token refresh + retry (default on). */
   autoRefresh?: boolean;
+  /** Set false to disable the in-engine 429 rate-limit retry (default on for real fetch). */
+  autoRetry?: boolean;
+  /** Max 429 retries (default 3). Each sleeps the server-directed cooldown before retrying. */
+  maxRateLimitRetries?: number;
+  /** Injected sleep (ms) — tests pass a no-op so retries don't actually wait. */
+  sleepImpl?: (ms: number) => Promise<void>;
 }
 
 export interface ExecuteCryptoOptions {
@@ -1559,6 +1565,65 @@ function tryRefreshBrokerageToken(): string | undefined {
   return undefined;
 }
 
+export type RobinhoodErrorKind =
+  | "rate_limited"
+  | "overnight_buying_power"
+  | "insufficient_buying_power"
+  | "below_min_tick"
+  | "otc_market_order"
+  | "app_version_gate"
+  | "unauthorized"
+  | "not_found"
+  | "bad_request"
+  | "ok"
+  | "unknown";
+
+export interface RobinhoodErrorClassification {
+  kind: RobinhoodErrorKind;
+  status: number;
+  detail: string;
+  retryable: boolean;
+  /** Server-directed cooldown in ms for rate limits (parsed from body / Retry-After), else undefined. */
+  retryAfterMs?: number;
+  /** One-line operator-facing remedy. */
+  hint?: string;
+}
+
+/**
+ * Map a Robinhood HTTP response (status + body text + headers) to a single error taxonomy.
+ * Centralizes the patterns that were scattered across scripts/call-sites (429 burst limit,
+ * overnight-BP, min-tick, OTC reject, app-version gate) so retry/recovery/messaging is uniform
+ * and testable. Pure — no I/O. Use for both human messaging and programmatic retry decisions.
+ */
+export function classifyRobinhoodError(status: number, bodyText: string, headers?: Headers): RobinhoodErrorClassification {
+  if (status >= 200 && status < 300) return { kind: "ok", status, detail: "", retryable: false };
+  const body = (bodyText || "").toString();
+  const lower = body.toLowerCase();
+  const detail = (() => {
+    try {
+      const j = JSON.parse(body);
+      return String(j.detail ?? (Array.isArray(j.non_field_errors) ? j.non_field_errors.join("; ") : "") ?? j.reject_reason ?? "").trim() || body.slice(0, 200);
+    } catch {
+      return body.slice(0, 200);
+    }
+  })();
+  if (status === 429 || lower.includes("too many requests") || lower.includes("rate limit")) {
+    const retryHeader = Number(headers?.get?.("retry-after"));
+    const m = /(\d+)\s*second/.exec(body);
+    const secs = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : m ? parseInt(m[1], 10) : 30;
+    return { kind: "rate_limited", status, detail, retryable: true, retryAfterMs: Math.min(120, secs + 2) * 1000, hint: `Rate-limited; wait ${secs}s and retry the SAME ref_id (nothing was placed).` };
+  }
+  if (lower.includes("overnight buying power")) return { kind: "overnight_buying_power", status, detail, retryable: false, hint: "GTC option opens are gated by OVERNIGHT buying power, not regular BP. Use a day order or fund the account." };
+  if (lower.includes("buying power") || lower.includes("not enough") || lower.includes("only purchase 0")) return { kind: "insufficient_buying_power", status, detail, retryable: false, hint: "Insufficient buying power for this order size." };
+  if (lower.includes("min tick") || lower.includes("does not satisfy")) return { kind: "below_min_tick", status, detail, retryable: false, hint: "Price below the chain cutoff must use below_tick (read options/chains/{id} min_ticks; often $0.05)." };
+  if (lower.includes("market order") && (lower.includes("otc") || lower.includes("not eligible"))) return { kind: "otc_market_order", status, detail, retryable: false, hint: "OTC names reject market/fractional orders — use whole shares + a marketable limit." };
+  if (lower.includes("app version") || lower.includes("important stock trading updates")) return { kind: "app_version_gate", status, detail, retryable: false, hint: "Equity orders need order_form_version:7 + the web headers (the engine sends these)." };
+  if (status === 401 || status === 403) return { kind: "unauthorized", status, detail, retryable: status === 401, hint: status === 401 ? "Token expired — refresh (pnpm auth:refresh) and retry." : "Forbidden (entitlement/permission)." };
+  if (status === 404) return { kind: "not_found", status, detail, retryable: false };
+  if (status === 400) return { kind: "bad_request", status, detail, retryable: false };
+  return { kind: "unknown", status, detail, retryable: false };
+}
+
 export async function executeBrokerageRequest(
   plan: PlannedBrokerageRequest,
   options: ExecuteBrokerageOptions = {}
@@ -1634,7 +1699,8 @@ export async function executeBrokerageRequest(
     });
   };
 
-  let response = await send(token);
+  let currentToken = token;
+  let response = await send(currentToken);
 
   // A 401 means the token expired and the request was rejected (never executed),
   // so retrying after a refresh is safe even for writes. Only self-heal real token
@@ -1648,11 +1714,29 @@ export async function executeBrokerageRequest(
     const fresh = tryRefreshBrokerageToken();
     if (fresh && fresh !== token) {
       process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
+      currentToken = fresh;
       response = await send(fresh);
     }
   }
 
-  const text = await response.text();
+  let text = await response.text();
+
+  // In-engine 429 retry. Robinhood burst-limits orders (~9 fractional, then 429 ~48s). A 429 means
+  // the request was rejected before execution, so retrying the SAME request (same body/ref_id) after
+  // the server-directed cooldown is idempotent and safe even for writes. Bounded; skipped for injected
+  // test fetch impls and when autoRetry:false. Uses classifyRobinhoodError to read the cooldown.
+  if (options.autoRetry !== false) {
+    const sleep = options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const maxRetries = options.maxRateLimitRetries ?? 3;
+    let attempts = 0;
+    while (response.status === 429 && attempts < maxRetries) {
+      attempts++;
+      const cls = classifyRobinhoodError(429, text, response.headers);
+      await sleep(cls.retryAfterMs ?? 32000);
+      response = await send(currentToken);
+      text = await response.text();
+    }
+  }
   const max = options.fullBody ? Number.POSITIVE_INFINITY : options.maxBodyBytes ?? 4000;
   const truncated = text.length > max;
   return {

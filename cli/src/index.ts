@@ -111,7 +111,7 @@ apiMap
     printTable(
       routes.map((route) => ({
         risk: route.risk,
-        category: route.categories.join(",") || "uncategorized",
+        category: (route.categories ?? []).join(",") || "uncategorized",
         host: route.host,
         source: route.source ?? "unknown",
         url: route.url
@@ -136,7 +136,7 @@ apiMap
       routes.map((route) => ({
         risk: route.risk,
         host: route.host,
-        categories: route.categories.join(",") || "uncategorized",
+        categories: (route.categories ?? []).join(",") || "uncategorized",
         seenOn: route.seenOn.join(","),
         url: route.url
       })),
@@ -440,7 +440,7 @@ brokerage
     printTable(
       routes.map((route) => ({
         risk: route.risk,
-        category: route.categories.join(",") || "uncategorized",
+        category: (route.categories ?? []).join(",") || "uncategorized",
         host: route.host,
         url: route.url
       })),
@@ -467,7 +467,7 @@ brokerage
     printTable(
       selected.map((route) => ({
         risk: route.risk,
-        category: route.categories.join(",") || "uncategorized",
+        category: (route.categories ?? []).join(",") || "uncategorized",
         host: route.host,
         url: route.url
       })),
@@ -2218,7 +2218,7 @@ crypto
     }
     printTable(
       routes.map((route) => ({
-        methods: route.methods.join(",").toUpperCase(),
+        methods: (route.methods ?? []).join(",").toUpperCase(),
         path: route.path,
         operationIds: route.operationIds.join(",")
       })),

@@ -882,6 +882,19 @@ So by default, *without being asked*, whenever a specific option / chain / contr
 - **Don't cache per-contract ids** (unique + ephemeral); the reusable thing is the *chain enumeration*.
 Treat UUID bulk-enumeration as the first move in any options task, not an afterthought.
 
+### Inspect an owned option contract (read everything, then act) — verified 2026-06-04
+To pull "all the info" on a contract you hold (the option-detail page surface), chain these reads:
+- **Owned options:** `options positions` / `GET options/aggregate_positions/?account_numbers={acct}&nonzero=true`
+  → symbol, quantity, average_open_price, strategy, legs[].option (the option_instrument_id).
+- **Contract metadata:** `GET options/instruments/{option_id}/` → strike, expiration_date, type, chain_id, state.
+- **Live Greeks + quote:** `GET marketdata/options/?ids={option_id}` → bid/ask/adjusted_mark, delta/gamma/theta/vega/rho, implied_volatility, open_interest.
+- **Fills (date/price/qty — the buy/sell history):** `GET options/orders/?chain_ids={chain_id}&states=filled`
+  → each order's `legs[].executions[].{timestamp, price, quantity}` (e.g. HPE $30C bought 2026-04-16 ×1 @ $1.68).
+  The full per-trade detail (the "click each trade" view) is `options/orders/{order_id}/`; a trade-confirmation PDF is linked off the order's documents.
+- **Buy/sell from here:** place via `options/orders/` — **sell-to-close = {side:sell, position_effect:close}** (the others per the order-templates doc). TIF `gfd`|`gtc`; order types `limit`/`stop_limit`/`market`/`stop_market`.
+
+> **Tax timing (rare — usually ignore):** holding period almost never matters and shouldn't be raised. The only times to flag it: a position within ~days/weeks of crossing the **1-year short→long-term capital-gains line**, or near a **tax-year boundary** (defer a close to January). Compute the holding period from the fill `timestamp` above; mention it ONLY in those edge cases. Deeper angles (qualified covered calls, §1256, deferral) in `docs/tax-aware-options-strategies.md`.
+
 ### Sentiment data + deep-link pipeline (mapped 2026-06-03)
 
 RH exposes a live sentiment layer under `api.robinhood.com/midlands/` (risk `read`):

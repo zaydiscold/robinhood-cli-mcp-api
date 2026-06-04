@@ -182,7 +182,7 @@ robinhood-cli options chain NVDA --expiration 2026-07-02 --type put --width 10 -
 ```
 
 ```text
-$ robinhood-cli options positions
+$ robinhood-cli options positions          # illustrative output (not real holdings)
 contract              qty  entry  mark    return    delta
 --------------------  ---  -----  ------  --------  -----
 DRAM $50 Call 6/18    1    $1.30  $18.65  +1334.6%  0.93
@@ -407,14 +407,14 @@ robinhood-cli options expirations MRVL
 ```
 
 ```text
-$ robinhood-cli positions --account <ACCOUNT_NUMBER>
+$ robinhood-cli positions --account <ACCOUNT_NUMBER>   # output below is illustrative, not real holdings
 Account <ACCOUNT_NUMBER>
 symbol  qty     avgCost  last     return
 ------  ------  -------  -------  ------
-HPE     0.1074  $37.23   $56.15   +50.8%
-ARM     0.0060  $331.46  $402.55  +21.4%
+NVDA    2.0000  $100.00  $128.00  +28.0%
+AMD     1.5000  $150.00  $141.00  -6.0%
 ...
-21 positions — 14 green, 7 red.
+N positions — green/red split.
 ```
 
 > **Rebuild note:** the build copies `api-map/brokerage-routes.json` into `cli/dist/`, and the runtime reads that copy. After editing the route map, **rebuild** (`pnpm build`) or your change is a silent no-op.

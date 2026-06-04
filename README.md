@@ -69,7 +69,7 @@ The route map is the core artifact:
 - **Per-endpoint Markdown** — one file per route under [`api-map/markdown/`](./api-map/markdown/), each marked `Mutation: yes/no`, including [`trading-buy-sell-write.md`](./api-map/markdown/trading-buy-sell-write.md) for buy/sell + options.
 - **curl** — copy-paste examples for every route.
 
-It covers **265+ captured endpoints (285 mapped brokerage/account route entries)** across eight Robinhood API hosts — `api.robinhood.com`, `bonfire.robinhood.com`, `nummus.robinhood.com` (crypto), `cashier.robinhood.com` (money movement), plus `dora`, `identi`, `minerva`, and `phoenix`. Where Robinhood publishes an official spec (the Crypto Trading API), the repo folds that in directly; everything else is sanitized, browser-backed evidence: route shapes, methods, query keys, and risk classification, never tokens, balances, or order tickets.
+endpoints, we got em all
 
 ### Design note: method-aware route resolution
 

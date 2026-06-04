@@ -732,6 +732,27 @@ function collectId(value: string, previous: string[] = []): string[] {
   return [...previous, value];
 }
 
+// Generic double-gated brokerage write. Pass the EXACT templated URL (with {placeholders}) so the
+// resolver matches one route and the ambiguity guard can't fire. Dry-run by default; a live send
+// needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Returns status + the (dry-run or live) body.
+async function gatedBrokerageWrite(opts: {
+  url: string;
+  method: string;
+  params?: Record<string, string>;
+  body?: unknown;
+  dryRun?: boolean;
+  liveWrite?: boolean;
+}): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
+  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
+  const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
+  if (!route) throw new Error(`No ${opts.method} route for ${opts.url} — check the map / rebuild (AGENTS.md §3).`);
+  const gate = resolveLiveWriteGate({ risk: route.risk, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
+  const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
+  const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
+  const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
+  return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason, body: result.body };
+}
+
 async function runRecurringSet(
   desired: "active" | "paused",
   options: { id?: string[]; all?: boolean; account?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }
@@ -834,7 +855,200 @@ recurring
     runRecurringSet("paused", options)
   );
 
+recurring
+  .command("create")
+  .description("Create a recurring investment schedule (PROVEN write). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .requiredOption("--account <account_number>", "account number")
+  .requiredOption("--symbol <ticker>", "equity ticker to invest in")
+  .requiredOption("--amount <usd>", "dollar amount per cycle")
+  .option("--frequency <weekly|biweekly|monthly>", "cadence", "weekly")
+  .option("--start-date <YYYY-MM-DD>", "first investment date (default: tomorrow)")
+  .option("--dry-run", "plan only, send nothing")
+  .option("--live-write", "permit the live write")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account: string; symbol: string; amount: string; frequency?: string; startDate?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (!(Number(opts.amount) > 0)) throw new Error(`--amount must be a positive number (got "${opts.amount}").`);
+    const label = await assertOwnedAccount(opts.account);
+    const inst = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol: opts.symbol.toUpperCase() })).results?.[0];
+    if (!inst) throw new Error(`No instrument for ${opts.symbol} — check the ticker ('brokerage search').`);
+    const start = opts.startDate ?? new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const body = {
+      account_number: opts.account,
+      amount: { amount: Number(opts.amount).toFixed(2), currency_code: "USD" },
+      frequency: opts.frequency ?? "weekly",
+      investment_asset: { asset_id: inst.id, asset_symbol: inst.symbol, asset_type: "equity" },
+      source_of_funds: "buying_power",
+      start_date: start,
+      ref_id: randomUUID()
+    };
+    const r = await gatedBrokerageWrite({ url: RECURRING_LIST_URL, method: "POST", body, dryRun: opts.dryRun, liveWrite: opts.liveWrite });
+    if (r.dryRun && r.reason) process.stderr.write(`${r.reason}\n`);
+    if (opts.json) { printJson({ account: opts.account, accountLabel: label, symbol: inst.symbol, amount: body.amount, frequency: body.frequency, startDate: start, dryRun: r.dryRun, status: r.status, body: r.body }); return; }
+    process.stdout.write(`${r.dryRun ? "DRY-RUN" : r.status} create recurring ${inst.symbol} $${body.amount.amount} ${body.frequency} from ${start} acct ${opts.account}${label ? ` (${label})` : ""}\n`);
+    if (r.body) process.stdout.write(`${r.body}\n`);
+  });
+
+recurring
+  .command("edit")
+  .description("Edit a recurring schedule's amount and/or frequency (PROVEN write). Dry-run by default.")
+  .requiredOption("--id <schedule_id>", "schedule id (from 'recurring list')")
+  .option("--amount <usd>", "new dollar amount per cycle")
+  .option("--frequency <weekly|biweekly|monthly>", "new cadence")
+  .option("--dry-run", "plan only, send nothing")
+  .option("--live-write", "permit the live write")
+  .option("--json", "emit JSON")
+  .action(async (opts: { id: string; amount?: string; frequency?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (!opts.amount && !opts.frequency) throw new Error("Pass --amount and/or --frequency to edit.");
+    if (opts.amount && !(Number(opts.amount) > 0)) throw new Error(`--amount must be positive (got "${opts.amount}").`);
+    const body: Record<string, unknown> = {};
+    if (opts.amount) body.amount = { amount: Number(opts.amount).toFixed(2), currency_code: "USD" };
+    if (opts.frequency) body.frequency = opts.frequency;
+    const r = await gatedBrokerageWrite({ url: RECURRING_ITEM_URL, method: "PATCH", params: { "0": opts.id }, body, dryRun: opts.dryRun, liveWrite: opts.liveWrite });
+    if (r.dryRun && r.reason) process.stderr.write(`${r.reason}\n`);
+    if (opts.json) { printJson({ id: opts.id, changes: body, dryRun: r.dryRun, status: r.status, body: r.body }); return; }
+    process.stdout.write(`${r.dryRun ? "DRY-RUN" : r.status} edit recurring ${opts.id} ${JSON.stringify(body)}\n`);
+    if (r.body) process.stdout.write(`${r.body}\n`);
+  });
+
+recurring
+  .command("end")
+  .description("End/delete a recurring schedule (PATCH state=deleted). Dry-run by default; live needs both gates.")
+  .requiredOption("--id <schedule_id>", "schedule id to end")
+  .option("--dry-run", "plan only, send nothing")
+  .option("--live-write", "permit the live write")
+  .option("--json", "emit JSON")
+  .action(async (opts: { id: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    const r = await gatedBrokerageWrite({ url: RECURRING_ITEM_URL, method: "PATCH", params: { "0": opts.id }, body: { state: "deleted" }, dryRun: opts.dryRun, liveWrite: opts.liveWrite });
+    if (r.dryRun && r.reason) process.stderr.write(`${r.reason}\n`);
+    if (opts.json) { printJson({ id: opts.id, dryRun: r.dryRun, status: r.status, body: r.body }); return; }
+    process.stdout.write(`${r.dryRun ? "DRY-RUN" : r.status} end recurring ${opts.id}\n`);
+    if (r.body) process.stdout.write(`${r.body}\n`);
+  });
+
 program.addCommand(recurring);
+
+// --- Account settings: first-class wrappers over the PROVEN settings-write endpoints ---
+// (capability map docs/account-settings-capability-map-2026-06-03.md). Every write double-gated.
+const DRIP_ACCOUNT_URL = "https://api.robinhood.com/corp_actions/drip/account_settings/{account}/";
+const DRIP_INSTRUMENT_URL = "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account}/{instrument_id}/";
+const OPTION_SETTINGS_URL = "https://api.robinhood.com/options/option_settings/{account}/";
+const MARGIN_SETTINGS_URL = "https://api.robinhood.com/settings/margin/{account}/";
+const SWEEP_STATE_URL = "https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/";
+const STOCK_LENDING_URL = "https://bonfire.robinhood.com/slip/{account}/status/";
+
+const settings = new Command("settings").description("Read/write account settings: DRIP, trade-on-expiration, PDT protection, cash sweep, stock lending. Writes double-gated.");
+
+settings
+  .command("show")
+  .description("Read all settings for an account (DRIP, options trade-on-expiration, margin/PDT-protection, cash sweep, stock lending). Live read.")
+  .requiredOption("--account <account_number>", "account number")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account: string; json?: boolean }) => {
+    const label = await assertOwnedAccount(opts.account);
+    const get = async (url: string) => { try { return await brokerageGetJson(url, { account: opts.account }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
+    const [drip, optionSettings, margin, sweep, lending] = await Promise.all([
+      get(DRIP_ACCOUNT_URL), get(OPTION_SETTINGS_URL), get(MARGIN_SETTINGS_URL), get(SWEEP_STATE_URL), get(STOCK_LENDING_URL)
+    ]);
+    const out = {
+      account: opts.account, accountLabel: label,
+      dripEnabled: drip?.drip_enabled, tradingOnExpiration: optionSettings?.trading_on_expiration_state,
+      dayTradesProtection: margin?.day_trades_protection, sweepEnrolled: sweep?.sweep_enrolled, stockLendingEnabled: lending?.is_enabled
+    };
+    if (opts.json) { printJson(out); return; }
+    process.stdout.write(`Settings — ${opts.account}${label ? ` (${label})` : ""}\n`);
+    process.stdout.write(`  DRIP (dividend reinvestment): ${out.dripEnabled ?? "—"}\n`);
+    process.stdout.write(`  Options trade-on-expiration:  ${out.tradingOnExpiration ?? "—"}\n`);
+    process.stdout.write(`  PDT day-trade protection:     ${out.dayTradesProtection ?? "—"}\n`);
+    process.stdout.write(`  Cash sweep enrolled:          ${out.sweepEnrolled ?? "—"}\n`);
+    process.stdout.write(`  Stock lending enabled:        ${out.stockLendingEnabled ?? "—"}\n`);
+  });
+
+const writeFlag = (action: () => Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }>, json: boolean | undefined, label: string) => action().then((r) => {
+  if (r.dryRun && r.reason) process.stderr.write(`${r.reason}\n`);
+  if (json) { printJson({ action: label, dryRun: r.dryRun, status: r.status, body: r.body }); return; }
+  process.stdout.write(`${r.dryRun ? "DRY-RUN" : r.status} ${label}\n`);
+  if (r.body) process.stdout.write(`${r.body}\n`);
+});
+
+settings
+  .command("drip")
+  .description("Toggle dividend reinvestment (DRIP). Account-wide, or per-stock with --instrument. Double-gated.")
+  .requiredOption("--account <account_number>", "account number")
+  .option("--enable", "turn DRIP on")
+  .option("--disable", "turn DRIP off")
+  .option("--instrument <instrument_id>", "scope to one stock (per-instrument DRIP)")
+  .option("--dry-run", "plan only")
+  .option("--live-write", "permit live write")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account: string; enable?: boolean; disable?: boolean; instrument?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
+    await assertOwnedAccount(opts.account);
+    const url = opts.instrument ? DRIP_INSTRUMENT_URL : DRIP_ACCOUNT_URL;
+    const params: Record<string, string> = { account: opts.account };
+    if (opts.instrument) params.instrument_id = opts.instrument;
+    await writeFlag(() => gatedBrokerageWrite({ url, method: "PATCH", params, body: { drip_enabled: Boolean(opts.enable) }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `DRIP ${opts.enable ? "enable" : "disable"}${opts.instrument ? ` (instrument ${opts.instrument})` : " (account-wide)"} ${opts.account}`);
+  });
+
+settings
+  .command("expiration")
+  .description("Toggle 'trade on expiration' for options. Double-gated.")
+  .requiredOption("--account <account_number>", "account number")
+  .option("--enable", "enable trading on expiration")
+  .option("--disable", "disable trading on expiration")
+  .option("--dry-run", "plan only")
+  .option("--live-write", "permit live write")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account: string; enable?: boolean; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
+    await assertOwnedAccount(opts.account);
+    await writeFlag(() => gatedBrokerageWrite({ url: OPTION_SETTINGS_URL, method: "PATCH", params: { account: opts.account }, body: { trading_on_expiration_state: opts.enable ? "enabled" : "disabled" }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `trade-on-expiration ${opts.enable ? "enabled" : "disabled"} ${opts.account}`);
+  });
+
+settings
+  .command("pdt")
+  .description("Toggle PDT (pattern-day-trade) protection. Double-gated.")
+  .requiredOption("--account <account_number>", "account number")
+  .option("--on", "enable PDT protection")
+  .option("--off", "disable PDT protection")
+  .option("--dry-run", "plan only")
+  .option("--live-write", "permit live write")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account: string; on?: boolean; off?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (opts.on === opts.off) throw new Error("Pass exactly one of --on / --off.");
+    await assertOwnedAccount(opts.account);
+    await writeFlag(() => gatedBrokerageWrite({ url: MARGIN_SETTINGS_URL, method: "PUT", params: { account: opts.account }, body: { day_trades_protection: Boolean(opts.on) }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `PDT-protection ${opts.on ? "on" : "off"} ${opts.account}`);
+  });
+
+settings
+  .command("lending")
+  .description("Toggle stock lending (SLIP). Double-gated.")
+  .requiredOption("--account <account_number>", "account number")
+  .option("--enable", "enable stock lending")
+  .option("--disable", "disable stock lending")
+  .option("--dry-run", "plan only")
+  .option("--live-write", "permit live write")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account: string; enable?: boolean; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
+    await assertOwnedAccount(opts.account);
+    await writeFlag(() => gatedBrokerageWrite({ url: STOCK_LENDING_URL, method: "PUT", params: { account: opts.account }, body: { is_enabled: Boolean(opts.enable), was_ever_enabled: true }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `stock-lending ${opts.enable ? "enable" : "disable"} ${opts.account}`);
+  });
+
+settings
+  .command("sweep")
+  .description("Cash sweep enrollment. --disable unenrolls (proven). Enroll requires a separate agreement-sign flow — not automated. Double-gated.")
+  .requiredOption("--account <account_number>", "account number")
+  .option("--disable", "unenroll from cash sweep")
+  .option("--dry-run", "plan only")
+  .option("--live-write", "permit live write")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account: string; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (!opts.disable) throw new Error("Only --disable (unenroll) is automated. Enrolling needs the agreement-sign flow (see capability map).");
+    await assertOwnedAccount(opts.account);
+    await writeFlag(() => gatedBrokerageWrite({ url: SWEEP_STATE_URL, method: "POST", params: { account: opts.account }, body: { sweep_enrollment_action: "unenroll" }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `cash-sweep unenroll ${opts.account}`);
+  });
+
+program.addCommand(settings);
 
 // --- Options: first-class positions performance + chain ---
 // Wraps the mapped options routes (aggregate_positions, marketdata/options,

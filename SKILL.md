@@ -1,13 +1,13 @@
 ---
 name: robinhood-cli
-description: This skill should be used when the user asks to "use Robinhood", "check my Robinhood account", "show my positions", "rank my options", "quote an options spread", "build a dry-run Robinhood order", "manage recurring investments", "check account settings", "map Robinhood endpoints", "use the Robinhood CLI", or "use the Robinhood MCP". It covers brokerage/crypto reads, positions, orders, watchlists, options chains, recurring buys, account-settings route maps, and the full reverse-engineered API map with safety gates.
+description: This skill should be used when the user asks to "use Robinhood", "check my Robinhood account", "show my positions", "rank my options", "quote an options spread", "build a dry-run Robinhood order", "manage recurring investments", "check account settings", "map Robinhood endpoints", "use the Robinhood CLI", or "use the Robinhood MCP" — and for finance research/due-diligence: market sentiment and signal sourcing (news vs Twitter/X vs Reddit), or consulting the operator's "ball knowledge" investing-notes ledger. It covers brokerage/crypto reads, positions, orders, watchlists, options chains, recurring buys, account-settings route maps, the source-quality due-diligence doctrine, the Ball Knowledge memory layer, and the full reverse-engineered API map with safety gates.
 version: 2.0.0
 author: Zayd (@zaydiscold)
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [robinhood, trading, finance, api, mcp, brokerage, crypto, stocks, options]
+    tags: [robinhood, trading, finance, api, mcp, brokerage, crypto, stocks, options, sentiment, due-diligence, signal-sourcing, ball-knowledge]
     related_skills: []
 ---
 
@@ -379,14 +379,16 @@ Do not overclaim first-class support. If a capability is route-map-only, say so 
 | Strategy dry-run body | `robinhood-cli api-map options-strategy-plan <id> --param key=value` | Emits lookup steps + `options/orders/` body template; never sends |
 | Exact contract navigation plan | `robinhood-cli api-map options-contract-plan --account <n> --symbol <s> --expiration <d> --type call|put --side buy|sell --strike <k> --json` | Emits the tested web account shell, candidate web URL probes, API resolution steps, and dry-run single-leg handoff |
 
-Primary options references:
+Primary references:
 
-- `docs/README.md`
+- `docs/README.md` (docs index) and `docs/agent-operating-intelligence-2026-06-04.md` (**boot-smart KB — read first**)
+- `ball-knowledge.md` (repo root) — the operator's investing-memory ledger; see SKILL "Ball Knowledge" + "Signal sourcing"
 - `docs/options-greeks-strategy-research-2026-06-02.md`
 - `docs/options-quantitative-playbook-2026-06-03.md`
 - `docs/options-strategy-execution-smoke-2026-06-03.md`
 - `docs/options-contract-navigation-2026-06-03.md`
-- `docs/release-notes-2026-06-03.md`
+- `docs/index-options-1256-conclusion-2026-06-04.md`, `docs/futures-fx-commodities-surface-2026-06-04.md`
+- `docs/release-notes-2026-06-03.md`, `docs/release-notes-2026-06-04.md`
 - `docs/account-settings-capability-map-2026-06-03.md`
 - `api-map/options-strategy-workflows-2026-06-02.json`
 - `api-map/options-contract-navigation-workflows-2026-06-03.json`

@@ -648,5 +648,5 @@ to, and how it frames analysis. Read it on finance tasks.
   and important*, classify each by type (rumor → verify; `@handle` → source lead; "0DTE" → high-risk
   style note; "dividend/QDTE" → income preference), apply only a minor recency bias, and surface risk
   neutrally without imposing caution. **Full rules + the exact append format: SKILL.md "Ball Knowledge".**
-- Order-execution evidence: see §13-adjacent rule — *brokerage order history is the source of truth; no
-  record = treat as non-executed; screenshots/UI/logs are not proof* (also in SKILL.md failure modes #20).
+- Order-execution evidence (canonical in **SKILL.md failure mode #20** + the boot KB §1): *brokerage
+  order history is the source of truth; no record = treat as non-executed; screenshots/UI/logs are not proof.*

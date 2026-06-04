@@ -53,18 +53,26 @@ authorization to execute trades.
 === END BALL KNOWLEDGE ENTRY
 ```
 
+### Example entry (format illustration — NOT a live note; delete or replace)
+
+> The block below shows the entry format. It is an **illustration**, not a live conviction the agent
+> should frame analysis around — real entries start beneath the divider after it.
+
 ```
 === BEGIN BALL KNOWLEDGE ENTRY
 DATE:    2026-06-04
-SUBJECT: Semiconductors
+SUBJECT: Semiconductors  [EXAMPLE — illustrative only]
 ===
 INVESTING NOTES:
 """
-Semiconductors are a major sector to keep on the radar — NVDA, TSMC, AMD, AVGO, MRVL, ASML, and other
-AI-infrastructure / chip-supply-chain names. Watch AI infrastructure demand, data-center capex,
-earnings commentary, export controls, foundry capacity, supply-chain constraints, CEO comments,
-Taiwan-related developments, and investor-day narratives. This is a sector/context note, not a trade
-instruction. (Example entry — shows the format; replace/extend with your own.)
+(Example of a sector note.) Semiconductors as a sector to watch — e.g. NVDA, TSMC, AMD, AVGO, MRVL,
+ASML and AI-infrastructure / chip-supply-chain names; things like AI demand, data-center capex,
+earnings commentary, export controls, foundry capacity, CEO comments, Taiwan developments. A
+sector/context note, never a trade instruction. Replace this with your own real entries.
 """
 === END BALL KNOWLEDGE ENTRY
 ```
+
+---
+<!-- Real Ball Knowledge entries go below this line, newest at the bottom. -->
+

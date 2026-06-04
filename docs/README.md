@@ -23,8 +23,19 @@ folder stays local and is never pushed.
 | `options-contract-navigation-2026-06-03.md` | Exact-contract API resolution and account-pinned chain navigation |
 | `stock-page-profile-2026-06-03.md` | Stock detail page endpoint mapping |
 | `browser-capture-2026-05-26.md` | Older browser capture notes |
+| `agent-operating-intelligence-2026-06-04.md` | **Boot-smart KB** — read first: cardinal rule, account/order/signal-sourcing decision frameworks, failure→fix tree, roadmap |
+| `index-options-1256-conclusion-2026-06-04.md` | RH **does** offer cash-settled §1256 index options (SPX/SPXW/XSP/NDX/VIX/RUT) — hidden from search, live under `options/chains/?underlying_symbol=` |
+| `futures-fx-commodities-surface-2026-06-04.md` | Futures read-only (ceres TLS-walled), no spot FX, commodities via ETF proxies only |
+| `release-notes-2026-06-04.md` | Changelog: signal-sourcing doctrine, Ball Knowledge ledger, order-evidence rule, and the session's safety/command work |
 | `undocumented-surface.md` | Route discoveries that differ from public docs |
 | `tos-notes.md` | Risk and terms notes |
+
+**Repo-root files (not under `docs/`):**
+
+| File | Use it for |
+|------|------------|
+| `../ball-knowledge.md` | **Ball Knowledge** — the operator's living, append-only investing-memory ledger (themes, tickers, sources, hunches). Read on finance tasks; rules in `SKILL.md` "Ball Knowledge". |
+| `../SKILL.md` "Signal sourcing" | Source-quality / due-diligence doctrine (news = slow; X/Reddit = best signal-to-noise; X = fastest pulse; RH `midlands/*` = slow confirmer) |
 
 ## Naming Rule
 

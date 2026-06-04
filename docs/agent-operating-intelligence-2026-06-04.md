@@ -37,7 +37,13 @@ mid-batch.
    `liveWriteBlocked`. If it doesn't, stop — something is misconfigured (e.g. the env
    var got exported into your shell, which is itself a bug — see §1 rule 3).
 
-If all six pass, you're cleared for reads and dry-runs. Live writes still require
+7. **On any finance / research / due-diligence task, read `ball-knowledge.md`** (repo root — the
+   operator's investing-memory ledger) and apply the **Signal-sourcing** framework (§1 "Signal is a
+   surface" + SKILL.md "Signal sourcing" / "Ball Knowledge"): lead DD with the off-platform pulse
+   (X/Reddit), treat RH `midlands/*` + news as the slow confirmer, classify each ledger entry by type,
+   and treat it all as context — never permission to trade.
+
+If all seven pass, you're cleared for reads and dry-runs. Live writes still require
 explicit user approval + both gates, every single command.
 
 ---

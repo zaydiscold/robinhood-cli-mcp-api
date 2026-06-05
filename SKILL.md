@@ -844,14 +844,29 @@ follow this exact order — it is the intuitive answer they actually want:
    calls bleed across 3 accounts at once; GOOGL/NET winners can *mask* it inside one account so it nets
    positive). A per-account-only view buries the real driver. Group every leg by underlying, sum the
    dollar day-change, rank.
-4. **Options ≠ after-hours.** Options don't trade after-hours; their marks are frozen at the close. So a
-   portfolio's "down today vs prev close" is driven by **regular-session** option moves, even when the
-   operator is looking after hours. After-hours moves are **equities only** (usually small dollars on
-   fractional positions). State this explicitly so the operator isn't confused.
+4. **"After hours" is its OWN number — compute it correctly, and do NOT hard-rule an asset class out.**
+   When the operator asks "how am I down **after hours / today**," the after-hours $ per account is
+   **`extended_hours_equity − equity`** (NOT `… − equity_previous_close`, which is the full day). Read it
+   from `portfolios/{num}/` (param is literally `{num}`); it's the exact "−$X after hours" the app shows.
+   Sum across accounts and lead with it. Per-name attribution: `qty × (last_extended_hours_trade_price −
+   last_trade_price)` from `marketdata/quotes/` (equities/ETFs) and `marketdata/options/` (options).
+   - **It is NOT "equities only."** Index/ETF options (SPX, SPXW, SPY, NDX, …) trade ~15 min past the bell
+     and in extended sessions — they move after-hours too. Equities + leveraged single-stock ETFs are
+     usually the bulk of the dollars, but **CHECK the actual extended marks; never assert a class can't
+     be the cause.**
+   - Overnight (between sessions) a name's `last_extended_hours_trade_price` may be null — but the
+     account's `extended_hours_equity` still retains the last extended value. Use the account-level number
+     and say per-name attribution needs a live extended session; never report "$0" or "can't capture it."
 
-Until the first-class `portfolio` command lands (roadmap), compose this from `portfolios/` +
-`positions/` + `options aggregate_positions/` + `marketdata/{quotes,options}/`. The deliverable is one
-ranked, dollar-weighted, by-underlying answer across accounts — not a per-account percent dump.
+**NEVER say "I can't capture it" and stop.** A failed read is almost always a route/param mismatch — e.g.
+`{num}` not `{n}`, `positions/?account_number={account_number}`, or ambiguous `portfolios/` needing the
+full host URL. Fix the call and get the number. Find the field, fix the route, then answer.
+
+Until the first-class `portfolio` command lands (roadmap #54), compose this from `portfolios/{num}/`
+(equity / extended_hours_equity / equity_previous_close) + `positions/?account_number={account_number}` +
+`options aggregate_positions/` + `marketdata/{quotes,options}/`. The deliverable is one ranked,
+dollar-weighted, by-underlying answer across accounts, with the **after-hours number kept separate from
+the full-day number** — not a per-account percent dump.
 
 ## Worked Build — Iron Condor, End to End
 

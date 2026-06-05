@@ -9,6 +9,8 @@
 
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import {
   buildAccountContextUrl,
   buildOptionsContractLinkBundle,
@@ -2512,6 +2514,152 @@ program
     );
     const winners = rows.filter((row: any) => Number.isFinite(row.returnPct) && row.returnPct > 0).length;
     process.stdout.write(`\n${held.length} positions — ${winners} green, ${held.length - winners} red.\n`);
+  });
+
+// ── portfolio: one-call P&L across ALL accounts — DOLLARS, day vs after-hours, by underlying ──
+// The composed answer to "how am I down?". Metrics agents get wrong, pinned here:
+//   after-hours Δ = extended_hours_equity − equity         (NOT − previous_close; that's the full day)
+//   day Δ         = equity − adjusted_equity_previous_close (equity_previous_close is "0" per-account)
+// Per-position $ drivers (equity: qty×Δprice; option: Δmark×100×qty), rolled up by underlying.
+const PORTFOLIO_ACCOUNT_URL = "https://api.robinhood.com/portfolios/{num}/";
+
+function loadLocalAccountLabels(): Map<string, string> {
+  // Optional gitignored overlay (accounts.local.json) so the PUBLIC repo never hardcodes nicknames.
+  const out = new Map<string, string>();
+  try {
+    const obj = JSON.parse(readFileSync(resolvePath(process.cwd(), "accounts.local.json"), "utf8"));
+    for (const [k, v] of Object.entries(obj)) out.set(String(k), String(v));
+  } catch { /* no overlay — fine */ }
+  return out;
+}
+function accountDisplay(acct: string, rhLabel: string, local: Map<string, string>): string {
+  const last4 = acct.slice(-4);
+  return local.get(acct) || local.get("…" + last4) || local.get(last4) || rhLabel || `…${last4}`;
+}
+
+program
+  .command("portfolio")
+  .aliases(["pnl", "snapshot"])
+  .description("Portfolio P&L across ALL accounts in DOLLARS: per-account day Δ + after-hours Δ, with drivers rolled up by underlying. Answers 'how am I down today / after hours and which names'. Live read.")
+  .option("--by <dimension>", "roll-up: underlying | account | position", "underlying")
+  .option("--window <window>", "day | after-hours | both", "both")
+  .option("--after-hours", "shorthand for --window after-hours")
+  .option("--day", "shorthand for --window day")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--top <n>", "limit ranked drivers (0 = all)", "12")
+  .option("--json", "emit JSON")
+  .action(async (opts: any) => {
+    const window = opts.afterHours ? "after-hours" : opts.day ? "day" : (opts.window || "both");
+    const top = Number(opts.top) || 0;
+    const owned = await loadOwnedAccounts();
+    let accts: string[];
+    const labels = owned?.labels ?? new Map<string, string>();
+    if (opts.account) {
+      await assertOwnedAccount(opts.account);
+      accts = [opts.account];
+    } else {
+      if (!owned) throw new Error("Could not enumerate accounts (transfer/accounts/ lookup failed). Run `pnpm auth:refresh` and retry.");
+      accts = [...owned.numbers];
+    }
+    const local = loadLocalAccountLabels();
+
+    const perAccount = await Promise.all(accts.map(async (acct) => {
+      const a: any = { acct, label: accountDisplay(acct, labels.get(acct) || "", local), equity: Number.NaN, day: Number.NaN, afterHours: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
+      try {
+        const p = await brokerageGetJson(PORTFOLIO_ACCOUNT_URL, { num: acct });
+        const equity = num(p.equity);
+        const ext = num(p.extended_hours_equity);
+        const prevClose = num(p.adjusted_equity_previous_close) || num(p.equity_previous_close);
+        a.equity = equity;
+        a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
+        a.day = Number.isFinite(equity) && prevClose ? equity - prevClose : Number.NaN;
+      } catch (e) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
+      try {
+        const eq = await brokerageGetAllResults(POSITIONS_URL, {}, { nonzero: "true", account_number: acct });
+        a.equityPositions = eq.filter((x: any) => num(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: num(x.quantity) }));
+      } catch { a.warnings.push(`equity positions read failed (${acct})`); }
+      try {
+        const od = await brokerageGetJson(AGG_POSITIONS_URL, {}, { account_numbers: acct, nonzero: "true" });
+        a.optionPositions = (Array.isArray(od.results) ? od.results : []).filter((x: any) => num(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: num(x.quantity) }));
+      } catch { /* options optional */ }
+      return a;
+    }));
+
+    const allEqIds = [...new Set(perAccount.flatMap((a) => a.equityPositions.map((p: any) => p.iid).filter(Boolean)))];
+    const allOptIds = [...new Set(perAccount.flatMap((a) => a.optionPositions.map((p: any) => p.oid).filter(Boolean)))];
+    const quotes = allEqIds.length ? await fetchQuotes(allEqIds) : new Map();
+    const marks = allOptIds.length ? await fetchOptionMarks(allOptIds) : new Map();
+
+    const drivers: any[] = [];
+    for (const a of perAccount) {
+      for (const p of a.equityPositions) {
+        const q = quotes.get(p.iid) ?? {};
+        const last = num(q.last_trade_price);
+        const ext = q.last_extended_hours_trade_price != null ? num(q.last_extended_hours_trade_price) : Number.NaN;
+        const prev = num(q.adjusted_previous_close ?? q.previous_close);
+        drivers.push({ acct: a.acct, label: a.label, kind: "equity", symbol: p.symbol, name: p.symbol, qty: p.qty,
+          value: Number.isFinite(last) ? p.qty * last : Number.NaN,
+          dayUsd: Number.isFinite(last) && Number.isFinite(prev) ? p.qty * (last - prev) : Number.NaN,
+          ahUsd: Number.isFinite(ext) && Number.isFinite(last) ? p.qty * (ext - last) : Number.NaN });
+      }
+      for (const p of a.optionPositions) {
+        const m = marks.get(p.oid) ?? {};
+        const mark = num(m.adjusted_mark_price ?? m.mark_price);
+        const prev = num(m.previous_close_price);
+        const reg = num(m.last_trade_price);
+        drivers.push({ acct: a.acct, label: a.label, kind: "option", symbol: p.symbol, name: p.name, qty: p.qty,
+          value: Number.isFinite(mark) ? mark * 100 * p.qty : Number.NaN,
+          dayUsd: Number.isFinite(mark) && Number.isFinite(prev) ? (mark - prev) * 100 * p.qty : Number.NaN,
+          ahUsd: Number.isFinite(mark) && Number.isFinite(reg) ? (mark - reg) * 100 * p.qty : Number.NaN });
+      }
+    }
+
+    const sum = (xs: number[]) => xs.filter((x) => Number.isFinite(x)).reduce((s, x) => s + x, 0);
+    const totals = { equity: sum(perAccount.map((a) => a.equity)), day: sum(perAccount.map((a) => a.day)), afterHours: sum(perAccount.map((a) => a.afterHours)) };
+
+    const byU = new Map<string, any>();
+    for (const d of drivers) {
+      const u = byU.get(d.symbol) ?? { symbol: d.symbol, value: 0, dayUsd: 0, ahUsd: 0, accts: new Set<string>(), kinds: new Set<string>() };
+      u.value += Number.isFinite(d.value) ? d.value : 0;
+      u.dayUsd += Number.isFinite(d.dayUsd) ? d.dayUsd : 0;
+      u.ahUsd += Number.isFinite(d.ahUsd) ? d.ahUsd : 0;
+      u.accts.add(d.acct); u.kinds.add(d.kind);
+      byU.set(d.symbol, u);
+    }
+    const byUnderlying = [...byU.values()].map((u) => ({ symbol: u.symbol, value: u.value, dayUsd: u.dayUsd, ahUsd: u.ahUsd, accts: [...u.accts], kinds: [...u.kinds] }));
+    const rankKey = window === "after-hours" ? "ahUsd" : "dayUsd";
+    const rank = (xs: any[]) => xs.slice().sort((x, y) => (Number.isFinite(x[rankKey]) ? x[rankKey] : 0) - (Number.isFinite(y[rankKey]) ? y[rankKey] : 0));
+
+    if (opts.json) {
+      printJson({ generatedAt: new Date().toISOString(), window, totals,
+        accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equity: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, warnings: a.warnings })),
+        byUnderlying: rank(byUnderlying), byPosition: rank(drivers) });
+      return;
+    }
+
+    process.stdout.write(`Portfolio P&L — ${accts.length} account(s) — window: ${window}\n\n`);
+    printTable(
+      perAccount.map((a) => ({ account: `${a.label} (…${a.acct.slice(-4)})`, equity: usd(a.equity), dayDelta: usd(a.day), afterHoursDelta: usd(a.afterHours) }))
+        .concat([{ account: "TOTAL", equity: usd(totals.equity), dayDelta: usd(totals.day), afterHoursDelta: usd(totals.afterHours) }]),
+      ["account", "equity", "dayDelta", "afterHoursDelta"]
+    );
+
+    if (opts.by !== "account") {
+      const ranked = opts.by === "position" ? rank(drivers) : rank(byUnderlying);
+      const losers = ranked.filter((x: any) => (Number.isFinite(x[rankKey]) ? x[rankKey] : 0) < 0);
+      const shown = top > 0 ? losers.slice(0, top) : losers;
+      if (shown.length) {
+        process.stdout.write(`\nBleeding most (by ${opts.by === "position" ? "position" : "underlying"}, ranked in $, ${window === "both" ? "day+AH" : window}):\n`);
+        printTable(
+          shown.map((x: any) => opts.by === "position"
+            ? { name: x.name, acct: `…${x.acct.slice(-4)}`, value: usd(x.value), dayUsd: usd(x.dayUsd), ahUsd: usd(x.ahUsd) }
+            : { underlying: x.symbol, where: `${x.kinds.join("+")} ×${x.accts.length}`, value: usd(x.value), dayUsd: usd(x.dayUsd), ahUsd: usd(x.ahUsd) }),
+          opts.by === "position" ? ["name", "acct", "value", "dayUsd", "ahUsd"] : ["underlying", "where", "value", "dayUsd", "ahUsd"]
+        );
+      }
+    }
+    const warns = perAccount.flatMap((a) => a.warnings);
+    if (warns.length) process.stdout.write(`\n${warns.map((w) => "⚠️  " + w).join("\n")}\n`);
   });
 
 const watchlist = new Command("watchlist").description("Inspect your custom watchlists (read)");

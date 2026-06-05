@@ -1,0 +1,3 @@
+# Everything in this dir is local/private — ignored except this file.
+*
+!.gitignore

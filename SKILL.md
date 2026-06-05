@@ -810,6 +810,7 @@ deep math lives in *Options Greeks and Strategy Math* above.
 | User intent | Action | Command (verify with `--help`) |
 |-------------|--------|--------------------------------|
 | "What do I own / how are my accounts?" | discover accounts, then read | `accounts` (lists every account with cash/margin/IRA capabilities; unverified-type accounts flagged conservative); then portfolios/positions per account |
+| **"Why am I down / what's bleeding me / how's my portfolio today?"** | **top-line first, then DOLLAR attribution** | **See "Portfolio loss attribution" below — read `portfolios/` equity vs `equity_previous_close` for the $ change, then rank holdings by DOLLARS (value × move), roll up by UNDERLYING across accounts. NEVER lead with percents or enumerate positions blindly.** |
 | "Quote X" / "what's the chain?" | live read | `quote <SYM>`, `options chain <SYM>`, `options expirations <SYM>` |
 | "Best option position" / P&L | ranked read | `options positions` |
 | "What transactions went through (today/yesterday)?" | unified history | `history --days <n> [--account <N>]` (merges equity + options + crypto orders + ACH transfers, newest first) |
@@ -824,6 +825,33 @@ deep math lives in *Options Greeks and Strategy Math* above.
 emit blockers, *then* (only on explicit request + both write gates) send. Never
 infer naked/undefined-risk exposure from loose wording — see *Options Strategy
 Classification*.
+
+### Portfolio loss attribution — "why am I down?" (answer in DOLLARS, not percents)
+
+When the operator asks why they're down (or up), what's bleeding them, or how the portfolio is doing,
+follow this exact order — it is the intuitive answer they actually want:
+
+1. **Top-line, per account, in dollars first.** Read `portfolios/` → `equity` (or
+   `extended_hours_equity`) vs `equity_previous_close`. The difference is the authoritative "$ down/up
+   today" per account. Lead with this number. (Per-account `portfolios/{num}/` may lack
+   `equity_previous_close`; the list endpoint has it for the primary.)
+2. **Attribute by DOLLARS, never percents.** Rank holdings by *dollar* day-change, not %:
+   - equity: `qty × last × dayPct`
+   - **options:** `(adjusted_mark_price − previous_close_price) × 100 × qty` (from `marketdata/options/`).
+   A −9% move on a $6 fractional position is −$0.50 and irrelevant; a −5% move on a $1,600 deep-ITM call
+   is −$350 and the real story. **Percent leaderboards mislead — always weight by position size.**
+3. **Roll up by UNDERLYING across ALL accounts.** Losses concentrate by ticker, not by account (e.g. HPE
+   calls bleed across 3 accounts at once; GOOGL/NET winners can *mask* it inside one account so it nets
+   positive). A per-account-only view buries the real driver. Group every leg by underlying, sum the
+   dollar day-change, rank.
+4. **Options ≠ after-hours.** Options don't trade after-hours; their marks are frozen at the close. So a
+   portfolio's "down today vs prev close" is driven by **regular-session** option moves, even when the
+   operator is looking after hours. After-hours moves are **equities only** (usually small dollars on
+   fractional positions). State this explicitly so the operator isn't confused.
+
+Until the first-class `portfolio` command lands (roadmap), compose this from `portfolios/` +
+`positions/` + `options aggregate_positions/` + `marketdata/{quotes,options}/`. The deliverable is one
+ranked, dollar-weighted, by-underlying answer across accounts — not a per-account percent dump.
 
 ## Worked Build — Iron Condor, End to End
 

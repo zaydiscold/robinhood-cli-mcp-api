@@ -22,6 +22,7 @@ import {
   selectRouteByQueryAndMethod,
   brokerageGetJson,
   brokerageGetAllResults,
+  computePortfolioPnl,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   executeBrokerageRequest,
@@ -2517,29 +2518,10 @@ program
   });
 
 // ── portfolio: one-call P&L across ALL accounts — DOLLARS, day vs after-hours, by underlying ──
-// The composed answer to "how am I down?". Metrics agents get wrong, pinned here:
+// The composed answer to "how am I down?". The compute lives in lib.computePortfolioPnl (shared with
+// the MCP robinhood_portfolio tool); this command is a thin renderer over its structured result.
 //   after-hours Δ = extended_hours_equity − equity         (NOT − previous_close; that's the full day)
 //   day Δ         = equity − adjusted_equity_previous_close (equity_previous_close is "0" per-account)
-// Per-position $ drivers (equity: qty×Δprice; option: Δmark×100×qty), rolled up by underlying.
-const PORTFOLIO_ACCOUNT_URL = "https://api.robinhood.com/portfolios/{num}/";
-
-function loadLocalAccountLabels(): Map<string, string> {
-  // Optional gitignored overlay (accounts.local.json) so the PUBLIC repo never hardcodes nicknames.
-  const out = new Map<string, string>();
-  for (const rel of ["local/accounts.local.json", "accounts.local.json"]) {
-    try {
-      const obj = JSON.parse(readFileSync(resolvePath(process.cwd(), rel), "utf8"));
-      for (const [k, v] of Object.entries(obj)) out.set(String(k), String(v));
-      break;
-    } catch { /* try next / no overlay — fine */ }
-  }
-  return out;
-}
-function accountDisplay(acct: string, rhLabel: string, local: Map<string, string>): string {
-  const last4 = acct.slice(-4);
-  return local.get(acct) || local.get("…" + last4) || local.get(last4) || rhLabel || `…${last4}`;
-}
-
 program
   .command("portfolio")
   .aliases(["pnl", "snapshot"])
@@ -2556,134 +2538,39 @@ program
     if (!["underlying", "account", "position"].includes(opts.by)) throw new Error(`--by must be underlying|account|position (got "${opts.by}")`);
     if (!["day", "after-hours", "both"].includes(window)) throw new Error(`--window must be day|after-hours|both (got "${window}")`);
     const top = Number.isFinite(Number(opts.top)) ? Number(opts.top) : 0;
-    const owned = await loadOwnedAccounts();
-    let accts: string[];
-    const labels = owned?.labels ?? new Map<string, string>();
-    if (opts.account) {
-      await assertOwnedAccount(opts.account);
-      accts = [opts.account];
-    } else {
-      if (!owned) throw new Error("Could not enumerate accounts (transfer/accounts/ lookup failed). Run `pnpm auth:refresh` and retry.");
-      accts = [...owned.numbers];
-    }
-    const local = loadLocalAccountLabels();
+    // Shared engine — identical code path to the MCP robinhood_portfolio tool (alignment invariant).
+    const r = await computePortfolioPnl({ by: opts.by, window: window as any, accountNumber: opts.account, top: 0 });
 
-    const perAccount = await Promise.all(accts.map(async (acct) => {
-      const a: any = { acct, label: accountDisplay(acct, labels.get(acct) || "", local), equity: Number.NaN, day: Number.NaN, afterHours: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
-      try {
-        const p = await brokerageGetJson(PORTFOLIO_ACCOUNT_URL, { num: acct });
-        const equity = num(p.equity);
-        const ext = num(p.extended_hours_equity);
-        // Per-account portfolios/{num}/ returns equity_previous_close "0"; the real baseline is
-        // adjusted_equity_previous_close. Prefer it; never let a falsy 0 silently pick the wrong field.
-        const adjPrev = num(p.adjusted_equity_previous_close);
-        const rawPrev = num(p.equity_previous_close);
-        const prevClose = Number.isFinite(adjPrev) && adjPrev !== 0 ? adjPrev : (Number.isFinite(rawPrev) && rawPrev !== 0 ? rawPrev : Number.NaN);
-        a.equity = equity;
-        a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
-        a.day = Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
-      } catch (e) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
-      try {
-        const eq = await brokerageGetAllResults(POSITIONS_URL, {}, { nonzero: "true", account_number: acct });
-        a.equityPositions = eq.filter((x: any) => num(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: num(x.quantity) }));
-      } catch { a.warnings.push(`equity positions read failed (${acct})`); }
-      try {
-        const od = await brokerageGetAllResults(AGG_POSITIONS_URL, {}, { account_numbers: acct, nonzero: "true" });
-        a.optionPositions = od.filter((x: any) => num(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: num(x.quantity) }));
-      } catch { a.warnings.push(`option positions read failed (${acct})`); }
-      return a;
-    }));
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
 
-    const allEqIds = [...new Set(perAccount.flatMap((a) => a.equityPositions.map((p: any) => p.iid).filter(Boolean)))];
-    const allOptIds = [...new Set(perAccount.flatMap((a) => a.optionPositions.map((p: any) => p.oid).filter(Boolean)))];
-    const quotes = allEqIds.length ? await fetchQuotes(allEqIds) : new Map();
-    const marks = allOptIds.length ? await fetchOptionMarks(allOptIds) : new Map();
-
-    const drivers: any[] = [];
-    for (const a of perAccount) {
-      for (const p of a.equityPositions) {
-        const q = quotes.get(p.iid) ?? {};
-        const last = num(q.last_trade_price);
-        const ext = q.last_extended_hours_trade_price != null ? num(q.last_extended_hours_trade_price) : Number.NaN;
-        const prev = num(q.adjusted_previous_close ?? q.previous_close);
-        drivers.push({ acct: a.acct, label: a.label, kind: "equity", symbol: p.symbol, name: p.symbol, qty: p.qty,
-          value: Number.isFinite(last) ? p.qty * last : Number.NaN,
-          dayUsd: Number.isFinite(last) && Number.isFinite(prev) ? p.qty * (last - prev) : Number.NaN,
-          ahUsd: Number.isFinite(ext) && Number.isFinite(last) ? p.qty * (ext - last) : Number.NaN });
-      }
-      for (const p of a.optionPositions) {
-        const m = marks.get(p.oid) ?? {};
-        const mark = num(m.adjusted_mark_price ?? m.mark_price);
-        const prev = num(m.previous_close_price);
-        drivers.push({ acct: a.acct, label: a.label, kind: "option", symbol: p.symbol, name: p.name, qty: p.qty,
-          value: Number.isFinite(mark) ? mark * 100 * p.qty : Number.NaN,
-          dayUsd: Number.isFinite(mark) && Number.isFinite(prev) ? (mark - prev) * 100 * p.qty : Number.NaN,
-          // Options don't print after-hours; marketdata/options has no extended field, so mark−last is
-          // mid-price drift, NOT a real AH move. Exclude options from per-name AH (0); the account-level
-          // extended_hours_equity already captures any genuine index/ETF-option AH move in aggregate.
-          ahUsd: 0 });
-      }
-    }
-
-    const sum = (xs: number[]) => xs.filter((x) => Number.isFinite(x)).reduce((s, x) => s + x, 0);
-    const totals = { equity: sum(perAccount.map((a) => a.equity)), day: sum(perAccount.map((a) => a.day)), afterHours: sum(perAccount.map((a) => a.afterHours)) };
-    const failedReads = perAccount.filter((a) => !Number.isFinite(a.equity)).length;
-    const driverDaySum = drivers.reduce((s, d) => s + (Number.isFinite(d.dayUsd) ? d.dayUsd : 0), 0);
-    const residual = Number.isFinite(totals.day) ? totals.day - driverDaySum : Number.NaN;
-
-    const byU = new Map<string, any>();
-    for (const d of drivers) {
-      const u = byU.get(d.symbol) ?? { symbol: d.symbol, value: 0, dayUsd: 0, ahUsd: 0, accts: new Set<string>(), kinds: new Set<string>() };
-      u.value += Number.isFinite(d.value) ? d.value : 0;
-      u.dayUsd += Number.isFinite(d.dayUsd) ? d.dayUsd : 0;
-      u.ahUsd += Number.isFinite(d.ahUsd) ? d.ahUsd : 0;
-      u.accts.add(d.acct); u.kinds.add(d.kind);
-      byU.set(d.symbol, u);
-    }
-    const byUnderlying = [...byU.values()].map((u) => ({ symbol: u.symbol, value: u.value, dayUsd: u.dayUsd, ahUsd: u.ahUsd, accts: [...u.accts], kinds: [...u.kinds] }));
-    // For --window both, rank by combined day+AH dollars so after-hours bleeders aren't buried under day-sort.
-    const sortVal = (x: any) => window === "after-hours" ? (Number.isFinite(x.ahUsd) ? x.ahUsd : 0)
-      : window === "day" ? (Number.isFinite(x.dayUsd) ? x.dayUsd : 0)
-      : (Number.isFinite(x.dayUsd) ? x.dayUsd : 0) + (Number.isFinite(x.ahUsd) ? x.ahUsd : 0);
-    const rank = (xs: any[]) => xs.slice().sort((x, y) => sortVal(x) - sortVal(y));
-
-    if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), window, complete: failedReads === 0,
-        totals: { equityUsd: totals.equity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
-        reconciliation: { driverDayChangeUsd: driverDaySum, totalsDayChangeUsd: totals.day, residualUsd: residual,
-          note: "residual = cash/dividends/transfers/option-vs-equity timing; after-hours is EQUITY-only (options don't print after-hours)" },
-        accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equityUsd: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, partial: !Number.isFinite(a.equity), warnings: a.warnings })),
-        byUnderlying: rank(byUnderlying).map((u: any) => ({ symbol: u.symbol, marketValueUsd: u.value, dayChangeUsd: u.dayUsd, afterHoursChangeUsd: u.ahUsd, accounts: u.accts, kinds: u.kinds })),
-        byPosition: rank(drivers).map((d: any) => ({ accountNumber: d.acct, label: d.label, kind: d.kind, symbol: d.symbol, name: d.name, qty: d.qty, marketValueUsd: d.value, dayChangeUsd: d.dayUsd, afterHoursChangeUsd: d.ahUsd })) });
-      return;
-    }
-
-    process.stdout.write(`Portfolio P&L — ${accts.length} account(s) — window: ${window}\n\n`);
+    process.stdout.write(`Portfolio P&L — ${r.accounts.length} account(s) — window: ${window}\n\n`);
     printTable(
-      perAccount.map((a) => ({ account: `${a.label} (…${a.acct.slice(-4)})`, equity: usd(a.equity), day_change_usd: usd(a.day), afterhrs_change_usd: usd(a.afterHours) }))
-        .concat([{ account: failedReads ? `TOTAL (partial — ${failedReads} acct read failed)` : "TOTAL", equity: usd(totals.equity), day_change_usd: usd(totals.day), afterhrs_change_usd: usd(totals.afterHours) }]),
+      r.accounts.map((a: any) => ({ account: `${a.label} (…${String(a.accountNumber).slice(-4)})`, equity: usd(a.equityUsd), day_change_usd: usd(a.dayChangeUsd), afterhrs_change_usd: usd(a.afterHoursChangeUsd) }))
+        .concat([{ account: r.complete ? "TOTAL" : `TOTAL (partial — ${r.accounts.filter((a: any) => a.partial).length} acct read failed)`, equity: usd(r.totals.equityUsd), day_change_usd: usd(r.totals.dayChangeUsd), afterhrs_change_usd: usd(r.totals.afterHoursChangeUsd) }]),
       ["account", "equity", "day_change_usd", "afterhrs_change_usd"]
     );
 
     if (opts.by !== "account") {
-      const ranked = opts.by === "position" ? rank(drivers) : rank(byUnderlying);
-      const losers = ranked.filter((x: any) => sortVal(x) < 0);
-      const shown = top > 0 ? losers.slice(0, top) : losers;
+      const wv = (x: any) => window === "after-hours" ? (Number.isFinite(x.afterHoursChangeUsd) ? x.afterHoursChangeUsd : 0)
+        : window === "day" ? (Number.isFinite(x.dayChangeUsd) ? x.dayChangeUsd : 0)
+        : (Number.isFinite(x.dayChangeUsd) ? x.dayChangeUsd : 0) + (Number.isFinite(x.afterHoursChangeUsd) ? x.afterHoursChangeUsd : 0);
+      const ranked = (opts.by === "position" ? r.byPosition : r.byUnderlying).filter((x: any) => wv(x) < 0); // lib already sorted ascending by window
+      const shown = top > 0 ? ranked.slice(0, top) : ranked;
       if (shown.length) {
         process.stdout.write(`\nBleeding most (by ${opts.by === "position" ? "position" : "underlying"}, ranked in $, ${window === "both" ? "day+AH combined" : window}):\n`);
         printTable(
           shown.map((x: any) => opts.by === "position"
-            ? { name: x.name, acct: `…${x.acct.slice(-4)}`, mkt_value_usd: usd(x.value), day_change_usd: usd(x.dayUsd), afterhrs_change_usd: usd(x.ahUsd) }
-            : { underlying: x.symbol, where: `${x.kinds.join("+")} ×${x.accts.length}`, mkt_value_usd: usd(x.value), day_change_usd: usd(x.dayUsd), afterhrs_change_usd: usd(x.ahUsd) }),
+            ? { name: x.name, acct: `…${String(x.accountNumber).slice(-4)}`, mkt_value_usd: usd(x.marketValueUsd), day_change_usd: usd(x.dayChangeUsd), afterhrs_change_usd: usd(x.afterHoursChangeUsd) }
+            : { underlying: x.symbol, where: `${x.kinds.join("+")} ×${x.accounts.length}`, mkt_value_usd: usd(x.marketValueUsd), day_change_usd: usd(x.dayChangeUsd), afterhrs_change_usd: usd(x.afterHoursChangeUsd) }),
           opts.by === "position" ? ["name", "acct", "mkt_value_usd", "day_change_usd", "afterhrs_change_usd"] : ["underlying", "where", "mkt_value_usd", "day_change_usd", "afterhrs_change_usd"]
         );
       } else {
         process.stdout.write(`\nNo losers in the ${window} window.\n`);
       }
     }
-    process.stdout.write(`\nDrivers explain ${usd(driverDaySum)} of the ${usd(totals.day)} day move; residual ${usd(residual)} = cash / dividends / transfers / option-vs-equity timing. After-hours shown is EQUITY only (options don't print after-hours).\n`);
-    const warns = perAccount.flatMap((a) => a.warnings);
-    if (warns.length) process.stdout.write(`${warns.map((w) => "⚠️  " + w).join("\n")}\n`);
+    process.stdout.write(`\nDrivers explain ${usd(r.reconciliation.driverDayChangeUsd)} of the ${usd(r.totals.dayChangeUsd)} day move; residual ${usd(r.reconciliation.residualUsd)} = cash / dividends / transfers / option-vs-equity timing. After-hours shown is EQUITY only (options don't print after-hours).\n`);
+    const warns = r.accounts.flatMap((a: any) => a.warnings);
+    if (warns.length) process.stdout.write(`${warns.map((w: string) => "⚠️  " + w).join("\n")}\n`);
   });
 
 const watchlist = new Command("watchlist").description("Inspect your custom watchlists (read)");

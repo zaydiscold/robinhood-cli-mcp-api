@@ -27,6 +27,7 @@ import {
   selectRouteByQueryAndMethod,
   brokerageGetJson,
   brokerageGetAllResults,
+  computePortfolioPnl,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   signCryptoRequest,
@@ -710,6 +711,24 @@ server.registerTool(
     const held = (Array.isArray(data.results) ? data.results : []).filter((p: any) => n(p.quantity) > 0);
     return jsonResponse({ count: held.length, positions: held.map((p: any) => ({ symbol: p.symbol, quantity: n(p.quantity), average_buy_price: n(p.average_buy_price), instrument_id: p.instrument_id })) });
   }
+);
+
+server.registerTool(
+  "robinhood_portfolio",
+  {
+    title: "Robinhood Portfolio P&L",
+    description:
+      "One-call portfolio P&L across ALL owned accounts (or one) in DOLLARS. Per-account day change (equity − adjusted_equity_previous_close) AND after-hours change (extended_hours_equity − equity), then dollar-weighted drivers rolled up by underlying (or position) across accounts — equities AND options. Answers 'how am I down today / after hours and which names'. Ranks by DOLLARS not percent. Discloses a reconciliation residual (cash/dividends/transfers) so the drivers vs top-line gap is explicit. After-hours is EQUITY-only (options don't print after-hours). Live read; no gate.",
+    inputSchema: z.object({
+      by: z.enum(["underlying", "account", "position"]).default("underlying"),
+      window: z.enum(["day", "after-hours", "both"]).default("both"),
+      account_number: z.string().optional(),
+      top: z.number().int().min(0).max(200).default(12)
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ by, window, account_number, top }) =>
+    jsonResponse(await computePortfolioPnl({ by, window, accountNumber: account_number, top }))
 );
 
 server.registerTool(

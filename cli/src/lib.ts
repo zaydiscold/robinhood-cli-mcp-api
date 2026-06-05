@@ -1838,6 +1838,152 @@ export async function tryBrokerageGetJson(
   }
 }
 
+export interface PortfolioPnlOptions {
+  by?: "underlying" | "account" | "position";
+  window?: "day" | "after-hours" | "both";
+  accountNumber?: string;
+  top?: number;
+}
+
+/**
+ * Composed portfolio P&L across all owned accounts — the SHARED engine for the CLI `portfolio`
+ * command and the MCP `robinhood_portfolio` tool (single source per the alignment invariant; the CLI
+ * just renders this object, MCP returns it as JSON). Metrics agents get wrong, pinned here:
+ *   after-hours Δ = extended_hours_equity − equity        (NOT − previous_close; that's the full day)
+ *   day Δ         = equity − adjusted_equity_previous_close (equity_previous_close is "0" per-account)
+ * Per-position $ drivers: equity day = qty×(last − adjusted_previous_close), AH = qty×(ext − last);
+ * option day = (adjusted_mark − previous_close)×100×qty, AH = 0 (options don't print after-hours —
+ * mark−last is mid-drift; the account-level extended_hours_equity already captures real index-option AH).
+ * Returns a unit-explicit object; never throws on a per-account read failure (degrades + flags).
+ */
+export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promise<any> {
+  const n = (v: unknown) => Number(v);
+  const window = opts.window ?? "both";
+  // 1. Accounts — transfer/accounts/ is the COMPLETE graph; trading accounts only.
+  const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
+  const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+  const rhLabels = new Map<string, string>();
+  let accts: string[] = [];
+  for (const a of rows) {
+    if (a?.type !== "rhs" && a?.type !== "ira_roth") continue;
+    if (!a.account_number) continue;
+    accts.push(String(a.account_number));
+    rhLabels.set(String(a.account_number), a.account_name || a.display_title || "");
+  }
+  if (opts.accountNumber) {
+    if (!accts.includes(String(opts.accountNumber)))
+      throw new Error(`Account ${opts.accountNumber} is not one of your trading accounts (${accts.map((x) => "…" + x.slice(-4)).join(", ")}).`);
+    accts = [String(opts.accountNumber)];
+  }
+  // Optional gitignored nickname overlay (local/accounts.local.json).
+  const localLabels = new Map<string, string>();
+  for (const rel of ["local/accounts.local.json", "accounts.local.json"]) {
+    try {
+      const obj = JSON.parse(readFileSync(join(repoRoot(), rel), "utf8"));
+      for (const [k, v] of Object.entries(obj)) localLabels.set(String(k), String(v));
+      break;
+    } catch { /* try next */ }
+  }
+  const labelFor = (acct: string) => {
+    const l4 = acct.slice(-4);
+    return localLabels.get(acct) || localLabels.get("…" + l4) || localLabels.get(l4) || rhLabels.get(acct) || `…${l4}`;
+  };
+
+  // 2. Per-account top-line + raw positions, in parallel; a failure degrades to a warning.
+  const perAccount = await Promise.all(accts.map(async (acct) => {
+    const a: any = { acct, label: labelFor(acct), equity: Number.NaN, day: Number.NaN, afterHours: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
+    try {
+      const p = await brokerageGetJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
+      const equity = n(p.equity), ext = n(p.extended_hours_equity);
+      const adjPrev = n(p.adjusted_equity_previous_close), rawPrev = n(p.equity_previous_close);
+      const prevClose = Number.isFinite(adjPrev) && adjPrev !== 0 ? adjPrev : (Number.isFinite(rawPrev) && rawPrev !== 0 ? rawPrev : Number.NaN);
+      a.equity = equity;
+      a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
+      a.day = Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
+    } catch (e) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
+    try {
+      const eq = await brokerageGetAllResults("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
+      a.equityPositions = eq.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
+    } catch { a.warnings.push(`equity positions read failed (${acct})`); }
+    try {
+      const od = await brokerageGetAllResults("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
+      a.optionPositions = od.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: n(x.quantity) }));
+    } catch { a.warnings.push(`option positions read failed (${acct})`); }
+    return a;
+  }));
+
+  // 3. Batch quotes + option marks across all accounts (one ticker quoted once).
+  const allEqIds = [...new Set(perAccount.flatMap((a) => a.equityPositions.map((p: any) => p.iid).filter(Boolean)))];
+  const allOptIds = [...new Set(perAccount.flatMap((a) => a.optionPositions.map((p: any) => p.oid).filter(Boolean)))];
+  const fetchMap = async (url: string, ids: string[]) => {
+    const map = new Map<string, any>();
+    for (let i = 0; i < ids.length; i += 40) {
+      const data = await brokerageGetJson(url, { ids: ids.slice(i, i + 40).join(",") });
+      for (const r of data.results ?? []) if (r?.instrument_id) map.set(r.instrument_id, r);
+    }
+    return map;
+  };
+  const quotes = allEqIds.length ? await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds) : new Map();
+  const marks = allOptIds.length ? await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds) : new Map();
+
+  // 4. Per-position dollar drivers.
+  const drivers: any[] = [];
+  for (const a of perAccount) {
+    for (const p of a.equityPositions) {
+      const q = quotes.get(p.iid) ?? {};
+      const last = n(q.last_trade_price);
+      const ext = q.last_extended_hours_trade_price != null ? n(q.last_extended_hours_trade_price) : Number.NaN;
+      const prev = n(q.adjusted_previous_close ?? q.previous_close);
+      drivers.push({ acct: a.acct, label: a.label, kind: "equity", symbol: p.symbol, name: p.symbol, qty: p.qty,
+        value: Number.isFinite(last) ? p.qty * last : Number.NaN,
+        dayUsd: Number.isFinite(last) && Number.isFinite(prev) ? p.qty * (last - prev) : Number.NaN,
+        ahUsd: Number.isFinite(ext) && Number.isFinite(last) ? p.qty * (ext - last) : Number.NaN });
+    }
+    for (const p of a.optionPositions) {
+      const m = marks.get(p.oid) ?? {};
+      const mark = n(m.adjusted_mark_price ?? m.mark_price), prev = n(m.previous_close_price);
+      drivers.push({ acct: a.acct, label: a.label, kind: "option", symbol: p.symbol, name: p.name, qty: p.qty,
+        value: Number.isFinite(mark) ? mark * 100 * p.qty : Number.NaN,
+        dayUsd: Number.isFinite(mark) && Number.isFinite(prev) ? (mark - prev) * 100 * p.qty : Number.NaN,
+        ahUsd: 0 }); // options don't print after-hours; account-level extended_hours_equity captures real AH
+    }
+  }
+
+  // 5. Totals, reconciliation, rollups.
+  const sum = (xs: number[]) => xs.filter((x) => Number.isFinite(x)).reduce((s, x) => s + x, 0);
+  const totals = { equity: sum(perAccount.map((a) => a.equity)), day: sum(perAccount.map((a) => a.day)), afterHours: sum(perAccount.map((a) => a.afterHours)) };
+  const failedReads = perAccount.filter((a) => !Number.isFinite(a.equity)).length;
+  const driverDaySum = drivers.reduce((s, d) => s + (Number.isFinite(d.dayUsd) ? d.dayUsd : 0), 0);
+  const residual = Number.isFinite(totals.day) ? totals.day - driverDaySum : Number.NaN;
+
+  const byU = new Map<string, any>();
+  for (const d of drivers) {
+    const u = byU.get(d.symbol) ?? { symbol: d.symbol, value: 0, dayUsd: 0, ahUsd: 0, accts: new Set<string>(), kinds: new Set<string>() };
+    u.value += Number.isFinite(d.value) ? d.value : 0;
+    u.dayUsd += Number.isFinite(d.dayUsd) ? d.dayUsd : 0;
+    u.ahUsd += Number.isFinite(d.ahUsd) ? d.ahUsd : 0;
+    u.accts.add(d.acct); u.kinds.add(d.kind);
+    byU.set(d.symbol, u);
+  }
+  const sortVal = (x: any) => window === "after-hours" ? (Number.isFinite(x.ahUsd) ? x.ahUsd : 0)
+    : window === "day" ? (Number.isFinite(x.dayUsd) ? x.dayUsd : 0)
+    : (Number.isFinite(x.dayUsd) ? x.dayUsd : 0) + (Number.isFinite(x.ahUsd) ? x.ahUsd : 0);
+  const rank = (xs: any[]) => xs.slice().sort((x, y) => sortVal(x) - sortVal(y));
+  const top = opts.top && opts.top > 0 ? opts.top : undefined;
+  const byUnderlying = rank([...byU.values()].map((u) => ({ symbol: u.symbol, marketValueUsd: u.value, dayChangeUsd: u.dayUsd, afterHoursChangeUsd: u.ahUsd, accounts: [...u.accts], kinds: [...u.kinds] })));
+  const byPosition = rank(drivers.map((d) => ({ accountNumber: d.acct, label: d.label, kind: d.kind, symbol: d.symbol, name: d.name, qty: d.qty, marketValueUsd: d.value, dayChangeUsd: d.dayUsd, afterHoursChangeUsd: d.ahUsd })));
+
+  return {
+    window, complete: failedReads === 0,
+    totals: { equityUsd: totals.equity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
+    reconciliation: { driverDayChangeUsd: driverDaySum, totalsDayChangeUsd: totals.day, residualUsd: residual,
+      note: "residual = cash/dividends/transfers/option-vs-equity timing; after-hours is EQUITY-only (options don't print after-hours)" },
+    accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equityUsd: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, partial: !Number.isFinite(a.equity), warnings: a.warnings })),
+    byUnderlying: top ? byUnderlying.slice(0, top) : byUnderlying,
+    byPosition: top ? byPosition.slice(0, top) : byPosition
+  };
+}
+
 /**
  * Generic double-gated brokerage write, shared by the CLI and the MCP server. Pass the EXACT templated
  * URL (with {placeholders}) so the resolver matches one route and the ambiguity guard can't fire. The

@@ -6578,5 +6578,48 @@
     "requestTypes": [
       "XHR"
     ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/historicals/{symbol}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-04-injected-capture (observed; price historicals per symbol)",
+    "seenOn": [
+      "option-ticket"
+    ],
+    "queryKeys": [
+      "bounds",
+      "interval",
+      "span"
+    ],
+    "requestTypes": [
+      "XHR"
+    ]
+  },
+  {
+    "url": "https://bonfire.robinhood.com/options/{strategy_code}/historical-chart/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "options",
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-04-injected-capture (observed; option strategy historical chart; strategy_code = {option_uuid}_S1)",
+    "seenOn": [
+      "option-ticket"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ]
   }
 ]

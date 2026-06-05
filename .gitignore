@@ -6,10 +6,9 @@ dist/
 !.env.example
 fixtures/private/
 info/
-PLAN.local.md
-ARCHITECTURE.local.md
-CAPTURE-METHOD.local.md
-accounts.local.json
+# All local/private working files live in local/ — that dir self-ignores via local/.gitignore
+# (tracks only its own .gitignore as a placeholder). Drop CAPTURE-METHOD.local.md, ARCHITECTURE.local.md,
+# PLAN.local.md, accounts.local.json, etc. in there.
 *.log
 *.tgz
 capture-extension/

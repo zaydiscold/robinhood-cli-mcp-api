@@ -2526,10 +2526,13 @@ const PORTFOLIO_ACCOUNT_URL = "https://api.robinhood.com/portfolios/{num}/";
 function loadLocalAccountLabels(): Map<string, string> {
   // Optional gitignored overlay (accounts.local.json) so the PUBLIC repo never hardcodes nicknames.
   const out = new Map<string, string>();
-  try {
-    const obj = JSON.parse(readFileSync(resolvePath(process.cwd(), "accounts.local.json"), "utf8"));
-    for (const [k, v] of Object.entries(obj)) out.set(String(k), String(v));
-  } catch { /* no overlay — fine */ }
+  for (const rel of ["local/accounts.local.json", "accounts.local.json"]) {
+    try {
+      const obj = JSON.parse(readFileSync(resolvePath(process.cwd(), rel), "utf8"));
+      for (const [k, v] of Object.entries(obj)) out.set(String(k), String(v));
+      break;
+    } catch { /* try next / no overlay — fine */ }
+  }
   return out;
 }
 function accountDisplay(acct: string, rhLabel: string, local: Map<string, string>): string {

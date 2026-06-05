@@ -9,6 +9,7 @@ info/
 PLAN.local.md
 ARCHITECTURE.local.md
 CAPTURE-METHOD.local.md
+accounts.local.json
 *.log
 *.tgz
 capture-extension/

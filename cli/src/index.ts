@@ -2550,7 +2550,9 @@ program
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
     const window = opts.afterHours ? "after-hours" : opts.day ? "day" : (opts.window || "both");
-    const top = Number(opts.top) || 0;
+    if (!["underlying", "account", "position"].includes(opts.by)) throw new Error(`--by must be underlying|account|position (got "${opts.by}")`);
+    if (!["day", "after-hours", "both"].includes(window)) throw new Error(`--window must be day|after-hours|both (got "${window}")`);
+    const top = Number.isFinite(Number(opts.top)) ? Number(opts.top) : 0;
     const owned = await loadOwnedAccounts();
     let accts: string[];
     const labels = owned?.labels ?? new Map<string, string>();
@@ -2569,19 +2571,23 @@ program
         const p = await brokerageGetJson(PORTFOLIO_ACCOUNT_URL, { num: acct });
         const equity = num(p.equity);
         const ext = num(p.extended_hours_equity);
-        const prevClose = num(p.adjusted_equity_previous_close) || num(p.equity_previous_close);
+        // Per-account portfolios/{num}/ returns equity_previous_close "0"; the real baseline is
+        // adjusted_equity_previous_close. Prefer it; never let a falsy 0 silently pick the wrong field.
+        const adjPrev = num(p.adjusted_equity_previous_close);
+        const rawPrev = num(p.equity_previous_close);
+        const prevClose = Number.isFinite(adjPrev) && adjPrev !== 0 ? adjPrev : (Number.isFinite(rawPrev) && rawPrev !== 0 ? rawPrev : Number.NaN);
         a.equity = equity;
         a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
-        a.day = Number.isFinite(equity) && prevClose ? equity - prevClose : Number.NaN;
+        a.day = Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
       } catch (e) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
       try {
         const eq = await brokerageGetAllResults(POSITIONS_URL, {}, { nonzero: "true", account_number: acct });
         a.equityPositions = eq.filter((x: any) => num(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: num(x.quantity) }));
       } catch { a.warnings.push(`equity positions read failed (${acct})`); }
       try {
-        const od = await brokerageGetJson(AGG_POSITIONS_URL, {}, { account_numbers: acct, nonzero: "true" });
-        a.optionPositions = (Array.isArray(od.results) ? od.results : []).filter((x: any) => num(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: num(x.quantity) }));
-      } catch { /* options optional */ }
+        const od = await brokerageGetAllResults(AGG_POSITIONS_URL, {}, { account_numbers: acct, nonzero: "true" });
+        a.optionPositions = od.filter((x: any) => num(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: num(x.quantity) }));
+      } catch { a.warnings.push(`option positions read failed (${acct})`); }
       return a;
     }));
 
@@ -2606,16 +2612,21 @@ program
         const m = marks.get(p.oid) ?? {};
         const mark = num(m.adjusted_mark_price ?? m.mark_price);
         const prev = num(m.previous_close_price);
-        const reg = num(m.last_trade_price);
         drivers.push({ acct: a.acct, label: a.label, kind: "option", symbol: p.symbol, name: p.name, qty: p.qty,
           value: Number.isFinite(mark) ? mark * 100 * p.qty : Number.NaN,
           dayUsd: Number.isFinite(mark) && Number.isFinite(prev) ? (mark - prev) * 100 * p.qty : Number.NaN,
-          ahUsd: Number.isFinite(mark) && Number.isFinite(reg) ? (mark - reg) * 100 * p.qty : Number.NaN });
+          // Options don't print after-hours; marketdata/options has no extended field, so mark−last is
+          // mid-price drift, NOT a real AH move. Exclude options from per-name AH (0); the account-level
+          // extended_hours_equity already captures any genuine index/ETF-option AH move in aggregate.
+          ahUsd: 0 });
       }
     }
 
     const sum = (xs: number[]) => xs.filter((x) => Number.isFinite(x)).reduce((s, x) => s + x, 0);
     const totals = { equity: sum(perAccount.map((a) => a.equity)), day: sum(perAccount.map((a) => a.day)), afterHours: sum(perAccount.map((a) => a.afterHours)) };
+    const failedReads = perAccount.filter((a) => !Number.isFinite(a.equity)).length;
+    const driverDaySum = drivers.reduce((s, d) => s + (Number.isFinite(d.dayUsd) ? d.dayUsd : 0), 0);
+    const residual = Number.isFinite(totals.day) ? totals.day - driverDaySum : Number.NaN;
 
     const byU = new Map<string, any>();
     for (const d of drivers) {
@@ -2627,39 +2638,49 @@ program
       byU.set(d.symbol, u);
     }
     const byUnderlying = [...byU.values()].map((u) => ({ symbol: u.symbol, value: u.value, dayUsd: u.dayUsd, ahUsd: u.ahUsd, accts: [...u.accts], kinds: [...u.kinds] }));
-    const rankKey = window === "after-hours" ? "ahUsd" : "dayUsd";
-    const rank = (xs: any[]) => xs.slice().sort((x, y) => (Number.isFinite(x[rankKey]) ? x[rankKey] : 0) - (Number.isFinite(y[rankKey]) ? y[rankKey] : 0));
+    // For --window both, rank by combined day+AH dollars so after-hours bleeders aren't buried under day-sort.
+    const sortVal = (x: any) => window === "after-hours" ? (Number.isFinite(x.ahUsd) ? x.ahUsd : 0)
+      : window === "day" ? (Number.isFinite(x.dayUsd) ? x.dayUsd : 0)
+      : (Number.isFinite(x.dayUsd) ? x.dayUsd : 0) + (Number.isFinite(x.ahUsd) ? x.ahUsd : 0);
+    const rank = (xs: any[]) => xs.slice().sort((x, y) => sortVal(x) - sortVal(y));
 
     if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), window, totals,
-        accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equity: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, warnings: a.warnings })),
-        byUnderlying: rank(byUnderlying), byPosition: rank(drivers) });
+      printJson({ generatedAt: new Date().toISOString(), window, complete: failedReads === 0,
+        totals: { equityUsd: totals.equity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
+        reconciliation: { driverDayChangeUsd: driverDaySum, totalsDayChangeUsd: totals.day, residualUsd: residual,
+          note: "residual = cash/dividends/transfers/option-vs-equity timing; after-hours is EQUITY-only (options don't print after-hours)" },
+        accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equityUsd: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, partial: !Number.isFinite(a.equity), warnings: a.warnings })),
+        byUnderlying: rank(byUnderlying).map((u: any) => ({ symbol: u.symbol, marketValueUsd: u.value, dayChangeUsd: u.dayUsd, afterHoursChangeUsd: u.ahUsd, accounts: u.accts, kinds: u.kinds })),
+        byPosition: rank(drivers).map((d: any) => ({ accountNumber: d.acct, label: d.label, kind: d.kind, symbol: d.symbol, name: d.name, qty: d.qty, marketValueUsd: d.value, dayChangeUsd: d.dayUsd, afterHoursChangeUsd: d.ahUsd })) });
       return;
     }
 
     process.stdout.write(`Portfolio P&L — ${accts.length} account(s) — window: ${window}\n\n`);
     printTable(
-      perAccount.map((a) => ({ account: `${a.label} (…${a.acct.slice(-4)})`, equity: usd(a.equity), dayDelta: usd(a.day), afterHoursDelta: usd(a.afterHours) }))
-        .concat([{ account: "TOTAL", equity: usd(totals.equity), dayDelta: usd(totals.day), afterHoursDelta: usd(totals.afterHours) }]),
-      ["account", "equity", "dayDelta", "afterHoursDelta"]
+      perAccount.map((a) => ({ account: `${a.label} (…${a.acct.slice(-4)})`, equity: usd(a.equity), day_change_usd: usd(a.day), afterhrs_change_usd: usd(a.afterHours) }))
+        .concat([{ account: failedReads ? `TOTAL (partial — ${failedReads} acct read failed)` : "TOTAL", equity: usd(totals.equity), day_change_usd: usd(totals.day), afterhrs_change_usd: usd(totals.afterHours) }]),
+      ["account", "equity", "day_change_usd", "afterhrs_change_usd"]
     );
 
     if (opts.by !== "account") {
       const ranked = opts.by === "position" ? rank(drivers) : rank(byUnderlying);
-      const losers = ranked.filter((x: any) => (Number.isFinite(x[rankKey]) ? x[rankKey] : 0) < 0);
+      const losers = ranked.filter((x: any) => sortVal(x) < 0);
       const shown = top > 0 ? losers.slice(0, top) : losers;
       if (shown.length) {
-        process.stdout.write(`\nBleeding most (by ${opts.by === "position" ? "position" : "underlying"}, ranked in $, ${window === "both" ? "day+AH" : window}):\n`);
+        process.stdout.write(`\nBleeding most (by ${opts.by === "position" ? "position" : "underlying"}, ranked in $, ${window === "both" ? "day+AH combined" : window}):\n`);
         printTable(
           shown.map((x: any) => opts.by === "position"
-            ? { name: x.name, acct: `…${x.acct.slice(-4)}`, value: usd(x.value), dayUsd: usd(x.dayUsd), ahUsd: usd(x.ahUsd) }
-            : { underlying: x.symbol, where: `${x.kinds.join("+")} ×${x.accts.length}`, value: usd(x.value), dayUsd: usd(x.dayUsd), ahUsd: usd(x.ahUsd) }),
-          opts.by === "position" ? ["name", "acct", "value", "dayUsd", "ahUsd"] : ["underlying", "where", "value", "dayUsd", "ahUsd"]
+            ? { name: x.name, acct: `…${x.acct.slice(-4)}`, mkt_value_usd: usd(x.value), day_change_usd: usd(x.dayUsd), afterhrs_change_usd: usd(x.ahUsd) }
+            : { underlying: x.symbol, where: `${x.kinds.join("+")} ×${x.accts.length}`, mkt_value_usd: usd(x.value), day_change_usd: usd(x.dayUsd), afterhrs_change_usd: usd(x.ahUsd) }),
+          opts.by === "position" ? ["name", "acct", "mkt_value_usd", "day_change_usd", "afterhrs_change_usd"] : ["underlying", "where", "mkt_value_usd", "day_change_usd", "afterhrs_change_usd"]
         );
+      } else {
+        process.stdout.write(`\nNo losers in the ${window} window.\n`);
       }
     }
+    process.stdout.write(`\nDrivers explain ${usd(driverDaySum)} of the ${usd(totals.day)} day move; residual ${usd(residual)} = cash / dividends / transfers / option-vs-equity timing. After-hours shown is EQUITY only (options don't print after-hours).\n`);
     const warns = perAccount.flatMap((a) => a.warnings);
-    if (warns.length) process.stdout.write(`\n${warns.map((w) => "⚠️  " + w).join("\n")}\n`);
+    if (warns.length) process.stdout.write(`${warns.map((w) => "⚠️  " + w).join("\n")}\n`);
   });
 
 const watchlist = new Command("watchlist").description("Inspect your custom watchlists (read)");

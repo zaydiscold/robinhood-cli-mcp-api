@@ -30,7 +30,7 @@ metadata:
 - **When to load:** User mentions Robinhood, portfolio, positions, tickers, options, trades, watchlists, crypto.
 - **Most common commands:** `positions --account N`, `quote SYM`, `options positions`, `accounts`, `brokerage execute "..."`.
 - **#1 trap:** `brokerage execute` does NOT support query params (e.g. `?nonzero=true`). Use purpose-built commands (`positions`, `quote`, `options`) instead — they handle query params internally. If you need raw API access with query params, use MCP `robinhood_brokerage_execute` or the `brokerageGetJson` engine function.
-- **#2 trap:** `positions` shows total unrealized return, NOT today's day change. For "what am I down today?", see [Day P&L Quick Recipe](#-day-pnl-quick-recipe).
+- **#2 trap:** `positions` shows total unrealized return, NOT today's day change. For "what am I down today / after hours?", use **`portfolio`** (`portfolio --after-hours`) — one call, dollars, by underlying.
 - **#3 trap:** The README has spoofed example numbers (HPE=100 shares, ARM=50 shares). These are COSMETIC. Live CLI returns real data. Do NOT add spoof code to the CLI.
 - **Deep ref:** `AGENTS.md` for the complete API surface + worked examples.
 
@@ -60,7 +60,7 @@ metadata:
 | User says | Go to |
 |---|---|
 | "What do I own?" / "Show my positions" | [CLI Usage 80/20](#cli-usage--the-8020) → `positions` / `options positions` |
-| "What am I down today?" / "Biggest losers" | [Day P&L Quick Recipe](#-day-pnl-quick-recipe) |
+| "What am I down today?" / "Biggest losers" | `portfolio --day` (after hours: `portfolio --after-hours`) — one call, dollars, by underlying |
 | "Place a trade" / "Buy X" | [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03) |
 | "Quote a spread" / "Price an iron condor" | [Options CLI Playbook](#options-cliapi-playbook) |
 | "What can this account do?" | [Account-Aware Capabilities](#account-aware-capabilities--read-the-account-then-say-whats-allowed) |
@@ -810,7 +810,7 @@ deep math lives in *Options Greeks and Strategy Math* above.
 | User intent | Action | Command (verify with `--help`) |
 |-------------|--------|--------------------------------|
 | "What do I own / how are my accounts?" | discover accounts, then read | `accounts` (lists every account with cash/margin/IRA capabilities; unverified-type accounts flagged conservative); then portfolios/positions per account |
-| **"Why am I down / what's bleeding me / how's my portfolio today?"** | **top-line first, then DOLLAR attribution** | **See "Portfolio loss attribution" below — read `portfolios/` equity vs `equity_previous_close` for the $ change, then rank holdings by DOLLARS (value × move), roll up by UNDERLYING across accounts. NEVER lead with percents or enumerate positions blindly.** |
+| **"Why am I down / what's bleeding me / how's my portfolio today / after hours?"** | **one command** | **`portfolio` (aliases `pnl`/`snapshot`; MCP `robinhood_portfolio`) — `--day`/`--after-hours`/`--by position`. One call → per-account day Δ + after-hours Δ, drivers by underlying in DOLLARS, + reconciliation. Don't hand-stitch or lead with percents. Details in "Portfolio loss attribution" below.** |
 | "Quote X" / "what's the chain?" | live read | `quote <SYM>`, `options chain <SYM>`, `options expirations <SYM>` |
 | "Best option position" / P&L | ranked read | `options positions` |
 | "What transactions went through (today/yesterday)?" | unified history | `history --days <n> [--account <N>]` (merges equity + options + crypto orders + ACH transfers, newest first) |
@@ -862,8 +862,15 @@ follow this exact order — it is the intuitive answer they actually want:
 `{num}` not `{n}`, `positions/?account_number={account_number}`, or ambiguous `portfolios/` needing the
 full host URL. Fix the call and get the number. Find the field, fix the route, then answer.
 
-Until the first-class `portfolio` command lands (roadmap #54), compose this from `portfolios/{num}/`
-(equity / extended_hours_equity / equity_previous_close) + `positions/?account_number={account_number}` +
+**USE THE FIRST-CLASS COMMAND — don't hand-stitch.** This is `portfolio` (aliases `pnl`, `snapshot`),
+also the MCP tool `robinhood_portfolio`:
+- `portfolio` — all accounts, day Δ + after-hours Δ, drivers rolled up by underlying in dollars.
+- `portfolio --after-hours` — rank by the after-hours move (the "what's nuking me after hours" answer).
+- `portfolio --day` · `--by position|account|underlying` · `--account <n>` · `--json`.
+One call returns the per-account top-line, the by-underlying dollar drivers, and a reconciliation line.
+The manual composition below is only a FALLBACK if the command is unavailable: `portfolios/{num}/`
+(equity / extended_hours_equity / **adjusted_equity_previous_close** — note: per-account
+`equity_previous_close` is "0", use the adjusted field) + `positions/?account_number={account_number}` +
 `options aggregate_positions/` + `marketdata/{quotes,options}/`. The deliverable is one ranked,
 dollar-weighted, by-underlying answer across accounts, with the **after-hours number kept separate from
 the full-day number** — not a per-account percent dump.
@@ -1192,9 +1199,9 @@ documented. To extend it safely:
 
 ## MCP Server
 
-27 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+28 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
-> **Count note:** the *source/dist* registers 27 tools. A *running* MCP process started before the
+> **Count note:** the *source/dist* registers 28 tools. A *running* MCP process started before the
 > last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
 > the server) after pulling, then confirm the client lists all 27.
 
@@ -1396,31 +1403,26 @@ Full details: `AGENTS.md` §9.
 4. Verify: `node cli/dist/index.js brokerage execute "<new-route>" --json --full`.
 5. Document the discovery method in `docs/undocumented-surface.md`.
 
-### 📊 Day P&L Quick Recipe *(when user asks "what am I down today?" / "biggest losers")*
+### 📊 Day / After-Hours P&L — use the `portfolio` command (don't hand-compute)
 
-The `positions` command shows **total unrealized return** (cost basis vs current price). For **today's dollar change**, you need quotes with day% data:
-
-```bash
-# 1. Get all positions
-node cli/dist/index.js positions --account <ACCT> --json
-
-# 2. Get quotes for all symbols (day% change is embedded)
-node cli/dist/index.js quote --json SYM1 SYM2 SYM3 ...
-
-# 3. Compute: dayDollar = qty × last × dayPct / (100 + dayPct)
-#    (because prevClose = last / (1 + dayPct/100))
-```
-
-**After-hours:** The `quote` command only returns regular-session data. For AH breakdown, query the portfolio endpoint:
+"What am I down today / after hours / which names?" is **one command** — no manual quote math:
 
 ```bash
-node cli/dist/index.js brokerage execute "portfolios/{num}/" --param num=<ACCT> --json --full
-# AH change = extended_hours_equity - equity
+node cli/dist/index.js portfolio                # all accounts: day Δ + after-hours Δ, drivers by underlying ($)
+node cli/dist/index.js portfolio --after-hours  # rank by the after-hours move
+node cli/dist/index.js portfolio --day          # rank by the full-day move
+node cli/dist/index.js portfolio --by position --top 10 --json
 ```
+It composes accounts → `portfolios/{num}/` (day Δ = `equity − adjusted_equity_previous_close`;
+after-hours Δ = `extended_hours_equity − equity`) → positions + quotes + option marks, attributes in
+DOLLARS, rolls up by underlying across accounts, and prints a reconciliation line (drivers vs top-line).
+After-hours is EQUITY-only (options don't print after-hours). Same engine as the MCP tool
+`robinhood_portfolio`. **Don't** rebuild this by hand from `positions`+`quote` (percent math is size-blind
+and gets the metric wrong), and **don't** use `equity_previous_close` (it's "0" per-account — the command
+uses `adjusted_equity_previous_close`).
 
-Full working Python script in the Hermes skill reference: `references/day-pnl.md`.
-
-**Common mistake:** Using `brokerage execute "positions/?nonzero=true"` — this FAILS because `brokerage execute` doesn't support query params. Use the `positions` command instead.
+**Common mistake:** `brokerage execute "positions/?nonzero=true"` FAILS (`brokerage execute` doesn't take
+query params) — use the `positions` command, or just `portfolio`.
 
 ---
 

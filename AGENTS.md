@@ -58,7 +58,7 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
    manual login. (Details in §1.)
 
 4. **Two front doors** — the **CLI** (`cli/dist/index.js`, for humans/scripts) and the
-   **MCP server** (`mcp/dist/server.js`, 27 tools for agents incl. first-class parity tools — reload a
+   **MCP server** (`mcp/dist/server.js`, 28 tools for agents incl. first-class parity tools — reload a
    running server with `/reload-mcp` after pulling, or it advertises its old count). Both are thin wrappers over
    the engine.
 
@@ -591,7 +591,7 @@ settings/permissions, never print the token value.
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` (27 tools incl. accounts/positions/options-holdings/options-inspect/settings/recurring/quote/history/watchlist/options-enumerate parity: route inspection, browser/account
+Tools surface as `mcp__robinhood-cli__*` (28 tools incl. accounts/positions/portfolio/options-holdings/options-inspect/settings/recurring/quote/history/watchlist/options-enumerate parity: route inspection, browser/account
 context, options strategy workflows/plans, exact-contract link bundles, stock
 profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute). A running server advertises
 its old count until reloaded — `/reload-mcp` after pulling.

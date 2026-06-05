@@ -2565,11 +2565,14 @@ program
           opts.by === "position" ? ["name", "acct", "mkt_value_usd", "day_change_usd", "afterhrs_change_usd"] : ["underlying", "where", "mkt_value_usd", "day_change_usd", "afterhrs_change_usd"]
         );
       } else {
-        process.stdout.write(`\nNo losers in the ${window} window.\n`);
+        process.stdout.write(window === "after-hours" && !r.afterHoursActive
+          ? `\nAfter-hours Δ ≈ $0 across accounts — likely a regular session; per-name after-hours needs a live extended session.\n`
+          : `\nNo losers in the ${window} window.\n`);
       }
     }
-    process.stdout.write(`\nDrivers explain ${usd(r.reconciliation.driverDayChangeUsd)} of the ${usd(r.totals.dayChangeUsd)} day move; residual ${usd(r.reconciliation.residualUsd)} = cash / dividends / transfers / option-vs-equity timing. After-hours shown is EQUITY only (options don't print after-hours).\n`);
-    const warns = r.accounts.flatMap((a: any) => a.warnings);
+    const mp = r.reconciliation.mispricedPositions;
+    process.stdout.write(`\nDrivers explain ${usd(r.reconciliation.driverDayChangeUsd)} of the ${usd(r.totals.dayChangeUsd)} day move; residual ${usd(r.reconciliation.residualUsd)} = cash / dividends / transfers / option-vs-equity timing${mp ? ` (${mp} position(s) could not be priced)` : ""}. After-hours shown is EQUITY only (options don't print after-hours).\n`);
+    const warns = [...(r.warnings ?? []), ...r.accounts.flatMap((a: any) => a.warnings)];
     if (warns.length) process.stdout.write(`${warns.map((w: string) => "⚠️  " + w).join("\n")}\n`);
   });
 

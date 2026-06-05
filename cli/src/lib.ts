@@ -1923,8 +1923,14 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
     }
     return map;
   };
-  const quotes = allEqIds.length ? await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds) : new Map();
-  const marks = allOptIds.length ? await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds) : new Map();
+  // The batch quote/marks fetch must NOT take down the whole command — the account top-line is fully
+  // computable from portfolios/{num}/ alone. Degrade per-name drivers to a warning on any failure.
+  const globalWarnings: string[] = [];
+  let quotes = new Map<string, any>(), marks = new Map<string, any>();
+  try { if (allEqIds.length) quotes = await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds); }
+  catch (e) { globalWarnings.push(`equity quotes batch failed — per-name drivers degraded; account top-line is authoritative (${(e as Error).message.slice(0, 50)})`); }
+  try { if (allOptIds.length) marks = await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds); }
+  catch (e) { globalWarnings.push(`option marks batch failed — option drivers degraded (${(e as Error).message.slice(0, 50)})`); }
 
   // 4. Per-position dollar drivers.
   const drivers: any[] = [];
@@ -1955,6 +1961,12 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
   const failedReads = perAccount.filter((a) => !Number.isFinite(a.equity)).length;
   const driverDaySum = drivers.reduce((s, d) => s + (Number.isFinite(d.dayUsd) ? d.dayUsd : 0), 0);
   const residual = Number.isFinite(totals.day) ? totals.day - driverDaySum : Number.NaN;
+  // Distinguish legitimate unattributed flow (cash/dividends) from failed pricing: count positions we
+  // couldn't price, so an operator can tell a $X dividend residual from a "$X of positions weren't priced".
+  const mispricedPositions = drivers.filter((d) => !Number.isFinite(d.dayUsd)).length;
+  // After-hours is meaningful only in an extended session; intraday/closed it's ~0. Flag so callers don't
+  // read a regular-session "$0 after-hours / no AH losers" as a failed or flat session.
+  const afterHoursActive = perAccount.some((a) => Number.isFinite(a.afterHours) && Math.abs(a.afterHours) > 0.005);
 
   const byU = new Map<string, any>();
   for (const d of drivers) {
@@ -1974,13 +1986,14 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
   const byPosition = rank(drivers.map((d) => ({ accountNumber: d.acct, label: d.label, kind: d.kind, symbol: d.symbol, name: d.name, qty: d.qty, marketValueUsd: d.value, dayChangeUsd: d.dayUsd, afterHoursChangeUsd: d.ahUsd })));
 
   return {
-    window, complete: failedReads === 0,
+    window, complete: failedReads === 0 && globalWarnings.length === 0, afterHoursActive,
     totals: { equityUsd: totals.equity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
-    reconciliation: { driverDayChangeUsd: driverDaySum, totalsDayChangeUsd: totals.day, residualUsd: residual,
-      note: "residual = cash/dividends/transfers/option-vs-equity timing; after-hours is EQUITY-only (options don't print after-hours)" },
+    reconciliation: { driverDayChangeUsd: driverDaySum, totalsDayChangeUsd: totals.day, residualUsd: residual, mispricedPositions,
+      note: "residual = cash/dividends/transfers/option-vs-equity timing (NOT failed pricing — see mispricedPositions); after-hours is EQUITY-only (options don't print after-hours)" },
     accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equityUsd: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, partial: !Number.isFinite(a.equity), warnings: a.warnings })),
     byUnderlying: top ? byUnderlying.slice(0, top) : byUnderlying,
-    byPosition: top ? byPosition.slice(0, top) : byPosition
+    byPosition: top ? byPosition.slice(0, top) : byPosition,
+    warnings: globalWarnings
   };
 }
 

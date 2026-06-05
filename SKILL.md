@@ -24,7 +24,53 @@ metadata:
 > reference is [`AGENTS.md`](AGENTS.md)** in the repo root (next to this file) — open it directly.
 > When in doubt, read BOTH `AGENTS.md` and `SKILL.md` before acting. Don't guess; the docs are there.
 
-Operate real Robinhood brokerage accounts from the terminal or via MCP tools. The CLI and MCP share one engine (`cli/src/lib.ts`) — same auth, same route map (~300 brokerage/account route entries and growing — run `brokerage routes --json` for the live count, never trust a hardcoded number), same double-gate write safety.
+## ⚡ Agent Quick Scan *(read this in 5 seconds)*
+
+- **What:** CLI + MCP for a REAL Robinhood brokerage account. Reads are live and free. Writes are double-gated (dry-run by default).
+- **When to load:** User mentions Robinhood, portfolio, positions, tickers, options, trades, watchlists, crypto.
+- **Most common commands:** `positions --account N`, `quote SYM`, `options positions`, `accounts`, `brokerage execute "..."`.
+- **#1 trap:** `brokerage execute` does NOT support query params (e.g. `?nonzero=true`). Use purpose-built commands (`positions`, `quote`, `options`) instead — they handle query params internally. If you need raw API access with query params, use MCP `robinhood_brokerage_execute` or the `brokerageGetJson` engine function.
+- **#2 trap:** `positions` shows total unrealized return, NOT today's day change. For "what am I down today?", see [Day P&L Quick Recipe](#-day-pnl-quick-recipe).
+- **#3 trap:** The README has spoofed example numbers (HPE=100 shares, ARM=50 shares). These are COSMETIC. Live CLI returns real data. Do NOT add spoof code to the CLI.
+- **Deep ref:** `AGENTS.md` for the complete API surface + worked examples.
+
+## 📑 Table of Contents
+
+| Section | What it covers |
+|---|---|
+| [Skill Operating Model](#skill-operating-model) | How to use this skill (progressive disclosure layers) |
+| [When to Use](#when-to-use) | Trigger conditions |
+| [Capability Catalog](#capability-catalog--what-this-cliapimcp-can-actually-do) | Everything the CLI/API/MCP can do |
+| [Failure Modes](#️-failure-modes--hard-rules-read-before-any-write-this-is-where-a-weak-agent-loses-money) | Ranked money-loss risks (read before ANY write) |
+| [Quick Start + Auth](#quick-start) | Clone, build, auth |
+| [CLI Usage 80/20](#cli-usage--the-8020) | Most-used commands |
+| [Operating Playbook](#operating-playbook--when-to-use-what) | Intent → action routing table |
+| [Options Greeks + Strategy Math](#options-greeks-and-strategy-math) | Greeks formulas, classification, payoff checks |
+| [Options CLI Playbook](#options-cliapi-playbook) | Exact planning sequence + worked examples |
+| [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03) | Order creation, cancel, equity buying |
+| [Sentiment + Signal Sourcing](#signal-sourcing--where-due-diligence-signal-comes-from-descriptive-not-risk-guidance) | News, Twitter/X, Reddit, institutional research |
+| [Ball Knowledge + Trading Log](#ball-knowledge--the-operators-investing-memory-ledger-ball-knowledgemd) | Operator's market memory + execution history |
+| [MCP Server](#mcp-server) | MCP tools, registration, safety gates |
+| [Common Pitfalls](#common-pitfalls) | Route map, portfolio, watchlists, writes, cross-machine |
+| [One-Shot Recipes](#one-shot-recipes) | Portfolio snapshot, options trade, recurring buys |
+| [Verification Checklist](#verification-checklist) | Post-setup checks |
+
+## 🧭 Navigation by Task *(what the user said → which section)*
+
+| User says | Go to |
+|---|---|
+| "What do I own?" / "Show my positions" | [CLI Usage 80/20](#cli-usage--the-8020) → `positions` / `options positions` |
+| "What am I down today?" / "Biggest losers" | [Day P&L Quick Recipe](#-day-pnl-quick-recipe) |
+| "Place a trade" / "Buy X" | [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03) |
+| "Quote a spread" / "Price an iron condor" | [Options CLI Playbook](#options-cliapi-playbook) |
+| "What can this account do?" | [Account-Aware Capabilities](#account-aware-capabilities--read-the-account-then-say-whats-allowed) |
+| "Map a new endpoint" | [Research Methodology](#research-methodology--mapping-a-no-official-api-surface) |
+| "MCP setup" / "Register tools" | [MCP Server](#mcp-server) |
+| "I got a weird error" | [Failure Modes](#️-failure-modes--hard-rules-read-before-any-write-this-is-where-a-weak-agent-loses-money) + [Common Pitfalls](#common-pitfalls) |
+
+---
+
+Operate real Robinhood brokerage accounts from the terminal or via MCP tools.
 
 **Repo:** `github.com/zaydiscold/robinhood-cli`
 **Deep reference:** `AGENTS.md` in repo root — the complete API surface, worked examples, and every command. Hand that file to any agent and it's self-contained. This SKILL.md is the Hermes trigger + boot doc: quick-start, the 80/20 commands, and all the operational pitfalls learned across sessions.
@@ -1306,6 +1352,32 @@ Full details: `AGENTS.md` §9.
 3. Rebuild: `pnpm --filter @zaydiscold/robinhood-cli build`.
 4. Verify: `node cli/dist/index.js brokerage execute "<new-route>" --json --full`.
 5. Document the discovery method in `docs/undocumented-surface.md`.
+
+### 📊 Day P&L Quick Recipe *(when user asks "what am I down today?" / "biggest losers")*
+
+The `positions` command shows **total unrealized return** (cost basis vs current price). For **today's dollar change**, you need quotes with day% data:
+
+```bash
+# 1. Get all positions
+node cli/dist/index.js positions --account <ACCT> --json
+
+# 2. Get quotes for all symbols (day% change is embedded)
+node cli/dist/index.js quote --json SYM1 SYM2 SYM3 ...
+
+# 3. Compute: dayDollar = qty × last × dayPct / (100 + dayPct)
+#    (because prevClose = last / (1 + dayPct/100))
+```
+
+**After-hours:** The `quote` command only returns regular-session data. For AH breakdown, query the portfolio endpoint:
+
+```bash
+node cli/dist/index.js brokerage execute "portfolios/{num}/" --param num=<ACCT> --json --full
+# AH change = extended_hours_equity - equity
+```
+
+Full working Python script in the Hermes skill reference: `references/day-pnl.md`.
+
+**Common mistake:** Using `brokerage execute "positions/?nonzero=true"` — this FAILS because `brokerage execute` doesn't support query params. Use the `positions` command instead.
 
 ---
 

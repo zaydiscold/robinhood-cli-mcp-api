@@ -1856,11 +1856,17 @@ export interface PortfolioPnlOptions {
  * mark−last is mid-drift; the account-level extended_hours_equity already captures real index-option AH).
  * Returns a unit-explicit object; never throws on a per-account read failure (degrades + flags).
  */
-export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promise<any> {
+export async function computePortfolioPnl(
+  opts: PortfolioPnlOptions = {},
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {}
+): Promise<any> {
+  // Injectable fetchers default to the real engine (prod), overridable for tests (golden fixtures).
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
   const n = (v: unknown) => Number(v);
   const window = opts.window ?? "both";
   // 1. Accounts — transfer/accounts/ is the COMPLETE graph; trading accounts only.
-  const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
+  const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
   const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
   const rhLabels = new Map<string, string>();
   let accts: string[] = [];
@@ -1893,7 +1899,7 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
   const perAccount = await Promise.all(accts.map(async (acct) => {
     const a: any = { acct, label: labelFor(acct), equity: Number.NaN, day: Number.NaN, afterHours: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
     try {
-      const p = await brokerageGetJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
+      const p = await getJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
       const equity = n(p.equity), ext = n(p.extended_hours_equity);
       const adjPrev = n(p.adjusted_equity_previous_close), rawPrev = n(p.equity_previous_close);
       const prevClose = Number.isFinite(adjPrev) && adjPrev !== 0 ? adjPrev : (Number.isFinite(rawPrev) && rawPrev !== 0 ? rawPrev : Number.NaN);
@@ -1902,11 +1908,11 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
       a.day = Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
     } catch (e) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
     try {
-      const eq = await brokerageGetAllResults("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
+      const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
       a.equityPositions = eq.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
     } catch { a.warnings.push(`equity positions read failed (${acct})`); }
     try {
-      const od = await brokerageGetAllResults("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
+      const od = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
       a.optionPositions = od.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: n(x.quantity) }));
     } catch { a.warnings.push(`option positions read failed (${acct})`); }
     return a;
@@ -1918,7 +1924,7 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
   const fetchMap = async (url: string, ids: string[]) => {
     const map = new Map<string, any>();
     for (let i = 0; i < ids.length; i += 40) {
-      const data = await brokerageGetJson(url, { ids: ids.slice(i, i + 40).join(",") });
+      const data = await getJson(url, { ids: ids.slice(i, i + 40).join(",") });
       for (const r of data.results ?? []) if (r?.instrument_id) map.set(r.instrument_id, r);
     }
     return map;

@@ -2699,9 +2699,11 @@ program
           account_numbers: opts.account,
           is_closed: "false"
         });
-        const pending = (recent?.results ?? []).filter((o: any) =>
-          o.side === "buy" && o.state !== "filled" && o.state !== "cancelled" && o.state !== "rejected"
-        );
+        const pending = (recent?.results ?? []).filter((o: any) => {
+          // Only block orders from the last 5 minutes (stale pending ≠ real duplicate)
+          const age = Date.now() - Date.parse(String(o.created_at ?? 0));
+          return o.side === "buy" && o.state !== "filled" && o.state !== "cancelled" && o.state !== "rejected" && age < 300_000;
+        });
         if (pending.length > 0) {
           throw new Error(
             `DEDUP: ${pending.length} pending buy order(s) for ${opts.symbol.toUpperCase()} already exist. ` +
@@ -2803,9 +2805,10 @@ program
           account_numbers: opts.account,
           is_closed: "false"
         });
-        const pending = (recent?.results ?? []).filter((o: any) =>
-          o.side === "sell" && o.state !== "filled" && o.state !== "cancelled" && o.state !== "rejected"
-        );
+        const pending = (recent?.results ?? []).filter((o: any) => {
+          const age = Date.now() - Date.parse(String(o.created_at ?? 0));
+          return o.side === "sell" && o.state !== "filled" && o.state !== "cancelled" && o.state !== "rejected" && age < 300_000;
+        });
         if (pending.length > 0) {
           throw new Error(
             `DEDUP: ${pending.length} pending sell order(s) for ${opts.symbol.toUpperCase()} already exist. ` +

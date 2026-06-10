@@ -2715,7 +2715,8 @@ program
       }
     }
 
-    // 5. Execute
+    // 5. Execute (with ref_id for broker-level idempotency)
+    const refId = `${opts.symbol.toUpperCase()}-${opts.account}-${Date.now()}`;
     const result = await gatedBrokerageWrite({
       url: "https://api.robinhood.com/orders/",
       method: "POST",
@@ -2729,7 +2730,8 @@ program
         side: "buy",
         quantity: String(shares),
         price,
-        order_form_version: "7"
+        order_form_version: "7",
+        ref_id: refId
       },
       dryRun: !liveWrite,
       liveWrite
@@ -2816,6 +2818,7 @@ program
       }
     }
 
+    const refId = `${opts.symbol.toUpperCase()}-${opts.account}-${Date.now()}`;
     const result = await gatedBrokerageWrite({
       url: "https://api.robinhood.com/orders/",
       method: "POST",
@@ -2829,7 +2832,8 @@ program
         side: "sell",
         quantity: String(shares),
         price,
-        order_form_version: "7"
+        order_form_version: "7",
+        ref_id: refId
       },
       dryRun: !liveWrite,
       liveWrite

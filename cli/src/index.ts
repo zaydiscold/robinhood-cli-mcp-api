@@ -2336,7 +2336,8 @@ program
       if (inWindow(t)) events.push({ time: String(t), kind: "transfer", summary: `${r.direction ?? "?"} ${r.amount ?? "?"}`, state: String(r.state ?? "?") });
     }
     events.sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
-    if (opts.json) { printJson(events); return; }
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), events }); return; }
+    process.stdout.write(`as of ${new Date().toISOString()}\n`);
     if (events.length === 0) { process.stdout.write(`No transactions in the last ${days} day(s).\n`); return; }
     printTable(
       events.map((e) => ({ when: e.time.slice(0, 19).replace("T", " "), type: e.kind, state: e.state, detail: e.summary })),

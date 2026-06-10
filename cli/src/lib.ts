@@ -1551,13 +1551,31 @@ function cryptoAuthFromEnv(options: ExecuteCryptoOptions) {
 // request can be retried once. Returns undefined if the refresh produced nothing.
 // Runs in the CLI's own (TCC-permitted) context, so no daemon / Full Disk Access
 // grant is needed. See scripts/refresh-auth.sh for the disk-read rationale.
+function resolveBash(): string {
+  if (process.platform === "win32") {
+    // git-bash on Windows: try the standard Git install path first,
+    // then fall back to the MSYS2 /bin/bash (resolvable when running inside bash).
+    const candidates = [
+      "C:/Program Files/Git/usr/bin/bash.exe",
+      "C:/Program Files/Git/bin/bash.exe",
+      "/bin/bash",
+      "/usr/bin/bash",
+    ];
+    for (const c of candidates) {
+      if (existsSync(c)) return c;
+    }
+    return "bash"; // let execFileSync try PATH
+  }
+  return "/bin/bash";
+}
+
 function tryRefreshBrokerageToken(): string | undefined {
   try {
     const root = repoRoot();
     const script = join(root, "scripts", "refresh-auth.sh");
     const envPath = join(root, ".env");
     if (!existsSync(script)) return undefined;
-    execFileSync("/bin/bash", [script], { stdio: "ignore", timeout: 30000 });
+    execFileSync(resolveBash(), [script], { stdio: "ignore", timeout: 30000 });
     if (!existsSync(envPath)) return undefined;
     for (const line of readFileSync(envPath, "utf8").split("\n")) {
       const t = line.trim();
@@ -1693,7 +1711,7 @@ export async function executeBrokerageRequest(
       origin: "https://robinhood.com",
       referer: "https://robinhood.com/",
       "x-robinhood-api-version": process.env.ROBINHOOD_API_VERSION ?? "1.431.4",
-      "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.23.2025+43f8dad0de15",
+      "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.24.2030+bc12ef34",
       "x-hyper-ex": "enabled"
     };
     if (authToken) headers.authorization = `Bearer ${authToken}`;
@@ -1889,9 +1907,9 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
     return localLabels.get(acct) || localLabels.get("…" + l4) || localLabels.get(l4) || rhLabels.get(acct) || `…${l4}`;
   };
 
-  // 2. Per-account top-line + raw positions, in parallel; a failure degrades to a warning.
+  // 2. Per-account top-line + raw positions + buying power, in parallel; a failure degrades to a warning.
   const perAccount = await Promise.all(accts.map(async (acct) => {
-    const a: any = { acct, label: labelFor(acct), equity: Number.NaN, day: Number.NaN, afterHours: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
+    const a: any = { acct, label: labelFor(acct), equity: Number.NaN, day: Number.NaN, afterHours: Number.NaN, buyingPower: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
     try {
       const p = await brokerageGetJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
       const equity = n(p.equity), ext = n(p.extended_hours_equity);
@@ -1901,6 +1919,10 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
       a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
       a.day = Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
     } catch (e) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
+    try {
+      const bp = await brokerageGetJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", { num: acct });
+      a.buyingPower = n(bp.buying_power);
+    } catch { /* buying power is best-effort; degrade silently */ }
     try {
       const eq = await brokerageGetAllResults("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
       a.equityPositions = eq.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
@@ -1990,7 +2012,7 @@ export async function computePortfolioPnl(opts: PortfolioPnlOptions = {}): Promi
     totals: { equityUsd: totals.equity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
     reconciliation: { driverDayChangeUsd: driverDaySum, totalsDayChangeUsd: totals.day, residualUsd: residual, mispricedPositions,
       note: "residual = cash/dividends/transfers/option-vs-equity timing (NOT failed pricing — see mispricedPositions); after-hours is EQUITY-only (options don't print after-hours)" },
-    accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equityUsd: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, partial: !Number.isFinite(a.equity), warnings: a.warnings })),
+    accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equityUsd: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, buyingPower: a.buyingPower, partial: !Number.isFinite(a.equity), warnings: a.warnings })),
     byUnderlying: top ? byUnderlying.slice(0, top) : byUnderlying,
     byPosition: top ? byPosition.slice(0, top) : byPosition,
     warnings: globalWarnings
@@ -2020,6 +2042,17 @@ export async function gatedBrokerageWrite(opts: {
   const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
   const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
   return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason, body: result.body };
+}
+
+/** Append a trade to the local trading log (JSONL, one line per order). Best-effort. */
+export async function logTrade(entry: Record<string, unknown>) {
+  try {
+    const { appendFileSync, existsSync, mkdirSync } = await import("fs");
+    const { join } = await import("path");
+    const logDir = join(repoRoot(), "local");
+    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+    appendFileSync(join(logDir, "trading-log.jsonl"), JSON.stringify(entry) + "\n");
+  } catch { /* best-effort */ }
 }
 
 export async function executeCryptoRequest(

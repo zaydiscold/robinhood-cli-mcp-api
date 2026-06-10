@@ -6621,5 +6621,18 @@
     "requestTypes": [
       "XHR"
     ]
+  },
+  {
+    "url": "https://api.robinhood.com/orders/{0}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-06-09: single order status lookup by ID",
+    "summary": "Get a single order by ID (state, fills, price, quantity)"
   }
 ]

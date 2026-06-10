@@ -387,13 +387,17 @@ All commands run from repo root. Reads run live and free. Writes are double-gate
 
 ```bash
 robinhood-cli api-map summary --json
+robinhood-cli api-map directory --json                       # by-domain endpoint index → route + command + response fields
+robinhood-cli api-map directory --domain options             # one domain; add --with-fields for full field lists
 robinhood-cli api-map account-context --json
 robinhood-cli api-map options-strategies --json
 robinhood-cli api-map options-strategy-plan iron-condor --json
 robinhood-cli api-map routes --host trading.robinhood.com --json
 robinhood-cli brokerage routes --risk read --json
 robinhood-cli brokerage route "https://api.robinhood.com/accounts/" --json
+robinhood-cli brokerage describe "portfolios/{account_number}/" --json   # self-describing: tokens, query keys, response fields, driving command, risk
 robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --dry-run --json
+robinhood-cli recipes "after hours"                                      # intent → the one command to run (+ MCP tool)
 robinhood-cli quote MRVL NVDA AAPL --json
 robinhood-cli positions --json
 robinhood-cli options positions --json
@@ -428,7 +432,7 @@ Do not overclaim first-class support. If a capability is route-map-only, say so 
 |------|-------|-------|
 | All accounts (complete) | `bonfire.robinhood.com/transfer/accounts/` | ONLY endpoint that lists every account |
 | Primary account portfolio | `portfolios/` | List endpoint, includes `equity_previous_close` |
-| Per-account portfolio | `portfolios/{num}/` | Use `--param num=X`. Does NOT include prev_close |
+| Per-account portfolio | `portfolios/{account_number}/` | Use `--param account_number=X`. Does NOT include prev_close |
 | Positions | `positions/?account_number={n}&nonzero=true` | Returns instrument UUIDs, not tickers |
 | Instruments→tickers | `instruments/?ids={ids}` | Batch resolve UUIDs: `--param ids=uuid1,uuid2` |
 | Quotes | `marketdata/quotes/?ids={ids}` | Batch resolve instrument UUIDs to prices |
@@ -796,11 +800,12 @@ Interpret output this way:
 
 ### Route Matching Gotchas
 
-1. **Matching is substring-based.** `portfolios/<ACCOUNT_NUMBER>/` will NOT match — the route is `portfolios/{num}/` with a placeholder. Use brace syntax + `--param`.
+1. **Matching is substring-based.** `portfolios/<ACCOUNT_NUMBER>/` will NOT match — the route is `portfolios/{account_number}/` with a placeholder. Use brace syntax + `--param`.
 2. **Method-aware routing.** `GET /orders/` and `POST /orders/` share a URL. To hit the POST route you MUST pass `--method POST`, otherwise you get the GET (read) route.
 3. **`accounts/` under-reports.** Use `bonfire.robinhood.com/transfer/accounts/` for the full account list.
 4. **Build after map edits.** The runtime reads `cli/dist/api-map/`, not the source. Editing `api-map/brokerage-routes.json` without rebuilding is a silent no-op.
 5. **`url_template` vs `url`.** Some routes (watchlists, indices 263-271) used `url_template` instead of `url`. The engine only matches on `url`; keep source and dist route maps rebuilt after any repair.
+6. **Account tokens are standardized on `{account_number}`.** The map historically mixed `{num}`/`{account}`/`{account_number}` for the same thing; all are now `{account_number}`. The resolver is **alias-aware** — a legacy `--param num=` / `--param account=` (and a query using `{num}`/`{account}`) still resolves and substitutes, so old scripts/docs keep working. Prefer `{account_number}` in new work.
 
 Full details: `AGENTS.md` §3-§5.
 
@@ -864,7 +869,7 @@ follow this exact order — it is the intuitive answer they actually want:
 
 1. **Top-line, per account, in dollars first.** Read `portfolios/` → `equity` (or
    `extended_hours_equity`) vs `equity_previous_close`. The difference is the authoritative "$ down/up
-   today" per account. Lead with this number. (Per-account `portfolios/{num}/` may lack
+   today" per account. Lead with this number. (Per-account `portfolios/{account_number}/` may lack
    `equity_previous_close`; the list endpoint has it for the primary.)
 2. **Attribute by DOLLARS, never percents.** Rank holdings by *dollar* day-change, not %:
    - equity: `qty × last × dayPct`
@@ -878,7 +883,7 @@ follow this exact order — it is the intuitive answer they actually want:
 4. **"After hours" is its OWN number — compute it correctly, and do NOT hard-rule an asset class out.**
    When the operator asks "how am I down **after hours / today**," the after-hours $ per account is
    **`extended_hours_equity − equity`** (NOT `… − equity_previous_close`, which is the full day). Read it
-   from `portfolios/{num}/` (param is literally `{num}`); it's the exact "−$X after hours" the app shows.
+   from `portfolios/{account_number}/` (param is `{account_number}`); it's the exact "−$X after hours" the app shows.
    Sum across accounts and lead with it. Per-name attribution: `qty × (last_extended_hours_trade_price −
    last_trade_price)` from `marketdata/quotes/` (equities/ETFs) and `marketdata/options/` (options).
    - **It is NOT "equities only."** Index/ETF options (SPX, SPXW, SPY, NDX, …) trade ~15 min past the bell
@@ -899,7 +904,7 @@ also the MCP tool `robinhood_portfolio`:
 - `portfolio --after-hours` — rank by the after-hours move (the "what's nuking me after hours" answer).
 - `portfolio --day` · `--by position|account|underlying` · `--account <n>` · `--json`.
 One call returns the per-account top-line, the by-underlying dollar drivers, and a reconciliation line.
-The manual composition below is only a FALLBACK if the command is unavailable: `portfolios/{num}/`
+The manual composition below is only a FALLBACK if the command is unavailable: `portfolios/{account_number}/`
 (equity / extended_hours_equity / **adjusted_equity_previous_close** — note: per-account
 `equity_previous_close` is "0", use the adjusted field) + `positions/?account_number={account_number}` +
 `options aggregate_positions/` + `marketdata/{quotes,options}/`. The deliverable is one ranked,
@@ -1230,9 +1235,9 @@ documented. To extend it safely:
 
 ## MCP Server
 
-28 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+32 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
-> **Count note:** the *source/dist* registers 28 tools. A *running* MCP process started before the
+> **Count note:** the *source/dist* registers 32 tools. A *running* MCP process started before the
 > last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
 > the server) after pulling, then confirm the client lists all 28.
 
@@ -1255,6 +1260,10 @@ claude mcp add robinhood-cli -s user -- \
 | Tool | Purpose |
 |------|---------|
 | `robinhood_api_map_summary` | Summarize the route map |
+| `robinhood_api_map_directory` | By-domain endpoint directory: intent → route + first-class command + response fields (verified/inferred/undocumented) |
+| `robinhood_brokerage_describe` | Self-describing route card for one URL: tokens, query keys, response fields, risk, command; did-you-mean on a miss, candidates on ambiguity |
+| `robinhood_recipes` | Intent → the one command to run (+ MCP-tool equivalent); free-text filterable. The agent's intent-routing table |
+| `robinhood_options_order_flow` | Pre-trade options context: options buying power (per account), fee schedule, collateral. Each read degrades independently |
 | `robinhood_brokerage_routes` | List brokerage routes with filters |
 | `robinhood_routes` | Unified route map (crypto + brokerage) |
 | `robinhood_browser_routes` | Latest CDP-captured route templates |
@@ -1333,7 +1342,7 @@ Always try Syncthing before fighting with SSH.
 1. **Editing source without rebuilding.** The runtime reads `cli/dist/api-map/`, not `api-map/`. Rebuild after every map edit: `pnpm --filter @zaydiscold/robinhood-cli build`.
 2. **`url_template` vs `url`.** The engine matches on `url` only. 9 watchlist (`discovery/lists`) routes once carried only `url_template` and were silently unmatchable; that was repaired (commit `c2dd79f`) — they now carry both keys. If you add a route, give it a `url`; after any map edit, rebuild so `dist` matches.
 3. **`accounts/` under-reports.** Shows only 2 accounts. Use `bonfire.robinhood.com/transfer/accounts/` for the complete list.
-4. **Route matching is substring-based.** A raw account number won't match `portfolios/{num}/`. Use brace syntax + `--param`.
+4. **Route matching is substring-based.** A raw account number won't match `portfolios/{account_number}/`. Use brace syntax + `--param`.
 
 ### Portfolio & Data
 
@@ -1373,7 +1382,7 @@ Always try Syncthing before fighting with SSH.
 node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full
 
 # 2. For each account, get portfolio
-node cli/dist/index.js brokerage execute "portfolios/{num}/" --param "num=<N>" --json --full
+node cli/dist/index.js brokerage execute "portfolios/{account_number}/" --param "account_number=<N>" --json --full
 
 # 3. Get positions (returns instrument UUIDs)
 node cli/dist/index.js brokerage execute "positions/?account_number={n}&nonzero=true" --param "n=<N>" --json --full
@@ -1444,7 +1453,7 @@ node cli/dist/index.js portfolio --after-hours  # rank by the after-hours move
 node cli/dist/index.js portfolio --day          # rank by the full-day move
 node cli/dist/index.js portfolio --by position --top 10 --json
 ```
-It composes accounts → `portfolios/{num}/` (day Δ = `equity − adjusted_equity_previous_close`;
+It composes accounts → `portfolios/{account_number}/` (day Δ = `equity − adjusted_equity_previous_close`;
 after-hours Δ = `extended_hours_equity − equity`) → positions + quotes + option marks, attributes in
 DOLLARS, rolls up by underlying across accounts, and prints a reconciliation line (drivers vs top-line).
 After-hours is EQUITY-only (options don't print after-hours). Same engine as the MCP tool

@@ -188,7 +188,7 @@ node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/account
 Per-account reads (fill `--param` with an account number you discovered in §2):
 
 ```bash
-node cli/dist/index.js brokerage execute "portfolios/{num}/" --param num=<ACCOUNT_NUMBER> --json --full
+node cli/dist/index.js brokerage execute "portfolios/{account_number}/" --param account_number=<ACCOUNT_NUMBER> --json --full
 node cli/dist/index.js brokerage execute "positions/?account_number={account_number}&nonzero=true" --param account_number=<ACCOUNT_NUMBER> --json --full
 ```
 
@@ -569,7 +569,7 @@ ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
 # DRIP — toggle dividend reinvestment per account (PATCH, body {"drip_enrolled": true|false}):
 robinhood-cli brokerage execute \
   "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/" --method PATCH \
-  --param num=<ACCOUNT_NUMBER> --body-json '{"drip_enrolled":true}'   # dry-run unless gated
+  --param account_number=<ACCOUNT_NUMBER> --body-json '{"drip_enrolled":true}'   # dry-run unless gated
 
 # CANCEL an order (POST, no body):
 robinhood-cli brokerage execute \

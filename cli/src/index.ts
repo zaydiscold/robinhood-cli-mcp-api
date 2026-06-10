@@ -35,6 +35,13 @@ import {
   loadAccountContextWorkflows,
   loadBrowserRoutes,
   loadBrokerageRoutes,
+  buildEndpointDirectory,
+  ENDPOINT_DOMAINS,
+  describeRoute,
+  noMatchHint,
+  loadRecipes,
+  filterRecipes,
+  readOptionsOrderFlow,
   loadOptionsStrategyWorkflows,
   loadRobinhoodRoutes,
   optionReturnPct,
@@ -99,6 +106,37 @@ apiMap
     process.stdout.write(`Brokerage: ${summary.brokerage.routes} route templates\n`);
     process.stdout.write(`Browser CDP: ${summary.brokerage.browserRoutes} route templates\n`);
     process.stdout.write(`Unified risk: ${Object.entries(summary.unified.byRisk).map(([risk, count]) => `${risk}=${count}`).join(", ")}\n`);
+  });
+
+apiMap
+  .command("directory")
+  .description("By-domain endpoint directory: intent → route + first-class command + response fields")
+  .option("--domain <domain>", `filter to one domain (${ENDPOINT_DOMAINS.join(", ")})`)
+  .option("--query <text>", "substring filter against URL")
+  .option("--with-fields", "include the full response field list per endpoint")
+  .option("--json", "emit JSON")
+  .action((options: { domain?: any; query?: string; withFields?: boolean; json?: boolean }) => {
+    const directory = buildEndpointDirectory({ domain: options.domain, query: options.query, withFields: options.withFields });
+    if (options.json) {
+      printJson(directory);
+      return;
+    }
+    const cov = directory.fieldsCoverage;
+    process.stdout.write(`Endpoint directory — ${directory.totalRoutes} routes | fields: ${cov.verified} verified, ${cov.inferred} inferred, ${cov.undocumented} undocumented\n\n`);
+    for (const group of directory.domains) {
+      process.stdout.write(`▸ ${group.domain.toUpperCase()} (${group.routeCount})\n`);
+      printTable(
+        group.entries.map((entry) => ({
+          risk: entry.risk,
+          methods: entry.methods.join(","),
+          command: entry.command ?? "—",
+          fields: entry.fieldCount > 0 ? `${entry.fieldCount} (${entry.fieldsSource})` : "—",
+          url: entry.url
+        })),
+        ["risk", "methods", "command", "fields", "url"]
+      );
+      process.stdout.write("\n");
+    }
   });
 
 apiMap
@@ -432,6 +470,30 @@ apiMap
 
 program.addCommand(apiMap);
 
+program
+  .command("recipes")
+  .description("Intent → the one command to run. Maps a plain-English goal to the verified CLI command + MCP tool.")
+  .argument("[query]", "optional free-text filter (intent, trigger phrase, command)")
+  .option("--json", "emit JSON")
+  .action((query: string | undefined, options: { json?: boolean }) => {
+    const recipes = filterRecipes(loadRecipes(), query);
+    if (options.json) {
+      printJson({ count: recipes.length, recipes });
+      return;
+    }
+    if (recipes.length === 0) {
+      process.stdout.write(`No recipe matched "${query}". Run \`recipes\` with no filter to see them all.\n`);
+      return;
+    }
+    for (const r of recipes) {
+      process.stdout.write(`▸ ${r.intent}\n`);
+      process.stdout.write(`    run:   ${r.command}\n`);
+      process.stdout.write(`    mcp:   ${r.mcpTool}   [${r.risk}]\n`);
+      if (r.notes) process.stdout.write(`    note:  ${r.notes}\n`);
+      process.stdout.write("\n");
+    }
+  });
+
 const brokerage = new Command("brokerage").description("Inspect reverse-engineered brokerage/account routes");
 
 brokerage
@@ -473,7 +535,7 @@ brokerage
       return;
     }
     if (selected.length === 0) {
-      throw new Error(`No brokerage route matched: ${query}`);
+      throw new Error(noMatchHint(query));
     }
     printTable(
       selected.map((route) => ({
@@ -484,6 +546,42 @@ brokerage
       })),
       ["risk", "category", "host", "url"]
     );
+  });
+
+brokerage
+  .command("describe")
+  .description("Self-describing route card: what it needs (tokens/query keys), what it returns (fields), and the command that drives it")
+  .argument("<query>", "exact URL or URL substring")
+  .option("--method <method>", "disambiguate by HTTP method")
+  .option("--json", "emit JSON")
+  .action((query: string, options: { method?: string; json?: boolean }) => {
+    const desc = describeRoute(query, options.method);
+    if (options.json) {
+      printJson(desc);
+      return;
+    }
+    if (!desc.resolved) {
+      if (desc.ambiguous?.length) {
+        process.stdout.write(`"${query}" is AMBIGUOUS — ${desc.ambiguous.length} routes match. Be more specific:\n`);
+        for (const u of desc.ambiguous) process.stdout.write(`  - ${u}\n`);
+      } else {
+        process.stdout.write(`No route matched "${query}".\n`);
+        if (desc.suggestions?.length) {
+          process.stdout.write(`Did you mean:\n`);
+          for (const u of desc.suggestions) process.stdout.write(`  - ${u}\n`);
+        }
+      }
+      return;
+    }
+    process.stdout.write(`${(desc.methods ?? []).join(",")} ${desc.url}\n`);
+    process.stdout.write(`  risk:      ${desc.risk}\n`);
+    process.stdout.write(`  command:   ${desc.command ?? "— (use brokerage execute)"}\n`);
+    process.stdout.write(`  tokens:    ${desc.requiredTokens?.length ? desc.requiredTokens.map((t) => `{${t}}`).join(", ") : "none"}\n`);
+    process.stdout.write(`  queryKeys: ${desc.queryKeys?.length ? desc.queryKeys.join(", ") : "none"}\n`);
+    const fieldLabel = desc.fields?.length ? `${desc.fields.length} (${desc.fieldsSource}, ${desc.fieldsShape ?? "object"})` : `none (${desc.fieldsSource ?? "undocumented"})`;
+    process.stdout.write(`  fields:    ${fieldLabel}\n`);
+    if (desc.fields?.length) process.stdout.write(`             ${desc.fields.join(", ")}\n`);
+    for (const w of desc.warnings ?? []) process.stderr.write(`  warning:   ${w}\n`);
   });
 
 brokerage
@@ -500,7 +598,7 @@ brokerage
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, options.method);
     if (!route) {
-      throw new Error(`No brokerage route matched: ${query}`);
+      throw new Error(noMatchHint(query));
     }
     const plan = planBrokerageRequest({
       route,
@@ -540,7 +638,7 @@ brokerage
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, options.method);
     if (!route) {
-      throw new Error(`No brokerage route matched: ${query}`);
+      throw new Error(noMatchHint(query));
     }
     const gate = resolveLiveWriteGate({
       risk: route.risk,
@@ -925,12 +1023,12 @@ program.addCommand(recurring);
 
 // --- Account settings: first-class wrappers over the PROVEN settings-write endpoints ---
 // (capability map docs/account-settings-capability-map-2026-06-03.md). Every write double-gated.
-const DRIP_ACCOUNT_URL = "https://api.robinhood.com/corp_actions/drip/account_settings/{account}/";
-const DRIP_INSTRUMENT_URL = "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account}/{instrument_id}/";
-const OPTION_SETTINGS_URL = "https://api.robinhood.com/options/option_settings/{account}/";
-const MARGIN_SETTINGS_URL = "https://api.robinhood.com/settings/margin/{account}/";
-const SWEEP_STATE_URL = "https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/";
-const STOCK_LENDING_URL = "https://bonfire.robinhood.com/slip/{account}/status/";
+const DRIP_ACCOUNT_URL = "https://api.robinhood.com/corp_actions/drip/account_settings/{account_number}/";
+const DRIP_INSTRUMENT_URL = "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account_number}/{instrument_id}/";
+const OPTION_SETTINGS_URL = "https://api.robinhood.com/options/option_settings/{account_number}/";
+const MARGIN_SETTINGS_URL = "https://api.robinhood.com/settings/margin/{account_number}/";
+const SWEEP_STATE_URL = "https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/";
+const STOCK_LENDING_URL = "https://bonfire.robinhood.com/slip/{account_number}/status/";
 
 const settings = new Command("settings").description("Read/write account settings: DRIP, trade-on-expiration, PDT protection, cash sweep, stock lending. Writes double-gated.");
 
@@ -941,7 +1039,7 @@ settings
   .option("--json", "emit JSON")
   .action(async (opts: { account: string; json?: boolean }) => {
     const label = await assertOwnedAccount(opts.account);
-    const get = async (url: string) => { try { return await brokerageGetJson(url, { account: opts.account }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
+    const get = async (url: string) => { try { return await brokerageGetJson(url, { account_number: opts.account }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
     const [drip, optionSettings, margin, sweep, lending] = await Promise.all([
       get(DRIP_ACCOUNT_URL), get(OPTION_SETTINGS_URL), get(MARGIN_SETTINGS_URL), get(SWEEP_STATE_URL), get(STOCK_LENDING_URL)
     ]);
@@ -980,7 +1078,7 @@ settings
     if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
     await assertOwnedAccount(opts.account);
     const url = opts.instrument ? DRIP_INSTRUMENT_URL : DRIP_ACCOUNT_URL;
-    const params: Record<string, string> = { account: opts.account };
+    const params: Record<string, string> = { account_number: opts.account };
     if (opts.instrument) params.instrument_id = opts.instrument;
     await writeFlag(() => gatedBrokerageWrite({ url, method: "PATCH", params, body: { drip_enabled: Boolean(opts.enable) }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `DRIP ${opts.enable ? "enable" : "disable"}${opts.instrument ? ` (instrument ${opts.instrument})` : " (account-wide)"} ${opts.account}`);
   });
@@ -997,7 +1095,7 @@ settings
   .action(async (opts: { account: string; enable?: boolean; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
     await assertOwnedAccount(opts.account);
-    await writeFlag(() => gatedBrokerageWrite({ url: OPTION_SETTINGS_URL, method: "PATCH", params: { account: opts.account }, body: { trading_on_expiration_state: opts.enable ? "enabled" : "disabled" }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `trade-on-expiration ${opts.enable ? "enabled" : "disabled"} ${opts.account}`);
+    await writeFlag(() => gatedBrokerageWrite({ url: OPTION_SETTINGS_URL, method: "PATCH", params: { account_number: opts.account }, body: { trading_on_expiration_state: opts.enable ? "enabled" : "disabled" }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `trade-on-expiration ${opts.enable ? "enabled" : "disabled"} ${opts.account}`);
   });
 
 settings
@@ -1012,7 +1110,7 @@ settings
   .action(async (opts: { account: string; on?: boolean; off?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (opts.on === opts.off) throw new Error("Pass exactly one of --on / --off.");
     await assertOwnedAccount(opts.account);
-    await writeFlag(() => gatedBrokerageWrite({ url: MARGIN_SETTINGS_URL, method: "PUT", params: { account: opts.account }, body: { day_trades_protection: Boolean(opts.on) }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `PDT-protection ${opts.on ? "on" : "off"} ${opts.account}`);
+    await writeFlag(() => gatedBrokerageWrite({ url: MARGIN_SETTINGS_URL, method: "PUT", params: { account_number: opts.account }, body: { day_trades_protection: Boolean(opts.on) }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `PDT-protection ${opts.on ? "on" : "off"} ${opts.account}`);
   });
 
 settings
@@ -1027,7 +1125,7 @@ settings
   .action(async (opts: { account: string; enable?: boolean; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
     await assertOwnedAccount(opts.account);
-    await writeFlag(() => gatedBrokerageWrite({ url: STOCK_LENDING_URL, method: "PUT", params: { account: opts.account }, body: { is_enabled: Boolean(opts.enable), was_ever_enabled: true }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `stock-lending ${opts.enable ? "enable" : "disable"} ${opts.account}`);
+    await writeFlag(() => gatedBrokerageWrite({ url: STOCK_LENDING_URL, method: "PUT", params: { account_number: opts.account }, body: { is_enabled: Boolean(opts.enable), was_ever_enabled: true }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `stock-lending ${opts.enable ? "enable" : "disable"} ${opts.account}`);
   });
 
 settings
@@ -1041,7 +1139,7 @@ settings
   .action(async (opts: { account: string; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!opts.disable) throw new Error("Only --disable (unenroll) is automated. Enrolling needs the agreement-sign flow (see capability map).");
     await assertOwnedAccount(opts.account);
-    await writeFlag(() => gatedBrokerageWrite({ url: SWEEP_STATE_URL, method: "POST", params: { account: opts.account }, body: { sweep_enrollment_action: "unenroll" }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `cash-sweep unenroll ${opts.account}`);
+    await writeFlag(() => gatedBrokerageWrite({ url: SWEEP_STATE_URL, method: "POST", params: { account_number: opts.account }, body: { sweep_enrollment_action: "unenroll" }, dryRun: opts.dryRun, liveWrite: opts.liveWrite }), opts.json, `cash-sweep unenroll ${opts.account}`);
   });
 
 program.addCommand(settings);
@@ -1426,6 +1524,33 @@ options
     );
     const best = rows.find((row) => Number.isFinite(row.returnPct));
     if (best) process.stdout.write(`\nBest performer: ${best.contract} at ${pct(best.returnPct)}.\n`);
+  });
+
+options
+  .command("order-flow")
+  .description("Pre-trade options context (live reads): options buying power (per account), the fee schedule, and collateral requirements")
+  .option("--account <account_number>", "account for options buying power (per-account)")
+  .option("--chain-id <chain_id>", "chain id for chain-level collateral (else order-level collateral)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; chainId?: string; json?: boolean }) => {
+    const flow = await readOptionsOrderFlow({ accountNumber: opts.account, chainId: opts.chainId });
+    if (opts.json) {
+      printJson(flow);
+      return;
+    }
+    if (flow.buyingPower) {
+      const bp = flow.buyingPower;
+      process.stdout.write(`Options buying power (…${String(opts.account).slice(-4)}): ${usd(num(bp.options_buying_power ?? bp.buying_power ?? bp.amount))}\n`);
+    }
+    if (flow.fees) {
+      const f = flow.fees;
+      process.stdout.write(`Options fees: ${JSON.stringify(f).slice(0, 200)}\n`);
+    }
+    if (flow.collateral) {
+      process.stdout.write(`Collateral: ${JSON.stringify(flow.collateral).slice(0, 200)}\n`);
+    }
+    for (const w of flow.warnings) process.stderr.write(`warning: ${w}\n`);
+    process.stdout.write(`\nNote: the options/orders/review PREVIEW is a POST — run it via \`brokerage execute "options/orders/review" --method POST\` (gated) until a live pass confirms it is non-mutating.\n`);
   });
 
 options

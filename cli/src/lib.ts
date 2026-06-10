@@ -50,6 +50,12 @@ export interface BrokerageRoute {
   queryKeys?: string[];
   operationId?: string;
   summary?: string;
+  /** Response keys an agent reads off this endpoint (for lists, the item keys). See scripts/harvest-response-fields.mjs. */
+  fields?: string[];
+  /** Provenance of `fields`: "verified" (from a captured body), "inferred" (documented shape), or "undocumented" (stub). */
+  fieldsSource?: "verified" | "inferred" | "undocumented";
+  /** Whether the response is a single object or a list (item keys reported in `fields`). */
+  fieldsShape?: "object" | "list";
 }
 
 export interface BrowserRoute extends BrokerageRoute {
@@ -576,22 +582,201 @@ export function listCryptoRoutes(root = repoRootFromCli()): CryptoRoute[] {
   });
 }
 
+// ── Token canonicalization ──────────────────────────────────────────────────────────────────────
+// Account-identifying URL tokens were historically inconsistent across the captured route map
+// ({num}, {account}, {account_number} all meant "an account number"). The map is now standardized on
+// {account_number}. These aliases keep EVERY caller working through the transition — internal callers,
+// doc examples, and external scripts that still pass a legacy token — because both route MATCHING and
+// param SUBSTITUTION run through canonicalToken. That's the guarantee behind the rename: nothing breaks.
+const ACCOUNT_TOKEN_ALIASES: Record<string, string> = {
+  num: "account_number",
+  n: "account_number",
+  account: "account_number",
+  acct: "account_number",
+  account_number: "account_number"
+};
+export function canonicalToken(name: string): string {
+  return ACCOUNT_TOKEN_ALIASES[name] ?? name;
+}
+/** Rewrite every {token} in a URL to its canonical name, so legacy and current tokens compare equal. */
+export function normalizeUrlTokens(url: string): string {
+  return url.replace(/\{([^}]+)\}/g, (_m, name: string) => `{${canonicalToken(name)}}`);
+}
+/** Resolve a param value by its exact name OR by any alias that canonicalizes to the same token. */
+export function resolveParamValue(params: Record<string, string | undefined>, name: string): string | undefined {
+  const direct = params[name];
+  if (direct !== undefined && direct !== "") return direct;
+  const canon = canonicalToken(name);
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "") continue;
+    if (canonicalToken(key) === canon) return value;
+  }
+  return undefined;
+}
+
 export function filterBrokerageRoutes(
   routes: BrokerageRoute[],
   filters: { risk?: string; category?: string; host?: string; query?: string }
 ): BrokerageRoute[] {
   const query = filters.query?.toLowerCase();
+  // A templated query (contains a {token}) is matched token-insensitively so a legacy {num} query still
+  // finds the canonical {account_number} route. A plain text query (no braces) is unaffected.
+  const queryHasToken = query?.includes("{") ?? false;
+  const normQuery = queryHasToken ? normalizeUrlTokens(query!) : query;
   return routes.filter((route) => {
     if (!route?.url) return false;
     if (filters.risk && route.risk !== filters.risk) return false;
     if (filters.category && !route.categories?.includes(filters.category)) return false;
     if (filters.host && route.host !== filters.host) return false;
-    if (query && !route.url.toLowerCase().includes(query)) return false;
+    if (query) {
+      const haystack = queryHasToken ? normalizeUrlTokens(route.url.toLowerCase()) : route.url.toLowerCase();
+      if (!haystack.includes(normQuery!)) return false;
+    }
     return true;
   });
 }
 
 export const filterRobinhoodRoutes = filterBrokerageRoutes;
+
+// ── Endpoint directory ──────────────────────────────────────────────────────────────────────────
+// A by-domain index that points an agent from intent → the right route + the first-class command that
+// drives it. Built from the live route map (so it never drifts) + the harvested `fields` slot. Shared by
+// the CLI (`api-map directory`) and the MCP (`robinhood_api_map_directory`) per the alignment invariant.
+
+export const ENDPOINT_DOMAINS = [
+  "accounts", "portfolio", "marketdata", "orders", "options", "settings",
+  "money-movement", "sentiment", "ipo", "crypto", "other"
+] as const;
+export type EndpointDomain = (typeof ENDPOINT_DOMAINS)[number];
+
+/** Classify a route into one agent-facing domain by URL shape. Order = most-specific-first. */
+export function domainForRoute(route: BrokerageRoute): EndpointDomain {
+  const u = route.url.toLowerCase();
+  if (/\b(ipo_access|ipo)\b/.test(u)) return "ipo";
+  if (u.includes("trading.robinhood.com") || u.includes("nummus") || /\bcrypto\b/.test(u)) return "crypto";
+  if (u.includes("midlands/news") || u.includes("midlands/ratings") || u.includes("midlands/tags") ||
+      u.includes("midlands/movers") || u.includes("midlands/search") || u.includes("earnings")) return "sentiment";
+  if (u.includes("ach") || u.includes("cashier") || u.includes("acats") || u.includes("transfers") ||
+      route.categories?.includes("money-movement")) return "money-movement";
+  if (u.includes("options/")) return "options";
+  if (u.includes("/orders/") || u.endsWith("/orders")) return "orders";
+  if (u.includes("marketdata") || u.includes("/quotes") || u.includes("/instruments/") || u.endsWith("/instruments")) return "marketdata";
+  if (u.includes("portfolios") || u.includes("positions")) return "portfolio";
+  if (u.includes("drip") || u.includes("option_settings") || u.includes("/margin/") || u.includes("sweep") ||
+      u.includes("recurring") || u.includes("subscription") || u.includes("settings")) return "settings";
+  if (u.includes("/accounts/") || u.includes("transfer/accounts") || u.includes("/user")) return "accounts";
+  return "other";
+}
+
+// Map a route to the first-class CLI command that drives it (read side). Substring → command label.
+const COMMAND_HINTS: Array<{ match: string; command: string }> = [
+  { match: "transfer/accounts", command: "accounts" },
+  { match: "marketdata/quotes", command: "quote" },
+  { match: "options/aggregate_positions", command: "options positions" },
+  { match: "options/instruments", command: "options enumerate / options chain" },
+  { match: "options/chains", command: "options chain / options expirations" },
+  { match: "marketdata/options", command: "options strategy-quote" },
+  { match: "options/orders", command: "history (read) / brokerage execute (write)" },
+  { match: "positions/", command: "positions" },
+  { match: "portfolios", command: "portfolio" },
+  { match: "discovery/lists", command: "watchlist" },
+  { match: "recurring", command: "recurring" },
+  { match: "midlands/news", command: "brokerage execute (sentiment read)" },
+  { match: "/orders/", command: "history (read) / brokerage execute (write)" },
+  { match: "/accounts/", command: "accounts" }
+];
+function commandForRoute(route: BrokerageRoute): string | undefined {
+  return COMMAND_HINTS.find((h) => route.url.includes(h.match))?.command;
+}
+
+export interface EndpointDirectoryEntry {
+  url: string;
+  methods: string[];
+  risk: RouteRisk;
+  command?: string;
+  fieldCount: number;
+  fieldsSource: BrokerageRoute["fieldsSource"];
+  fields?: string[];
+}
+export interface EndpointDirectory {
+  generatedFrom: string;
+  totalRoutes: number;
+  fieldsCoverage: { verified: number; inferred: number; undocumented: number };
+  domains: Array<{ domain: EndpointDomain; routeCount: number; entries: EndpointDirectoryEntry[] }>;
+}
+
+/**
+ * Build the by-domain endpoint directory from the route map. `opts.domain` filters to one domain;
+ * `opts.query` filters by URL substring; `opts.withFields` includes the full field list per entry
+ * (off by default to keep output compact).
+ */
+export function buildEndpointDirectory(
+  opts: { domain?: EndpointDomain; query?: string; withFields?: boolean } = {},
+  routes: BrokerageRoute[] = loadBrokerageRoutes()
+): EndpointDirectory {
+  const q = opts.query?.toLowerCase();
+  const coverage = { verified: 0, inferred: 0, undocumented: 0 };
+  const byDomain = new Map<EndpointDomain, EndpointDirectoryEntry[]>();
+  for (const route of routes) {
+    if (!route?.url) continue;
+    const src = route.fieldsSource ?? "undocumented";
+    if (src === "verified") coverage.verified++;
+    else if (src === "inferred") coverage.inferred++;
+    else coverage.undocumented++;
+    const domain = domainForRoute(route);
+    if (opts.domain && domain !== opts.domain) continue;
+    if (q && !route.url.toLowerCase().includes(q)) continue;
+    const entry: EndpointDirectoryEntry = {
+      url: route.url,
+      methods: route.methods?.length ? route.methods : ["GET"],
+      risk: route.risk,
+      command: commandForRoute(route),
+      fieldCount: route.fields?.length ?? 0,
+      fieldsSource: src,
+      ...(opts.withFields ? { fields: route.fields ?? [] } : {})
+    };
+    const list = byDomain.get(domain) ?? [];
+    list.push(entry);
+    byDomain.set(domain, list);
+  }
+  const domains = ENDPOINT_DOMAINS
+    .filter((d) => byDomain.has(d))
+    .map((domain) => {
+      const entries = byDomain.get(domain)!.sort((a, b) => a.url.localeCompare(b.url));
+      return { domain, routeCount: entries.length, entries };
+    });
+  return {
+    generatedFrom: "api-map/brokerage-routes.json",
+    totalRoutes: routes.length,
+    fieldsCoverage: coverage,
+    domains
+  };
+}
+
+// ── Recipe index (T4) ───────────────────────────────────────────────────────────────────────────
+// Intent → the ONE command to run. Data-driven from api-map/recipes.json; surfaced by `recipes` (CLI) +
+// `robinhood_recipes` (MCP). The agent's intent-routing table, kept beside the route map.
+export interface Recipe {
+  id: string;
+  intent: string;
+  triggers: string[];
+  command: string;
+  mcpTool: string;
+  risk: string;
+  notes?: string;
+}
+export function loadRecipes(root = repoRootFromCli()): Recipe[] {
+  const doc = readJson<{ recipes?: Recipe[] }>(join(root, "api-map/recipes.json"));
+  return doc.recipes ?? [];
+}
+/** Filter recipes by a free-text query across intent, triggers, command, tool, and notes. */
+export function filterRecipes(recipes: Recipe[], query?: string): Recipe[] {
+  if (!query) return recipes;
+  const q = query.toLowerCase();
+  return recipes.filter((r) =>
+    [r.id, r.intent, r.command, r.mcpTool, r.notes ?? "", ...r.triggers].join("\n").toLowerCase().includes(q)
+  );
+}
 
 export function filterAccountContextWorkflows(
   workflows: AccountContextWorkflow[],
@@ -1299,7 +1484,9 @@ export function planBrokerageRequest(input: {
   const params = input.params ?? {};
   const missingParams: string[] = [];
   const url = input.route.url.replace(/\{([^}]+)\}/g, (_match, name: string) => {
-    const value = params[name];
+    // Alias-aware: a route's {account_number} token is satisfied by a legacy --param account=/num= and
+    // vice-versa, so the standardized map and pre-rename callers both resolve.
+    const value = resolveParamValue(params, name);
     if (value === undefined || value === "") {
       missingParams.push(name);
       return `{${name}}`;
@@ -1391,6 +1578,125 @@ export class AmbiguousRouteError extends Error {
     this.name = "AmbiguousRouteError";
     this.candidates = candidates;
   }
+}
+
+// ── Self-describing resolution + fail-loud hints (T3) ─────────────────────────────────────────────
+// The route map should never fail silently. A miss returns a did-you-mean; a missing param names the
+// exact token + an example; and `describeRoute` turns any URL into a self-documenting card (what it
+// needs, what it returns — using the harvested `fields` — and which first-class command drives it).
+
+/** The {placeholder} tokens a route URL requires, deduped, in order of appearance. */
+export function routeTokens(url: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of url.matchAll(/\{([^}]+)\}/g)) {
+    if (!seen.has(m[1])) { seen.add(m[1]); out.push(m[1]); }
+  }
+  return out;
+}
+
+/** Length of the longest shared prefix between two strings. */
+function sharedPrefix(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i;
+}
+
+/** Closest routes to a query that didn't resolve — the did-you-mean behind fail-loud errors. Matches
+ *  exact substrings first, then falls back to bidirectional containment / shared-prefix so a typo like
+ *  "portfoliosss" still surfaces "portfolios/". */
+export function suggestRoutes(query: string, routes: BrokerageRoute[] = loadBrokerageRoutes(), limit = 5): string[] {
+  const nq = normalizeUrlTokens(query.toLowerCase()).replace(/^https?:\/\//, "");
+  const qSegs = nq.split(/[/?&={}]+/).filter((s) => s.length > 2);
+  const scored = routes
+    .map((route) => {
+      const ru = normalizeUrlTokens(route.url.toLowerCase()).replace(/^https?:\/\//, "");
+      const rSegs = ru.split(/[/?&={}]+/).filter((s) => s.length > 2);
+      let score = 0;
+      for (const q of qSegs) {
+        if (ru.includes(q)) { score += q.length; continue; } // exact substring — strongest
+        let best = 0;
+        for (const r of rSegs) {
+          if (q.includes(r) || r.includes(q)) best = Math.max(best, Math.min(q.length, r.length));
+          else { const p = sharedPrefix(q, r); if (p >= 4) best = Math.max(best, p); } // typo-tolerant
+        }
+        score += best;
+      }
+      return { url: route.url, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const uniq: string[] = [];
+  for (const s of scored) {
+    if (!uniq.includes(s.url)) uniq.push(s.url);
+    if (uniq.length >= limit) break;
+  }
+  return uniq;
+}
+
+export interface RouteDescription {
+  query: string;
+  resolved: boolean;
+  ambiguous?: string[];
+  suggestions?: string[];
+  url?: string;
+  methods?: string[];
+  risk?: RouteRisk;
+  command?: string;
+  requiredTokens?: string[];
+  queryKeys?: string[];
+  fields?: string[];
+  fieldsSource?: BrokerageRoute["fieldsSource"];
+  fieldsShape?: BrokerageRoute["fieldsShape"];
+  warnings?: string[];
+}
+
+/** A self-describing view of a route: what it needs, what it returns, and the command that drives it. */
+export function describeRoute(
+  query: string,
+  method?: string,
+  routes: BrokerageRoute[] = loadBrokerageRoutes()
+): RouteDescription {
+  const matches = filterBrokerageRoutes(routes, { query });
+  if (matches.length === 0) return { query, resolved: false, suggestions: suggestRoutes(query, routes) };
+  let route: BrokerageRoute | undefined;
+  try {
+    route = selectRouteByQueryAndMethod(matches, query, method);
+  } catch (e) {
+    if (e instanceof AmbiguousRouteError) return { query, resolved: false, ambiguous: e.candidates };
+    throw e;
+  }
+  if (!route) return { query, resolved: false, suggestions: suggestRoutes(query, routes) };
+  return {
+    query,
+    resolved: true,
+    url: route.url,
+    methods: route.methods?.length ? route.methods : ["GET"],
+    risk: route.risk,
+    command: commandForRoute(route),
+    requiredTokens: routeTokens(route.url),
+    queryKeys: route.queryKeys ?? [],
+    fields: route.fields ?? [],
+    fieldsSource: route.fieldsSource,
+    fieldsShape: route.fieldsShape,
+    warnings: riskWarnings(route.risk)
+  };
+}
+
+/** Fail-loud, actionable message for missing params on a resolved route. */
+export function missingParamHint(url: string, missing: string[]): string {
+  const tokens = routeTokens(url).map((t) => `{${t}}`).join(", ") || "none";
+  const example = missing[0] ? ` Example: --param ${missing[0]}=<value>.` : "";
+  return `Missing params for ${url}: ${missing.join(", ")}. Route tokens: ${tokens}.${example} (Legacy account aliases num=/account= are also accepted.)`;
+}
+
+/** Fail-loud "no match" message with did-you-mean candidates. */
+export function noMatchHint(query: string, routes: BrokerageRoute[] = loadBrokerageRoutes()): string {
+  const suggestions = suggestRoutes(query, routes);
+  const tail = suggestions.length
+    ? ` Did you mean: ${suggestions.join(" | ")}`
+    : " No similar routes found — run `api-map directory` to browse by domain.";
+  return `No brokerage route matched: ${query}.${tail}`;
 }
 
 /**
@@ -1775,10 +2081,10 @@ export async function brokerageGetJson(
 ): Promise<any> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: url });
   const route = selectRouteByQueryAndMethod(matches, url, "GET");
-  if (!route) throw new Error(`Route missing from map: ${url} — rebuild the map (AGENTS.md §3).`);
+  if (!route) throw new Error(`${noMatchHint(url)} (rebuild the map after edits — AGENTS.md §3.)`);
   const plan = planBrokerageRequest({ route, method: "GET", params, dryRun: false });
   if (plan.missingParams.length > 0) {
-    throw new Error(`Missing params for ${url}: ${plan.missingParams.join(", ")}`);
+    throw new Error(missingParamHint(url, plan.missingParams));
   }
   if (Object.keys(query).length > 0) {
     const parsed = new URL(plan.url);
@@ -1899,7 +2205,7 @@ export async function computePortfolioPnl(
   const perAccount = await Promise.all(accts.map(async (acct) => {
     const a: any = { acct, label: labelFor(acct), equity: Number.NaN, day: Number.NaN, afterHours: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
     try {
-      const p = await getJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
+      const p = await getJson("https://api.robinhood.com/portfolios/{account_number}/", { account_number: acct });
       const equity = n(p.equity), ext = n(p.extended_hours_equity);
       const adjPrev = n(p.adjusted_equity_previous_close), rawPrev = n(p.equity_previous_close);
       const prevClose = Number.isFinite(adjPrev) && adjPrev !== 0 ? adjPrev : (Number.isFinite(rawPrev) && rawPrev !== 0 ? rawPrev : Number.NaN);
@@ -2004,6 +2310,44 @@ export async function computePortfolioPnl(
 }
 
 /**
+ * Options order-flow context (T5): the pre-trade reads an agent needs BEFORE building an options order —
+ * options buying power (the real gate on opens), the per-trade fee schedule, and collateral requirements.
+ * Each read degrades to a warning so one failure never blanks the others. Shared by CLI + MCP. READS only;
+ * the order/orders/review PREVIEW is a POST and stays behind the gated write path (brokerage execute)
+ * until a live pass confirms it is non-mutating.
+ */
+export interface OptionsOrderFlow {
+  accountNumber?: string;
+  buyingPower?: any;
+  fees?: any;
+  collateral?: any;
+  warnings: string[];
+}
+export async function readOptionsOrderFlow(
+  opts: { accountNumber?: string; chainId?: string } = {},
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<OptionsOrderFlow> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const out: OptionsOrderFlow = { accountNumber: opts.accountNumber, warnings: [] };
+  if (opts.accountNumber) {
+    try {
+      out.buyingPower = await getJson("https://bonfire.robinhood.com/accounts/{account_number}/options_buying_power", { account_number: opts.accountNumber });
+    } catch (e) { out.warnings.push(`options buying power read failed: ${(e as Error).message.slice(0, 60)}`); }
+  } else {
+    out.warnings.push("no --account given: options buying power is per-account and was skipped.");
+  }
+  try {
+    out.fees = await getJson("https://api.robinhood.com/options/fees/");
+  } catch (e) { out.warnings.push(`options fees read failed: ${(e as Error).message.slice(0, 60)}`); }
+  try {
+    out.collateral = opts.chainId
+      ? await getJson("https://api.robinhood.com/options/chains/{id}/collateral/", { id: opts.chainId })
+      : await getJson("https://api.robinhood.com/options/orders/collateral/");
+  } catch (e) { out.warnings.push(`options collateral read failed: ${(e as Error).message.slice(0, 60)}`); }
+  return out;
+}
+
+/**
  * Generic double-gated brokerage write, shared by the CLI and the MCP server. Pass the EXACT templated
  * URL (with {placeholders}) so the resolver matches one route and the ambiguity guard can't fire. The
  * gate engages on write verbs even if a route's risk is mis-classified (verb floor). Dry-run by default;
@@ -2020,7 +2364,11 @@ export async function gatedBrokerageWrite(opts: {
 }): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
   const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
-  if (!route) throw new Error(`No ${opts.method} route for ${opts.url} — check the map / rebuild (AGENTS.md §3).`);
+  if (!route) {
+    const suggestions = suggestRoutes(opts.url);
+    const tail = suggestions.length ? ` Closest mapped routes: ${suggestions.join(" | ")}.` : "";
+    throw new Error(`No ${opts.method ?? "matching"} route for ${opts.url} — a forced write with no matching write route fails closed (never degrades to a read).${tail} Check the map / rebuild (AGENTS.md §3).`);
+  }
   const gate = resolveLiveWriteGate({ risk: route.risk, method: opts.method, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
   const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
   const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });

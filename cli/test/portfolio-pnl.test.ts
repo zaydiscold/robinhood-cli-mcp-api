@@ -18,7 +18,7 @@ interface Fix {
 function deps(fix: Fix) {
   const getJson = async (url: string, params: any = {}) => {
     if (url.includes("transfer/accounts")) return fix.accounts;
-    if (url.includes("portfolios/{num}")) return fix.portfolios[params.num];
+    if (url.includes("portfolios/{account_number}")) return fix.portfolios[params.account_number];
     if (url.includes("marketdata/quotes")) { if (fix.throwOnQuotes) throw new Error("503"); return fix.quotes; }
     if (url.includes("marketdata/options")) return fix.optionMarks;
     throw new Error("unexpected getJson " + url);

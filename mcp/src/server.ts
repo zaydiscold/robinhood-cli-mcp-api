@@ -31,7 +31,13 @@ import {
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   signCryptoRequest,
-  summarizeApiMap
+  summarizeApiMap,
+  buildEndpointDirectory,
+  ENDPOINT_DOMAINS,
+  describeRoute,
+  loadRecipes,
+  filterRecipes,
+  readOptionsOrderFlow
 } from "@zaydiscold/robinhood-cli/lib";
 
 type RiskLevel = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
@@ -93,6 +99,65 @@ server.registerTool(
     annotations: toolAnnotations(true, "read")
   },
   async () => jsonResponse(summarizeApiMap())
+);
+
+server.registerTool(
+  "robinhood_api_map_directory",
+  {
+    title: "Robinhood API Map Directory",
+    description: "By-domain endpoint directory: maps intent to the right route, the first-class command that drives it, and the response fields it returns (verified/inferred/undocumented). This does not make live calls.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({
+      domain: z.enum(ENDPOINT_DOMAINS).optional(),
+      query: z.string().optional(),
+      withFields: z.boolean().default(false)
+    })
+  },
+  async ({ domain, query, withFields }) => jsonResponse(buildEndpointDirectory({ domain, query, withFields }))
+);
+
+server.registerTool(
+  "robinhood_brokerage_describe",
+  {
+    title: "Robinhood Brokerage Route Describe",
+    description: "Self-describing route card for one URL: required tokens, query keys, response fields (verified/inferred/undocumented), risk, and the first-class command that drives it. On a miss returns did-you-mean suggestions; on ambiguity returns the candidate URLs. Never makes a live call.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({
+      query: z.string(),
+      method: z.string().optional()
+    })
+  },
+  async ({ query, method }) => jsonResponse(describeRoute(query, method))
+);
+
+server.registerTool(
+  "robinhood_recipes",
+  {
+    title: "Robinhood Recipes",
+    description: "Intent → the one command to run. Maps a plain-English goal (optionally filtered by free-text query) to the verified first-class CLI command and its MCP-tool equivalent. The agent's intent-routing table. Does not make live calls.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({
+      query: z.string().optional()
+    })
+  },
+  async ({ query }) => {
+    const recipes = filterRecipes(loadRecipes(), query);
+    return jsonResponse({ count: recipes.length, recipes });
+  }
+);
+
+server.registerTool(
+  "robinhood_options_order_flow",
+  {
+    title: "Robinhood Options Order Flow",
+    description: "Pre-trade options context (live reads): options buying power (per account — the real gate on opens), the fee schedule, and collateral requirements. Each read degrades to a warning independently. The options/orders/review preview is a POST and stays behind the gated write path.",
+    annotations: toolAnnotations(true, "sensitive-read"),
+    inputSchema: z.object({
+      accountNumber: z.string().optional(),
+      chainId: z.string().optional()
+    })
+  },
+  async ({ accountNumber, chainId }) => jsonResponse(await readOptionsOrderFlow({ accountNumber, chainId }))
 );
 
 server.registerTool(
@@ -809,30 +874,30 @@ server.registerTool(
   },
   async ({ account_number, action, enable, instrument_id, dryRun, liveWrite }) => {
     if (action === "show") {
-      const get = async (url: string) => { try { return await brokerageGetJson(url, { account: account_number }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
+      const get = async (url: string) => { try { return await brokerageGetJson(url, { account_number: account_number }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
       const [drip, opt, margin, sweep, lending] = await Promise.all([
-        get("https://api.robinhood.com/corp_actions/drip/account_settings/{account}/"),
-        get("https://api.robinhood.com/options/option_settings/{account}/"),
-        get("https://api.robinhood.com/settings/margin/{account}/"),
-        get("https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/"),
-        get("https://bonfire.robinhood.com/slip/{account}/status/")
+        get("https://api.robinhood.com/corp_actions/drip/account_settings/{account_number}/"),
+        get("https://api.robinhood.com/options/option_settings/{account_number}/"),
+        get("https://api.robinhood.com/settings/margin/{account_number}/"),
+        get("https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/"),
+        get("https://bonfire.robinhood.com/slip/{account_number}/status/")
       ]);
       return jsonResponse({ account: account_number, dripEnabled: drip?.drip_enabled, tradingOnExpiration: opt?.trading_on_expiration_state, dayTradesProtection: margin?.day_trades_protection, sweepEnrolled: sweep?.sweep_enrolled, stockLendingEnabled: lending?.is_enabled });
     }
-    let url: string, method: string, params: Record<string, string> = { account: account_number }, body: unknown;
+    let url: string, method: string, params: Record<string, string> = { account_number: account_number }, body: unknown;
     if (action === "drip") {
-      url = instrument_id ? "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account}/{instrument_id}/" : "https://api.robinhood.com/corp_actions/drip/account_settings/{account}/";
+      url = instrument_id ? "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account_number}/{instrument_id}/" : "https://api.robinhood.com/corp_actions/drip/account_settings/{account_number}/";
       if (instrument_id) params.instrument_id = instrument_id;
       method = "PATCH"; body = { drip_enabled: Boolean(enable) };
     } else if (action === "expiration") {
-      url = "https://api.robinhood.com/options/option_settings/{account}/"; method = "PATCH"; body = { trading_on_expiration_state: enable ? "enabled" : "disabled" };
+      url = "https://api.robinhood.com/options/option_settings/{account_number}/"; method = "PATCH"; body = { trading_on_expiration_state: enable ? "enabled" : "disabled" };
     } else if (action === "pdt") {
-      url = "https://api.robinhood.com/settings/margin/{account}/"; method = "PUT"; body = { day_trades_protection: Boolean(enable) };
+      url = "https://api.robinhood.com/settings/margin/{account_number}/"; method = "PUT"; body = { day_trades_protection: Boolean(enable) };
     } else if (action === "lending") {
-      url = "https://bonfire.robinhood.com/slip/{account}/status/"; method = "PUT"; body = { is_enabled: Boolean(enable), was_ever_enabled: true };
+      url = "https://bonfire.robinhood.com/slip/{account_number}/status/"; method = "PUT"; body = { is_enabled: Boolean(enable), was_ever_enabled: true };
     } else { // sweep
       if (enable) throw new Error("Only sweep disable is automated; enroll needs the agreement-sign flow.");
-      url = "https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/"; method = "POST"; body = { sweep_enrollment_action: "unenroll" };
+      url = "https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/"; method = "POST"; body = { sweep_enrollment_action: "unenroll" };
     }
     const r = await gatedBrokerageWrite({ url, method, params, body, dryRun, liveWrite });
     return jsonResponse(r.dryRun && r.reason ? { ...r, liveWriteBlocked: r.reason } : r);

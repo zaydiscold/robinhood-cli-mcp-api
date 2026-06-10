@@ -45,12 +45,13 @@ describe("Robinhood API map", () => {
   it("loads the brokerage route map with conservative risk counts", () => {
     const routes = loadBrokerageRoutes();
     expect(routes.length).toBeGreaterThanOrEqual(285);
-    // 12 genuinely destructive routes: ACH relationship delete/unlink, 3× order cancel, watchlist
-    // create/rename/delete (the url_template→url repair in c2dd79f made the legacy
-    // discovery/lists stubs countable again), recurring create/delete. Bump
-    // deliberately after auditing so a misclassification can't slip in as "just
-    // another count change".
-    expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(12);
+    // 9 genuinely destructive routes, each properly method-classified: ACH relationship delete + unlink,
+    // 3× order cancel (equity/options/nummus), watchlist create(POST)/rename+delete(PATCH,DELETE on
+    // discovery/lists/{id}/), recurring create(POST)/edit+delete(PATCH,DELETE). Was 12 before the
+    // 2026-06-08 token-normalization dedup, which removed 3 bogus DUPLICATE discovery/lists entries that
+    // were mis-marked destructive on a GET method — exactly the misclassification this count guards against.
+    // Verify by auditing the destructive list before changing this number, never just bump it.
+    expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(9);
     expect(filterBrokerageRoutes(routes, { risk: "write-safe" }).length).toBeGreaterThanOrEqual(4);
     expect(filterBrokerageRoutes(routes, { category: "options" }).length).toBeGreaterThanOrEqual(11);
     expect(filterBrokerageRoutes(routes, { query: "ach/relationships" }).length).toBeGreaterThan(0);

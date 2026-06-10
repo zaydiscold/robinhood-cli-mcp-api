@@ -906,7 +906,8 @@ server.registerTool(
   async ({ order_id, live }) => {
     try {
       const result = await gatedBrokerageWrite({
-        url: `https://api.robinhood.com/orders/${order_id}/cancel/`, method: "POST",
+        url: "https://api.robinhood.com/orders/{0}/cancel/", method: "POST",
+        params: { "0": order_id },
         dryRun: !live, liveWrite: Boolean(live)
       });
       const rb = typeof result.body === "string" ? JSON.parse(result.body) : result.body;

@@ -934,34 +934,6 @@ server.registerTool(
   }
 );
 
-// ── robinhood_settings: read account settings ──
-server.registerTool(
-  "robinhood_settings",
-  {
-    title: "Robinhood Account Settings",
-    description: "Read account settings: DRIP, options trade-on-expiration, PDT protection, cash sweep, stock lending.",
-    inputSchema: z.object({ account_number: z.string() }),
-    annotations: toolAnnotations(true, "read")
-  },
-  async ({ account_number }) => {
-    const get = async (url: string) => { try { return await brokerageGetJson(url, { account: account_number }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
-    const [drip, opt, margin, sweep, lending] = await Promise.all([
-      get("https://api.robinhood.com/corp_actions/drip/account_settings/{account}/"),
-      get("https://api.robinhood.com/options/option_settings/{account}/"),
-      get("https://api.robinhood.com/settings/margin/{account}/"),
-      get(/* sweep state */ "https://api.robinhood.com/accounts/{account}/" /* simplified — use main */),
-      get(/* stock lending */ "https://api.robinhood.com/accounts/{account}/")
-    ]);
-    return jsonResponse({
-      account: account_number, generatedAt: new Date().toISOString(),
-      dripEnabled: drip?.dividend_reinvestment_enabled ?? drip?.drip_enabled,
-      optionsLevel: opt?.option_level,
-      pdtProtection: margin?.day_trades_protection,
-      leverageEnabled: margin?.leverage_enabled
-    });
-  }
-);
-
 server.registerTool(
   "robinhood_options_holdings",
   {

@@ -1,4 +1,4 @@
-# Robinhood CLI
+# Robinhood API + MCP + CLI
 
 > **`*** SYSTEM MESSAGE ***`**
 >
@@ -40,13 +40,13 @@ node cli/dist/index.js --help
 
 | Surface | Current state |
 |---------|---------------|
-| API map | ~300 brokerage/account route entries (incl. instrument search + the `midlands/` sentiment layer) + the official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates. Trust the live count (`brokerage routes --json`), never a hardcoded number. |
-| CLI | TypeScript command-line tool: live reads (`quote`, `positions`, `accounts`, `history`, `options positions/chain/enumerate/inspect/holdings`, `stock profile`, `watchlist`), equity dollar/share buys (OTC-aware), options strategy quoting + rolling, first-class `settings` (DRIP/expiration/PDT/lending/sweep) and `recurring` (list/pause/resume/create/edit/end) — all writes double-gated — plus route planning and dry-run order bodies. |
-| MCP | Agent tools sharing the same engine, auth, route map, and write gate (parity with the CLI verb surface is being completed). |
+| API map | 300+ brokerage/account route entries (incl. instrument search + the `midlands/` sentiment layer) + the official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates. Every entry carries field-level response provenance (`verified`/`inferred`/`undocumented`, test-enforced). Trust the live count (`brokerage routes --json`), never a hardcoded number. |
+| CLI | TypeScript command-line tool: live reads (`quote`, `positions`, `portfolio` (one-call day/after-hours P&L in dollars, by underlying), `accounts`, `history`, `order-status` (UUID→ticker resolved), `buying-power`, `options positions/chain/enumerate/inspect/holdings`, `stock profile`, `watchlist`, `recipes` (intent → the one command)), first-class order lifecycle (`buy` / `sell` / `cancel` — OTC-aware, deduped, `ref_id`-idempotent), options strategy quoting + rolling, first-class `settings` (DRIP/expiration/PDT/lending/sweep) and `recurring` (list/pause/resume/create/edit/end) — all writes double-gated — plus route planning and dry-run order bodies. |
+| MCP | 37 agent tools sharing the same engine, auth, route map, and write gates as the CLI — full verb parity. `robinhood_buy`/`robinhood_sell` run the exact same shared order engine as the CLI commands (same dedup, same `ref_id`, same OTC guard), so the two surfaces cannot drift. |
 | Memory | `ball-knowledge.md` (market beliefs/themes/sources) + `trading-log.md` (execution + intent history) — the agent's cross-session brain. |
 | Research | A source-quality doctrine (X/Reddit pulse → news/`midlands` confirmer → institutional outlook → academic math, none gospel) + strategy deep-dives (Wheel, rolling, with quant appendices), institutional CMAs, tax-aware notes. |
 | Auth | Browser-session bearer token loaded from local `.env`, with one-shot self-heal on `401` |
-| Safety | Reads run live; every write needs both `--live-write` and `ROBINHOOD_ALLOW_LIVE_WRITE=1`. Resolver fails closed/loud; order-evidence rule = order history is the only proof a trade happened. |
+| Safety | Reads run live; every write needs both `--live-write` and `ROBINHOOD_ALLOW_LIVE_WRITE=1`. Pending-duplicate dedup (5-min window) blocks accidental double-sends; `ref_id` idempotency makes 429 retries safe; resolver fails closed/loud; order-evidence rule = order history is the only proof a trade happened. |
 
 This is a pretty damn American piece of software: local control, account-owner agency, dry-run rights, and a command surface that lets people, scripts, and agents work the same Robinhood account without pretending the browser is the product.
 
@@ -57,11 +57,11 @@ It's not a pile of commands; it's one loop an agent runs, with memory and a rese
 ```
 boot (read the operating-intelligence KB → memory → doctrine)
   → research a thesis  (signal sourcing: X/Reddit pulse → news/midlands → institutional outlook → academic math)
-  → read the account truthfully  (accounts + the buying-power family — overnight/options BP, not the headline)
+  → read the account truthfully  (accounts + portfolio P&L + the buying-power family — overnight/options BP, not the headline)
   → plan the order  (options strategy-quote / roll-plan / contract resolution → exact dry-run body)
   → gate it  (dry-run by default; live only with BOTH gates + echoed account/side/qty/price)
-  → execute  (one engine; 429-retry, min-tick, collar guards)
-  → verify it happened  (order history is the only proof — not the UI, not a 201 alone)
+  → execute  (one engine; pending-order dedup, ref_id idempotency, 429-retry, min-tick, collar guards)
+  → verify it happened  (order history is the only proof — not the UI, not a 201 alone; `order-status` resolves the ticker)
   → log it  (trading-log.md: what + intent + the strategy thread / "what we're rolling from")
   → update memory  (ball-knowledge.md) → the thread continues next session
 ```
@@ -76,7 +76,9 @@ The layers an agent reads to do that: **`SKILL.md`** (trigger + 80/20 + all the 
 - **Performance** — windowed returns: YTD, 1w, 1m, 1y, 5y, and all-time.
 - **Money movement** — transfers, deposits, withdrawals, linked accounts.
 - **Dividends** — history and upcoming payouts.
-- **Orders** — equity and options order history, status, placement, and cancellation.
+- **Orders** — equity and options order history, status (single-order lookup with the instrument UUID resolved to a real ticker), placement, and cancellation — with pending-duplicate dedup and `ref_id` idempotency on every send.
+- **Portfolio P&L** — `portfolio` (aliases `pnl`/`snapshot`): one call → per-account day Δ + after-hours Δ + per-account buying power, drivers rolled up by underlying in **dollars** across all accounts, with a reconciliation line.
+- **Recipes** — `recipes "<intent>"`: free-text intent → the one CLI command (and MCP tool) that answers it.
 - **Watchlists** — list, add, remove.
 - **Margin** — status, maintenance requirements, margin balance.
 - **Recurring investments** — first-class list, pause, resume, **create, edit, and end** (all double-gated; create/edit body shapes verified live).
@@ -89,8 +91,11 @@ The layers an agent reads to do that: **`SKILL.md`** (trigger + 80/20 + all the 
 The MCP server is meant for requests like:
 
 - "Show my best option position by percent return."
+- "Why am I down today — which names, in dollars, across all my accounts?"
 - "List all recurring investments and tell me which ones are paused."
 - "Quote a DRAM call credit spread, show bid/ask/Greeks, and build the dry-run order body."
+- "Dry-run a $50 buy of VOO in my Roth, then place it live." *(the live send dedups against pending orders and carries a `ref_id`, so an agent retry can't double-fire)*
+- "Check the status of my last order." *(comes back with the real ticker, not an instrument UUID)*
 - "Open the DRAM stock profile and include market cap, AUM, P/E, 52-week range, borrow rate, and account-scoped buying power."
 - "Build a cash-account staged roll plan: sell the current call today, then open the replacement no earlier than the next business day after fresh settled-cash and quote checks."
 
@@ -152,6 +157,12 @@ robinhood-cli api-map options-strategy-plan iron-condor --json
 robinhood-cli api-map options-strategy-plan naked-short-put --json
 robinhood-cli recurring list                          # recurring buys + state
 robinhood-cli quote MRVL NVDA AAPL                    # live quotes for one+ symbols
+robinhood-cli portfolio                               # day + after-hours P&L in dollars, by underlying, all accounts
+robinhood-cli portfolio --after-hours                 # "what's nuking me after hours"
+robinhood-cli recipes "after hours"                   # free-text intent → the one command to run
+robinhood-cli buying-power                            # per-account BP + margin health
+robinhood-cli buy -s AAPL -a <ACCOUNT_NUMBER> -m 25   # DRY-RUN by default (deduped, ref_id idempotent)
+robinhood-cli order-status -i <ORDER_ID>              # single order — real ticker, state, fills
 robinhood-cli positions                               # equity holdings ranked by return
 robinhood-cli positions --account <ACCOUNT_NUMBER>     # per-account equity positions
 robinhood-cli options positions                       # rank open options by % return
@@ -179,6 +190,11 @@ ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
 
 # First-class commands carry the same gate, e.g. recurring investments:
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --all --live-write
+
+# First-class orders: dry-run by default; the live send dedups against pending
+# same-side orders (5-min window) and carries a ref_id so a retry can't double-fire.
+robinhood-cli buy -s AAPL -a <ACCOUNT_NUMBER> -m 25                       # dry-run
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli buy -s AAPL -a <ACCOUNT_NUMBER> -m 25 --live
 ```
 
 ### 5. Use it from an AI agent (MCP server)
@@ -195,11 +211,11 @@ claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp
 node mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` and inherit the identical auth, route map, and write-gate as the CLI.
+37 tools surface as `mcp__robinhood-cli__*` and inherit the identical auth, route map, and write gates as the CLI. The order tools (`robinhood_buy`, `robinhood_sell`, `robinhood_cancel`, `robinhood_order_status`, `robinhood_buying_power`) run the **same shared engine functions** as the CLI commands — dedup, `ref_id` idempotency, and the OTC guard apply identically on both surfaces. (Trust the live `tools/list`, not a hardcoded count.)
 
 ### Current Update
 
-See [`docs/release-notes-2026-06-04.md`](./docs/release-notes-2026-06-04.md) for the current patch notes (the prior cycle is [`release-notes-2026-06-03.md`](./docs/release-notes-2026-06-03.md)). The 06-04 cycle adds: the signal-sourcing doctrine + Ball Knowledge ledger + Trading log (memory layers), the order-execution-evidence rule, first-class `settings` + `recurring create/edit/end` commands, `options inspect`/`holdings`, the boot-smart operating-intelligence KB, strategy deep-dives (Wheel + rolling, with quant appendices), the institutional-outlook layer, and the index-options/§1256 correction — plus safety hardening (ambiguity guard, account-ownership validation, verb-floor gate, 429 retry).
+See [`docs/release-notes-2026-06-11.md`](./docs/release-notes-2026-06-11.md) for the current patch notes (prior cycles: [`06-04`](./docs/release-notes-2026-06-04.md), [`06-03`](./docs/release-notes-2026-06-03.md)). The 06-11 cycle merges the hardening PR and completes CLI↔MCP order parity: first-class `buy`/`sell`/`cancel`/`order-status`/`buying-power` on both surfaces, all driven by one shared engine — pending-order dedup (5-min window), `ref_id` idempotency, the OTC/fractional guard, dead-quote hard-fail, trade logging — plus `order-status` ticker resolution (UUID → real symbol), the `portfolio` P&L + `recipes` intent router from the 06-09/06-10 work, and an error-code reference. The 06-04 cycle added: the signal-sourcing doctrine + Ball Knowledge ledger + Trading log (memory layers), the order-execution-evidence rule, first-class `settings` + `recurring create/edit/end` commands, `options inspect`/`holdings`, the boot-smart operating-intelligence KB, strategy deep-dives (Wheel + rolling, with quant appendices), the institutional-outlook layer, and the index-options/§1256 correction — plus safety hardening (ambiguity guard, account-ownership validation, verb-floor gate, 429 retry).
 
 ### 6. Options analytics — positions & chains
 
@@ -465,6 +481,7 @@ For the full agent playbook — account discovery, the gate, watchlists, recurri
 | [`docs/README.md`](./docs/README.md) | Public docs index and naming/release rules |
 | [`docs/account-settings-capability-map-2026-06-03.md`](./docs/account-settings-capability-map-2026-06-03.md) | Funding, recurring, DRIP, cash sweep, stock lending, margin, futures, event-contract capability matrix |
 | [`docs/options-strategy-execution-smoke-2026-06-03.md`](./docs/options-strategy-execution-smoke-2026-06-03.md) | Dry-run options strategy smoke evidence |
+| [`docs/error-code-reference-2026-06-11.md`](./docs/error-code-reference-2026-06-11.md) | Every known Robinhood API error → meaning → fix (mirrors the engine's error classifier) |
 | [`api-map/`](./api-map/) | Generated route map, OpenAPI, endpoint Markdown, curl templates, and workflow JSON |
 
 ## Extending it

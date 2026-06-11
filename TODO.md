@@ -2,13 +2,13 @@
 
 ## High priority
 
-- [ ] **Web app version auto-scrape**: The `x-robinhood-web-app-version` header rotates periodically. Scrape it from the live browser (CDP) during `scripts/refresh-auth.sh` or on first API call. Currently hardcoded to `2026.24.2030+bc12ef34` in lib.ts.
+- [ ] **Web app version auto-scrape**: The `x-robinhood-web-app-version` header rotates periodically. Scrape it from the live browser (CDP) during `scripts/refresh-auth.sh` or on first API call. *(2026-06-11: checked — the version string is NOT in the robinhood.com homepage HTML; needs a JS-bundle fetch or CDP capture. Working mitigation: the `ROBINHOOD_WEB_APP_VERSION` env override exists, and the `app_version_gate` error hint now names it.)*
 
-- [ ] **Order status ticker resolution**: `order-status` shows instrument UUID instead of ticker symbol. Add an instrument lookup call to resolve the UUID to a symbol for display.
+- [x] **Order status ticker resolution**: ~~`order-status` shows instrument UUID instead of ticker symbol.~~ Done 2026-06-11 — shared `getOrderStatus()` resolves the UUID via `instruments/?ids=`; CLI `order-status` and MCP `robinhood_order_status` both use it.
 
 - [ ] **Options order live test**: The `buy` command was tested live with equity orders. Options orders use a different body schema (legs, strategy, etc.) and need a live test pass to verify `order_form_version` and other fields.
 
-- [ ] **ref_id on all orders**: Both buy and sell now include `ref_id` for Robinhood-level idempotency. MCP buy/sell tools should also include `ref_id`.
+- [x] **ref_id on all orders**: Done 2026-06-11 — `placeEquityOrder()` (shared engine) stamps `ref_id` on every buy/sell from BOTH the CLI and MCP surfaces.
 
 ## Medium priority
 
@@ -16,9 +16,9 @@
 
 - [ ] **Dollar-value aggregation in positions**: `positions` shows per-account breakdown. Add a `--all` flag that aggregates quantities and values across accounts by symbol.
 
-- [ ] **MCP dedup parity**: CLI buy/sell have dedup checks. MCP `robinhood_buy` and `robinhood_sell` do not — they should use the same `logTrade` + dedup pattern.
+- [x] **MCP dedup parity**: Done 2026-06-11 — CLI `buy`/`sell` and MCP `robinhood_buy`/`robinhood_sell` now call the SAME `placeEquityOrder()` engine (dedup + `logTrade` + `ref_id` + OTC guard); MCP tools gained the `force` param. Pinned by `cli/test/equity-order.test.ts`.
 
-- [ ] **Settings MCP read parity**: The CLI `settings show` reads DRIP, PDT, sweep, lending, options level. The original MCP `robinhood_settings` handles reads via its `show` sub-action — verify parity.
+- [x] **Settings MCP read parity**: Verified 2026-06-11 — MCP `robinhood_settings` `action=show` reads the same DRIP/expiration/PDT/lending/sweep set as CLI `settings show`.
 
 ## Low priority
 
@@ -35,8 +35,8 @@
 ## Documentation
 
 - [ ] **API map changelog**: Track route additions/removals over time so the map's freshness is auditable.
-- [ ] **MCP tool catalog in SKILL.md**: Full 33-tool inventory with descriptions.
-- [ ] **Error code reference**: Common Robinhood API errors and their fixes (order_form_version, subpenny, fractional, app version gate).
+- [x] **MCP tool catalog in SKILL.md**: Done 2026-06-11 — full 37-tool table in SKILL.md §MCP Tools (counts de-hardcoded to "live truth: tools/list").
+- [x] **Error code reference**: Done 2026-06-11 — `docs/error-code-reference-2026-06-11.md`, mirroring the `classifyRobinhoodError()` taxonomy one-for-one.
 
 ---
 

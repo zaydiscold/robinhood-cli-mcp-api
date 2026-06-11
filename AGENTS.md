@@ -58,9 +58,10 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
    manual login. (Details in §1.)
 
 4. **Two front doors** — the **CLI** (`cli/dist/index.js`, for humans/scripts) and the
-   **MCP server** (`mcp/dist/server.js`, 28 tools for agents incl. first-class parity tools — reload a
-   running server with `/reload-mcp` after pulling, or it advertises its old count). Both are thin wrappers over
-   the engine.
+   **MCP server** (`mcp/dist/server.js`, 37 tools for agents incl. first-class parity tools — live truth is
+   `tools/list`; reload a running server with `/reload-mcp` after pulling, or it advertises its old count). Both
+   are thin wrappers over the engine — the order path (`placeEquityOrder`) is literally the same function on
+   both surfaces.
 
 **How a single call flows:** you give a query string → the engine substring-matches it
 against the route map → fills params/body → infers or honors the method → checks the risk
@@ -609,10 +610,12 @@ settings/permissions, never print the token value.
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` (28 tools incl. accounts/positions/portfolio/options-holdings/options-inspect/settings/recurring/quote/history/watchlist/options-enumerate parity: route inspection, browser/account
+Tools surface as `mcp__robinhood-cli__*` (37 tools incl. accounts/positions/portfolio/buy/sell/cancel/order-status/buying-power/options-holdings/options-inspect/settings/recurring/quote/history/watchlist/options-enumerate parity: route inspection, browser/account
 context, options strategy workflows/plans, exact-contract link bundles, stock
-profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute). A running server advertises
-its old count until reloaded — `/reload-mcp` after pulling.
+profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute). `robinhood_buy`/`robinhood_sell`
+run the same shared engine as the CLI commands — pending-order dedup (5-min window; `force: true` skips),
+`ref_id` idempotency, OTC/fractional guard, and trading-log append all apply identically. A running server advertises
+its old count until reloaded — `/reload-mcp` after pulling (live truth: `tools/list`).
 Same engine → same auth, gate, and method-aware routing as the CLI. The MCP mirrors the CLI gate: `liveWrite: true` plus
 `ROBINHOOD_ALLOW_LIVE_WRITE=1` to send a write; otherwise forced dry-run.
 

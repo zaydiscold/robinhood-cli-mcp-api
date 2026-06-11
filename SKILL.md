@@ -164,6 +164,10 @@ is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
   at the ask (whole shares only).
 - Sell (shares / dollar), search the universe (`brokerage search`), live quotes, positions,
   unified history (equity+options+crypto+transfers), stock profile.
+- First-class order lifecycle: `buy` / `sell` / `cancel` / `order-status` (ticker-resolved) /
+  `buying-power` — CLI and MCP share ONE engine (`placeEquityOrder` in `cli/src/lib.ts`): OTC/
+  fractional guard, dead-quote hard-fail, pending-order dedup (5-min window; `--force`/`force:true`
+  skips), `ref_id` idempotency (429 ⇒ retry the SAME ref_id), trading-log append on live sends.
 
 **Options — single-leg (the four primitives)**
 - **Buy to open** — long call or long put (`side:buy, position_effect:open`).
@@ -1235,11 +1239,11 @@ documented. To extend it safely:
 
 ## MCP Server
 
-32 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+37 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
-> **Count note:** the *source/dist* registers 32 tools. A *running* MCP process started before the
+> **Count note:** the *source/dist* registers 37 tools (live truth: `tools/list`). A *running* MCP process started before the
 > last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
-> the server) after pulling, then confirm the client lists all 28.
+> the server) after pulling, then confirm the client's `tools/list` count matches the current build.
 
 ### Registration
 
@@ -1290,6 +1294,11 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_history` | Unified history (equity + options + crypto orders + transfers), newest first |
 | `robinhood_watchlist` | Read custom watchlists (`owner_type=custom`) |
 | `robinhood_options_enumerate` | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration |
+| `robinhood_buy` | Equity buy (dollar-notional fractional or shares) — shared engine: OTC guard, pending-order dedup (5-min, `force` skips), `ref_id` idempotency, trade log; double-gated |
+| `robinhood_sell` | Equity sell — same shared engine + gates as `robinhood_buy` |
+| `robinhood_cancel` | Cancel a pending order by ID or URL (double-gated) |
+| `robinhood_order_status` | One order's state/fills/price — instrument UUID resolved to the real ticker |
+| `robinhood_buying_power` | Per-account buying power breakdown + margin health |
 
 ### MCP Safety Gates
 

@@ -80,3 +80,5 @@ if (!has("https://bonfire.robinhood.com/recurring_schedules/", "POST")) {
 
 writeFileSync(PATH, JSON.stringify(r, null, 2) + "\n");
 console.log("routes after transform:", r.length);
+
+// made with love by Zayd Khan / cold

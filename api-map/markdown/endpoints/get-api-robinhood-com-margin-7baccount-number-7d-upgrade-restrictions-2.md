@@ -1,4 +1,4 @@
-# GET /portfolios/%7Bnum%7D/
+# GET /margin/%7Baccount_number%7D/upgrade_restrictions/
 
 Mutation: no
 Risk: sensitive-read
@@ -11,5 +11,7 @@ Operation ID: n/a
 Route template:
 
 ```text
-https://api.robinhood.com/portfolios/{num}/
+https://api.robinhood.com/margin/{account_number}/upgrade_restrictions/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

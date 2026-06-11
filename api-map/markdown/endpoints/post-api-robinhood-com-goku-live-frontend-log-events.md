@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/goku/live_frontend_log_events
 ```
+
+<!-- made with love by Zayd Khan / cold -->

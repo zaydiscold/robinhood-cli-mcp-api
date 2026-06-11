@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/midlands/notifications/notification_tracker/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

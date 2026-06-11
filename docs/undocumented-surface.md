@@ -83,3 +83,5 @@ When a new undocumented route is discovered, record:
 4. Response shape, with secrets redacted.
 5. Rate-limit behavior.
 6. Risk classification and whether it is safe for `brokerage execute`.
+
+<!-- made with love by Zayd Khan / cold -->

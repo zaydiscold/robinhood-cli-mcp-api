@@ -35,6 +35,8 @@ for (const route of routes) {
   );
 }
 
+lines.push("", "<!-- made with love by Zayd Khan / cold -->");
+
 await mkdir(dirname(outPath), { recursive: true });
 await writeFile(outPath, `${lines.join("\n")}\n`);
 console.error(`wrote ${outPath}`);

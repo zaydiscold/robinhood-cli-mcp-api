@@ -167,3 +167,5 @@ Use this exact sequence:
 Live execution is outside this playbook unless the user gives exact approval and
 the normal CLI gate is satisfied: `--live-write` plus
 `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+
+<!-- made with love by Zayd Khan / cold -->

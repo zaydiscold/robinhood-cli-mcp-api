@@ -1,4 +1,4 @@
-# GET /margin/%7Bnum%7D/upgrade_restrictions
+# GET /accounts/%7Baccount_number%7D/buying_power_breakdown
 
 Mutation: no
 Risk: sensitive-read
@@ -11,5 +11,7 @@ Operation ID: n/a
 Route template:
 
 ```text
-https://api.robinhood.com/margin/{num}/upgrade_restrictions
+https://api.robinhood.com/accounts/{account_number}/buying_power_breakdown
 ```
+
+<!-- made with love by Zayd Khan / cold -->

@@ -1,4 +1,4 @@
-# GET /accounts/%7Bnum%7D/buying_power_breakdown
+# GET /portfolios/%7Baccount_number%7D/
 
 Mutation: no
 Risk: sensitive-read
@@ -11,5 +11,7 @@ Operation ID: n/a
 Route template:
 
 ```text
-https://api.robinhood.com/accounts/{num}/buying_power_breakdown
+https://api.robinhood.com/portfolios/{account_number}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

@@ -77,3 +77,5 @@ pnpm merge:cdp path/to/cdp-stock-account-deep-sanitized-2026-05-27.json
 pnpm generate:api-map
 pnpm test
 ```
+
+<!-- made with love by Zayd Khan / cold -->

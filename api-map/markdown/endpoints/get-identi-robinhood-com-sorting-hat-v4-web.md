@@ -13,3 +13,5 @@ Route template:
 ```text
 https://identi.robinhood.com/sorting_hat/v4_web/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

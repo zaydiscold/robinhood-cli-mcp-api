@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/slip/hub-card/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

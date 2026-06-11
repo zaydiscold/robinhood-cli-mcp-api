@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/app-comms/receipt/seen/{uuid}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

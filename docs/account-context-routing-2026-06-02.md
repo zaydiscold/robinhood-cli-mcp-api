@@ -154,3 +154,5 @@ robinhood-cli api-map account-url options-chain-symbol-builder \
   --account <ACCOUNT_NUMBER> \
   --symbol XBI
 ```
+
+<!-- made with love by Zayd Khan / cold -->

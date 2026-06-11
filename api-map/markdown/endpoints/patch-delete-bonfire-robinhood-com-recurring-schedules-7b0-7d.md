@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/recurring_schedules/{0}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

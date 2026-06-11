@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/options/should_show_options_upgrade_on_sdp/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

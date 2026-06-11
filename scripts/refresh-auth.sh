@@ -150,3 +150,5 @@ except OSError:
 print("[refresh-auth] wrote %s (OK len=%d type=%s exp_days=%.1f)"
       % (env_path, len(tok), ttype, exp / 86400))
 PYEOF
+
+# made with love by Zayd Khan / cold

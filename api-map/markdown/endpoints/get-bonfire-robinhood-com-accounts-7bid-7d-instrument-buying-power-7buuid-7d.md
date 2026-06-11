@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/accounts/{id}/instrument_buying_power/{uuid}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

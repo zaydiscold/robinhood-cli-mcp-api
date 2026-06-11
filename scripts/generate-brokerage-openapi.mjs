@@ -127,7 +127,7 @@ const spec = {
     title: "Robinhood Brokerage API Map",
     version: "0.1.0",
     description:
-      "Personal Robinhood brokerage/account API map from reverse-engineered routes and sanitized authenticated browser capture. This repo can execute live with caller-owned auth; pass dryRun/--dry-run for non-sending tests."
+      "Personal Robinhood brokerage/account API map from reverse-engineered routes and sanitized authenticated browser capture. This repo can execute live with caller-owned auth; pass dryRun/--dry-run for non-sending tests. Made with love by Zayd Khan / cold."
   },
   servers: [
     { url: "https://api.robinhood.com" },
@@ -178,3 +178,5 @@ await mkdir(dirname(outPath), { recursive: true });
 await writeFile(outPath, `${JSON.stringify(spec, null, 2)}\n`);
 console.error(`wrote ${outPath}`);
 console.error(`brokerage routes=${routes.length} openapi paths=${Object.keys(spec.paths).length} operations=${grouped.size}`);
+
+// made with love by Zayd Khan / cold

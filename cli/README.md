@@ -17,3 +17,5 @@ ROBINHOOD_CRYPTO_API_KEY=... ROBINHOOD_CRYPTO_PRIVATE_KEY_B64=... robinhood-cli 
 
 `brokerage execute` sends live requests when `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE` is set. Pass `--dry-run` to avoid sending.
 `crypto execute` sends live requests to Robinhood's official Crypto Trading API when `ROBINHOOD_CRYPTO_API_KEY` and `ROBINHOOD_CRYPTO_PRIVATE_KEY_B64` are set. Pass `--dry-run` to avoid sending.
+
+<!-- made with love by Zayd Khan / cold -->

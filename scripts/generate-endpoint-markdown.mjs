@@ -49,6 +49,8 @@ Route template:
 \`\`\`text
 ${route.url}
 \`\`\`
+
+<!-- made with love by Zayd Khan / cold -->
 `;
   await writeFile(resolve(outDir, `${slug}.md`), content);
 }

@@ -43,3 +43,5 @@ robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/market
 ```
 
 Use exact-action consent for mutations: trade, transfer, cancel, unlink, or destructive calls should only be run when the user asked for that specific live operation.
+
+<!-- made with love by Zayd Khan / cold -->

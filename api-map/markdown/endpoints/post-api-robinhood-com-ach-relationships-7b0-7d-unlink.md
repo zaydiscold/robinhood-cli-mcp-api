@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/ach/relationships/{0}/unlink/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

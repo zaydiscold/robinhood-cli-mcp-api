@@ -13,3 +13,5 @@ Route template:
 ```text
 https://identi.robinhood.com/user_info/privacy_consent/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

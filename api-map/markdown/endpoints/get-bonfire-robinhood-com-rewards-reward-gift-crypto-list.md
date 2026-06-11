@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/rewards/reward/gift/crypto/list/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

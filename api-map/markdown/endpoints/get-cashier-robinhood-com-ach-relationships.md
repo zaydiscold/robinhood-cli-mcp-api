@@ -13,3 +13,5 @@ Route template:
 ```text
 https://cashier.robinhood.com/ach/relationships/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

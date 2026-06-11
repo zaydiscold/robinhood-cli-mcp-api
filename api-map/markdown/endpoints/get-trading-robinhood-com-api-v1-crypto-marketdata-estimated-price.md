@@ -13,3 +13,5 @@ Route template:
 ```text
 https://trading.robinhood.com/api/v1/crypto/marketdata/estimated_price/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

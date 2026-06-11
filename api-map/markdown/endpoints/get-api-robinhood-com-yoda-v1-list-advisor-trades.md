@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/yoda/v1/list_advisor_trades
 ```
+
+<!-- made with love by Zayd Khan / cold -->

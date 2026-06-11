@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/midlands/referral/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

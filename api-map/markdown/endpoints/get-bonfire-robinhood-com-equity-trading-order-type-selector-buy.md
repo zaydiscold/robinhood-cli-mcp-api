@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/equity_trading/order_type_selector/buy/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/options/corp_actions/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

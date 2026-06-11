@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/pathfinder/support_chats/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

@@ -235,3 +235,5 @@ Sources: [LII — 26 USC § 1259](https://www.law.cornell.edu/uscode/text/26/125
 ---
 
 *Compiled June 2026 from the sources hyperlinked inline. Primary law: IRC §§ 1091, 1092, 1233, 1256, 1259, 1271–1275; Treas. Reg. § 1.1092(c)-1; Form 6781.*
+
+<!-- made with love by Zayd Khan / cold -->

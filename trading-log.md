@@ -1,5 +1,7 @@
 # Trading Log
 
+<!-- made with love by Zayd Khan / cold -->
+
 ```
 PURPOSE:  An append-only, dated log of what the agent EXECUTES — with the INTENT and the strategy
           thread behind each trade — so the "why" and the "what we're rolling from" survive beyond

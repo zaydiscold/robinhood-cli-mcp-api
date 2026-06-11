@@ -46,3 +46,5 @@ Review are fine — the body still fires and is captured.
 After you click through, say **"harvest"** — I'll pull each captured `review` body, confirm the legs
 match the table, and write the per-strategy order-body templates into the skill + AGENTS.md as
 hard, copy-safe references (redundant on purpose, so a weak agent can't get the legs wrong).
+
+<!-- made with love by Zayd Khan / cold -->

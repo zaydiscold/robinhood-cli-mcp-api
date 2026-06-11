@@ -127,6 +127,31 @@
     "fieldsShape": "list"
   },
   {
+    "url": "https://api.robinhood.com/accounts/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "fields": [
+      "account_number",
+      "brokerage_account_type",
+      "buying_power",
+      "cash",
+      "margin_balances",
+      "nickname",
+      "option_level",
+      "portfolio_cash",
+      "type"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object",
+    "source": "live-verified-2026-06-11 (per-account detail; the bulk accounts/ endpoints omit some owned accounts — this is the type/cash fallback for those)"
+  },
+  {
     "url": "https://api.robinhood.com/accounts/?default_to_all_accounts=true",
     "host": "api.robinhood.com",
     "categories": [
@@ -2633,6 +2658,31 @@
     ],
     "fieldsSource": "inferred",
     "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/options/historicals/?ids={ids}&interval={interval}&span={span}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "options"
+    ],
+    "risk": "read",
+    "fields": [
+      "begins_at",
+      "close_price",
+      "data_points",
+      "high_price",
+      "instrument_id",
+      "interval",
+      "low_price",
+      "open_price",
+      "span",
+      "symbol",
+      "volume"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list",
+    "source": "live-verified-2026-06-11 (batch daily closes for held contracts; powers pre-open day attribution in computePortfolioPnl)"
   },
   {
     "url": "https://api.robinhood.com/marketdata/options/strategy/quotes/",

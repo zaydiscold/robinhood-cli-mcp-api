@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/settings/education_state/{id}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

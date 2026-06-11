@@ -39,7 +39,7 @@ const H = () => ({
   accept: "application/json", "content-type": "application/json",
   "user-agent": process.env.ROBINHOOD_USER_AGENT ?? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
   origin: "https://robinhood.com", referer: "https://robinhood.com/",
-  "x-robinhood-api-version": "1.431.4", "x-robinhood-web-app-version": "2026.23.2025+43f8dad0de15",
+  "x-robinhood-api-version": "1.431.4", "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.24.3589+55c48b8f7a1c",
   "x-hyper-ex": "enabled", authorization: "Bearer " + process.env.ROBINHOOD_BROKERAGE_TOKEN
 });
 const log = (...a) => process.stderr.write(a.join(" ") + "\n");
@@ -121,3 +121,5 @@ async function placeAndCancel(label, body) {
   log(`\n=== ${placed}/${receipts.filter((r) => !r.dry).length} placed 201 + cancelled; the rest are semantic (BP/collateral) rejects — all structurally valid, nothing filled ===`);
   try { mkdirSync(join(REPO, "info", "order-receipts"), { recursive: true }); writeFileSync(join(REPO, "info", "order-receipts", "live-order-smoke.json"), JSON.stringify(receipts, null, 1)); } catch {}
 })().catch((e) => log("FATAL " + (e.stack || e)));
+
+// made with love by Zayd Khan / cold

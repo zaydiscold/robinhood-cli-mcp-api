@@ -1,4 +1,4 @@
-# PATCH /corp_actions/drip/enrollment/%7Bnum%7D/
+# PATCH /corp_actions/drip/enrollment/%7Baccount_number%7D/
 
 Mutation: yes
 Risk: write-or-sensitive
@@ -11,5 +11,7 @@ Operation ID: n/a
 Route template:
 
 ```text
-https://api.robinhood.com/corp_actions/drip/enrollment/{num}/
+https://api.robinhood.com/corp_actions/drip/enrollment/{account_number}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

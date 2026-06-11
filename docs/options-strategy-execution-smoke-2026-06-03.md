@@ -62,3 +62,5 @@ dry-run body generation. It does not prove that a live Robinhood order would be
 accepted or filled, because live order submission remains blocked by design
 unless exact approval, `--live-write`, and `ROBINHOOD_ALLOW_LIVE_WRITE=1` are
 all present.
+
+<!-- made with love by Zayd Khan / cold -->

@@ -1,5 +1,7 @@
 # Ball Knowledge
 
+<!-- made with love by Zayd Khan / cold -->
+
 ```
 CREATOR:     Zayd
 CREATED ON:  2026-06-04

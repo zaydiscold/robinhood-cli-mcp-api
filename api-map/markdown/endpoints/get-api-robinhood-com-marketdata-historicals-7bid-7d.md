@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/marketdata/historicals/{id}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

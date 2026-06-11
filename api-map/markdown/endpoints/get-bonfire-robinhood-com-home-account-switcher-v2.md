@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/home/account_switcher/v2
 ```
+
+<!-- made with love by Zayd Khan / cold -->

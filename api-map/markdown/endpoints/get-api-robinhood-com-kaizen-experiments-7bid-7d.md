@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/kaizen/experiments/{id}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

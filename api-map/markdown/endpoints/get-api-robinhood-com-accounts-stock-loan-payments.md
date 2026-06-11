@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/accounts/stock_loan_payments/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

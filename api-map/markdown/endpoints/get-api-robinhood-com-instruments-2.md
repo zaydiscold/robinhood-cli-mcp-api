@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/instruments/?ids={ids}
 ```
+
+<!-- made with love by Zayd Khan / cold -->

@@ -55,3 +55,5 @@ robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --dry-run 
 ```
 
 Live execution is personal-side behavior. There is no `*_ALLOW_WRITES` environment gate in this repo; `--dry-run` is the opt-in non-sending mode.
+
+<!-- made with love by Zayd Khan / cold -->

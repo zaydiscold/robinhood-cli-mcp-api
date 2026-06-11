@@ -13,3 +13,5 @@ Route template:
 ```text
 https://minerva.robinhood.com/accounts/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

@@ -13,3 +13,5 @@ Route template:
 ```text
 https://trading.robinhood.com/api/v1/crypto/trading/trading_pairs/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

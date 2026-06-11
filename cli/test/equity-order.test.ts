@@ -250,3 +250,5 @@ describe("getOrderStatus — ticker resolution", () => {
     expect(r.symbol).toBeUndefined();
   });
 });
+
+// made with love by Zayd Khan / cold

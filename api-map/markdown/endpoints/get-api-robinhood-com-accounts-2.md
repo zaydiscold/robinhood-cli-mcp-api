@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/accounts/?default_to_all_accounts=true
 ```
+
+<!-- made with love by Zayd Khan / cold -->

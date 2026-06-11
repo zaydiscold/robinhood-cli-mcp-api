@@ -68,3 +68,5 @@ PATCH (write-gated) route. This is the **repeatable method** for promoting the
 remaining route-mapped-only settings (DRIP, stock lending, high-yield cash,
 futures/event-contracts enablement, margin) from "unverified" to first-class:
 navigate to the setting, inject the interceptor, toggle once, capture, revert.
+
+<!-- made with love by Zayd Khan / cold -->

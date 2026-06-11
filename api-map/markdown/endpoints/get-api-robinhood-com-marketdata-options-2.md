@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/marketdata/options/?ids={ids}
 ```
+
+<!-- made with love by Zayd Khan / cold -->

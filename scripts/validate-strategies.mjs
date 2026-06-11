@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 (function(){const p=join(REPO,".env");if(!existsSync(p))return;for(const l of readFileSync(p,"utf8").split("\n")){const t=l.trim();if(!t||t.startsWith("#"))continue;const e=t.indexOf("=");if(e<0)continue;const k=t.slice(0,e).trim();let v=t.slice(e+1).trim();if((v.startsWith('"')&&v.endsWith('"'))||(v.startsWith("'")&&v.endsWith("'")))v=v.slice(1,-1);if(k&&process.env[k]===undefined)process.env[k]=v;}})();
-const H=()=>({accept:"application/json","content-type":"application/json","user-agent":process.env.ROBINHOOD_USER_AGENT??"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",origin:"https://robinhood.com",referer:"https://robinhood.com/","x-robinhood-api-version":"1.431.4","x-robinhood-web-app-version":"2026.23.2025+43f8dad0de15","x-hyper-ex":"enabled",authorization:"Bearer "+process.env.ROBINHOOD_BROKERAGE_TOKEN});
+const H=()=>({accept:"application/json","content-type":"application/json","user-agent":process.env.ROBINHOOD_USER_AGENT??"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",origin:"https://robinhood.com",referer:"https://robinhood.com/","x-robinhood-api-version":"1.431.4","x-robinhood-web-app-version":process.env.ROBINHOOD_WEB_APP_VERSION??"2026.24.3589+55c48b8f7a1c","x-hyper-ex":"enabled",authorization:"Bearer "+process.env.ROBINHOOD_BROKERAGE_TOKEN});
 const SYM=(process.argv[2]||"AAPL").toUpperCase(); const ACCT=process.argv[3]||"333333333";
 const api=async(u,o={})=>{const r=await fetch(u,o);const t=await r.text();let b=null;try{b=t?JSON.parse(t):null}catch{b=t}return{status:r.status,body:b}};
 const oUrl=id=>`https://api.robinhood.com/options/instruments/${id}/`;
@@ -105,3 +105,5 @@ const log=(...a)=>process.stderr.write(a.join(" ")+"\n");
   log(`\n=== ${okN}/${receipts.length} placed 201 (structure OK); rest are semantic (BP/risk) — all cancelled ===`);
   try{mkdirSync(join(REPO,"info","order-receipts"),{recursive:true});writeFileSync(join(REPO,"info","order-receipts",`strategy-validation-${SYM}.json`),JSON.stringify(receipts,null,1));}catch{}
 })().catch(e=>log("FATAL "+(e.stack||e)));
+
+// made with love by Zayd Khan / cold

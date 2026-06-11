@@ -10,3 +10,5 @@ const dest = resolve(repoRoot, "cli/dist/api-map");
 await rm(dest, { recursive: true, force: true });
 await mkdir(dest, { recursive: true });
 await cp(source, dest, { recursive: true });
+
+// made with love by Zayd Khan / cold

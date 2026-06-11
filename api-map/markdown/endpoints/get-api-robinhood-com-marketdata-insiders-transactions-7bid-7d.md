@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/marketdata/insiders/transactions/{id}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

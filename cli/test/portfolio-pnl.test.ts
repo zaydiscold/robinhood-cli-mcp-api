@@ -112,3 +112,5 @@ describe("computePortfolioPnl — metric definitions (golden fixtures)", () => {
     await expect(computePortfolioPnl({ accountNumber: "999" }, deps(base()))).rejects.toThrow(/not one of your trading accounts/);
   });
 });
+
+// made with love by Zayd Khan / cold

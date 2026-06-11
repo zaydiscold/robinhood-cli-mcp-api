@@ -13,3 +13,5 @@ Route template:
 ```text
 https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

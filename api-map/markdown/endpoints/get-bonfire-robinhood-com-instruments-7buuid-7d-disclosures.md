@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/instruments/{uuid}/disclosures/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

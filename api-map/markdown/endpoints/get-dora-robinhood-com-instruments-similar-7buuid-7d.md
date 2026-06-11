@@ -13,3 +13,5 @@ Route template:
 ```text
 https://dora.robinhood.com/instruments/similar/{uuid}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

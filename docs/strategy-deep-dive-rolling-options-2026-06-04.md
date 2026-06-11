@@ -517,3 +517,5 @@ percent ATM; use the live RH Greeks from `marketdata/options/` for any actual de
 > $c+L$ vs. the trapped-collateral opportunity cost $(\mu_e\mathcal C-g)\Delta T$ — not the sign of the cash. Surface
 > the credit, the change in capital at risk, $\Delta T$ vs. $\Delta T^\star$, and whether the strike move stays inside
 > the extrinsic budget; then do what the operator asks.
+
+<!-- made with love by Zayd Khan / cold -->

@@ -13,3 +13,5 @@ Route template:
 ```text
 https://cashier.robinhood.com/ach/deposit_schedules/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

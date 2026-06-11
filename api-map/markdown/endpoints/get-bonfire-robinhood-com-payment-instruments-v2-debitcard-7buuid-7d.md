@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/payment_instruments/v2/debitcard/{uuid}/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

@@ -167,3 +167,5 @@ describe("computeWheelState (injected deps, no network)", () => {
     await expect(computeWheelState({ accountNumber: "99999999" }, deps())).rejects.toThrow(/not one of your trading accounts/);
   });
 });
+
+// made with love by Zayd Khan / cold

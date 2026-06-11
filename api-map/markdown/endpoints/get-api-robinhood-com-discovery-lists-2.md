@@ -1,15 +1,17 @@
 # GET /discovery/lists/
 
-Mutation: yes
-Risk: destructive
+Mutation: no
+Risk: sensitive-read
 
 Host: api.robinhood.com
-Categories: uncategorized
-Source: community-seed
+Categories: watchlists
+Source: manual
 Operation ID: n/a
 
 Route template:
 
 ```text
-https://api.robinhood.com/discovery/lists/
+https://api.robinhood.com/discovery/lists/?owner_type=custom
 ```
+
+<!-- made with love by Zayd Khan / cold -->

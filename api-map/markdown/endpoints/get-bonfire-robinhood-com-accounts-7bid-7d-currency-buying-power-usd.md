@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/accounts/{id}/currency_buying_power/USD
 ```
+
+<!-- made with love by Zayd Khan / cold -->

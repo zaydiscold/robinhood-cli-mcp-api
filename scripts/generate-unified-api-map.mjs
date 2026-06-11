@@ -140,6 +140,9 @@ const brokerageSpec = JSON.parse(await readFile(brokerageSpecPath, "utf8"));
 const cryptoRoutes = cryptoRoutesFromSpec(cryptoSpec);
 const unifiedRoutes = [...cryptoRoutes, ...brokerageRoutes].sort((a, b) => a.host.localeCompare(b.host) || a.url.localeCompare(b.url));
 const unifiedSpec = mergeSpecs(cryptoSpec, brokerageSpec);
+if (unifiedSpec?.info?.description && !/made with love/i.test(unifiedSpec.info.description)) {
+  unifiedSpec.info.description += " Made with love by Zayd Khan / cold.";
+}
 
 await mkdir(dirname(routesOutPath), { recursive: true });
 await mkdir(dirname(openapiOutPath), { recursive: true });
@@ -164,7 +167,9 @@ const markdown = [
   "",
   "| Mutation | Risk | Methods | Categories | Host | Source | Route template |",
   "|---|---|---|---|---|---|---|",
-  ...markdownRows(unifiedRoutes)
+  ...markdownRows(unifiedRoutes),
+  "",
+  "<!-- made with love by Zayd Khan / cold -->"
 ].join("\n");
 
 await writeFile(markdownOutPath, `${markdown}\n`);

@@ -147,3 +147,5 @@ await writeFile(routesPath, `${JSON.stringify(existingRoutes, null, 2)}\n`);
 console.error(`capture=${capturePath}`);
 console.error(`browser routes=${browserRoutes.length}`);
 console.error(`merged routes=${existingRoutes.length}`);
+
+// made with love by Zayd Khan / cold

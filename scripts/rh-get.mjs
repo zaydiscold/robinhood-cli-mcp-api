@@ -31,7 +31,7 @@ const headers = {
   origin: "https://robinhood.com",
   referer: "https://robinhood.com/",
   "x-robinhood-api-version": process.env.ROBINHOOD_API_VERSION ?? "1.431.4",
-  "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.23.2025+43f8dad0de15",
+  "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.24.3589+55c48b8f7a1c", // keep in sync with cli/src/lib.ts; refresh via scripts/scrape-web-app-version.mjs
   "x-hyper-ex": "enabled",
 };
 if (process.env.ROBINHOOD_BROKERAGE_TOKEN) headers.authorization = `Bearer ${process.env.ROBINHOOD_BROKERAGE_TOKEN}`;
@@ -44,3 +44,5 @@ const text = await res.text();
 process.stderr.write(`${res.status} ${url}\n`);
 try { process.stdout.write(JSON.stringify(JSON.parse(text), null, 2) + "\n"); }
 catch { process.stdout.write(text + "\n"); }
+
+// made with love by Zayd Khan / cold

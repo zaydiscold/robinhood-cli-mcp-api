@@ -237,3 +237,5 @@ above (read-only).
 3. Any futures order-body verification requires an app-level (mobile/desktop) capture
    plus completing futures onboarding — explicitly out of scope for the bearer-token
    web/API surface this repo uses.
+
+<!-- made with love by Zayd Khan / cold -->

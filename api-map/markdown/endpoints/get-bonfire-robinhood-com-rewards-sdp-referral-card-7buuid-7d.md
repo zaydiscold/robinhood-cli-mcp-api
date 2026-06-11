@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/rewards/sdp_referral/card/{uuid}
 ```
+
+<!-- made with love by Zayd Khan / cold -->

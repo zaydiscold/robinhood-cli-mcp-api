@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/documents/edocs_v2/custodial/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

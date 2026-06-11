@@ -76,3 +76,5 @@ collateral); the standalone covered-call leg correctly rejected **"infinite risk
 the 100 backing shares). Conclusion: **all leg topologies are RH-verified**; credit/short strategies
 additionally require coverage/BP. Reproduce with `scripts/validate-strategies.mjs <SYM> <ACCOUNT>`.
 
+
+<!-- made with love by Zayd Khan / cold -->

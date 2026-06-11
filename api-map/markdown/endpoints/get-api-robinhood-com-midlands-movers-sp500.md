@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/midlands/movers/sp500/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

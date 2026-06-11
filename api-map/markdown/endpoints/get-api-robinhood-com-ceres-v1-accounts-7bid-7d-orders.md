@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/ceres/v1/accounts/{id}/orders
 ```
+
+<!-- made with love by Zayd Khan / cold -->

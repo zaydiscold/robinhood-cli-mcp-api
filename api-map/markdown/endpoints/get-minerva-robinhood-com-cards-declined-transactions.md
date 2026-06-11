@@ -13,3 +13,5 @@ Route template:
 ```text
 https://minerva.robinhood.com/cards/declined_transactions/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

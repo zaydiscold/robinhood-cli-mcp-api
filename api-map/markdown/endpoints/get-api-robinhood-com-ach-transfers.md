@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/ach/transfers/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

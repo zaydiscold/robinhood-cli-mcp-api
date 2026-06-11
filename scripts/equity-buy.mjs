@@ -55,7 +55,7 @@ function webHeaders(json = false) {
     origin: "https://robinhood.com",
     referer: "https://robinhood.com/",
     "x-robinhood-api-version": process.env.ROBINHOOD_API_VERSION ?? "1.431.4",
-    "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.23.2025+43f8dad0de15",
+    "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.24.3589+55c48b8f7a1c", // keep in sync with cli/src/lib.ts; refresh via scripts/scrape-web-app-version.mjs
     "x-hyper-ex": "enabled",
   };
   if (TOKEN) h.authorization = `Bearer ${TOKEN}`;
@@ -177,7 +177,15 @@ async function preflight() {
     process.exit(2);
   }
   const accts = (r.body?.results || []).map((a) => `${a.account_number}(${a.brokerage_account_type}/${a.type})`);
-  log(`PREFLIGHT: OK — auth live, ${accts.length} accounts: ${accts.join(", ")}`);
+  // The bulk accounts/ endpoint under-reports (live 2026-06-11: 2 of 5). The COMPLETE owned-account
+  // graph is bonfire transfer/accounts/ — report both so the subset is never mistaken for the whole.
+  let totalOwned = null;
+  try {
+    const g = await get("https://bonfire.robinhood.com/transfer/accounts/");
+    const rows = (g.body?.results || []).filter((x) => x?.account_number && !x?.is_external && String(x?.type || "").toLowerCase() !== "ach");
+    if (rows.length) totalOwned = rows.length;
+  } catch { /* graph read is best-effort; the bulk result above already proves auth */ }
+  log(`PREFLIGHT: OK — auth live, ${accts.length} typed account(s) from bulk endpoint${totalOwned ? ` of ${totalOwned} owned total (run \`accounts\` for the full list)` : ""}: ${accts.join(", ")}`);
   return true;
 }
 
@@ -269,3 +277,5 @@ const live = flag("live");
   try { writeFileSync(logPath, JSON.stringify(receipts, null, 2)); log(`receipt: ${logPath}`); } catch {}
   process.stdout.write(JSON.stringify(receipts, null, 2) + "\n");
 })().catch((e) => { log("FATAL " + (e.stack || e)); process.exit(1); });
+
+// made with love by Zayd Khan / cold

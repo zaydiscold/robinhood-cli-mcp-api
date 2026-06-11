@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/equities/history/{id}
 ```
+
+<!-- made with love by Zayd Khan / cold -->

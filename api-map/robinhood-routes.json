@@ -16,7 +16,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/acats/",
@@ -37,7 +39,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/accounts/",
@@ -45,7 +49,82 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [
+      "account_number",
+      "active_subscription_id",
+      "affiliate",
+      "agentic_allowed",
+      "amount_eligible_for_deposit_cancellation",
+      "brokerage_account_type",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "car_valid_until",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_available_for_withdrawal_without_margin",
+      "cash_available_trading_only",
+      "cash_available_trading_only_expiry_date",
+      "cash_balances",
+      "cash_held_for_options_collateral",
+      "cash_held_for_orders",
+      "cash_management_enabled",
+      "created_at",
+      "crypto_buying_power",
+      "deactivated",
+      "deposit_halted",
+      "disable_adt",
+      "drip_enabled",
+      "dynamic_instant_limit",
+      "eligible_for_cash_management",
+      "eligible_for_drip",
+      "eligible_for_fractionals",
+      "equity_trading_lock",
+      "fractional_position_closing_only",
+      "group_id",
+      "group_type",
+      "has_futures_account",
+      "instant_eligibility",
+      "ipo_access_restricted",
+      "ipo_access_restricted_reason",
+      "is_default",
+      "is_original",
+      "is_pinnacle_account",
+      "locked",
+      "management_type",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "nickname",
+      "onbp",
+      "only_position_closing_trades",
+      "option_level",
+      "option_trading_lock",
+      "option_trading_on_expiration_enabled",
+      "permanently_deactivated",
+      "portfolio_cash",
+      "received_ach_debit_locked",
+      "ref_id",
+      "rhs_account_number",
+      "second_trade_suitability_completed",
+      "sma",
+      "sma_held_for_orders",
+      "state",
+      "sweep_enabled",
+      "sweep_enrolled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_debit",
+      "unsettled_funds",
+      "updated_at",
+      "url",
+      "user",
+      "user_dynamic_instant_limit",
+      "user_id",
+      "user_real_instant_limit",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/accounts/?default_to_all_accounts=true",
@@ -85,7 +164,82 @@
       "include_multiple_individual",
       "include_multiple_individual_accounts",
       "is_default"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "active_subscription_id",
+      "affiliate",
+      "agentic_allowed",
+      "amount_eligible_for_deposit_cancellation",
+      "brokerage_account_type",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "car_valid_until",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_available_for_withdrawal_without_margin",
+      "cash_available_trading_only",
+      "cash_available_trading_only_expiry_date",
+      "cash_balances",
+      "cash_held_for_options_collateral",
+      "cash_held_for_orders",
+      "cash_management_enabled",
+      "created_at",
+      "crypto_buying_power",
+      "deactivated",
+      "deposit_halted",
+      "disable_adt",
+      "drip_enabled",
+      "dynamic_instant_limit",
+      "eligible_for_cash_management",
+      "eligible_for_drip",
+      "eligible_for_fractionals",
+      "equity_trading_lock",
+      "fractional_position_closing_only",
+      "group_id",
+      "group_type",
+      "has_futures_account",
+      "instant_eligibility",
+      "ipo_access_restricted",
+      "ipo_access_restricted_reason",
+      "is_default",
+      "is_original",
+      "is_pinnacle_account",
+      "locked",
+      "management_type",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "nickname",
+      "onbp",
+      "only_position_closing_trades",
+      "option_level",
+      "option_trading_lock",
+      "option_trading_on_expiration_enabled",
+      "permanently_deactivated",
+      "portfolio_cash",
+      "received_ach_debit_locked",
+      "ref_id",
+      "rhs_account_number",
+      "second_trade_suitability_completed",
+      "sma",
+      "sma_held_for_orders",
+      "state",
+      "sweep_enabled",
+      "sweep_enrolled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_debit",
+      "unsettled_funds",
+      "updated_at",
+      "url",
+      "user",
+      "user_dynamic_instant_limit",
+      "user_id",
+      "user_real_instant_limit",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/accounts/{0}/recent_day_trades/",
@@ -101,10 +255,60 @@
     "seenOn": [
       "crypto-btc"
     ],
-    "queryKeys": []
+    "queryKeys": [],
+    "fields": [
+      "account_number",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_balances",
+      "created_at",
+      "deactivated",
+      "instant_eligibility",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "option_level",
+      "portfolio_cash",
+      "rhs_account_number",
+      "sma",
+      "sweep_enabled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_funds",
+      "url",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
-    "url": "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
+    "url": "https://api.robinhood.com/accounts/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "fields": [
+      "account_number",
+      "brokerage_account_type",
+      "buying_power",
+      "cash",
+      "margin_balances",
+      "nickname",
+      "option_level",
+      "portfolio_cash",
+      "type"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object",
+    "source": "live-verified-2026-06-11 (per-account detail; the bulk accounts/ endpoints omit some owned accounts — this is the type/cash fallback for those)"
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/{account_number}/buying_power_breakdown",
     "host": "api.robinhood.com",
     "categories": [
       "account"
@@ -120,7 +324,89 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_balances",
+      "created_at",
+      "deactivated",
+      "instant_eligibility",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "option_level",
+      "portfolio_cash",
+      "rhs_account_number",
+      "sma",
+      "sweep_enabled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_funds",
+      "url",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "cash"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "High-yield cash sweep state {sweep_enrolled}. POST {\"sweep_enrollment_action\":\"unenroll\"} to disable (write-mutate).",
+    "fields": [
+      "account_number",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_balances",
+      "created_at",
+      "deactivated",
+      "instant_eligibility",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "option_level",
+      "portfolio_cash",
+      "rhs_account_number",
+      "sma",
+      "sweep_enabled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_funds",
+      "url",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/",
+    "methods": [
+      "POST"
+    ],
+    "risk": "write-mutate",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "cash"
+    ],
+    "summary": "Disable cash sweep. POST {\"sweep_enrollment_action\":\"unenroll\"}.",
+    "source": "settings-capture-2026-06-03",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/accounts/stock_loan_payments/",
@@ -146,7 +432,32 @@
       "account_number",
       "account_numbers",
       "page_size"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_balances",
+      "created_at",
+      "deactivated",
+      "instant_eligibility",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "option_level",
+      "portfolio_cash",
+      "rhs_account_number",
+      "sma",
+      "sweep_enabled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_funds",
+      "url",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/accounts/sweeps/",
@@ -167,7 +478,32 @@
       "default_to_all_accounts",
       "include_managed",
       "page_size"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_balances",
+      "created_at",
+      "deactivated",
+      "instant_eligibility",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "option_level",
+      "portfolio_cash",
+      "rhs_account_number",
+      "sma",
+      "sweep_enabled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_funds",
+      "url",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/accounts/sweeps/interest/",
@@ -191,7 +527,32 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_balances",
+      "created_at",
+      "deactivated",
+      "instant_eligibility",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "option_level",
+      "portfolio_cash",
+      "rhs_account_number",
+      "sma",
+      "sweep_enabled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_funds",
+      "url",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/accounts/sweeps/timeline_summary/",
@@ -215,7 +576,32 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "buying_power",
+      "can_downgrade_to_cash",
+      "cash",
+      "cash_available_for_withdrawal",
+      "cash_balances",
+      "created_at",
+      "deactivated",
+      "instant_eligibility",
+      "margin_balances",
+      "max_ach_early_access_amount",
+      "option_level",
+      "portfolio_cash",
+      "rhs_account_number",
+      "sma",
+      "sweep_enabled",
+      "type",
+      "uncleared_deposits",
+      "unsettled_funds",
+      "url",
+      "withdrawal_halted"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/ach/received/transfers/",
@@ -223,7 +609,9 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/",
@@ -235,7 +623,9 @@
     "methods": [
       "GET"
     ],
-    "summary": "List ACH bank links."
+    "summary": "List ACH bank links.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/",
@@ -254,7 +644,9 @@
       "bank_account_type",
       "bank_account_holder_name"
     ],
-    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/{0}/",
@@ -266,7 +658,9 @@
     "methods": [
       "GET"
     ],
-    "summary": "Get an ACH relationship."
+    "summary": "Get an ACH relationship.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/{0}/",
@@ -278,7 +672,9 @@
     "methods": [
       "DELETE"
     ],
-    "summary": "Delete an ACH relationship."
+    "summary": "Delete an ACH relationship.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ach/relationships/{0}/unlink/",
@@ -290,7 +686,9 @@
     "methods": [
       "POST"
     ],
-    "summary": "Unlink an ACH relationship (no body)."
+    "summary": "Unlink an ACH relationship (no body).",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ach/transfers/",
@@ -302,7 +700,9 @@
     "methods": [
       "GET"
     ],
-    "summary": "List ACH transfers."
+    "summary": "List ACH transfers.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ach/transfers/",
@@ -320,7 +720,9 @@
       "amount",
       "direction"
     ],
-    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/banking/cross-sell/creditcard/applications/{uuid}",
@@ -339,7 +741,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/bw/config",
@@ -358,7 +762,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/cash_journal/margin_interest_charges/",
@@ -378,7 +784,9 @@
     "queryKeys": [
       "default_to_all_accounts",
       "page_size"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/{id}",
@@ -400,7 +808,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/{id}/{id}",
@@ -421,7 +831,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/accounts",
@@ -446,7 +858,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/accounts/{id}/aggregated_positions",
@@ -466,7 +880,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/accounts/{id}/orders",
@@ -492,7 +908,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/accounts/{id}/pnl_cost_basis",
@@ -511,7 +929,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/cash_settlement_executions",
@@ -533,10 +953,12 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
-    "url": "https://api.robinhood.com/ceres/v1/futures_account_eligibility/{num}",
+    "url": "https://api.robinhood.com/ceres/v1/futures_account_eligibility/{account_number}",
     "host": "api.robinhood.com",
     "categories": [
       "account"
@@ -552,7 +974,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/manual_cash_correction",
@@ -573,7 +997,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/ceres/v1/user_settings",
@@ -608,7 +1034,12 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "userSettings"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/challenge/{0}/respond/",
@@ -616,7 +1047,9 @@
     "categories": [
       "auth"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/combo/orders/",
@@ -647,7 +1080,14 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "next",
+      "previous",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/corp_actions/adr_fees/",
@@ -677,10 +1117,46 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
-    "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
+    "url": "https://api.robinhood.com/corp_actions/drip/account_settings/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "dividends"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Account-wide DRIP state {drip_enabled}. PATCH {\"drip_enabled\":bool} to toggle (write-mutate).",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/account_settings/{account_number}/",
+    "methods": [
+      "PATCH"
+    ],
+    "risk": "write-mutate",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "dividends"
+    ],
+    "summary": "Toggle account-wide DRIP. PATCH {\"drip_enabled\":bool}.",
+    "source": "settings-capture-2026-06-03",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{account_number}/",
     "host": "api.robinhood.com",
     "categories": [
       "dividends"
@@ -697,10 +1173,12 @@
     "requestTypes": [
       "XHR"
     ],
-    "summary": "Read DRIP dividend-reinvestment enrollment for an account."
+    "summary": "Read DRIP dividend-reinvestment enrollment for an account.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
-    "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{num}/",
+    "url": "https://api.robinhood.com/corp_actions/drip/enrollment/{account_number}/",
     "host": "api.robinhood.com",
     "categories": [
       "dividends"
@@ -721,7 +1199,43 @@
     "bodyKeys": [
       "drip_enrolled"
     ],
-    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "dividends"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Per-instrument DRIP settings list for an account (results[]).",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account_number}/{instrument_id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "dividends"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "PATCH"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Per-stock DRIP toggle. PATCH {\"drip_enabled\":bool}.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/corp_actions/v2/split_payments/",
@@ -751,7 +1265,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/crypto-transfers/account/",
@@ -771,7 +1287,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/devices/",
@@ -790,7 +1308,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/devices/disable_remove_device/",
@@ -809,7 +1329,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/",
@@ -818,16 +1340,20 @@
     "category": "watchlists",
     "host": "api.robinhood.com",
     "summary": "List all watchlists",
-    "url": "https://api.robinhood.com/discovery/lists/"
-  },
-  {
-    "url_template": "https://api.robinhood.com/discovery/lists/",
-    "method": "POST",
-    "risk": "destructive",
-    "category": "watchlists",
-    "host": "api.robinhood.com",
-    "summary": "Create watchlist",
-    "url": "https://api.robinhood.com/discovery/lists/"
+    "url": "https://api.robinhood.com/discovery/lists/",
+    "fields": [
+      "display_name",
+      "followed",
+      "icon_emoji",
+      "id",
+      "item_count",
+      "list_type",
+      "name",
+      "owner_type",
+      "system_edited"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/discovery/lists/",
@@ -849,7 +1375,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/?owner_type=custom",
@@ -858,25 +1386,30 @@
     "category": "watchlists",
     "host": "api.robinhood.com",
     "summary": "List all custom watchlists",
-    "url": "https://api.robinhood.com/discovery/lists/?owner_type=custom"
-  },
-  {
     "url": "https://api.robinhood.com/discovery/lists/?owner_type=custom",
-    "host": "api.robinhood.com",
+    "fields": [
+      "display_name",
+      "followed",
+      "icon_emoji",
+      "id",
+      "item_count",
+      "list_type",
+      "name",
+      "owner_type",
+      "system_edited"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object",
     "categories": [
       "watchlists"
     ],
-    "risk": "sensitive-read",
-    "methods": [
-      "GET"
-    ],
-    "source": "manual",
     "queryKeys": [
       "owner_type"
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "source": "manual"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
@@ -885,25 +1418,20 @@
     "category": "watchlists",
     "host": "api.robinhood.com",
     "summary": "Get one watchlist",
-    "url": "https://api.robinhood.com/discovery/lists/{0}/"
-  },
-  {
-    "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
-    "method": "PATCH",
-    "risk": "destructive",
-    "category": "watchlists",
-    "host": "api.robinhood.com",
-    "summary": "Rename watchlist",
-    "url": "https://api.robinhood.com/discovery/lists/{0}/"
-  },
-  {
-    "url_template": "https://api.robinhood.com/discovery/lists/{0}/",
-    "method": "DELETE",
-    "risk": "destructive",
-    "category": "watchlists",
-    "host": "api.robinhood.com",
-    "summary": "Delete watchlist",
-    "url": "https://api.robinhood.com/discovery/lists/{0}/"
+    "url": "https://api.robinhood.com/discovery/lists/{0}/",
+    "fields": [
+      "display_name",
+      "followed",
+      "icon_emoji",
+      "id",
+      "item_count",
+      "list_type",
+      "name",
+      "owner_type",
+      "system_edited"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/discovery/lists/{id}/",
@@ -925,7 +1453,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/default/",
@@ -934,7 +1464,20 @@
     "category": "watchlists",
     "host": "api.robinhood.com",
     "summary": "Get default watchlist",
-    "url": "https://api.robinhood.com/discovery/lists/default/"
+    "url": "https://api.robinhood.com/discovery/lists/default/",
+    "fields": [
+      "display_name",
+      "followed",
+      "icon_emoji",
+      "id",
+      "item_count",
+      "list_type",
+      "name",
+      "owner_type",
+      "system_edited"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/items/",
@@ -943,7 +1486,20 @@
     "category": "watchlists",
     "host": "api.robinhood.com",
     "summary": "List watchlist items",
-    "url": "https://api.robinhood.com/discovery/lists/items/"
+    "url": "https://api.robinhood.com/discovery/lists/items/",
+    "fields": [
+      "display_name",
+      "followed",
+      "icon_emoji",
+      "id",
+      "item_count",
+      "list_type",
+      "name",
+      "owner_type",
+      "system_edited"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url_template": "https://api.robinhood.com/discovery/lists/user_items/",
@@ -952,7 +1508,20 @@
     "category": "watchlists",
     "host": "api.robinhood.com",
     "summary": "List user watchlist items",
-    "url": "https://api.robinhood.com/discovery/lists/user_items/"
+    "url": "https://api.robinhood.com/discovery/lists/user_items/",
+    "fields": [
+      "display_name",
+      "followed",
+      "icon_emoji",
+      "id",
+      "item_count",
+      "list_type",
+      "name",
+      "owner_type",
+      "system_edited"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/discovery/ratings/{id}/overview/",
@@ -976,7 +1545,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/dividends/",
@@ -1004,7 +1575,9 @@
       "include_managed",
       "instrument_id",
       "page_size"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/documents/",
@@ -1032,7 +1605,9 @@
       "page_size",
       "type",
       "type__in"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/documents/edocs_v2/custodial/",
@@ -1055,7 +1630,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/documents/edocs_v2/ira/",
@@ -1082,7 +1659,13 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "next",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/documents/edocs_v2/managed/",
@@ -1105,7 +1688,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/documents/edocs_v2/rhc/",
@@ -1128,7 +1713,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/documents/edocs_v2/rhd/",
@@ -1151,7 +1738,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/documents/joint_account",
@@ -1174,7 +1763,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/fundamentals/",
@@ -1182,7 +1773,9 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/goku/{id}",
@@ -1213,7 +1806,9 @@
     "queryKeys": [],
     "requestTypes": [
       "Fetch"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/goku/lcm",
@@ -1250,7 +1845,9 @@
     "queryKeys": [],
     "requestTypes": [
       "Fetch"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/goku/lcmv2",
@@ -1286,7 +1883,9 @@
     "queryKeys": [],
     "requestTypes": [
       "Fetch"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/goku/live_frontend_log_events",
@@ -1310,7 +1909,9 @@
     "queryKeys": [],
     "requestTypes": [
       "Fetch"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/hippo/ux-flags",
@@ -1347,7 +1948,18 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "createdAt",
+      "flagType",
+      "metadata",
+      "name",
+      "results",
+      "updatedAt",
+      "value"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/inbox/notifications/badge",
@@ -1386,7 +1998,13 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "shouldBadge",
+      "shouldCriticalBadge"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/inbox/threads/",
@@ -1423,7 +2041,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/instruments/",
@@ -1451,7 +2071,66 @@
       "active_instruments_only",
       "ids",
       "symbol"
-    ]
+    ],
+    "fields": [
+      "account_type_tradabilities",
+      "affiliate",
+      "affiliate_tradability",
+      "all_day_tradability",
+      "bloomberg_unique",
+      "car_required",
+      "country",
+      "day_trade_ratio",
+      "default_collar_fraction",
+      "default_preset_percent_limit",
+      "extended_hours_fractional_tradability",
+      "fractional_tradability",
+      "fundamentals",
+      "high_risk_maintenance_ratio",
+      "id",
+      "internal_halt_details",
+      "internal_halt_end_time",
+      "internal_halt_reason",
+      "internal_halt_sessions",
+      "internal_halt_source",
+      "internal_halt_start_time",
+      "ipo_access_cob_deadline",
+      "ipo_access_status",
+      "ipo_access_supports_dsp",
+      "ipo_roadshow_url",
+      "ipo_s1_url",
+      "ipoa_start_date",
+      "is_high_investment_risk",
+      "is_spac",
+      "is_test",
+      "issuer_type",
+      "list_date",
+      "low_risk_maintenance_ratio",
+      "maintenance_ratio",
+      "margin_initial_ratio",
+      "market",
+      "min_tick_size",
+      "name",
+      "notional_estimated_quantity_decimals",
+      "otc_market_tier",
+      "quote",
+      "reserved_buying_power_percent_immediate",
+      "reserved_buying_power_percent_queued",
+      "rhs_tradability",
+      "short_selling_tradability",
+      "simple_name",
+      "splits",
+      "state",
+      "symbol",
+      "tax_security_type",
+      "tradability",
+      "tradable_chain_id",
+      "tradeable",
+      "type",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/instruments/?ids={ids}",
@@ -1467,7 +2146,66 @@
     "source": "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
     "queryKeys": [
       "ids"
-    ]
+    ],
+    "fields": [
+      "account_type_tradabilities",
+      "affiliate",
+      "affiliate_tradability",
+      "all_day_tradability",
+      "bloomberg_unique",
+      "car_required",
+      "country",
+      "day_trade_ratio",
+      "default_collar_fraction",
+      "default_preset_percent_limit",
+      "extended_hours_fractional_tradability",
+      "fractional_tradability",
+      "fundamentals",
+      "high_risk_maintenance_ratio",
+      "id",
+      "internal_halt_details",
+      "internal_halt_end_time",
+      "internal_halt_reason",
+      "internal_halt_sessions",
+      "internal_halt_source",
+      "internal_halt_start_time",
+      "ipo_access_cob_deadline",
+      "ipo_access_status",
+      "ipo_access_supports_dsp",
+      "ipo_roadshow_url",
+      "ipo_s1_url",
+      "ipoa_start_date",
+      "is_high_investment_risk",
+      "is_spac",
+      "is_test",
+      "issuer_type",
+      "list_date",
+      "low_risk_maintenance_ratio",
+      "maintenance_ratio",
+      "margin_initial_ratio",
+      "market",
+      "min_tick_size",
+      "name",
+      "notional_estimated_quantity_decimals",
+      "otc_market_tier",
+      "quote",
+      "reserved_buying_power_percent_immediate",
+      "reserved_buying_power_percent_queued",
+      "rhs_tradability",
+      "short_selling_tradability",
+      "simple_name",
+      "splits",
+      "state",
+      "symbol",
+      "tax_security_type",
+      "tradability",
+      "tradable_chain_id",
+      "tradeable",
+      "type",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/instruments/?symbol={symbol}",
@@ -1483,7 +2221,66 @@
     "source": "self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution",
     "queryKeys": [
       "symbol"
-    ]
+    ],
+    "fields": [
+      "account_type_tradabilities",
+      "affiliate",
+      "affiliate_tradability",
+      "all_day_tradability",
+      "bloomberg_unique",
+      "car_required",
+      "country",
+      "day_trade_ratio",
+      "default_collar_fraction",
+      "default_preset_percent_limit",
+      "extended_hours_fractional_tradability",
+      "fractional_tradability",
+      "fundamentals",
+      "high_risk_maintenance_ratio",
+      "id",
+      "internal_halt_details",
+      "internal_halt_end_time",
+      "internal_halt_reason",
+      "internal_halt_sessions",
+      "internal_halt_source",
+      "internal_halt_start_time",
+      "ipo_access_cob_deadline",
+      "ipo_access_status",
+      "ipo_access_supports_dsp",
+      "ipo_roadshow_url",
+      "ipo_s1_url",
+      "ipoa_start_date",
+      "is_high_investment_risk",
+      "is_spac",
+      "is_test",
+      "issuer_type",
+      "list_date",
+      "low_risk_maintenance_ratio",
+      "maintenance_ratio",
+      "margin_initial_ratio",
+      "market",
+      "min_tick_size",
+      "name",
+      "notional_estimated_quantity_decimals",
+      "otc_market_tier",
+      "quote",
+      "reserved_buying_power_percent_immediate",
+      "reserved_buying_power_percent_queued",
+      "rhs_tradability",
+      "short_selling_tradability",
+      "simple_name",
+      "splits",
+      "state",
+      "symbol",
+      "tax_security_type",
+      "tradability",
+      "tradable_chain_id",
+      "tradeable",
+      "type",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/instruments/{0}/popularity/",
@@ -1491,7 +2288,29 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "bloomberg_unique",
+      "country",
+      "default_collar_fraction",
+      "fractional_tradability",
+      "id",
+      "list_date",
+      "market",
+      "min_tick_size",
+      "name",
+      "rhs_tradability",
+      "simple_name",
+      "splits",
+      "state",
+      "symbol",
+      "tradability",
+      "tradable_chain_id",
+      "tradeable",
+      "type"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/instruments/{0}/splits/",
@@ -1499,7 +2318,29 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "bloomberg_unique",
+      "country",
+      "default_collar_fraction",
+      "fractional_tradability",
+      "id",
+      "list_date",
+      "market",
+      "min_tick_size",
+      "name",
+      "rhs_tradability",
+      "simple_name",
+      "splits",
+      "state",
+      "symbol",
+      "tradability",
+      "tradable_chain_id",
+      "tradeable",
+      "type"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/instruments/{id}/shorting/",
@@ -1523,7 +2364,29 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "bloomberg_unique",
+      "country",
+      "default_collar_fraction",
+      "fractional_tradability",
+      "id",
+      "list_date",
+      "market",
+      "min_tick_size",
+      "name",
+      "rhs_tradability",
+      "simple_name",
+      "splits",
+      "state",
+      "symbol",
+      "tradability",
+      "tradable_chain_id",
+      "tradeable",
+      "type"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/kaizen/experiments/{id}/",
@@ -1564,10 +2427,15 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "experiments"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
-    "url": "https://api.robinhood.com/margin/{num}/upgrade_restrictions",
+    "url": "https://api.robinhood.com/margin/{account_number}/upgrade_restrictions",
     "host": "api.robinhood.com",
     "categories": [
       "account"
@@ -1588,10 +2456,12 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
-    "url": "https://api.robinhood.com/margin/{num}/upgrade_restrictions/",
+    "url": "https://api.robinhood.com/margin/{account_number}/upgrade_restrictions/",
     "host": "api.robinhood.com",
     "categories": [
       "account"
@@ -1612,7 +2482,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/margin/calls/",
@@ -1630,7 +2502,9 @@
     ],
     "queryKeys": [
       "account_number"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/earnings/",
@@ -1653,7 +2527,17 @@
     ],
     "queryKeys": [
       "instrument"
-    ]
+    ],
+    "fields": [
+      "call",
+      "eps",
+      "instrument",
+      "report",
+      "symbol",
+      "year"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/marketdata/equities/summary/robinhood/{id}/",
@@ -1675,7 +2559,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/forex/estimated_price/{uuid}/",
@@ -1698,7 +2584,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/forex/fundamentals/{uuid}/",
@@ -1717,7 +2605,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/forex/historicals/",
@@ -1741,7 +2631,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/forex/historicals/{0}/",
@@ -1761,7 +2653,9 @@
       "bounds",
       "interval",
       "span"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/forex/quotes/",
@@ -1784,7 +2678,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/forex/quotes/{0}/",
@@ -1792,7 +2688,9 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/fundamentals/{id}/",
@@ -1820,7 +2718,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/fundamentals/short/v1/",
@@ -1847,7 +2747,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/hedgefunds/summary/{id}/",
@@ -1869,7 +2771,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/hedgefunds/transactions/{id}/",
@@ -1891,7 +2795,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/historicals/",
@@ -1915,7 +2821,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/historicals/{id}/",
@@ -1942,7 +2850,34 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/historicals/{symbol}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-04-injected-capture (observed; price historicals per symbol)",
+    "seenOn": [
+      "option-ticket"
+    ],
+    "queryKeys": [
+      "bounds",
+      "interval",
+      "span"
+    ],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/insiders/summary/{id}/",
@@ -1964,7 +2899,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/insiders/transactions/{id}/",
@@ -1986,7 +2923,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/marketdata/options/",
@@ -2010,7 +2949,48 @@
       "ids",
       "includeAllSessions",
       "include_all_sessions"
-    ]
+    ],
+    "fields": [
+      "adjusted_mark_price",
+      "adjusted_mark_price_round_down",
+      "ask_price",
+      "ask_size",
+      "bid_price",
+      "bid_size",
+      "break_even_price",
+      "chance_of_profit_long",
+      "chance_of_profit_short",
+      "delta",
+      "gamma",
+      "high_fill_rate_buy_price",
+      "high_fill_rate_sell_price",
+      "high_price",
+      "implied_volatility",
+      "instrument",
+      "instrument_id",
+      "last_trade_price",
+      "last_trade_size",
+      "latest_quote_session",
+      "low_fill_rate_buy_price",
+      "low_fill_rate_sell_price",
+      "low_price",
+      "mark_price",
+      "occ_symbol",
+      "open_interest",
+      "previous_close_date",
+      "previous_close_price",
+      "pricing_model",
+      "reg_session",
+      "rho",
+      "state",
+      "symbol",
+      "theta",
+      "updated_at",
+      "vega",
+      "volume"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/marketdata/options/?ids={ids}",
@@ -2029,7 +3009,73 @@
     ],
     "queryKeys": [
       "ids"
-    ]
+    ],
+    "fields": [
+      "adjusted_mark_price",
+      "adjusted_mark_price_round_down",
+      "ask_price",
+      "ask_size",
+      "bid_price",
+      "bid_size",
+      "break_even_price",
+      "chance_of_profit_long",
+      "chance_of_profit_short",
+      "delta",
+      "gamma",
+      "high_fill_rate_buy_price",
+      "high_fill_rate_sell_price",
+      "high_price",
+      "implied_volatility",
+      "instrument",
+      "instrument_id",
+      "last_trade_price",
+      "last_trade_size",
+      "latest_quote_session",
+      "low_fill_rate_buy_price",
+      "low_fill_rate_sell_price",
+      "low_price",
+      "mark_price",
+      "occ_symbol",
+      "open_interest",
+      "previous_close_date",
+      "previous_close_price",
+      "pricing_model",
+      "reg_session",
+      "rho",
+      "state",
+      "symbol",
+      "theta",
+      "updated_at",
+      "vega",
+      "volume"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/options/historicals/?ids={ids}&interval={interval}&span={span}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "options"
+    ],
+    "risk": "read",
+    "fields": [
+      "begins_at",
+      "close_price",
+      "data_points",
+      "high_price",
+      "instrument_id",
+      "interval",
+      "low_price",
+      "open_price",
+      "span",
+      "symbol",
+      "volume"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list",
+    "source": "live-verified-2026-06-11 (batch daily closes for held contracts; powers pre-open day attribution in computePortfolioPnl)"
   },
   {
     "url": "https://api.robinhood.com/marketdata/options/historicals/{0}/",
@@ -2038,7 +3084,34 @@
       "marketdata",
       "options"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "adjusted_mark_price",
+      "ask_price",
+      "ask_size",
+      "bid_price",
+      "bid_size",
+      "break_even_price",
+      "chance_of_profit_long",
+      "chance_of_profit_short",
+      "delta",
+      "gamma",
+      "high_price",
+      "implied_volatility",
+      "instrument_id",
+      "last_trade_price",
+      "low_price",
+      "mark_price",
+      "open_interest",
+      "previous_close_price",
+      "rho",
+      "symbol",
+      "theta",
+      "vega",
+      "volume"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/marketdata/options/strategy/quotes/",
@@ -2066,7 +3139,41 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "adjusted_mark_price",
+      "ask_price",
+      "ask_size",
+      "bid_price",
+      "bid_size",
+      "break_even_price",
+      "chance_of_profit_long",
+      "chance_of_profit_short",
+      "delta",
+      "gamma",
+      "high_price",
+      "implied_volatility",
+      "instrument",
+      "instrument_id",
+      "last_trade_price",
+      "last_trade_size",
+      "latest_quote_session",
+      "legs",
+      "low_price",
+      "mark_price",
+      "occ_symbol",
+      "open_interest",
+      "previous_close_date",
+      "previous_close_price",
+      "reg_session",
+      "rho",
+      "symbol",
+      "theta",
+      "vega",
+      "volume"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/marketdata/quotes/",
@@ -2098,7 +3205,38 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "adjusted_previous_close",
+      "ask_mic",
+      "ask_price",
+      "ask_size",
+      "ask_source",
+      "bid_mic",
+      "bid_price",
+      "bid_size",
+      "bid_source",
+      "has_traded",
+      "instrument",
+      "instrument_id",
+      "last_extended_hours_trade_price",
+      "last_non_reg_trade_price",
+      "last_non_reg_trade_price_source",
+      "last_trade_price",
+      "last_trade_price_source",
+      "previous_close",
+      "previous_close_date",
+      "state",
+      "symbol",
+      "trading_halted",
+      "updated_at",
+      "venue_ask_time",
+      "venue_bid_time",
+      "venue_last_non_reg_trade_time",
+      "venue_last_trade_time"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/marketdata/quotes/?ids={ids}",
@@ -2114,7 +3252,38 @@
     "source": "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
     "queryKeys": [
       "ids"
-    ]
+    ],
+    "fields": [
+      "adjusted_previous_close",
+      "ask_mic",
+      "ask_price",
+      "ask_size",
+      "ask_source",
+      "bid_mic",
+      "bid_price",
+      "bid_size",
+      "bid_source",
+      "has_traded",
+      "instrument",
+      "instrument_id",
+      "last_extended_hours_trade_price",
+      "last_non_reg_trade_price",
+      "last_non_reg_trade_price_source",
+      "last_trade_price",
+      "last_trade_price_source",
+      "previous_close",
+      "previous_close_date",
+      "state",
+      "symbol",
+      "trading_halted",
+      "updated_at",
+      "venue_ask_time",
+      "venue_bid_time",
+      "venue_last_non_reg_trade_time",
+      "venue_last_trade_time"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/marketdata/quotes/{id}/",
@@ -2136,7 +3305,27 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "adjusted_previous_close",
+      "ask_price",
+      "ask_size",
+      "bid_price",
+      "bid_size",
+      "has_traded",
+      "instrument",
+      "instrument_id",
+      "last_extended_hours_trade_price",
+      "last_non_reg_trade_price",
+      "last_trade_price",
+      "previous_close",
+      "previous_close_date",
+      "symbol",
+      "trading_halted",
+      "updated_at"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/markets/",
@@ -2144,7 +3333,9 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/markets/{}/hours/{}/",
@@ -2152,7 +3343,9 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/markets/{market}/hours/{date}/",
@@ -2189,7 +3382,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/midlands/ach/iav_banks/{id}/",
@@ -2208,7 +3403,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/midlands/lists/default/",
@@ -2216,7 +3413,9 @@
     "categories": [
       "watchlists"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/midlands/lists/items/",
@@ -2224,7 +3423,9 @@
     "categories": [
       "watchlists"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/midlands/movers/sp500/",
@@ -2232,7 +3433,54 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "description",
+      "instrument_url",
+      "market_hours_last_movement_pct",
+      "market_hours_last_price",
+      "symbol",
+      "updated_at"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/news/?symbol={symbol}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "sentiment",
+      "news",
+      "data"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "queryKeys": [
+      "symbol"
+    ],
+    "source": "sentiment-rd-2026-06-03",
+    "summary": "News articles per symbol (sentiment source).",
+    "fields": [
+      "api_source",
+      "author",
+      "currency_id",
+      "instrument",
+      "num_clicks",
+      "preview_image_url",
+      "published_at",
+      "related_instruments",
+      "relay_url",
+      "source",
+      "summary",
+      "title",
+      "updated_at",
+      "url",
+      "uuid"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/midlands/news/{0}/?",
@@ -2240,7 +3488,26 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "api_source",
+      "author",
+      "currency_id",
+      "instrument",
+      "num_clicks",
+      "preview_image_url",
+      "published_at",
+      "related_instruments",
+      "relay_url",
+      "source",
+      "summary",
+      "title",
+      "updated_at",
+      "url",
+      "uuid"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/midlands/notification_settings/ui_resources/",
@@ -2267,7 +3534,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/midlands/notifications/notification_tracker/",
@@ -2275,7 +3544,9 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/midlands/notifications/stack/",
@@ -2294,7 +3565,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/midlands/ratings/",
@@ -2320,7 +3593,16 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "instrument_id",
+      "ratings",
+      "ratings_published_at",
+      "summary",
+      "type"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/midlands/ratings/{0}/",
@@ -2328,7 +3610,16 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "instrument_id",
+      "ratings",
+      "ratings_published_at",
+      "summary",
+      "type"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/midlands/ratings/{id}/",
@@ -2352,7 +3643,16 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "instrument_id",
+      "ratings",
+      "ratings_published_at",
+      "summary",
+      "type"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/midlands/referral/",
@@ -2360,7 +3660,34 @@
     "categories": [
       "account"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/search/?query={query}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "search",
+      "instruments"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "queryKeys": [
+      "query"
+    ],
+    "source": "manual-search-2026-06-03",
+    "summary": "Global instrument search (web search bar) — resolve name/theme to tickers.",
+    "fields": [
+      "currencies",
+      "instruments",
+      "lists",
+      "tags"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/midlands/tags/tag/{}/",
@@ -2368,7 +3695,45 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "canonical_examples",
+      "description",
+      "instruments",
+      "membership_count",
+      "name",
+      "slug"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/midlands/tags/tag/{tag}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "sentiment",
+      "discovery",
+      "data"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "queryKeys": [
+      "tag"
+    ],
+    "source": "sentiment-rd-2026-06-03",
+    "summary": "Crowd/discovery lists: 100-most-popular, top-movers, etc.",
+    "fields": [
+      "canonical_examples",
+      "description",
+      "instruments",
+      "membership_count",
+      "name",
+      "slug"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/midlands/tags/tag/100-most-popular/",
@@ -2376,7 +3741,17 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "canonical_examples",
+      "description",
+      "instruments",
+      "membership_count",
+      "name",
+      "slug"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/midlands/tags/tag/top-movers/",
@@ -2384,7 +3759,17 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "canonical_examples",
+      "description",
+      "instruments",
+      "membership_count",
+      "name",
+      "slug"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/nimbus/v1/asset_transfers",
@@ -2405,7 +3790,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/notifications/devices/",
@@ -2413,7 +3800,9 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/oauth2/token/",
@@ -2421,7 +3810,9 @@
     "categories": [
       "auth"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/options-product/tooltips/home-tab/",
@@ -2443,7 +3834,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/options/{id}/",
@@ -2470,7 +3863,12 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "should_show"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/aggregate_positions/",
@@ -2479,7 +3877,14 @@
       "account",
       "options"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [
+      "next",
+      "previous",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
@@ -2506,7 +3911,14 @@
       "account_numbers",
       "chain_ids",
       "nonzero"
-    ]
+    ],
+    "fields": [
+      "next",
+      "previous",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/options/chains/",
@@ -2536,7 +3948,19 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "can_open_position",
+      "cash_component",
+      "expiration_dates",
+      "id",
+      "min_ticks",
+      "symbol",
+      "trade_value_multiplier",
+      "underlying_instruments"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/chains/{0}/",
@@ -2544,7 +3968,25 @@
     "categories": [
       "options"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "can_open_position",
+      "cash_component",
+      "expiration_dates",
+      "extended_hours_state",
+      "id",
+      "late_close_state",
+      "min_ticks",
+      "min_ticks_multileg",
+      "sellout_time_to_expiration",
+      "settle_on_open",
+      "symbol",
+      "trade_value_multiplier",
+      "underlying_instruments",
+      "underlyings"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/chains/{id}/",
@@ -2569,7 +4011,25 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "can_open_position",
+      "cash_component",
+      "expiration_dates",
+      "extended_hours_state",
+      "id",
+      "late_close_state",
+      "min_ticks",
+      "min_ticks_multileg",
+      "sellout_time_to_expiration",
+      "settle_on_open",
+      "symbol",
+      "trade_value_multiplier",
+      "underlying_instruments",
+      "underlyings"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/chains/{id}/collateral/",
@@ -2595,7 +4055,19 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "can_open_position",
+      "cash_component",
+      "expiration_dates",
+      "id",
+      "min_ticks",
+      "symbol",
+      "trade_value_multiplier",
+      "underlying_instruments"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/corp_actions/",
@@ -2617,7 +4089,14 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "next",
+      "previous",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/options/events/",
@@ -2645,7 +4124,47 @@
       "equity_instrument_id",
       "page_size",
       "states"
-    ]
+    ],
+    "fields": [
+      "next",
+      "previous",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
+  },
+  {
+    "url": "https://api.robinhood.com/options/fees/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "trading"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-04-dram-option-order-flow (observed; per-order fee schedule)",
+    "seenOn": [
+      "option-order-ticket"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [
+      "cat_fee",
+      "contract_fee",
+      "exchange_fee",
+      "gold_fee_savings",
+      "is_gold",
+      "occ_fee",
+      "or_fee",
+      "sales_taxes",
+      "total_fee"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/instruments/",
@@ -2667,7 +4186,29 @@
     ],
     "queryKeys": [
       "ids"
-    ]
+    ],
+    "fields": [
+      "chain_id",
+      "chain_symbol",
+      "created_at",
+      "expiration_date",
+      "id",
+      "issue_date",
+      "long_strategy_code",
+      "min_ticks",
+      "rhs_tradability",
+      "sellout_datetime",
+      "short_strategy_code",
+      "state",
+      "strike_price",
+      "tradability",
+      "type",
+      "underlying_type",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}",
@@ -2686,7 +4227,29 @@
       "chain_id",
       "expiration_dates",
       "type"
-    ]
+    ],
+    "fields": [
+      "chain_id",
+      "chain_symbol",
+      "created_at",
+      "expiration_date",
+      "id",
+      "issue_date",
+      "long_strategy_code",
+      "min_ticks",
+      "rhs_tradability",
+      "sellout_datetime",
+      "short_strategy_code",
+      "state",
+      "strike_price",
+      "tradability",
+      "type",
+      "underlying_type",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/options/instruments/{0}/",
@@ -2695,7 +4258,86 @@
       "marketdata",
       "options"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [
+      "chain_id",
+      "chain_symbol",
+      "created_at",
+      "expiration_date",
+      "id",
+      "issue_date",
+      "min_ticks",
+      "rhs_tradability",
+      "state",
+      "strike_price",
+      "tradability",
+      "type",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/options/option_settings/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "settings",
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "web-ui-capture-2026-06-03 (account/settings/investing)",
+    "seenOn": [
+      "account-settings-investing"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "summary": "Read per-account options settings (e.g. trading_on_expiration_state). Use brace syntax + --param num=<ACCOUNT_NUMBER>.",
+    "bodyKeys": [],
+    "fields": [
+      "account_number",
+      "default_price",
+      "short_shares_on_option_events_enabled",
+      "short_shares_settings_effective_since",
+      "trading_on_expiration_enabled",
+      "trading_on_expiration_state"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/options/option_settings/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "settings",
+      "account"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
+      "PATCH"
+    ],
+    "source": "web-ui-capture-2026-06-03 (account/settings/investing toggle)",
+    "seenOn": [
+      "account-settings-investing"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "summary": "Write per-account options settings. Body VERIFIED via web-UI capture 2026-06-03: {\"trading_on_expiration_state\": \"enabled\"|\"disabled\"}. Toggled live off then back on; both directions succeeded and state was restored. Use brace syntax + --param num=<ACCOUNT_NUMBER> --method PATCH --live-write.",
+    "bodyKeys": [
+      "trading_on_expiration_state"
+    ],
+    "note": "verified 2026-06-03 via web-UI fetch interceptor; first account-settings WRITE captured + confirmed this way",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/options/orders/",
@@ -2727,7 +4369,32 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "chain_id",
+      "chain_symbol",
+      "closing_strategy",
+      "created_at",
+      "direction",
+      "id",
+      "legs",
+      "net_amount",
+      "opening_strategy",
+      "premium",
+      "price",
+      "processed_premium",
+      "processed_quantity",
+      "quantity",
+      "ref_id",
+      "state",
+      "time_in_force",
+      "trigger",
+      "type",
+      "updated_at"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/orders/",
@@ -2753,7 +4420,9 @@
       "legs",
       "ref_id",
       "override_day_trade_checks"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/options/orders/{0}/cancel/",
@@ -2767,7 +4436,56 @@
       "POST"
     ],
     "summary": "Cancel an order (no body).",
-    "source": "wire-writes 2026-05-29"
+    "source": "wire-writes 2026-05-29",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/options/orders/collateral/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "trading"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-04-dram-option-order-flow (observed; collateral pre-check, order passed url-encoded in ?order={json})",
+    "seenOn": [
+      "option-order-ticket"
+    ],
+    "queryKeys": [
+      "order"
+    ],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [
+      "account_number",
+      "chain_id",
+      "chain_symbol",
+      "closing_strategy",
+      "created_at",
+      "direction",
+      "id",
+      "legs",
+      "net_amount",
+      "opening_strategy",
+      "premium",
+      "price",
+      "processed_premium",
+      "processed_quantity",
+      "quantity",
+      "ref_id",
+      "state",
+      "time_in_force",
+      "trigger",
+      "type",
+      "updated_at"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/positions/",
@@ -2776,7 +4494,14 @@
       "account",
       "options"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [
+      "next",
+      "previous",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/options/positions/?account_numbers=",
@@ -2802,7 +4527,14 @@
       "account_numbers",
       "chain_ids",
       "nonzero"
-    ]
+    ],
+    "fields": [
+      "next",
+      "previous",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/options/should_show_options_upgrade_on_sdp/",
@@ -2826,7 +4558,12 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "should_show"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/options/strategies/",
@@ -2847,7 +4584,16 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "chain_id",
+      "display_name",
+      "legs",
+      "strategy_code",
+      "strategy_type"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/orders/",
@@ -2879,7 +4625,32 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account",
+      "average_price",
+      "created_at",
+      "cumulative_quantity",
+      "dollar_based_amount",
+      "executions",
+      "fees",
+      "id",
+      "instrument",
+      "instrument_id",
+      "last_transaction_at",
+      "price",
+      "quantity",
+      "ref_id",
+      "side",
+      "state",
+      "stop_price",
+      "time_in_force",
+      "trigger",
+      "type",
+      "updated_at"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/orders/",
@@ -2905,7 +4676,24 @@
       "quantity",
       "side",
       "ref_id"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/orders/{0}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-06-09: single order status lookup by ID",
+    "summary": "Get a single order by ID (state, fills, price, quantity)",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/orders/{0}/cancel/",
@@ -2918,7 +4706,9 @@
       "POST"
     ],
     "summary": "Cancel an order (no body).",
-    "source": "wire-writes 2026-05-29"
+    "source": "wire-writes 2026-05-29",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/orders/session/",
@@ -2945,7 +4735,32 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account",
+      "average_price",
+      "created_at",
+      "cumulative_quantity",
+      "dollar_based_amount",
+      "executions",
+      "fees",
+      "id",
+      "instrument",
+      "instrument_id",
+      "last_transaction_at",
+      "price",
+      "quantity",
+      "ref_id",
+      "side",
+      "state",
+      "stop_price",
+      "time_in_force",
+      "trigger",
+      "type",
+      "updated_at"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/pathfinder/concierge/plus/status/",
@@ -2972,7 +4787,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/pathfinder/issues/",
@@ -3011,7 +4828,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/pathfinder/support_chats/",
@@ -3048,7 +4867,13 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "next",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/pluto/historical_activities/",
@@ -3075,7 +4900,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/portfolios/",
@@ -3083,10 +4910,12 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
-    "url": "https://api.robinhood.com/portfolios/{num}/",
+    "url": "https://api.robinhood.com/portfolios/{account_number}/",
     "host": "api.robinhood.com",
     "categories": [
       "account"
@@ -3120,7 +4949,31 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account",
+      "adjusted_equity_previous_close",
+      "adjusted_portfolio_equity_previous_close",
+      "display_currency",
+      "equity",
+      "equity_previous_close",
+      "extended_hours_equity",
+      "extended_hours_market_value",
+      "extended_hours_portfolio_equity",
+      "last_core_equity",
+      "last_core_market_value",
+      "last_core_market_value_absolute",
+      "last_core_portfolio_equity",
+      "market_value",
+      "portfolio_equity_previous_close",
+      "start_date",
+      "unwithdrawable_deposits",
+      "unwithdrawable_grants",
+      "url",
+      "withdrawable_amount"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/portfolios/historicals/{0}/",
@@ -3128,7 +4981,9 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/positions/",
@@ -3136,7 +4991,25 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [
+      "account",
+      "account_number",
+      "average_buy_price",
+      "instrument",
+      "instrument_id",
+      "intraday_average_buy_price",
+      "intraday_quantity",
+      "pending_average_buy_price",
+      "quantity",
+      "shares_held_for_buys",
+      "shares_held_for_options_collateral",
+      "shares_held_for_sells",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/positions/?account_number=",
@@ -3163,7 +5036,25 @@
       "account_number",
       "instrument",
       "nonzero"
-    ]
+    ],
+    "fields": [
+      "account",
+      "account_number",
+      "average_buy_price",
+      "instrument",
+      "instrument_id",
+      "intraday_average_buy_price",
+      "intraday_quantity",
+      "pending_average_buy_price",
+      "quantity",
+      "shares_held_for_buys",
+      "shares_held_for_options_collateral",
+      "shares_held_for_sells",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true",
@@ -3179,7 +5070,25 @@
     "queryKeys": [
       "account_number",
       "nonzero"
-    ]
+    ],
+    "fields": [
+      "account",
+      "account_number",
+      "average_buy_price",
+      "instrument",
+      "instrument_id",
+      "intraday_average_buy_price",
+      "intraday_quantity",
+      "pending_average_buy_price",
+      "quantity",
+      "shares_held_for_buys",
+      "shares_held_for_options_collateral",
+      "shares_held_for_sells",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/quotes/",
@@ -3187,7 +5096,9 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/quotes/historicals/",
@@ -3195,49 +5106,9 @@
     "categories": [
       "marketdata"
     ],
-    "risk": "read"
-  },
-  {
-    "url": "https://api.robinhood.com/robinhood/agentic/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account"
-    ],
-    "risk": "sensitive-read",
-    "methods": [
-      "GET"
-    ],
-    "source": "cdp-2026-05-28-account-section-unique; agent-added-2026-06-02",
-    "seenOn": [
-      "account-section"
-    ],
-    "queryKeys": [
-      "account_number"
-    ],
-    "requestTypes": [
-      "XHR"
-    ]
-  },
-  {
-    "url": "https://api.robinhood.com/robinhood/agentic/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account"
-    ],
-    "risk": "write-or-sensitive",
-    "methods": [
-      "PATCH"
-    ],
-    "source": "cdp-2026-05-28-account-section-unique; agent-added-2026-06-02",
-    "seenOn": [
-      "account-section"
-    ],
-    "queryKeys": [
-      "account_number"
-    ],
-    "requestTypes": [
-      "XHR"
-    ]
+    "risk": "read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/settings/education_state/{id}/",
@@ -3256,7 +5127,56 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "web_show_advanced_charts_button_tooltip",
+      "web_show_default_pricing_welcome_hook",
+      "web_show_early_assignment_splash_screen",
+      "web_show_friday_trading_welcome_hook",
+      "web_show_in_app_exercise_splash_screen",
+      "web_show_options_market_order_nux",
+      "web_show_options_rolling_welcome_hook",
+      "web_show_options_stop_market_order_nux",
+      "web_show_options_watchlist_hook",
+      "web_show_profit_loss_chart_welcome_hook"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/settings/margin/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "margin"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Margin/PDT settings {leverage,day_trades,advanced_buying_power}. PUT {\"day_trades_protection\":bool} for PDT protection (write-mutate).",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/settings/margin/{account_number}/",
+    "methods": [
+      "PUT"
+    ],
+    "risk": "write-mutate",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "margin"
+    ],
+    "summary": "Set margin/PDT. PUT {\"day_trades_protection\":bool}.",
+    "source": "settings-capture-2026-06-03",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/subscription/subscription_fees/",
@@ -3264,7 +5184,9 @@
     "categories": [
       "account"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "write-or-sensitive",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/user/",
@@ -3298,7 +5220,24 @@
       "stock-nvda-options",
       "stock-tsla"
     ],
-    "queryKeys": []
+    "queryKeys": [],
+    "fields": [
+      "created_at",
+      "email",
+      "email_verified",
+      "first_name",
+      "has_mononym",
+      "id",
+      "id_info",
+      "last_name",
+      "moderation_removed",
+      "origin",
+      "profile_name",
+      "url",
+      "username"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/user/additional_info/",
@@ -3314,7 +5253,9 @@
     "seenOn": [
       "account-root"
     ],
-    "queryKeys": []
+    "queryKeys": [],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/user/basic_info/",
@@ -3322,7 +5263,9 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/user/investment_profile/",
@@ -3330,7 +5273,9 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/user/verify/email/info/",
@@ -3351,7 +5296,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/wire/transfers",
@@ -3359,7 +5306,9 @@
     "categories": [
       "money-movement"
     ],
-    "risk": "write-or-sensitive"
+    "risk": "write-or-sensitive",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/wonka/promotions/upsell_configs/BADGE",
@@ -3381,7 +5330,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/wonka/promotions/upsell_configs/TRANSFER_HUB_ROW_UPSELL",
@@ -3400,7 +5351,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://api.robinhood.com/yoda/v1/list_advisor_trades",
@@ -3419,7 +5372,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/acats/",
@@ -3442,7 +5397,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/account_switcher/instrument/v2/{uuid}/",
@@ -3466,7 +5423,36 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/accounts/{account_number}/options_buying_power",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "account",
+      "options"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-04-dram-option-order-flow (observed; the real options-BP gate the web reads before an option open)",
+    "seenOn": [
+      "option-order-ticket"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [
+      "account_number",
+      "buying_power",
+      "order_to_replace_id"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://bonfire.robinhood.com/accounts/{id}/{id}",
@@ -3485,7 +5471,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/accounts/{id}/currency_buying_power/{uuid}/info_alert",
@@ -3504,7 +5492,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/accounts/{id}/currency_buying_power/USD",
@@ -3523,7 +5513,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/accounts/{id}/instrument_buying_power/{uuid}/",
@@ -3547,7 +5539,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/accounts/{id}/unified/",
@@ -3572,7 +5566,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/advisory/fees/",
@@ -3591,7 +5587,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/app-comms/batch/surface/info-banner/",
@@ -3624,7 +5622,12 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "info_banners"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://bonfire.robinhood.com/app-comms/receipt/seen/{uuid}/",
@@ -3648,7 +5651,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/app-comms/surface/{id}/",
@@ -3687,7 +5692,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/app-comms/surface/alert-sheet",
@@ -3727,7 +5734,12 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "alert_sheet"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://bonfire.robinhood.com/app-comms/surface/hero-card",
@@ -3754,7 +5766,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/app-comms/surface/status-banner",
@@ -3791,7 +5805,12 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "status_banner"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://bonfire.robinhood.com/crypto-yields/v1/history/",
@@ -3815,7 +5834,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/crypto/crypto_migrations",
@@ -3834,7 +5855,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/crypto/cryptobility/{uuid}/",
@@ -3853,7 +5876,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/crypto/fundamental_stats/{uuid}/",
@@ -3872,7 +5897,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/crypto/transfers/history/",
@@ -3895,7 +5922,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/edocs_orchestrator/{id}/",
@@ -3915,7 +5944,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/education/tool_tips",
@@ -3937,7 +5968,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/education/tour/",
@@ -3964,7 +5997,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/equities/history/{id}",
@@ -3983,7 +6018,31 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "equity",
+      "ipo-access"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp (observed; RH IPO Access summary viewmodel — Idea A seed; full prospectus/IOI family TBD via interactive capture)",
+    "seenOn": [
+      "ipo-access"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/equity_trading/order_type_selector/buy/",
@@ -4007,7 +6066,31 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/equity_trading/order_type_selector/sell/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "equity",
+      "trading"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp (observed; web order-ticket SELL-side selector viewmodel)",
+    "seenOn": [
+      "equity-order-ticket"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/feature-discovery/features/investing_below_card",
@@ -4028,7 +6111,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/gold/{id}/",
@@ -4049,7 +6134,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/gold/get_subscription_list/",
@@ -4084,7 +6171,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/gold/pill",
@@ -4105,7 +6194,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/gold/sweep_flow_splash/",
@@ -4126,7 +6217,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/home/account_switcher/v2",
@@ -4145,7 +6238,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/{uuid}/disclosures/",
@@ -4171,7 +6266,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/{uuid}/etp-details/",
@@ -4191,7 +6288,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/{uuid}/historical-chart/",
@@ -4218,7 +6317,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/{uuid}/margin-requirements/",
@@ -4245,7 +6346,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/{uuid}/qa/event-info/",
@@ -4269,7 +6372,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/{uuid}/qa/events-section/",
@@ -4293,7 +6398,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/{uuid}/stock_detail/",
@@ -4312,7 +6419,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/{uuid}/v2/warnings/",
@@ -4336,7 +6445,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/chart-bounds/",
@@ -4363,7 +6474,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/instruments/spans/",
@@ -4387,7 +6500,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/margin/{id}/",
@@ -4408,7 +6523,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/margin/{id}/buying_power_hub_view",
@@ -4427,7 +6544,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/margin/{id}/eligibility",
@@ -4454,7 +6573,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/margin/{id}/investing_info/",
@@ -4475,7 +6596,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/margin/{id}/settings/",
@@ -4501,7 +6624,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/market_indices",
@@ -4522,7 +6647,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/onboarding/{id}/",
@@ -4559,7 +6686,65 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/options/{strategy_code}/historical-chart/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "options",
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-04-injected-capture (observed; option strategy historical chart; strategy_code = {option_uuid}_S1)",
+    "seenOn": [
+      "option-ticket"
+    ],
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/options/orders/marketability/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "options",
+      "trading",
+      "preview"
+    ],
+    "risk": "write-safe",
+    "methods": [
+      "POST"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Options order marketability check, no placement. Same multi-leg body as review.",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/options/orders/review",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "options",
+      "trading",
+      "preview"
+    ],
+    "risk": "write-safe",
+    "methods": [
+      "POST"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Server-side options order REVIEW/validation, no placement. Multi-leg body {account,direction,legs[{option,position_effect,ratio_quantity,side}],client_ask/bid_at_submission,form_source}.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/p2p/treatment/",
@@ -4579,7 +6764,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/payment_instruments/v2/",
@@ -4600,7 +6787,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/payment_instruments/v2/debitcard/{uuid}/",
@@ -4619,7 +6808,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/paymenthub/unified_transfers/",
@@ -4639,7 +6830,9 @@
     ],
     "queryKeys": [
       "page_size"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/paymenthub/unified_transfers/{uuid}/contribution/",
@@ -4658,7 +6851,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/portfolio/{id}/positions_v2",
@@ -4680,7 +6875,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/portfolio/acats/bonus-promo-info/",
@@ -4699,7 +6896,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/portfolio/account/{id}/live",
@@ -4738,7 +6937,29 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "brokerage_cash",
+      "cash",
+      "currency",
+      "deposit_adjusted_market_value",
+      "early_access_amount",
+      "equity_market_value",
+      "event_contracts_cash",
+      "event_contracts_market_value",
+      "event_contracts_market_value_excluding_swaps_cash",
+      "excess_maintenance_with_uncleared_deposits",
+      "forex_market_value",
+      "futures_cash",
+      "futures_market_value",
+      "last_core_portfolio_equity",
+      "margin_used",
+      "option_market_value",
+      "pending_deposits"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://bonfire.robinhood.com/portfolio/performance/{id}",
@@ -4762,7 +6983,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/portfolio/performance/{id}/settings_v2/",
@@ -4781,7 +7004,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/psp/eligible_programs",
@@ -4802,7 +7027,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/psp/gifts/history/",
@@ -4829,7 +7056,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/questionnaire/questionnaire-completed/",
@@ -4856,7 +7085,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/rad/gifting/gifts",
@@ -4877,7 +7108,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/recurring_schedules/",
@@ -4906,7 +7139,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/recurring_schedules/",
@@ -4928,7 +7163,9 @@
       "account_number"
     ],
     "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
-    "source": "wire-writes 2026-05-29"
+    "source": "wire-writes 2026-05-29",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/recurring_schedules/{0}/",
@@ -4946,7 +7183,9 @@
       "state"
     ],
     "note": "VERIFIED 2026-05-29: PATCH {\"state\":\"active\"} resumes (200, next_investment_date populates); state field round-trips. DELETE unverified.",
-    "source": "wire-writes 2026-05-29"
+    "source": "wire-writes 2026-05-29",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/recurring_schedules/{0}/",
@@ -4959,7 +7198,9 @@
       "GET"
     ],
     "summary": "Get one recurring schedule (state, next_investment_date, amount).",
-    "source": "fix-recurring-read-gate 2026-05-29"
+    "source": "fix-recurring-read-gate 2026-05-29",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/recurring_schedules/equity/next_investment_date/",
@@ -4986,7 +7227,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/recurring_tradability/equity/{uuid}/",
@@ -5012,7 +7255,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/recurring_trade_logs/",
@@ -5044,7 +7289,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/region",
@@ -5081,7 +7328,12 @@
     "queryKeys": [],
     "requestTypes": [
       "Fetch,Other"
-    ]
+    ],
+    "fields": [
+      "region"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://bonfire.robinhood.com/retirement/history/",
@@ -5100,7 +7352,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/rewards/reward/gift/crypto/list/",
@@ -5121,7 +7375,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/rewards/reward/stocks/",
@@ -5143,7 +7399,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/rewards/sdp_referral/card/{uuid}",
@@ -5167,7 +7425,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/rhy/accounts/",
@@ -5194,7 +7454,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/screeners",
@@ -5231,7 +7493,12 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://bonfire.robinhood.com/screeners/presets/",
@@ -5266,7 +7533,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/settings_page//account_contact/",
@@ -5287,7 +7556,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/settings_page//account_preferences/",
@@ -5309,7 +7580,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/settings_page//notifications/",
@@ -5328,7 +7601,43 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/slip/{account_number}/status/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "stock-lending"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Stock Lending Income Program (SLIP) status for an account {is_enabled,was_ever_enabled}. PUT {\"account_number\":..,\"is_enabled\":bool,\"was_ever_enabled\":bool} to toggle (write-mutate).",
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/slip/{account_number}/status/",
+    "methods": [
+      "PUT"
+    ],
+    "risk": "write-mutate",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "stock-lending"
+    ],
+    "summary": "Toggle stock lending (SLIP). PUT {\"account_number\":..,\"is_enabled\":bool,\"was_ever_enabled\":bool}.",
+    "source": "settings-capture-2026-06-03",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/slip/{id}/",
@@ -5347,7 +7656,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/slip/eligibility/",
@@ -5373,7 +7684,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/slip/hub-card/",
@@ -5394,7 +7707,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/sms/margin/{id}/{id}",
@@ -5421,7 +7736,26 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/sms/sweep/agree_and_enroll",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "account",
+      "settings",
+      "cash"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Enroll high-yield cash sweep. POST {\"account_number\":\"...\"} (pairs with an agreements/v2/sign).",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/tax_info/instrument/{uuid}/withholding_status/",
@@ -5445,7 +7779,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/tax_info/withheld_amount/",
@@ -5471,7 +7807,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/transfer/accounts/",
@@ -5490,7 +7828,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://bonfire.robinhood.com/user_status/stripe/",
@@ -5509,7 +7849,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://cashier.robinhood.com/ach/deposit_schedules/",
@@ -5528,7 +7870,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://cashier.robinhood.com/ach/relationships/",
@@ -5549,7 +7893,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://dora.robinhood.com/feed/",
@@ -5568,7 +7914,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://dora.robinhood.com/feed/instrument/{uuid}/",
@@ -5593,7 +7941,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://dora.robinhood.com/instruments/similar/{uuid}/",
@@ -5617,7 +7967,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://identi.robinhood.com/sorting_hat/v1/user_state/",
@@ -5645,7 +7997,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://identi.robinhood.com/sorting_hat/v4_web/",
@@ -5667,7 +8021,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://identi.robinhood.com/user_info/address/residential/",
@@ -5688,7 +8044,25 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://identi.robinhood.com/user_info/agreements/v2/sign/",
+    "host": "identi.robinhood.com",
+    "categories": [
+      "account",
+      "agreements"
+    ],
+    "risk": "write-or-sensitive",
+    "methods": [
+      "POST"
+    ],
+    "source": "settings-capture-2026-06-03",
+    "summary": "Sign a Robinhood agreement. POST {agreement_id,sha256}. Used by enroll flows.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://identi.robinhood.com/user_info/opt_out_consent/",
@@ -5723,7 +8097,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://identi.robinhood.com/user_info/opt_out_consent/ccpa_marketing/",
@@ -5750,7 +8126,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://identi.robinhood.com/user_info/privacy_consent/",
@@ -5787,7 +8165,12 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "detail"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://identi.robinhood.com/user_info/profile_info/",
@@ -5814,7 +8197,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://identi.robinhood.com/user_info/trusted_contact/",
@@ -5835,7 +8220,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://minerva.robinhood.com/accounts/",
@@ -5870,7 +8257,14 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "next",
+      "previous",
+      "results"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://minerva.robinhood.com/cards/declined_transactions/",
@@ -5891,7 +8285,9 @@
     ],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://minerva.robinhood.com/history/transactions/",
@@ -5913,7 +8309,9 @@
       "source_type",
       "source_type__ne",
       "type"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://nummus.robinhood.com/accounts/",
@@ -5949,7 +8347,26 @@
     ],
     "queryKeys": [
       "default_to_all_accounts"
-    ]
+    ],
+    "fields": [
+      "account_number",
+      "account_type",
+      "agentic_allowed",
+      "apex_account_number",
+      "created_at",
+      "feature_statuses",
+      "first_trade_cooldown_expires_at",
+      "funding_sources",
+      "id",
+      "is_default",
+      "rhs_account_number",
+      "status",
+      "status_reason_code",
+      "updated_at",
+      "user_id"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://nummus.robinhood.com/activations/",
@@ -5968,7 +8385,9 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://nummus.robinhood.com/currency_pairs/",
@@ -5990,7 +8409,9 @@
     "queryKeys": [
       "code",
       "ids"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://nummus.robinhood.com/holdings/",
@@ -6010,7 +8431,9 @@
     ],
     "queryKeys": [
       "currency_id"
-    ]
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://nummus.robinhood.com/orders/",
@@ -6033,7 +8456,9 @@
       "page_size",
       "state_group"
     ],
-    "summary": "List crypto orders."
+    "summary": "List crypto orders.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://nummus.robinhood.com/orders/",
@@ -6066,7 +8491,9 @@
       "price",
       "time_in_force"
     ],
-    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting"
+    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://nummus.robinhood.com/orders/{0}/",
@@ -6078,7 +8505,9 @@
     "methods": [
       "GET"
     ],
-    "summary": "Get a single crypto order."
+    "summary": "Get a single crypto order.",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://nummus.robinhood.com/orders/{0}/cancel/",
@@ -6091,7 +8520,9 @@
       "POST"
     ],
     "summary": "Cancel an order (no body).",
-    "source": "wire-writes 2026-05-29"
+    "source": "wire-writes 2026-05-29",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://nummus.robinhood.com/portfolios/{uuid}/",
@@ -6128,7 +8559,21 @@
     "queryKeys": [],
     "requestTypes": [
       "XHR"
-    ]
+    ],
+    "fields": [
+      "account_id",
+      "currency_type",
+      "equity",
+      "extended_hours_equity",
+      "extended_hours_market_value",
+      "id",
+      "market_value",
+      "market_value_money",
+      "previous_close",
+      "updated_at"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://phoenix.robinhood.com/accounts/unified",
@@ -6136,7 +8581,9 @@
     "categories": [
       "account"
     ],
-    "risk": "sensitive-read"
+    "risk": "sensitive-read",
+    "fields": [],
+    "fieldsSource": "undocumented"
   },
   {
     "url": "https://trading.robinhood.com/api/v1/crypto/marketdata/best_bid_ask/",
@@ -6526,297 +8973,5 @@
     ],
     "operationId": "api_v2_crypto_trading_trading_pairs",
     "summary": "Get Trading Pairs"
-  },
-  {
-    "url": "https://api.robinhood.com/midlands/search/?query={query}",
-    "host": "api.robinhood.com",
-    "categories": [
-      "search",
-      "instruments"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "queryKeys": [
-      "query"
-    ],
-    "source": "manual-search-2026-06-03",
-    "summary": "Global instrument search (web search bar) — resolve name/theme to tickers."
-  },
-  {
-    "url": "https://api.robinhood.com/midlands/news/?symbol={symbol}",
-    "host": "api.robinhood.com",
-    "categories": [
-      "sentiment",
-      "news",
-      "data"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "queryKeys": [
-      "symbol"
-    ],
-    "source": "sentiment-rd-2026-06-03",
-    "summary": "News articles per symbol (sentiment source)."
-  },
-  {
-    "url": "https://api.robinhood.com/midlands/tags/tag/{tag}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "sentiment",
-      "discovery",
-      "data"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "queryKeys": [
-      "tag"
-    ],
-    "source": "sentiment-rd-2026-06-03",
-    "summary": "Crowd/discovery lists: 100-most-popular, top-movers, etc."
-  },
-  {
-    "url": "https://api.robinhood.com/corp_actions/drip/account_settings/{account}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "dividends"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Account-wide DRIP state {drip_enabled}. PATCH {\"drip_enabled\":bool} to toggle (write-mutate)."
-  },
-  {
-    "url": "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "dividends"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Per-instrument DRIP settings list for an account (results[])."
-  },
-  {
-    "url": "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account}/{instrument_id}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "dividends"
-    ],
-    "risk": "write-mutate",
-    "methods": [
-      "PATCH"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Per-stock DRIP toggle. PATCH {\"drip_enabled\":bool}."
-  },
-  {
-    "url": "https://api.robinhood.com/options/option_settings/{account}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "options"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Options settings {trading_on_expiration_state,default_price,...}. PATCH to change (write-mutate)."
-  },
-  {
-    "url": "https://api.robinhood.com/settings/margin/{account}/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "margin"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Margin/PDT settings {leverage,day_trades,advanced_buying_power}. PUT {\"day_trades_protection\":bool} for PDT protection (write-mutate)."
-  },
-  {
-    "url": "https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "cash"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "High-yield cash sweep state {sweep_enrolled}. POST {\"sweep_enrollment_action\":\"unenroll\"} to disable (write-mutate)."
-  },
-  {
-    "url": "https://bonfire.robinhood.com/sms/sweep/agree_and_enroll",
-    "host": "bonfire.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "cash"
-    ],
-    "risk": "write-mutate",
-    "methods": [
-      "POST"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Enroll high-yield cash sweep. POST {\"account_number\":\"...\"} (pairs with an agreements/v2/sign)."
-  },
-  {
-    "url": "https://identi.robinhood.com/user_info/agreements/v2/sign/",
-    "host": "identi.robinhood.com",
-    "categories": [
-      "account",
-      "agreements"
-    ],
-    "risk": "write-or-sensitive",
-    "methods": [
-      "POST"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Sign a Robinhood agreement. POST {agreement_id,sha256}. Used by enroll flows."
-  },
-  {
-    "url": "https://bonfire.robinhood.com/options/orders/review",
-    "host": "bonfire.robinhood.com",
-    "categories": [
-      "options",
-      "trading",
-      "preview"
-    ],
-    "risk": "write-safe",
-    "methods": [
-      "POST"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Server-side options order REVIEW/validation, no placement. Multi-leg body {account,direction,legs[{option,position_effect,ratio_quantity,side}],client_ask/bid_at_submission,form_source}."
-  },
-  {
-    "url": "https://bonfire.robinhood.com/options/orders/marketability/",
-    "host": "bonfire.robinhood.com",
-    "categories": [
-      "options",
-      "trading",
-      "preview"
-    ],
-    "risk": "write-safe",
-    "methods": [
-      "POST"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Options order marketability check, no placement. Same multi-leg body as review."
-  },
-  {
-    "url": "https://bonfire.robinhood.com/slip/{account}/status/",
-    "host": "bonfire.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "stock-lending"
-    ],
-    "risk": "read",
-    "methods": [
-      "GET"
-    ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Stock Lending Income Program (SLIP) status for an account {is_enabled,was_ever_enabled}. PUT {\"account_number\":..,\"is_enabled\":bool,\"was_ever_enabled\":bool} to toggle (write-mutate)."
-  },
-  {
-    "url": "https://api.robinhood.com/corp_actions/drip/account_settings/{account}/",
-    "methods": [
-      "PATCH"
-    ],
-    "risk": "write-mutate",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "dividends"
-    ],
-    "summary": "Toggle account-wide DRIP. PATCH {\"drip_enabled\":bool}.",
-    "source": "settings-capture-2026-06-03"
-  },
-  {
-    "url": "https://api.robinhood.com/options/option_settings/{account}/",
-    "methods": [
-      "PATCH"
-    ],
-    "risk": "write-mutate",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "options"
-    ],
-    "summary": "Set options settings. PATCH {\"trading_on_expiration_state\":\"enabled|disabled\"}.",
-    "source": "settings-capture-2026-06-03"
-  },
-  {
-    "url": "https://api.robinhood.com/settings/margin/{account}/",
-    "methods": [
-      "PUT"
-    ],
-    "risk": "write-mutate",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "margin"
-    ],
-    "summary": "Set margin/PDT. PUT {\"day_trades_protection\":bool}.",
-    "source": "settings-capture-2026-06-03"
-  },
-  {
-    "url": "https://bonfire.robinhood.com/slip/{account}/status/",
-    "methods": [
-      "PUT"
-    ],
-    "risk": "write-mutate",
-    "host": "bonfire.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "stock-lending"
-    ],
-    "summary": "Toggle stock lending (SLIP). PUT {\"account_number\":..,\"is_enabled\":bool,\"was_ever_enabled\":bool}.",
-    "source": "settings-capture-2026-06-03"
-  },
-  {
-    "url": "https://api.robinhood.com/accounts/{account}/sweep_enrollment_state/",
-    "methods": [
-      "POST"
-    ],
-    "risk": "write-mutate",
-    "host": "api.robinhood.com",
-    "categories": [
-      "account",
-      "settings",
-      "cash"
-    ],
-    "summary": "Disable cash sweep. POST {\"sweep_enrollment_action\":\"unenroll\"}.",
-    "source": "settings-capture-2026-06-03"
   }
 ]

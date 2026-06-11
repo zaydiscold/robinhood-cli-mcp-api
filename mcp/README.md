@@ -20,3 +20,5 @@ Stdio MCP server for personal Robinhood API-map inspection and execution.
 - `robinhood_crypto_execute`
 
 Read/list/plan/sign tools are annotated read-only. `robinhood_routes` is the unified official Crypto plus brokerage/account map. `robinhood_brokerage_execute` and `robinhood_crypto_execute` are annotated as live/open-world write-capable tools; pass `dryRun: true` to avoid sending.
+
+<!-- made with love by Zayd Khan / cold -->

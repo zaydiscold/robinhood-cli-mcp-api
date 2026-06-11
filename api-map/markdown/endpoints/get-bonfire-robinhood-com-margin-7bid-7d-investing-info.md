@@ -13,3 +13,5 @@ Route template:
 ```text
 https://bonfire.robinhood.com/margin/{id}/investing_info/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/instruments/{0}/popularity/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

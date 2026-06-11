@@ -83,3 +83,5 @@ authority before building any order body.
 The public rule is narrow: promote only tested, additive handoff behavior into
 CLI/API/MCP/docs; keep generated webhook builders, link bundles, and
 account-specific payloads inside the gitignored `info/` folder.
+
+<!-- made with love by Zayd Khan / cold -->

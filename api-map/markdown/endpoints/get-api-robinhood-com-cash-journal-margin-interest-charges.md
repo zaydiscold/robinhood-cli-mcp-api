@@ -13,3 +13,5 @@ Route template:
 ```text
 https://api.robinhood.com/cash_journal/margin_interest_charges/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

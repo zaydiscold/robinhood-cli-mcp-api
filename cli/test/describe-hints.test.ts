@@ -97,3 +97,5 @@ describe("fail-loud hint strings", () => {
     expect(noMatchHint("zzzzzqqqq", fixture)).toContain("api-map directory");
   });
 });
+
+// made with love by Zayd Khan / cold

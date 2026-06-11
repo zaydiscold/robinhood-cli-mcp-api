@@ -13,3 +13,5 @@ Route template:
 ```text
 https://nummus.robinhood.com/orders/{0}/cancel/
 ```
+
+<!-- made with love by Zayd Khan / cold -->

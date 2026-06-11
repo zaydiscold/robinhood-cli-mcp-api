@@ -57,3 +57,5 @@ Public docs must not include account numbers, balances, bearer tokens, cookies,
 live order IDs, bank details, or private webhook payloads. If a doc needs those
 to reproduce a finding, keep the private material in the gitignored `info/`
 folder and link only to sanitized commands or route templates here.
+
+<!-- made with love by Zayd Khan / cold -->

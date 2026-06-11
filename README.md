@@ -42,7 +42,7 @@ node cli/dist/index.js --help
 |---------|---------------|
 | API map | 300+ brokerage/account route entries (incl. instrument search + the `midlands/` sentiment layer) + the official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates. Every entry carries field-level response provenance (`verified`/`inferred`/`undocumented`, test-enforced). Trust the live count (`brokerage routes --json`), never a hardcoded number. |
 | CLI | TypeScript command-line tool: live reads (`quote`, `positions`, `portfolio` (one-call day/after-hours P&L in dollars, by underlying), `accounts`, `history`, `order-status` (UUID→ticker resolved), `buying-power`, `options positions/chain/enumerate/inspect/holdings`, `stock profile`, `watchlist`, `recipes` (intent → the one command)), first-class order lifecycle (`buy` / `sell` / `cancel` — OTC-aware, deduped, `ref_id`-idempotent), options strategy quoting + rolling, first-class `settings` (DRIP/expiration/PDT/lending/sweep) and `recurring` (list/pause/resume/create/edit/end) — all writes double-gated — plus route planning and dry-run order bodies. |
-| MCP | 37 agent tools sharing the same engine, auth, route map, and write gates as the CLI — full verb parity. `robinhood_buy`/`robinhood_sell` run the exact same shared order engine as the CLI commands (same dedup, same `ref_id`, same OTC guard), so the two surfaces cannot drift. |
+| MCP | 38 agent tools sharing the same engine, auth, route map, and write gates as the CLI — full verb parity. `robinhood_buy`/`robinhood_sell` run the exact same shared order engine as the CLI commands (same dedup, same `ref_id`, same OTC guard), so the two surfaces cannot drift. `robinhood_wheel` reads your actual wheel state (shares + short puts/calls) and returns the next-leg dry-run command. |
 | Memory | `ball-knowledge.md` (market beliefs/themes/sources) + `trading-log.md` (execution + intent history) — the agent's cross-session brain. |
 | Research | A source-quality doctrine (X/Reddit pulse → news/`midlands` confirmer → institutional outlook → academic math, none gospel) + strategy deep-dives (Wheel, rolling, with quant appendices), institutional CMAs, tax-aware notes. |
 | Auth | Browser-session bearer token loaded from local `.env`, with one-shot self-heal on `401` |
@@ -92,6 +92,7 @@ The MCP server is meant for requests like:
 
 - "Show my best option position by percent return."
 - "Why am I down today — which names, in dollars, across all my accounts?"
+- "Where am I in the wheel on F — and what's the next leg?" *(reads your shares + short puts/calls, classifies the stage, hands back the exact dry-run command — works as pure discussion even with no position)*
 - "List all recurring investments and tell me which ones are paused."
 - "Quote a DRAM call credit spread, show bid/ask/Greeks, and build the dry-run order body."
 - "Dry-run a $50 buy of VOO in my Roth, then place it live." *(the live send dedups against pending orders and carries a `ref_id`, so an agent retry can't double-fire)*
@@ -163,6 +164,7 @@ robinhood-cli recipes "after hours"                   # free-text intent → the
 robinhood-cli buying-power                            # per-account BP + margin health
 robinhood-cli buy -s AAPL -a <ACCOUNT_NUMBER> -m 25   # DRY-RUN by default (deduped, ref_id idempotent)
 robinhood-cli order-status -i <ORDER_ID>              # single order — real ticker, state, fills
+robinhood-cli wheel F                                 # Wheel stage + next leg from account evidence
 robinhood-cli positions                               # equity holdings ranked by return
 robinhood-cli positions --account <ACCOUNT_NUMBER>     # per-account equity positions
 robinhood-cli options positions                       # rank open options by % return
@@ -211,7 +213,7 @@ claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp
 node mcp/dist/server.js
 ```
 
-37 tools surface as `mcp__robinhood-cli__*` and inherit the identical auth, route map, and write gates as the CLI. The order tools (`robinhood_buy`, `robinhood_sell`, `robinhood_cancel`, `robinhood_order_status`, `robinhood_buying_power`) run the **same shared engine functions** as the CLI commands — dedup, `ref_id` idempotency, and the OTC guard apply identically on both surfaces. (Trust the live `tools/list`, not a hardcoded count.)
+38 tools surface as `mcp__robinhood-cli__*` and inherit the identical auth, route map, and write gates as the CLI. The order tools (`robinhood_buy`, `robinhood_sell`, `robinhood_cancel`, `robinhood_order_status`, `robinhood_buying_power`) run the **same shared engine functions** as the CLI commands — dedup, `ref_id` idempotency, and the OTC guard apply identically on both surfaces — and `robinhood_wheel` gives agents an evidence-based Wheel conversation (stage + next leg + the exact dry-run command). (Trust the live `tools/list`, not a hardcoded count.)
 
 ### Current Update
 
@@ -521,3 +523,5 @@ Pattern: CLI + skill + MCP. Capture the surface once, expose it cleanly everywhe
   <strong>Mapped and built by Zayd Khan.</strong><br>
   MIT © Zayd Khan.
 </p>
+
+<!-- made with love by Zayd Khan / cold -->

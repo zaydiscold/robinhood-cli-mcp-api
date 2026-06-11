@@ -93,6 +93,7 @@ then this file. When the answer isn't obvious, the docs already have it — read
 | "What do I own?" / "Show my positions" | [CLI Usage 80/20](#cli-usage--the-8020) → `positions` / `options positions` |
 | "What am I down today?" / "Biggest losers" | `portfolio --day` (after hours: `portfolio --after-hours`) — one call, dollars, by underlying |
 | "Place a trade" / "Buy X" | [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03) |
+| "Wheel" / "got assigned — now what?" | `wheel [symbol]` — evidence-based stage + the next-leg dry-run command (background: `docs/strategy-deep-dive-the-wheel-2026-06-04.md`) |
 | "Quote a spread" / "Price an iron condor" | [Options CLI Playbook](#options-cliapi-playbook) |
 | "What can this account do?" | [Account-Aware Capabilities](#account-aware-capabilities--read-the-account-then-say-whats-allowed) |
 | "Map a new endpoint" | [Research Methodology](#research-methodology--mapping-a-no-official-api-surface) |
@@ -858,6 +859,7 @@ deep math lives in *Options Greeks and Strategy Math* above.
 | "Plan a named strategy" | catalog plan | `api-map options-strategies`, `api-map options-strategy-plan <id>` |
 | "Open the exact contract for me" | resolve + navigate | `api-map options-contract-links ...` (emits the API-resolved contract + chain-id deeplink) |
 | "Roll my position" | staged close+open plan | `options roll-plan ...` (cash-account aware; see below) |
+| "Where am I in the wheel / what's the next leg?" | evidence-based stage + next-leg command | `wheel [symbol] [--account <N>]` (read-only; classifies CSP→shares→CC from live positions, flags undercovered short calls, works with no position as discussion mode) |
 | "Place / cancel an order" | gated write | `brokerage execute "options/orders/" --method POST --live-write` ... then `options/orders/{0}/cancel/` |
 | "Change a setting (DRIP, recurring, etc.)" | gated write | `recurring pause|resume`; route-map writes via `brokerage execute --method ... --live-write` |
 
@@ -1239,9 +1241,9 @@ documented. To extend it safely:
 
 ## MCP Server
 
-37 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+38 tools surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_wheel` (evidence-based Wheel stage + next-leg command), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
-> **Count note:** the *source/dist* registers 37 tools (live truth: `tools/list`). A *running* MCP process started before the
+> **Count note:** the *source/dist* registers 38 tools (live truth: `tools/list`). A *running* MCP process started before the
 > last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
 > the server) after pulling, then confirm the client's `tools/list` count matches the current build.
 
@@ -1299,6 +1301,7 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_cancel` | Cancel a pending order by ID or URL (double-gated) |
 | `robinhood_order_status` | One order's state/fills/price — instrument UUID resolved to the real ticker |
 | `robinhood_buying_power` | Per-account buying power breakdown + margin health |
+| `robinhood_wheel` | Wheel stage from account evidence (shares + short puts/calls) + the literal next-leg dry-run command; flags undercovered short calls; discussion mode when no position |
 
 ### MCP Safety Gates
 
@@ -1499,3 +1502,5 @@ query params) — use the `positions` command, or just `portfolio`.
 - If you discover a route not in the map, add it, classify risk conservatively, rebuild, and document the discovery in `docs/undocumented-surface.md`.
 - If you hit a 401: the engine self-heals. If it fails, run `pnpm auth:refresh` manually.
 - The `recurring` subcommand is preferred over raw URL calls for recurring buys — it's idempotent and safer.
+
+<!-- made with love by Zayd Khan / cold -->

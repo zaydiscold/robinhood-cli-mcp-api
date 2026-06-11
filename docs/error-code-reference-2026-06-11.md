@@ -45,3 +45,5 @@ batch scripts all route failures through it, so messaging and retry decisions st
 **Source:** consolidated 2026-06-11 from live-verified failures recorded in `SKILL.md` (failure
 modes), `AGENTS.md`, and the 06-03/06-04 execution-smoke docs. Reproduce any row by triggering the
 listed condition against a dry-run or far-from-market test order — never a fillable live order.
+
+<!-- made with love by Zayd Khan / cold -->

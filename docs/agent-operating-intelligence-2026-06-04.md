@@ -387,3 +387,5 @@ Ranked by leverage (hardening first, then growth). Each is concrete enough to st
    conservative risk → rebuild → live-verify with a reversible action → promote only
    sanitized, tested behavior to public docs (raw captures stay in gitignored
    `info/`). Never claim working automation for an unconfirmed body.
+
+<!-- made with love by Zayd Khan / cold -->

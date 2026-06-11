@@ -23,3 +23,5 @@ pnpm install && pnpm build
 ```
 Note: the token in .env expires ~weekly; re-run auth refresh on frostbyte and it
 re-syncs here automatically.
+
+<!-- made with love by Zayd Khan / cold -->

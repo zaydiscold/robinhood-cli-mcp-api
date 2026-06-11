@@ -394,3 +394,5 @@ time-varying) edge.
 > *average* that compresses or goes negative exactly in the crises that assign the Wheel; index results
 > do not transfer to leveraged or single-name discretionary Wheels. This is the mathematical "why it
 > works," not a claim that it will — risk and sizing remain the operator's call.
+
+<!-- made with love by Zayd Khan / cold -->

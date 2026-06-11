@@ -49,6 +49,37 @@ both surfaces, so the CLI and MCP can never disagree about how a real-money orde
   gfd/gtc selection, 4-dp sizing), dry-run-never-dedups/never-logs, live logging, and ticker
   resolution — all against injected deps, no network. Suite total: 101 passing.
 
+## Wheel engine — discuss & drive the Wheel from evidence
+
+- **`wheel [symbol]` (CLI) + `robinhood_wheel` (MCP)**, both over the shared `computeWheelState()`:
+  reads shares + short puts (CSP leg) + short calls (CC leg) per account — the aggregate-position
+  legs are self-describing (`position_type`/`option_type`/`strike_price`/`expiration_date` inline,
+  zero extra fetches) — classifies the stage (`not-started` → `cash-secured-put-open` →
+  `shares-uncovered` → `covered-call-open`, plus `csp-plus-shares`, `sub-100-shares`, and the
+  `short-call-undercovered` blocker), and emits the **literal next-leg dry-run command** using the
+  verified strategy ids (`cash-secured-short-put`, `covered-call`, `options roll-plan`).
+- Coverage math is the hard safety check: short calls beyond shares/100 are flagged as
+  naked/undercovered, never normalized into a "wheel."
+- **Discussion mode:** a requested symbol with no position still returns the leg-1 entry plan — so
+  "let's talk about wheeling F" works with an empty account.
+- 13 new tests (`cli/test/wheel.test.ts`) pin the classifier + composition. Descriptive, not
+  prescriptive, per the repo doctrine; background stays in the Wheel deep-dive doc.
+
+## Web-app version — auto-scrape SHIPPED (the CDP route)
+
+- **`pnpm version:refresh`** (`scripts/scrape-web-app-version.mjs`): connects to a CDP-debuggable
+  Chrome (the shared `chrome-debug` profile on 9222, or any `--remote-debugging-port` Chrome),
+  loads the **login page** (the SPA shell sends `x-robinhood-web-app-version` pre-auth — no
+  Robinhood login needed in the debug browser), captures the header from the network stream, and
+  writes `ROBINHOOD_WEB_APP_VERSION` into `.env`. Verified live: captured `2026.24.3589+55c48b8f7a1c`
+  (the baked fallback was `…2030+bc12ef34`); the lib fallback is refreshed to match.
+
+## Recipes — six new intent routes
+
+- `wheel-status`, `wheel-start-csp`, `wheel-covered-call`, `order-simple`, `order-status-check`,
+  `buying-power` — free text like "got assigned, now what?" or "did my order go through" now routes
+  to the one right command + MCP tool (27 recipes total; integrity pinned by `recipes.test.ts`).
+
 ## Smaller fixes
 
 - `classifyRobinhoodError` app-version hint now names the `ROBINHOOD_WEB_APP_VERSION` env override
@@ -59,3 +90,5 @@ both surfaces, so the CLI and MCP can never disagree about how a real-money orde
   matching the `classifyRobinhoodError` implementation one-for-one.
 - README rewritten to match the current surface (engine parity, `portfolio`, `recipes`, order
   lifecycle, 37 MCP tools); repo title/description shortened to "Robinhood API + MCP + CLI".
+
+<!-- made with love by Zayd Khan / cold -->

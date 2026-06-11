@@ -2,7 +2,7 @@
 
 ## High priority
 
-- [ ] **Web app version auto-scrape**: The `x-robinhood-web-app-version` header rotates periodically. Scrape it from the live browser (CDP) during `scripts/refresh-auth.sh` or on first API call. *(2026-06-11: checked — the version string is NOT in the robinhood.com homepage HTML; needs a JS-bundle fetch or CDP capture. Working mitigation: the `ROBINHOOD_WEB_APP_VERSION` env override exists, and the `app_version_gate` error hint now names it.)*
+- [x] **Web app version auto-scrape**: Done 2026-06-11 — `pnpm version:refresh` (`scripts/scrape-web-app-version.mjs`) CDP-attaches to a debug Chrome (port 9222), loads the login page (the SPA shell sends the header pre-auth, no RH login needed), captures `x-robinhood-web-app-version` from the network stream, and writes it to `.env`. Live-verified: captured `2026.24.3589+55c48b8f7a1c`. (Earlier finding: the version is NOT in the homepage HTML — the login-page network capture is the reliable route.)
 
 - [x] **Order status ticker resolution**: ~~`order-status` shows instrument UUID instead of ticker symbol.~~ Done 2026-06-11 — shared `getOrderStatus()` resolves the UUID via `instruments/?ids=`; CLI `order-status` and MCP `robinhood_order_status` both use it.
 
@@ -83,3 +83,5 @@
 | ••••9911 Agentic | $0 |
 | ••••2523 Agentic-long | $0 |
 | **TOTAL** | **$[redacted]** |
+
+<!-- made with love by Zayd Khan / cold -->

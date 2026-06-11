@@ -30,6 +30,9 @@ import {
   computePortfolioPnl,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
+  placeEquityOrder,
+  getOrderStatus,
+  extractOrderId,
   signCryptoRequest,
   summarizeApiMap,
   buildEndpointDirectory,
@@ -857,7 +860,7 @@ server.registerTool(
   {
     title: "Robinhood Buy Order",
     description:
-      "Place an equity buy order. Market buys are fractional, limit orders are whole shares. Dry-run by default; set live=true and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Auto-resolves symbol to instrument, fetches live quote, calculates shares from dollar amount.",
+      "Place an equity buy order. Market buys are fractional, limit orders are whole shares. Dry-run by default; set live=true and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Auto-resolves symbol, fetches live quote, sizes shares from dollar amount, blocks OTC/non-fractional dollar orders, dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, and logs live sends to the trading log — same shared engine as the CLI `buy` command.",
     inputSchema: z.object({
       symbol: z.string(),
       account_number: z.string(),
@@ -865,61 +868,19 @@ server.registerTool(
       shares: z.number().positive().optional(),
       price: z.number().positive().optional(),
       live: z.boolean().default(false),
+      force: z.boolean().default(false),
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ symbol, account_number, amount, shares, price: limitPrice, live }) => {
-    if (!amount && !shares) return jsonResponse({ error: "Must specify amount (dollars) or shares (quantity)" });
-    if (amount && shares) return jsonResponse({ error: "Specify amount OR shares, not both" });
-
+  async ({ symbol, account_number, amount, shares, price: limitPrice, live, force }) => {
     try {
-      const inst = (await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: symbol.toUpperCase() })).results?.[0];
-      if (!inst) return jsonResponse({ error: `Symbol ${symbol} not found` });
-      const iid = inst.id;
-
-      const q = (await brokerageGetJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: iid })).results?.[0];
-      if (!q) return jsonResponse({ error: `No quote for ${symbol}` });
-      const last = Number(q.last_trade_price);
-      if (!last || last <= 0) return jsonResponse({ error: `Invalid price: $${last}` });
-
-      const isMarket = !limitPrice;
-      const rawShares = amount ? amount / last : Number(shares);
-      const qty = Number(rawShares.toFixed(4));
-      const orderPrice = limitPrice ? limitPrice.toFixed(2) : last.toFixed(2);
-
-      const result = await gatedBrokerageWrite({
-        url: "https://api.robinhood.com/orders/",
-        method: "POST",
-        body: {
-          account: `https://api.robinhood.com/accounts/${account_number}/`,
-          instrument: `https://api.robinhood.com/instruments/${iid}/`,
-          symbol: symbol.toUpperCase(),
-          type: isMarket ? "market" : "limit",
-          time_in_force: isMarket ? "gfd" : "gtc",
-          trigger: "immediate",
-          side: "buy",
-          quantity: String(qty),
-          price: orderPrice,
-          order_form_version: "7"
-        },
-        dryRun: !live,
-        liveWrite: Boolean(live)
+      const r = await placeEquityOrder({
+        symbol, accountNumber: account_number, side: "buy",
+        amount, shares, limitPrice,
+        liveWrite: Boolean(live), force: Boolean(force)
       });
-
-      const rb = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-      return jsonResponse({
-        symbol: symbol.toUpperCase(),
-        account: account_number,
-        shares: qty,
-        estimatedPrice: last,
-        estimatedTotal: qty * last,
-        type: isMarket ? "market" : "limit",
-        live: !result.dryRun,
-        orderId: rb?.id ?? rb?.url ?? null,
-        state: rb?.state ?? null,
-        httpStatus: result.status,
-        dryRun: result.dryRun
-      });
+      const { result: _raw, ...summary } = r;
+      return jsonResponse(summary);
     } catch (e: any) {
       return jsonResponse({ error: e.message });
     }
@@ -931,30 +892,24 @@ server.registerTool(
   "robinhood_sell",
   {
     title: "Robinhood Sell Order",
-    description: "Place an equity sell order. Market sells are fractional. Dry-run by default.",
+    description: "Place an equity sell order. Market sells are fractional. Dry-run by default; set live=true and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, and logs live sends to the trading log — same shared engine as the CLI `sell` command.",
     inputSchema: z.object({
       symbol: z.string(), account_number: z.string(),
       amount: z.number().positive().optional(), shares: z.number().positive().optional(),
       price: z.number().positive().optional(), live: z.boolean().default(false),
+      force: z.boolean().default(false),
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ symbol, account_number, amount, shares, price: limitPrice, live }) => {
-    if (!amount && !shares) return jsonResponse({ error: "Must specify amount or shares" });
+  async ({ symbol, account_number, amount, shares, price: limitPrice, live, force }) => {
     try {
-      const inst = (await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: symbol.toUpperCase() })).results?.[0];
-      if (!inst) return jsonResponse({ error: `Symbol ${symbol} not found` });
-      const iid = inst.id;
-      const q = (await brokerageGetJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: iid })).results?.[0];
-      const last = Number(q?.last_trade_price ?? 0);
-      const qty = Number((amount ? amount / last : Number(shares)).toFixed(4));
-      const result = await gatedBrokerageWrite({
-        url: "https://api.robinhood.com/orders/", method: "POST",
-        body: { account: `https://api.robinhood.com/accounts/${account_number}/`, instrument: `https://api.robinhood.com/instruments/${iid}/`, symbol: symbol.toUpperCase(), type: limitPrice ? "limit" : "market", time_in_force: limitPrice ? "gtc" : "gfd", trigger: "immediate", side: "sell", quantity: String(qty), price: (limitPrice ?? last).toFixed(2), order_form_version: "7" },
-        dryRun: !live, liveWrite: Boolean(live)
+      const r = await placeEquityOrder({
+        symbol, accountNumber: account_number, side: "sell",
+        amount, shares, limitPrice,
+        liveWrite: Boolean(live), force: Boolean(force)
       });
-      const rb = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-      return jsonResponse({ symbol: symbol.toUpperCase(), account: account_number, shares: qty, estimatedPrice: last, type: limitPrice ? "limit" : "market", live: !result.dryRun, orderId: rb?.id ?? null, state: rb?.state ?? null, httpStatus: result.status });
+      const { result: _raw, ...summary } = r;
+      return jsonResponse(summary);
     } catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );
@@ -972,7 +927,7 @@ server.registerTool(
     try {
       const result = await gatedBrokerageWrite({
         url: "https://api.robinhood.com/orders/{0}/cancel/", method: "POST",
-        params: { "0": order_id },
+        params: { "0": extractOrderId(order_id) },
         dryRun: !live, liveWrite: Boolean(live)
       });
       const rb = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
@@ -986,15 +941,13 @@ server.registerTool(
   "robinhood_order_status",
   {
     title: "Robinhood Order Status",
-    description: "Check status of a single order by ID — symbol, side, quantity, price, state, fills.",
+    description: "Check status of a single order by ID or URL — symbol (UUID resolved to the real ticker), side, quantity, price, state, fills.",
     inputSchema: z.object({ order_id: z.string() }),
     annotations: toolAnnotations(true, "sensitive-read")
   },
   async ({ order_id }) => {
     try {
-      const id = order_id.includes("/orders/") ? order_id.split("/orders/")[1].replace(/\/$/, "") : order_id;
-      const data = await brokerageGetJson("https://api.robinhood.com/orders/{0}/", { "0": id });
-      return jsonResponse(data);
+      return jsonResponse(await getOrderStatus(order_id));
     } catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );

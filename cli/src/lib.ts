@@ -1949,7 +1949,7 @@ export function classifyRobinhoodError(status: number, bodyText: string, headers
   if (lower.includes("buying power") || lower.includes("not enough") || lower.includes("only purchase 0")) return { kind: "insufficient_buying_power", status, detail, retryable: false, hint: "Insufficient buying power for this order size." };
   if (lower.includes("min tick") || lower.includes("does not satisfy")) return { kind: "below_min_tick", status, detail, retryable: false, hint: "Price below the chain cutoff must use below_tick (read options/chains/{id} min_ticks; often $0.05)." };
   if (lower.includes("market order") && (lower.includes("otc") || lower.includes("not eligible"))) return { kind: "otc_market_order", status, detail, retryable: false, hint: "OTC names reject market/fractional orders — use whole shares + a marketable limit." };
-  if (lower.includes("app version") || lower.includes("important stock trading updates")) return { kind: "app_version_gate", status, detail, retryable: false, hint: "Equity orders need order_form_version:7 + the web headers (the engine sends these)." };
+  if (lower.includes("app version") || lower.includes("important stock trading updates")) return { kind: "app_version_gate", status, detail, retryable: false, hint: "Equity orders need order_form_version:7 + the web headers (the engine sends these). If Robinhood rotated the web build, set ROBINHOOD_WEB_APP_VERSION to the current x-robinhood-web-app-version header (grab it from any logged-in robinhood.com request) and retry." };
   if (status === 401 || status === 403) return { kind: "unauthorized", status, detail, retryable: status === 401, hint: status === 401 ? "Token expired — refresh (pnpm auth:refresh) and retry." : "Forbidden (entitlement/permission)." };
   if (status === 404) return { kind: "not_found", status, detail, retryable: false };
   if (status === 400) return { kind: "bad_request", status, detail, retryable: false };
@@ -2407,6 +2407,216 @@ export async function logTrade(entry: Record<string, unknown>) {
     if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
     appendFileSync(join(logDir, "trading-log.jsonl"), JSON.stringify(entry) + "\n");
   } catch { /* best-effort */ }
+}
+
+// ───────────────────────── Equity order engine (shared CLI + MCP) ─────────────────────────
+// The order-construction path is the dangerous one to duplicate (alignment invariant): the CLI
+// `buy`/`sell` commands and the MCP `robinhood_buy`/`robinhood_sell` tools both call
+// placeEquityOrder so dedup, ref_id idempotency, the OTC/fractional guard, quantity math, and
+// trade logging cannot drift between surfaces.
+
+/** Extract a bare order id from an id-or-URL ("https://api.robinhood.com/orders/<id>/" or "<id>"). */
+export function extractOrderId(idOrUrl: string): string {
+  return idOrUrl.includes("/orders/") ? idOrUrl.split("/orders/")[1].replace(/\/$/, "") : idOrUrl;
+}
+
+export const DEDUP_WINDOW_MS = 300_000;
+
+/**
+ * Pure dedup filter: same-side orders in a non-terminal state created inside the window.
+ * Stale pending orders (older than the window) do NOT block — a forgotten GTC limit from
+ * yesterday is not a duplicate of today's intent.
+ */
+export function filterRecentPending(orders: any[], side: "buy" | "sell", nowMs: number, windowMs: number = DEDUP_WINDOW_MS): any[] {
+  return (Array.isArray(orders) ? orders : []).filter((o: any) => {
+    // A future-dated created_at (server clock skew) still blocks — it is pending NOW.
+    const age = nowMs - Date.parse(String(o?.created_at ?? 0));
+    return o?.side === side
+      && o?.state !== "filled" && o?.state !== "cancelled" && o?.state !== "rejected"
+      && Number.isFinite(age) && age < windowMs;
+  });
+}
+
+export interface EquityOrderInput {
+  symbol: string;
+  accountNumber: string;
+  side: "buy" | "sell";
+  /** Dollar notional (fractional, market-style sizing). Mutually exclusive with shares. */
+  amount?: number;
+  /** Share quantity. Mutually exclusive with amount. */
+  shares?: number;
+  /** Limit price; omit for a market order. */
+  limitPrice?: number;
+  /** Live send — still requires ROBINHOOD_ALLOW_LIVE_WRITE=1 (second gate, enforced downstream). */
+  liveWrite?: boolean;
+  /** Skip the pending-duplicate check. */
+  force?: boolean;
+}
+
+export interface EquityOrderDeps {
+  getJson?: typeof brokerageGetJson;
+  write?: typeof gatedBrokerageWrite;
+  log?: typeof logTrade;
+  now?: () => number;
+}
+
+export interface EquityOrderResult {
+  symbol: string;
+  account: string;
+  side: "buy" | "sell";
+  shares: number;
+  estimatedPrice: number;
+  estimatedTotal: number;
+  type: "market" | "limit";
+  live: boolean;
+  dryRun: boolean;
+  refId: string;
+  orderId: string | null;
+  state: string | null;
+  httpStatus: number | string;
+  result: Awaited<ReturnType<typeof gatedBrokerageWrite>>;
+}
+
+/**
+ * Place (or dry-run) a simple equity order. One source of truth for both surfaces:
+ *   1. amount XOR shares validation
+ *   2. instrument resolution + OTC/fractional guard (failure mode #4 — dollar orders on
+ *      non-`tradable` fractional names are impossible; switch to whole shares + limit)
+ *   3. live quote with a hard validity check (a dead quote must never become qty=Infinity)
+ *   4. pending-duplicate check (live sends only; 5-min window; force skips)
+ *   5. ref_id idempotency (safe to retry the SAME ref_id on 429 — nothing was placed)
+ *   6. trading-log append on live sends
+ * Dry-run unless liveWrite — and even then the engine's double gate still applies.
+ */
+export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrderDeps = {}): Promise<EquityOrderResult> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const write = deps.write ?? gatedBrokerageWrite;
+  const log = deps.log ?? logTrade;
+  const now = deps.now ?? Date.now;
+  const symbol = input.symbol.toUpperCase();
+  const side = input.side;
+  if (!input.amount && !input.shares) throw new Error("Must specify amount (dollars) or shares (quantity)");
+  if (input.amount && input.shares) throw new Error("Specify amount OR shares, not both");
+
+  // 1. Resolve instrument — the response carries the OTC/fractional signals.
+  const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })).results?.[0];
+  if (!inst) throw new Error(`Symbol ${symbol} not found`);
+  const iid = inst.id;
+  const otc = Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
+  if (input.amount && inst.fractional_tradability && inst.fractional_tradability !== "tradable") {
+    throw new Error(`${symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional order. Use shares (whole qty)${otc ? " (OTC: limit at the ask)" : ""}.`);
+  }
+
+  // 2. Quote — hard-fail on a dead/missing quote so sizing math can't divide by zero.
+  const q = (await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: iid })).results?.[0];
+  const last = Number(q?.last_trade_price);
+  if (!Number.isFinite(last) || last <= 0) throw new Error(`Invalid or missing quote for ${symbol} (last_trade_price=${q?.last_trade_price ?? "none"})`);
+
+  // 3. Quantity (Robinhood: 4 decimal places for fractional shares).
+  const rawShares = input.amount ? Number(input.amount) / last : Number(input.shares);
+  const shares = Number(rawShares.toFixed(4));
+  if (!Number.isFinite(shares) || shares <= 0) throw new Error(`Computed share quantity is invalid (${rawShares}) for ${symbol}`);
+
+  const isMarket = input.limitPrice == null;
+  const tif = isMarket ? "gfd" : "gtc";
+  const price = isMarket ? last.toFixed(2) : Number(input.limitPrice).toFixed(2);
+  const liveWrite = Boolean(input.liveWrite);
+
+  // 4. Dedup: pending same-side orders on this instrument+account inside the window block the
+  // send (live only — dry-runs can't duplicate anything). Best-effort: a failed check never
+  // blocks, only a positive hit does.
+  if (liveWrite && !input.force) {
+    try {
+      const recent = await getJson("https://api.robinhood.com/orders/", {}, {
+        instrument: `https://api.robinhood.com/instruments/${iid}/`,
+        account_numbers: input.accountNumber,
+        is_closed: "false"
+      });
+      const pending = filterRecentPending(recent?.results, side, now());
+      if (pending.length > 0) {
+        throw new Error(
+          `DEDUP: ${pending.length} pending ${side} order(s) for ${symbol} already exist. ` +
+          `IDs: ${pending.map((o: any) => String(o.id ?? "").slice(0, 8)).join(", ")}. ` +
+          `Pass --force (CLI) / force:true (MCP) to skip this check.`
+        );
+      }
+    } catch (e: any) {
+      if (String(e?.message ?? "").startsWith("DEDUP:")) throw e;
+      // Dedup check failed non-fatally — continue.
+    }
+  }
+
+  // 5. Send (ref_id = broker-level idempotency; a 429 retries the SAME ref_id safely).
+  const refId = `${symbol}-${input.accountNumber}-${now()}`;
+  const result = await write({
+    url: "https://api.robinhood.com/orders/",
+    method: "POST",
+    body: {
+      account: `https://api.robinhood.com/accounts/${input.accountNumber}/`,
+      instrument: `https://api.robinhood.com/instruments/${iid}/`,
+      symbol,
+      type: isMarket ? "market" : "limit",
+      time_in_force: tif,
+      trigger: "immediate",
+      side,
+      quantity: String(shares),
+      price,
+      order_form_version: "7",
+      ref_id: refId
+    },
+    dryRun: !liveWrite,
+    liveWrite
+  });
+
+  const rb = (() => {
+    try { return typeof result.body === "string" ? JSON.parse(result.body) : result.body; }
+    catch { return undefined; }
+  })();
+
+  // 6. Log live sends to local/trading-log.jsonl (order history stays the source of truth).
+  if (!result.dryRun) {
+    try {
+      await log({
+        ts: new Date().toISOString(),
+        symbol, account: input.accountNumber, side,
+        type: isMarket ? "market" : "limit",
+        shares, price: isMarket ? last : Number(input.limitPrice),
+        estimatedTotal: shares * last, refId,
+        orderId: (rb as any)?.id ?? null, state: (rb as any)?.state ?? null, httpStatus: result.status
+      });
+    } catch { /* best-effort */ }
+  }
+
+  return {
+    symbol, account: input.accountNumber, side, shares,
+    estimatedPrice: last, estimatedTotal: shares * last,
+    type: isMarket ? "market" : "limit",
+    live: !result.dryRun, dryRun: result.dryRun, refId,
+    orderId: (rb as any)?.id ?? (rb as any)?.url ?? null,
+    state: (rb as any)?.state ?? null,
+    httpStatus: result.status,
+    result
+  };
+}
+
+/**
+ * Read one order by id-or-URL and resolve its ticker. Order objects carry an instrument URL,
+ * not a symbol — the lookup joins instruments/?ids= so callers see "AAPL", not a UUID.
+ * Symbol resolution is best-effort; the order itself is returned regardless.
+ */
+export async function getOrderStatus(idOrUrl: string, deps: { getJson?: typeof brokerageGetJson } = {}): Promise<any> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const order = await getJson("https://api.robinhood.com/orders/{0}/", { "0": extractOrderId(idOrUrl) });
+  if (order && !order.symbol && typeof order.instrument === "string") {
+    const m = /instruments\/([0-9a-f-]{8,})/i.exec(order.instrument);
+    if (m) {
+      try {
+        const sym = (await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: m[1] })).results?.[0]?.symbol;
+        if (sym) return { ...order, symbol: sym };
+      } catch { /* best-effort */ }
+    }
+  }
+  return order;
 }
 
 export async function executeCryptoRequest(

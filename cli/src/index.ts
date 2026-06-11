@@ -26,6 +26,9 @@ import {
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   logTrade,
+  placeEquityOrder,
+  getOrderStatus,
+  extractOrderId,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -2793,102 +2796,28 @@ program
   .option("--force", "Skip duplicate order check")
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
-    if (!opts.amount && !opts.shares) throw new Error("Must specify --amount (dollars) or --shares (quantity)");
-    if (opts.amount && opts.shares) throw new Error("Specify --amount OR --shares, not both");
-
-    // 1. Resolve instrument
-    const inst = (await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: opts.symbol.toUpperCase() })).results?.[0];
-    if (!inst) throw new Error(`Symbol ${opts.symbol} not found`);
-    const iid = inst.id;
-
-    // 2. Get quote
-    const q = (await brokerageGetJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: iid })).results?.[0];
-    if (!q) throw new Error(`No quote for ${opts.symbol}`);
-    const last = Number(q.last_trade_price);
-    if (!last || last <= 0) throw new Error(`Invalid price for ${opts.symbol}: $${last}`);
-
-    // 3. Calculate quantity (Robinhood: 4 decimal places for fractional shares on most stocks)
-    const isMarket = !opts.price;
-    const rawShares = opts.amount ? Number(opts.amount) / last : Number(opts.shares);
-    const shares = Number(rawShares.toFixed(4));
-    const tif = isMarket ? "gfd" : "gtc";
-    // Market orders: Robinhood requires a price field — round to 2 decimals
-    const price = opts.price ? Number(opts.price).toFixed(2) : last.toFixed(2);
-
-    // 4. Dedup: check for recent orders on same symbol+account (prevents test+batch doubles)
-    const liveWrite = Boolean(opts.live);
-    if (liveWrite && !opts.force) {
-      try {
-        const recent = await brokerageGetJson("https://api.robinhood.com/orders/", {}, {
-          instrument: `https://api.robinhood.com/instruments/${iid}/`,
-          account_numbers: opts.account,
-          is_closed: "false"
-        });
-        const pending = (recent?.results ?? []).filter((o: any) => {
-          // Only block orders from the last 5 minutes (stale pending ≠ real duplicate)
-          const age = Date.now() - Date.parse(String(o.created_at ?? 0));
-          return o.side === "buy" && o.state !== "filled" && o.state !== "cancelled" && o.state !== "rejected" && age < 300_000;
-        });
-        if (pending.length > 0) {
-          throw new Error(
-            `DEDUP: ${pending.length} pending buy order(s) for ${opts.symbol.toUpperCase()} already exist. ` +
-            `IDs: ${pending.map((o: any) => (o.id ?? "").slice(0, 8)).join(", ")}. ` +
-            `Pass --force to skip this check.`
-          );
-        }
-      } catch (e: any) {
-        if (e.message.startsWith("DEDUP:")) throw e;
-        // Dedup check failed non-fatally — continue
-      }
-    }
-
-    // 5. Execute (with ref_id for broker-level idempotency)
-    const refId = `${opts.symbol.toUpperCase()}-${opts.account}-${Date.now()}`;
-    const result = await gatedBrokerageWrite({
-      url: "https://api.robinhood.com/orders/",
-      method: "POST",
-      body: {
-        account: `https://api.robinhood.com/accounts/${opts.account}/`,
-        instrument: `https://api.robinhood.com/instruments/${iid}/`,
-        symbol: opts.symbol.toUpperCase(),
-        type: isMarket ? "market" : "limit",
-        time_in_force: tif,
-        trigger: "immediate",
-        side: "buy",
-        quantity: String(shares),
-        price,
-        order_form_version: "7",
-        ref_id: refId
-      },
-      dryRun: !liveWrite,
-      liveWrite
+    // Validation, OTC/fractional guard, quote check, dedup, ref_id, gates, and trade logging
+    // all live in the shared engine — identical behavior to the MCP robinhood_buy tool.
+    const r = await placeEquityOrder({
+      symbol: opts.symbol,
+      accountNumber: opts.account,
+      side: "buy",
+      amount: opts.amount ? Number(opts.amount) : undefined,
+      shares: opts.shares ? Number(opts.shares) : undefined,
+      limitPrice: opts.price ? Number(opts.price) : undefined,
+      liveWrite: Boolean(opts.live),
+      force: Boolean(opts.force)
     });
 
-    // Log live trades to local/trading-log.jsonl
-    if (!result.dryRun) {
-      const rb = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-      logTrade({
-        ts: new Date().toISOString(),
-        symbol: opts.symbol.toUpperCase(), account: opts.account,
-        side: "buy", type: isMarket ? "market" : "limit",
-        shares, price: isMarket ? last : Number(opts.price),
-        estimatedTotal: shares * last, orderId: rb?.id ?? null,
-        state: rb?.state ?? null, httpStatus: result.status
-      }).catch(() => {});
-    }
-
     if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares, estimatedPrice: last, estimatedTotal: shares * last, type: isMarket ? "market" : "limit", live: !result.dryRun, result });
+      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, live: r.live, refId: r.refId, result: r.result });
       return;
     }
 
-    const mode = result.dryRun ? "DRY RUN" : "LIVE";
-    process.stdout.write(`${mode} ${isMarket ? "market" : "limit"} buy: ${opts.symbol.toUpperCase()} ${shares.toFixed(6)} sh @ ~$${last.toFixed(2)} ≈ $${(shares * last).toFixed(2)}  acct=…${String(opts.account).slice(-4)}\n`);
-    if (result.dryRun) process.stdout.write("Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
-    else {
-      const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-      process.stdout.write(`Status: ${result.status}  id=${body?.id ?? body?.url ?? "?"}  state=${body?.state ?? "?"}\n`);
-    }
+    const mode = r.dryRun ? "DRY RUN" : "LIVE";
+    process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${r.shares.toFixed(6)} sh @ ~$${r.estimatedPrice.toFixed(2)} ≈ $${r.estimatedTotal.toFixed(2)}  acct=…${String(opts.account).slice(-4)}\n`);
+    if (r.dryRun) process.stdout.write("Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
+    else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 
 // ── sell: mirror of buy for closing/reducing positions ──
@@ -2904,94 +2833,27 @@ program
   .option("--force", "Skip duplicate order check")
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
-    if (!opts.amount && !opts.shares) throw new Error("Must specify --amount (dollars) or --shares (quantity)");
-    if (opts.amount && opts.shares) throw new Error("Specify --amount OR --shares, not both");
-
-    const inst = (await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: opts.symbol.toUpperCase() })).results?.[0];
-    if (!inst) throw new Error(`Symbol ${opts.symbol} not found`);
-    const iid = inst.id;
-
-    const q = (await brokerageGetJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: iid })).results?.[0];
-    if (!q) throw new Error(`No quote for ${opts.symbol}`);
-    const last = Number(q.last_trade_price);
-    if (!last || last <= 0) throw new Error(`Invalid price for ${opts.symbol}: $${last}`);
-
-    const isMarket = !opts.price;
-    const rawShares = opts.amount ? Number(opts.amount) / last : Number(opts.shares);
-    const shares = Number(rawShares.toFixed(4));
-    const tif = isMarket ? "gfd" : "gtc";
-    const price = opts.price ? Number(opts.price).toFixed(2) : last.toFixed(2);
-
-    const liveWrite = Boolean(opts.live);
-    if (liveWrite && !opts.force) {
-      try {
-        const recent = await brokerageGetJson("https://api.robinhood.com/orders/", {}, {
-          instrument: `https://api.robinhood.com/instruments/${iid}/`,
-          account_numbers: opts.account,
-          is_closed: "false"
-        });
-        const pending = (recent?.results ?? []).filter((o: any) => {
-          const age = Date.now() - Date.parse(String(o.created_at ?? 0));
-          return o.side === "sell" && o.state !== "filled" && o.state !== "cancelled" && o.state !== "rejected" && age < 300_000;
-        });
-        if (pending.length > 0) {
-          throw new Error(
-            `DEDUP: ${pending.length} pending sell order(s) for ${opts.symbol.toUpperCase()} already exist. ` +
-            `IDs: ${pending.map((o: any) => (o.id ?? "").slice(0, 8)).join(", ")}. ` +
-            `Pass --force to skip this check.`
-          );
-        }
-      } catch (e: any) {
-        if (e.message.startsWith("DEDUP:")) throw e;
-      }
-    }
-
-    const refId = `${opts.symbol.toUpperCase()}-${opts.account}-${Date.now()}`;
-    const result = await gatedBrokerageWrite({
-      url: "https://api.robinhood.com/orders/",
-      method: "POST",
-      body: {
-        account: `https://api.robinhood.com/accounts/${opts.account}/`,
-        instrument: `https://api.robinhood.com/instruments/${iid}/`,
-        symbol: opts.symbol.toUpperCase(),
-        type: isMarket ? "market" : "limit",
-        time_in_force: tif,
-        trigger: "immediate",
-        side: "sell",
-        quantity: String(shares),
-        price,
-        order_form_version: "7",
-        ref_id: refId
-      },
-      dryRun: !liveWrite,
-      liveWrite
+    // Same shared engine as `buy` and the MCP robinhood_sell tool — only the side differs.
+    const r = await placeEquityOrder({
+      symbol: opts.symbol,
+      accountNumber: opts.account,
+      side: "sell",
+      amount: opts.amount ? Number(opts.amount) : undefined,
+      shares: opts.shares ? Number(opts.shares) : undefined,
+      limitPrice: opts.price ? Number(opts.price) : undefined,
+      liveWrite: Boolean(opts.live),
+      force: Boolean(opts.force)
     });
 
-    // Log live trades to local/trading-log.jsonl
-    if (!result.dryRun) {
-      const rb = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-      logTrade({
-        ts: new Date().toISOString(),
-        symbol: opts.symbol.toUpperCase(), account: opts.account,
-        side: "sell", type: isMarket ? "market" : "limit",
-        shares, price: isMarket ? last : Number(opts.price),
-        estimatedTotal: shares * last, orderId: rb?.id ?? null,
-        state: rb?.state ?? null, httpStatus: result.status
-      }).catch(() => {});
-    }
-
     if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares, estimatedPrice: last, estimatedTotal: shares * last, type: isMarket ? "market" : "limit", live: !result.dryRun, result });
+      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, live: r.live, refId: r.refId, result: r.result });
       return;
     }
 
-    const mode = result.dryRun ? "DRY RUN" : "LIVE";
-    process.stdout.write(`${mode} ${isMarket ? "market" : "limit"} sell: ${opts.symbol.toUpperCase()} ${shares.toFixed(6)} sh @ ~$${last.toFixed(2)} ≈ $${(shares * last).toFixed(2)}  acct=…${String(opts.account).slice(-4)}\n`);
-    if (result.dryRun) process.stdout.write("Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
-    else {
-      const body = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-      process.stdout.write(`Status: ${result.status}  id=${body?.id ?? body?.url ?? "?"}  state=${body?.state ?? "?"}\n`);
-    }
+    const mode = r.dryRun ? "DRY RUN" : "LIVE";
+    process.stdout.write(`${mode} ${r.type} sell: ${r.symbol} ${r.shares.toFixed(6)} sh @ ~$${r.estimatedPrice.toFixed(2)} ≈ $${r.estimatedTotal.toFixed(2)}  acct=…${String(opts.account).slice(-4)}\n`);
+    if (r.dryRun) process.stdout.write("Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
+    else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 
 // ── cancel: cancel a pending order by ID ──
@@ -3003,8 +2865,7 @@ program
   .option("--force", "Skip duplicate order check")
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
-    // Extract ID from URL if full URL given
-    const id = opts.id.includes("/orders/") ? opts.id.split("/orders/")[1].replace(/\/$/, "") : opts.id;
+    const id = extractOrderId(opts.id);
     const liveWrite = Boolean(opts.live);
     const result = await gatedBrokerageWrite({
       url: "https://api.robinhood.com/orders/{0}/cancel/",
@@ -3030,15 +2891,14 @@ program
   .requiredOption("-i, --id <order_id>", "Order ID or full URL")
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
-    const id = opts.id.includes("/orders/") ? opts.id.split("/orders/")[1].replace(/\/$/, "") : opts.id;
-    const data = await brokerageGetJson("https://api.robinhood.com/orders/{0}/", { "0": id });
+    // getOrderStatus resolves the instrument UUID to a real ticker (order GETs carry no symbol).
+    const data = await getOrderStatus(opts.id);
     if (opts.json) {
       printJson({ generatedAt: new Date().toISOString(), ...data });
       return;
     }
     const o = data;
-    // Order GET doesn't return symbol — extract from instrument URL
-    const sym = o.symbol || (o.instrument ? o.instrument.split("/").filter(Boolean).pop()?.toUpperCase() : "?");
+    const sym = o.symbol ?? "?";
     process.stdout.write(`${o.side?.toUpperCase() ?? "?"} ${sym}  ${o.cumulative_quantity ?? "0"} sh  @ $${Number(o.average_price ?? o.price ?? 0).toFixed(2)}  state=${o.state ?? "?"}\n`);
     process.stdout.write(`id: ${o.id}\n`);
     process.stdout.write(`created: ${o.created_at}\n`);

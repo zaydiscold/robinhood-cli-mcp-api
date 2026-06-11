@@ -33,6 +33,7 @@ import {
   placeEquityOrder,
   getOrderStatus,
   extractOrderId,
+  computeWheelState,
   signCryptoRequest,
   summarizeApiMap,
   buildEndpointDirectory,
@@ -952,6 +953,26 @@ server.registerTool(
   }
 );
 
+// ── robinhood_wheel: Wheel-strategy status + next leg from account evidence ──
+server.registerTool(
+  "robinhood_wheel",
+  {
+    title: "Robinhood Wheel Status",
+    description:
+      "Where am I in the Wheel (CSP → assignment → covered call → called away), and what's the next leg? Reads shares + short puts/calls per account from live evidence, classifies the stage, flags undercovered short calls, and returns the literal next-leg dry-run command. Works with no position (discussion mode: returns the leg-1 entry plan). Read-only; descriptive, not prescriptive. Background doc: docs/strategy-deep-dive-the-wheel-2026-06-04.md.",
+    inputSchema: z.object({
+      symbol: z.string().optional(),
+      account_number: z.string().optional()
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ symbol, account_number }) => {
+    try {
+      return jsonResponse(await computeWheelState({ symbol, accountNumber: account_number }));
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
 server.registerTool(
   "robinhood_options_holdings",
   {
@@ -1185,3 +1206,5 @@ server.registerTool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+// made with love by Zayd Khan / cold

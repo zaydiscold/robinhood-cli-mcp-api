@@ -10,7 +10,8 @@
     "test": "pnpm --filter @zaydiscold/robinhood-cli test",
     "typecheck": "pnpm --filter @zaydiscold/robinhood-cli typecheck && pnpm --filter @zaydiscold/robinhood-cli build && pnpm --filter @zaydiscold/robinhood-cli-mcp typecheck",
     "cli": "pnpm --filter @zaydiscold/robinhood-cli cli",
-    "auth:refresh": "bash scripts/refresh-auth.sh"
+    "auth:refresh": "bash scripts/refresh-auth.sh",
+    "version:refresh": "node scripts/scrape-web-app-version.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

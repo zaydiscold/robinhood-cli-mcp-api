@@ -2017,7 +2017,9 @@ export async function executeBrokerageRequest(
       origin: "https://robinhood.com",
       referer: "https://robinhood.com/",
       "x-robinhood-api-version": process.env.ROBINHOOD_API_VERSION ?? "1.431.4",
-      "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.24.2030+bc12ef34",
+      // Fallback rotates with Robinhood's web builds — refresh via `pnpm version:refresh`
+      // (CDP-scrapes the login page; no auth needed) or set ROBINHOOD_WEB_APP_VERSION.
+      "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.24.3589+55c48b8f7a1c",
       "x-hyper-ex": "enabled"
     };
     if (authToken) headers.authorization = `Bearer ${authToken}`;
@@ -2241,7 +2243,7 @@ export async function computePortfolioPnl(
     } catch { a.warnings.push(`equity positions read failed (${acct})`); }
     try {
       const od = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
-      a.optionPositions = od.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: n(x.quantity) }));
+      a.optionPositions = od.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: n(x.quantity), underlyingType: x.underlying_type ?? null }));
     } catch { a.warnings.push(`option positions read failed (${acct})`); }
     return a;
   }));
@@ -2266,6 +2268,42 @@ export async function computePortfolioPnl(
   try { if (allOptIds.length) marks = await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds); }
   catch (e) { globalWarnings.push(`option marks batch failed — option drivers degraded (${(e as Error).message.slice(0, 50)})`); }
 
+  // 3b. WINDOW COHERENCE (the pre-open $0-options bug). Between a session close and the next open,
+  // marketdata/options/ rolls previous_close_price to the JUST-COMPLETED session while equity quotes
+  // (and the portfolios/ top-line) still measure that session's move. Result: every option attributes
+  // exactly $0 and the whole options bleed lands in "residual". Detect the mismatch from the feeds'
+  // own previous_close_date stamps (no clock/TZ guessing, holiday-proof) and re-anchor option "previous"
+  // to the close BEFORE the last completed session via batch daily historicals.
+  const eqPrevDates = [...new Set([...quotes.values()].map((q: any) => q?.previous_close_date).filter(Boolean).map(String))].sort();
+  const optPrevDates = [...new Set([...marks.values()].map((m: any) => m?.previous_close_date).filter(Boolean).map(String))].sort();
+  const eqPrevDate = eqPrevDates.at(-1) ?? null;
+  const optPrevDate = optPrevDates.at(-1) ?? null;
+  const betweenSessions = Boolean(eqPrevDate && optPrevDate && optPrevDate > eqPrevDate);
+  const optPrevOverride = new Map<string, number>();
+  if (betweenSessions && allOptIds.length) {
+    try {
+      for (let i = 0; i < allOptIds.length; i += 40) {
+        const data = await getJson("https://api.robinhood.com/marketdata/options/historicals/?ids={ids}&interval={interval}&span={span}",
+          { ids: allOptIds.slice(i, i + 40).join(","), interval: "day", span: "week" });
+        for (const r of data.results ?? []) {
+          // Batch historicals results carry `id` + `instrument` URL, NOT `instrument_id` (live-verified 2026-06-11).
+          const key = r?.instrument_id ?? r?.id ?? String(r?.instrument ?? "").split("/").filter(Boolean).pop();
+          if (!key) continue;
+          const dps = (r.data_points ?? r.historicals ?? []).filter((d: any) => String(d.begins_at).slice(0, 10) <= String(eqPrevDate));
+          const close = dps.length ? Number(dps[dps.length - 1].close_price) : Number.NaN;
+          if (Number.isFinite(close)) optPrevOverride.set(String(key), close);
+        }
+      }
+      if (!optPrevOverride.size)
+        globalWarnings.push("option historicals re-anchor returned no usable closes — option day drivers may read $0 between sessions");
+    } catch (e) {
+      globalWarnings.push(`option historicals re-anchor failed — option day drivers may read $0 between sessions (${(e as Error).message.slice(0, 60)})`);
+    }
+  }
+  const dayWindow = betweenSessions
+    ? { phase: "between-sessions", sessionDate: optPrevDate, note: `Market not in regular session — 'day' figures are the LAST COMPLETED session (${optPrevDate}); option drivers re-anchored to the ${eqPrevDate} close so they attribute that session instead of $0.` }
+    : { phase: "session", sessionDate: eqPrevDate ? `after ${eqPrevDate} close` : null, note: null };
+
   // 4. Per-position dollar drivers.
   const drivers: any[] = [];
   for (const a of perAccount) {
@@ -2281,11 +2319,16 @@ export async function computePortfolioPnl(
     }
     for (const p of a.optionPositions) {
       const m = marks.get(p.oid) ?? {};
-      const mark = n(m.adjusted_mark_price ?? m.mark_price), prev = n(m.previous_close_price);
+      const mark = n(m.adjusted_mark_price ?? m.mark_price);
+      // Between sessions, re-anchored prev (close before the last completed session) keeps the option
+      // measuring the SAME window as the account top-line; in-session, previous_close_price is correct.
+      const prev = optPrevOverride.get(p.oid) ?? n(m.previous_close_price);
       drivers.push({ acct: a.acct, label: a.label, kind: "option", symbol: p.symbol, name: p.name, qty: p.qty,
         value: Number.isFinite(mark) ? mark * 100 * p.qty : Number.NaN,
         dayUsd: Number.isFinite(mark) && Number.isFinite(prev) ? (mark - prev) * 100 * p.qty : Number.NaN,
-        ahUsd: 0 }); // options don't print after-hours; account-level extended_hours_equity captures real AH
+        ahUsd: 0 }); // per-name option AH not attributed; account-level extended_hours_equity captures it
+      if (p.underlyingType === "index" && !globalWarnings.some((w) => w.startsWith("index options held")))
+        globalWarnings.push(`index options held (${p.symbol}): index options DO trade extended sessions — per-name AH is not attributed here, but the account-level after-hours number includes it`);
     }
   }
 
@@ -2316,11 +2359,14 @@ export async function computePortfolioPnl(
     : (Number.isFinite(x.dayUsd) ? x.dayUsd : 0) + (Number.isFinite(x.ahUsd) ? x.ahUsd : 0);
   const rank = (xs: any[]) => xs.slice().sort((x, y) => sortVal(x) - sortVal(y));
   const top = opts.top && opts.top > 0 ? opts.top : undefined;
-  const byUnderlying = rank([...byU.values()].map((u) => ({ symbol: u.symbol, marketValueUsd: u.value, dayChangeUsd: u.dayUsd, afterHoursChangeUsd: u.ahUsd, accounts: [...u.accts], kinds: [...u.kinds] })));
-  const byPosition = rank(drivers.map((d) => ({ accountNumber: d.acct, label: d.label, kind: d.kind, symbol: d.symbol, name: d.name, qty: d.qty, marketValueUsd: d.value, dayChangeUsd: d.dayUsd, afterHoursChangeUsd: d.ahUsd })));
+  // Rank on the RAW driver objects (dayUsd/ahUsd) BEFORE mapping to output field names — sortVal reads
+  // dayUsd/ahUsd, so ranking the mapped objects (dayChangeUsd/...) silently compared 0 vs 0 and left
+  // the "ranked" tables in insertion order. (Live-caught 2026-06-11.)
+  const byUnderlying = rank([...byU.values()]).map((u) => ({ symbol: u.symbol, marketValueUsd: u.value, dayChangeUsd: u.dayUsd, afterHoursChangeUsd: u.ahUsd, accounts: [...u.accts], kinds: [...u.kinds] }));
+  const byPosition = rank(drivers).map((d) => ({ accountNumber: d.acct, label: d.label, kind: d.kind, symbol: d.symbol, name: d.name, qty: d.qty, marketValueUsd: d.value, dayChangeUsd: d.dayUsd, afterHoursChangeUsd: d.ahUsd }));
 
   return {
-    window, complete: failedReads === 0 && globalWarnings.length === 0, afterHoursActive,
+    window, complete: failedReads === 0 && globalWarnings.length === 0, afterHoursActive, dayWindow,
     totals: { equityUsd: totals.equity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
     reconciliation: { driverDayChangeUsd: driverDaySum, totalsDayChangeUsd: totals.day, residualUsd: residual, mispricedPositions,
       note: "residual = cash/dividends/transfers/option-vs-equity timing (NOT failed pricing — see mispricedPositions); after-hours is EQUITY-only (options don't print after-hours)" },
@@ -2617,6 +2663,275 @@ export async function getOrderStatus(idOrUrl: string, deps: { getJson?: typeof b
     }
   }
   return order;
+}
+
+// ───────────────────────── Wheel engine (status + next leg, shared CLI + MCP) ─────────────────────────
+// "Where am I in the wheel, and what's the next leg?" answered from ACCOUNT EVIDENCE — shares held,
+// short puts (CSP leg), short calls (CC leg) — never from memory of past intent. The classifier is
+// pure and unit-tested; the composition reads positions + aggregate option positions (whose legs are
+// self-describing: position_type/option_type/strike_price/expiration_date come inline, no per-leg
+// instrument fetches). Descriptive, not prescriptive: it names the conventional next leg and emits
+// the exact dry-run command, the operator decides. Background: docs/strategy-deep-dive-the-wheel-2026-06-04.md
+
+export const WHEEL_DOC = "docs/strategy-deep-dive-the-wheel-2026-06-04.md";
+
+export interface WheelLeg {
+  optionId: string | null;
+  side: "short" | "long" | "unknown";
+  type: "call" | "put" | "unknown";
+  strike: number | null;
+  expiration: string | null;
+  dte: number | null;
+  contracts: number;
+  strategy: string;
+}
+
+export interface WheelStateInput {
+  sharesQty: number;
+  avgCost: number | null;
+  shortPuts: WheelLeg[];
+  shortCalls: WheelLeg[];
+  otherLegs: WheelLeg[];
+}
+
+export interface WheelNextLeg {
+  action: string;
+  rationale: string;
+  /** The literal dry-run command to run next (never sends; live needs both write gates). */
+  command: string | null;
+}
+
+export interface WheelClassification {
+  stage: "not-started" | "cash-secured-put-open" | "csp-plus-shares" | "shares-uncovered"
+    | "covered-call-open" | "short-call-undercovered" | "sub-100-shares";
+  summary: string;
+  nextLeg: WheelNextLeg;
+  blockers: string[];
+}
+
+const fmtWheelLeg = (l: WheelLeg) =>
+  `${l.contracts}× $${l.strike ?? "?"} ${l.type === "put" ? "P" : l.type === "call" ? "C" : "?"} ${l.expiration ?? "?"}${l.dte != null ? ` (${l.dte}d)` : ""}`;
+
+/**
+ * Pure wheel-stage classifier — exported for tests. Stages map to the wheel's legs:
+ * CSP open (leg 1) → assigned/holding ≥100 shares (leg 2) → covered call open (leg 3) → called
+ * away → back to leg 1. Coverage math is the one hard safety check: short calls beyond
+ * shares/100 are flagged as naked/undercovered, never normalized.
+ */
+export function classifyWheelStage(
+  s: WheelStateInput,
+  ctx: { symbol?: string; accountNumber?: string } = {}
+): WheelClassification {
+  const S = ctx.symbol ?? "<SYMBOL>";
+  const N = ctx.accountNumber ?? "<ACCOUNT_NUMBER>";
+  const ccContracts = s.shortCalls.reduce((a, l) => a + l.contracts, 0);
+  const cspContracts = s.shortPuts.reduce((a, l) => a + l.contracts, 0);
+  const blockers: string[] = [];
+  const extras = s.otherLegs.length
+    ? ` ${s.otherLegs.length} non-wheel option leg(s) also present (long/multi-leg) — not counted as wheel legs.`
+    : "";
+
+  const cspQuote = `options strategy-quote cash-secured-short-put --account ${N} --symbol ${S} --expiration <pick via: options expirations ${S}> --leg short_put=<strike> --pricing-mode safe-sell-probe --json`;
+  const ccQuote = (basisNote: string) =>
+    `options strategy-quote covered-call --account ${N} --symbol ${S} --expiration <pick via: options expirations ${S}> --leg short_call=<strike${basisNote}> --pricing-mode safe-sell-probe --json`;
+  const rollPlan = (type: "call" | "put", leg?: WheelLeg) =>
+    `options roll-plan --account ${N} --symbol ${S} --type ${type} --close-expiration ${leg?.expiration ?? "<old-exp>"} --close-strike ${leg?.strike ?? "<old-strike>"} --open-expiration <new-exp> --open-strike <new-strike> [--cash-account] --json`;
+
+  if (ccContracts > 0 && s.sharesQty < ccContracts * 100) {
+    blockers.push(`short calls exceed share coverage: ${ccContracts} contract(s) need ${ccContracts * 100} shares, account holds ${s.sharesQty} — naked/undercovered (undefined-risk) exposure, NOT a wheel state`);
+    return {
+      stage: "short-call-undercovered",
+      summary: `Short calls (${s.shortCalls.map(fmtWheelLeg).join(", ")}) without full share coverage.${extras}`,
+      nextLeg: {
+        action: "review the uncovered short call exposure before anything else",
+        rationale: "The wheel's short call is COVERED by definition (100 shares per contract in the same account). Anything less is a different, undefined-risk position.",
+        command: null
+      },
+      blockers
+    };
+  }
+  if (ccContracts > 0) {
+    return {
+      stage: "covered-call-open",
+      summary: `Wheel leg 3 working: ${s.sharesQty} shares covering ${s.shortCalls.map(fmtWheelLeg).join(", ")}.${extras}`,
+      nextLeg: {
+        action: "manage the short call to its end state",
+        rationale: "Expires worthless → keep premium, sell the next call. Assigned (shares called away) → wheel restarts at leg 1 (CSP). Tested and you want to keep shares → roll out/up for a net credit.",
+        command: rollPlan("call", s.shortCalls[0])
+      },
+      blockers
+    };
+  }
+  if (cspContracts > 0) {
+    const both = s.sharesQty >= 100;
+    return {
+      stage: both ? "csp-plus-shares" : "cash-secured-put-open",
+      summary: `Wheel leg 1 working: ${s.shortPuts.map(fmtWheelLeg).join(", ")}${both ? ` — plus ${s.sharesQty} shares already held (CC candidate in parallel)` : ""}.${extras}`,
+      nextLeg: {
+        action: both ? "manage the short put; the existing 100+ shares can carry a covered call in parallel" : "manage the short put to its end state",
+        rationale: "Expires worthless → keep premium, sell the next put. Assigned → you own 100 shares/contract at the strike (leg 2) and the conventional next move is the covered call. Tested → roll out(/down) for a net credit.",
+        command: both ? ccQuote(s.avgCost != null ? ` — basis ~$${s.avgCost.toFixed(2)}` : "") : rollPlan("put", s.shortPuts[0])
+      },
+      blockers
+    };
+  }
+  if (s.sharesQty >= 100) {
+    const basisNote = s.avgCost != null ? ` ≥ basis $${s.avgCost.toFixed(2)}` : "";
+    return {
+      stage: "shares-uncovered",
+      summary: `Wheel leg 2: holding ${s.sharesQty} shares${s.avgCost != null ? ` (avg $${s.avgCost.toFixed(2)})` : ""}, no short call against them.${extras}`,
+      nextLeg: {
+        action: "sell a covered call against the shares (leg 3)",
+        rationale: `Each contract needs 100 shares in the SAME account (have ${Math.floor(s.sharesQty / 100)} contract(s) of coverage). Strike at/above cost basis keeps an assignment profitable; below basis locks a loss if called.`,
+        command: ccQuote(basisNote)
+      },
+      blockers
+    };
+  }
+  if (s.sharesQty > 0) {
+    return {
+      stage: "sub-100-shares",
+      summary: `${s.sharesQty} share(s) held — below the 100 needed to cover one call.${extras}`,
+      nextLeg: {
+        action: "not wheelable at this size — accumulate to 100 shares, or start a fresh wheel via a cash-secured put",
+        rationale: "Covered calls need 100-share lots. A CSP (leg 1) builds the lot via assignment while collecting premium.",
+        command: cspQuote
+      },
+      blockers
+    };
+  }
+  return {
+    stage: "not-started",
+    summary: `No shares and no wheel legs.${extras}`,
+    nextLeg: {
+      action: "start the wheel at leg 1: sell a cash-secured put",
+      rationale: "Collateral = strike × 100 in settled cash per contract. Assigned → leg 2 (own the shares) → leg 3 (covered call). Pick the strike from the live chain.",
+      command: cspQuote
+    },
+    blockers
+  };
+}
+
+export interface WheelSymbolState extends WheelClassification {
+  account: string | null;
+  accountLabel: string;
+  symbol: string;
+  sharesQty: number;
+  avgCost: number | null;
+  shortPuts: WheelLeg[];
+  shortCalls: WheelLeg[];
+  otherLegs: WheelLeg[];
+}
+
+/**
+ * Composed wheel status across accounts — the shared engine behind the CLI `wheel` command and
+ * the MCP `robinhood_wheel` tool. Scans every trading account (or one), groups shares + option
+ * legs by underlying, classifies each symbol's wheel stage, and emits the next-leg dry-run
+ * command. Reads only; per-account failures degrade to a note instead of throwing.
+ */
+export async function computeWheelState(
+  opts: { symbol?: string; accountNumber?: string } = {},
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults; now?: () => number } = {}
+): Promise<any> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const now = deps.now ?? Date.now;
+  const n = (v: unknown) => Number(v);
+  const wantSymbol = opts.symbol?.toUpperCase();
+
+  // 1. Accounts — transfer/accounts/ is the complete graph; trading accounts only.
+  const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
+  const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+  let accts = rows
+    .filter((a) => (a?.type === "rhs" || a?.type === "ira_roth") && a?.account_number)
+    .map((a) => ({ acct: String(a.account_number), label: String(a.account_name || a.display_title || "") }));
+  if (opts.accountNumber) {
+    accts = accts.filter((a) => a.acct === String(opts.accountNumber));
+    if (!accts.length) throw new Error(`Account ${opts.accountNumber} is not one of your trading accounts.`);
+  }
+
+  const notes: string[] = [];
+  const dteOf = (exp: string | null) =>
+    exp ? Math.max(0, Math.ceil((Date.parse(exp) - now()) / 86_400_000)) : null;
+
+  // 2. Per account: shares by symbol + option legs by underlying (legs are self-describing).
+  const states: WheelSymbolState[] = [];
+  for (const { acct, label } of accts) {
+    const shares = new Map<string, { qty: number; avgCost: number | null }>();
+    const legsBySymbol = new Map<string, WheelLeg[]>();
+    try {
+      const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
+      for (const p of eq) {
+        const qty = n(p?.quantity);
+        if (!p?.symbol || !(qty > 0)) continue;
+        const avg = n(p.average_buy_price);
+        shares.set(String(p.symbol).toUpperCase(), { qty, avgCost: Number.isFinite(avg) && avg > 0 ? avg : null });
+      }
+    } catch (e) { notes.push(`equity positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    try {
+      const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
+      for (const pos of agg) {
+        const sym = String(pos?.symbol ?? "").toUpperCase();
+        const posQty = n(pos?.quantity);
+        if (!sym || !(posQty > 0)) continue;
+        const strategy = String(pos?.strategy ?? "");
+        for (const leg of pos?.legs ?? []) {
+          const side = leg?.position_type === "short" ? "short" : leg?.position_type === "long" ? "long"
+            : strategy.startsWith("short") ? "short" : strategy.startsWith("long") ? "long" : "unknown";
+          const type = leg?.option_type === "put" ? "put" : leg?.option_type === "call" ? "call" : "unknown";
+          const strike = Number.isFinite(n(leg?.strike_price)) ? n(leg?.strike_price) : null;
+          const expiration = leg?.expiration_date ?? null;
+          const list = legsBySymbol.get(sym) ?? [];
+          list.push({
+            optionId: leg?.option_id ?? null, side, type, strike, expiration,
+            dte: dteOf(expiration), contracts: posQty * (n(leg?.ratio_quantity) || 1), strategy
+          });
+          legsBySymbol.set(sym, list);
+        }
+      }
+    } catch (e) { notes.push(`option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+
+    // 3. Symbols worth reporting: requested one, any with option legs, or any 100+ share lot.
+    const symbols = new Set<string>();
+    if (wantSymbol) symbols.add(wantSymbol);
+    else {
+      for (const s of legsBySymbol.keys()) symbols.add(s);
+      for (const [s, v] of shares) if (v.qty >= 100) symbols.add(s);
+    }
+    for (const sym of symbols) {
+      const legs = legsBySymbol.get(sym) ?? [];
+      const input: WheelStateInput = {
+        sharesQty: shares.get(sym)?.qty ?? 0,
+        avgCost: shares.get(sym)?.avgCost ?? null,
+        shortPuts: legs.filter((l) => l.side === "short" && l.type === "put"),
+        shortCalls: legs.filter((l) => l.side === "short" && l.type === "call"),
+        otherLegs: legs.filter((l) => !(l.side === "short" && (l.type === "put" || l.type === "call")))
+      };
+      // Per-account rows only where evidence exists; a requested symbol held nowhere falls
+      // through to the single synthetic "discussion mode" row instead of N empty rows.
+      if (wantSymbol ? input.sharesQty <= 0 && !legs.length : input.sharesQty < 100 && !legs.length) continue;
+      const cls = classifyWheelStage(input, { symbol: sym, accountNumber: acct });
+      states.push({ account: acct, accountLabel: label, symbol: sym, ...input, ...cls });
+    }
+  }
+
+  // 4. Discussion mode: a requested symbol with no position anywhere still gets a not-started plan.
+  if (wantSymbol && !states.length) {
+    const cls = classifyWheelStage(
+      { sharesQty: 0, avgCost: null, shortPuts: [], shortCalls: [], otherLegs: [] },
+      { symbol: wantSymbol }
+    );
+    states.push({ account: null, accountLabel: "(no position in any scanned account)", symbol: wantSymbol, sharesQty: 0, avgCost: null, shortPuts: [], shortCalls: [], otherLegs: [], ...cls });
+  }
+
+  return {
+    symbol: wantSymbol ?? null,
+    accountsScanned: accts.map((a) => "…" + a.acct.slice(-4)),
+    states,
+    notes,
+    reference: WHEEL_DOC,
+    disclaimer: "Descriptive, not prescriptive — evidence + the conventional next leg. Live sends always need both write gates."
+  };
 }
 
 export async function executeCryptoRequest(
@@ -3038,3 +3353,5 @@ export function printTable(rows: Array<Record<string, unknown>>, columns: string
     process.stdout.write(`${columns.map((column, i) => String(row[column] ?? "").padEnd(widths[i] ?? column.length)).join("  ")}\n`);
   }
 }
+
+// made with love by Zayd Khan / cold

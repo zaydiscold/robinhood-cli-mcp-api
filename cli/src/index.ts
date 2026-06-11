@@ -29,6 +29,7 @@ import {
   placeEquityOrder,
   getOrderStatus,
   extractOrderId,
+  computeWheelState,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -1234,11 +1235,25 @@ interface OpenOptionPosition {
   averageOpenPrice: number;
   quantity: number;
   optionId: string;
+  accountNumber: string;
 }
 
 async function loadOpenOptionPositions(): Promise<OpenOptionPosition[]> {
-  const data = await brokerageGetJson(AGG_POSITIONS_URL);
-  const results: any[] = Array.isArray(data.results) ? data.results : [];
+  // The bare aggregate_positions endpoint silently defaults to ONE account (the wrong-account trap).
+  // Enumerate the full owned graph and read per-account in parallel so every contract in every
+  // account shows up; fall back to the bare read only if the graph lookup fails.
+  let results: any[] = [];
+  const owned = await loadOwnedAccounts();
+  if (owned && owned.numbers.size > 0) {
+    const perAcct = await Promise.all([...owned.numbers].map(async (acct) => {
+      try { return (await brokerageGetJson(AGG_POSITIONS_URL, {}, { account_numbers: acct, nonzero: "true" })).results ?? []; }
+      catch { return []; }
+    }));
+    results = perAcct.flat();
+  } else {
+    const data = await brokerageGetJson(AGG_POSITIONS_URL);
+    results = Array.isArray(data.results) ? data.results : [];
+  }
   const open: OpenOptionPosition[] = [];
   for (const position of results) {
     const quantity = num(position.quantity);
@@ -1252,7 +1267,8 @@ async function loadOpenOptionPositions(): Promise<OpenOptionPosition[]> {
       name: `${position.symbol} ${detail}`,
       averageOpenPrice: num(position.average_open_price),
       quantity,
-      optionId
+      optionId,
+      accountNumber: String(position.account_number ?? "")
     });
   }
   return open;
@@ -1488,7 +1504,7 @@ const options = new Command("options").description("Options analytics: position 
 
 options
   .command("positions")
-  .description("Rank your open option positions by return (live read). Premiums and % only — no account totals.")
+  .description("Open option positions ranked in DOLLARS (live read): per-contract value, unrealized $ P&L, day $ change, account, return %, delta.")
   .option("--json", "emit JSON")
   .action(async (opts: { json?: boolean }) => {
     const open = await loadOpenOptionPositions();
@@ -1499,18 +1515,28 @@ options
     const marks = await fetchOptionMarks(open.map((position) => position.optionId));
     const rows = open
       .map((position) => {
-        const mark = num(marks.get(position.optionId)?.adjusted_mark_price);
-        const delta = num(marks.get(position.optionId)?.delta);
+        const m = marks.get(position.optionId) ?? {};
+        const mark = num(m.adjusted_mark_price);
+        const prev = num(m.previous_close_price);
+        const delta = num(m.delta);
+        const valueUsd = Number.isFinite(mark) ? mark * 100 * position.quantity : Number.NaN;
+        const entryPer = position.averageOpenPrice / 100;
         return {
           contract: position.name,
+          acct: position.accountNumber ? `…${position.accountNumber.slice(-4)}` : "—",
           qty: position.quantity,
-          entry: position.averageOpenPrice / 100,
+          entry: entryPer,
           mark,
+          valueUsd,
+          // Unrealized $ = (mark − entry) × 100 × qty; day $ = (mark − previous close) × 100 × qty.
+          plUsd: Number.isFinite(mark) ? (mark - entryPer) * 100 * position.quantity : Number.NaN,
+          dayUsd: Number.isFinite(mark) && Number.isFinite(prev) ? (mark - prev) * 100 * position.quantity : Number.NaN,
           returnPct: optionReturnPct(position.averageOpenPrice, mark),
           delta
         };
       })
-      .sort((a, b) => (Number.isFinite(b.returnPct) ? b.returnPct : -Infinity) - (Number.isFinite(a.returnPct) ? a.returnPct : -Infinity));
+      // Dollars, not percents: rank by unrealized $ P&L so a $6 lot can't outrank a $1,600 call.
+      .sort((a, b) => (Number.isFinite(b.plUsd) ? b.plUsd : -Infinity) - (Number.isFinite(a.plUsd) ? a.plUsd : -Infinity));
     if (opts.json) {
       printJson(rows);
       return;
@@ -1518,16 +1544,22 @@ options
     printTable(
       rows.map((row) => ({
         contract: row.contract,
+        acct: row.acct,
         qty: row.qty,
         entry: usd(row.entry),
         mark: usd(row.mark),
+        value_usd: usd(row.valueUsd),
+        pl_usd: usd(row.plUsd),
+        day_usd: usd(row.dayUsd),
         return: pct(row.returnPct),
         delta: Number.isFinite(row.delta) ? row.delta.toFixed(2) : "—"
       })),
-      ["contract", "qty", "entry", "mark", "return", "delta"]
+      ["contract", "acct", "qty", "entry", "mark", "value_usd", "pl_usd", "day_usd", "return", "delta"]
     );
-    const best = rows.find((row) => Number.isFinite(row.returnPct));
-    if (best) process.stdout.write(`\nBest performer: ${best.contract} at ${pct(best.returnPct)}.\n`);
+    const sum = (xs: number[]) => xs.filter(Number.isFinite).reduce((s, x) => s + x, 0);
+    process.stdout.write(`\nTOTAL: value ${usd(sum(rows.map((r) => r.valueUsd)))} | unrealized ${usd(sum(rows.map((r) => r.plUsd)))} | day ${usd(sum(rows.map((r) => r.dayUsd)))}\n`);
+    if (rows.every((r) => !Number.isFinite(r.dayUsd) || r.dayUsd === 0))
+      process.stdout.write(`NOTE: day $ reads $0 between sessions (options haven't traded yet today) — use \`portfolio\` for last-session attribution.\n`);
   });
 
 options
@@ -2379,6 +2411,16 @@ program
       const t = String(r?.type ?? "").toLowerCase();
       return !r?.is_external && t !== "ach" && Boolean(r?.account_number);
     });
+    // The bulk accounts/ endpoints omit some owned accounts entirely (live: 2 of 5 returned). For any
+    // account in the transfer graph but missing from the typed list, fall back to the per-account
+    // detail endpoint so type/cash/BP are real instead of "unverified". Reads in parallel, degrade per-account.
+    await Promise.all(brokerage
+      .filter((g) => !typeByNum.has(String(g.account_number)))
+      .map(async (g) => {
+        const num = String(g.account_number);
+        const one = await tryBrokerageGetJson("https://api.robinhood.com/accounts/{account_number}/", { account_number: num });
+        if (one.ok && (one.data as any)?.account_number) typeByNum.set(num, one.data as Record<string, any>);
+      }));
     const rows = brokerage.map((g) => {
       const num = String(g.account_number);
       const transferType = String(g?.type ?? "").toLowerCase(); // rhs | ira_roth | ...
@@ -2412,13 +2454,15 @@ program
     printTable(
       rows.map((row) => ({
         account: row.accountNumber,
+        nickname: row.nickname || "—",
         class: row.class,
         cash: usd(num(row.portfolioCash)),
+        buying_power: usd(num(row.buyingPower)),
         margin: row.canMarginBorrow ? "yes" : "no",
         roll: row.canRollOnMargin ? "yes" : "no",
         naked: row.canNakedShort ? "yes" : "no"
       })),
-      ["account", "class", "cash", "margin", "roll", "naked"]
+      ["account", "nickname", "class", "cash", "buying_power", "margin", "roll", "naked"]
     );
     for (const row of rows) process.stdout.write(`\n${row.accountNumber} (${row.class}): ${row.capabilityNote}\n`);
   });
@@ -2676,7 +2720,9 @@ program
     if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
 
     process.stdout.write(`Portfolio P&L — ${r.accounts.length} account(s) — window: ${window}\n`);
-    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n`);
+    if (r.dayWindow?.note) process.stdout.write(`NOTE: ${r.dayWindow.note}\n`);
+    process.stdout.write(`\n`);
     printTable(
       r.accounts.map((a: any) => ({ account: `${a.label} (…${String(a.accountNumber).slice(-4)})`, equity: usd(a.equityUsd), buying_power: usd(a.buyingPower), day_change_usd: usd(a.dayChangeUsd), afterhrs_change_usd: usd(a.afterHoursChangeUsd) }))
         .concat([{ account: r.complete ? "TOTAL" : `TOTAL (partial — ${r.accounts.filter((a: any) => a.partial).length} acct read failed)`, equity: usd(r.totals.equityUsd), buying_power: "", day_change_usd: usd(r.totals.dayChangeUsd), afterhrs_change_usd: usd(r.totals.afterHoursChangeUsd) }]),
@@ -2907,6 +2953,34 @@ program
     }
   });
 
+// ── wheel: where am I in the Wheel, and what's the next leg? (evidence-based, read-only) ──
+program
+  .command("wheel")
+  .argument("[symbol]", "Underlying to inspect (omit to scan every wheel-relevant symbol)")
+  .description("Wheel status from account evidence: shares + short puts (CSP) + short calls (CC) per account, the stage, and the literal next-leg dry-run command. Read-only.")
+  .option("-a, --account <number>", "Limit to one account")
+  .option("--json", "emit JSON")
+  .action(async (symbol: string | undefined, opts: any) => {
+    const r = await computeWheelState({ symbol, accountNumber: opts.account });
+    if (opts.json) {
+      printJson({ generatedAt: new Date().toISOString(), ...r });
+      return;
+    }
+    process.stdout.write(`Wheel status — ${r.states.length} position(s) across ${r.accountsScanned.length} account(s)\n`);
+    for (const s of r.states) {
+      const acct = s.account ? `…${String(s.account).slice(-4)}${s.accountLabel ? ` (${s.accountLabel})` : ""}` : s.accountLabel;
+      process.stdout.write(`\n${s.symbol} — ${acct}\n`);
+      process.stdout.write(`  stage: ${s.stage}\n`);
+      process.stdout.write(`  ${s.summary}\n`);
+      process.stdout.write(`  next: ${s.nextLeg.action}\n`);
+      process.stdout.write(`        ${s.nextLeg.rationale}\n`);
+      if (s.nextLeg.command) process.stdout.write(`  run:  ${s.nextLeg.command}\n`);
+      for (const b of s.blockers) process.stdout.write(`  ⚠️  ${b}\n`);
+    }
+    for (const note of r.notes) process.stdout.write(`\n⚠️  ${note}\n`);
+    process.stdout.write(`\nBackground: ${r.reference} — ${r.disclaimer}\n`);
+  });
+
 const watchlist = new Command("watchlist").description("Inspect your custom watchlists (read)");
 
 watchlist
@@ -3125,3 +3199,5 @@ program.parseAsync(process.argv).catch((error: unknown) => {
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
 });
+
+// made with love by Zayd Khan / cold

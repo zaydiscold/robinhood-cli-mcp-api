@@ -24,18 +24,68 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export ROBINHOOD_ENV_PATH="$REPO_DIR/.env"
 
-command -v python3 >/dev/null || { echo "ERROR: python3 not on PATH" >&2; exit 1; }
+# Detect OS and pick the right Python binary + Chrome base path.
+case "$(uname -s)" in
+    Darwin)
+        PYTHON_BIN="python3"
+        CHROME_BASE="$HOME/Library/Application Support/Google/Chrome"
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        # git-bash / MSYS2 / Cygwin on Windows
+        if command -v python >/dev/null 2>&1; then
+            PYTHON_BIN="python"
+        elif command -v python3 >/dev/null 2>&1; then
+            PYTHON_BIN="python3"
+        else
+            echo "ERROR: python not on PATH" >&2
+            exit 1
+        fi
+        # Windows Chrome profile: %LOCALAPPDATA%\Google\Chrome\User Data
+        # In MSYS/git-bash, LOCALAPPDATA is already set. Fall back to constructing from HOME.
+        if [ -n "${LOCALAPPDATA:-}" ]; then
+            CHROME_BASE="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")/Google/Chrome/User Data"
+        else
+            CHROME_BASE="$HOME/AppData/Local/Google/Chrome/User Data"
+        fi
+        ;;
+    Linux)
+        PYTHON_BIN="python3"
+        CHROME_BASE="$HOME/.config/google-chrome"
+        ;;
+    *)
+        echo "ERROR: unsupported OS ($(uname -s))" >&2
+        exit 1
+        ;;
+esac
+
+# Verify the binary exists.
+command -v "$PYTHON_BIN" >/dev/null || { echo "ERROR: $PYTHON_BIN not on PATH" >&2; exit 1; }
+
+export CHROME_BASE
 
 # Python does the disk scan, writes .env, chmods it, and prints the status — so the
-# token value never passes through the shell. Heredoc goes straight to python3 (no
+# token value never passes through the shell. Heredoc goes straight to python (no
 # nesting inside $(), which trips macOS bash 3.2's paren scanner).
-python3 << 'PYEOF'
+"$PYTHON_BIN" << 'PYEOF'
 import re, json, glob, os, sys, datetime
 
 env_path = os.environ["ROBINHOOD_ENV_PATH"]
-home = os.path.expanduser("~")
-base = os.path.join(home, "Library/Application Support/Google/Chrome")
+base = os.environ.get("CHROME_BASE")
 
+if not base:
+    # Fallback: try macOS default (for bare invocation without the wrapper)
+    home = os.path.expanduser("~")
+    if sys.platform == "darwin":
+        base = os.path.join(home, "Library/Application Support/Google/Chrome")
+    elif sys.platform == "win32":
+        base = os.path.join(os.environ.get("LOCALAPPDATA", os.path.join(home, "AppData/Local")),
+                            "Google", "Chrome", "User Data")
+    else:
+        base = os.path.join(home, ".config/google-chrome")
+
+# On Windows, the base IS "User Data" and profiles are direct children.
+# On macOS/Linux, profiles are direct children of the Chrome base.
+# The glob below handles both: "<base>/*/Local Storage/leveldb"
 files = []
 for prof in glob.glob(os.path.join(base, "*", "Local Storage", "leveldb")):
     files += glob.glob(os.path.join(prof, "*.ldb"))
@@ -93,7 +143,10 @@ env = (
 )
 with open(env_path, "w") as fh:
     fh.write(env)
-os.chmod(env_path, 0o600)
+try:
+    os.chmod(env_path, 0o600)
+except OSError:
+    pass  # chmod on Windows is no-op; ignore
 print("[refresh-auth] wrote %s (OK len=%d type=%s exp_days=%.1f)"
       % (env_path, len(tok), ttype, exp / 86400))
 PYEOF

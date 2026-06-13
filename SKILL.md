@@ -1044,9 +1044,12 @@ Verified live, not theorized:
   — the version gate is equity-only.
 - **Lifecycle (verified):** POST `options/orders/` (`201 queued`) → `options/orders/{0}/cancel/`
   (`200`) → re-read (`cancelled`). Always use a far-from-market limit for test orders so they can't fill.
-- **DRIP toggle is NOT `PATCH corp_actions/drip/enrollment/{num}/`** — GET-only; PATCH/POST/PUT → `405`
-  (re-verified). DRIP/cash-sweep/stock-lending/margin **write** endpoints remain unproven and need a
-  fresh browser capture before any automation. Treat them as research, not supported writes.
+- **DRIP toggle is NOT `PATCH corp_actions/drip/enrollment/{num}/`** — that one is GET-only; PATCH/POST/PUT → `405`
+  (re-verified). The REAL DRIP write is `PATCH corp_actions/drip/account_settings/{account_number}/` (account-wide)
+  / `.../instrument_settings/{account_number}/{instrument_id}/` (per-stock), body `{"drip_enabled":bool}` — captured
+  + wired (first-class `settings drip`; see `docs/account-settings-capability-map-2026-06-03.md`). Cash-sweep /
+  stock-lending / margin **write** endpoints remain unproven and need a fresh browser capture before any
+  automation — treat THOSE as research, not supported writes.
 
 ### Option UUIDs — always bulk-enumerate (default behavior, no prompt needed)
 
@@ -1252,9 +1255,9 @@ documented. To extend it safely:
 
 ## MCP Server
 
-48 tools (live truth: `tools/list`) surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_wheel` (evidence-based Wheel stage + next-leg command), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+50 tools (live truth: `tools/list`) surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_wheel` (evidence-based Wheel stage + next-leg command), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
-> **Count note:** the *source/dist* registers 48 tools (live truth: `tools/list`). A *running* MCP process started before the
+> **Count note:** the *source/dist* registers 50 tools (live truth: `tools/list`). A *running* MCP process started before the
 > last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
 > the server) after pulling, then confirm the client's `tools/list` count matches the current build.
 

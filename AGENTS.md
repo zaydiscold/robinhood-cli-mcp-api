@@ -58,7 +58,7 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
    manual login. (Details in §1.)
 
 4. **Two front doors** — the **CLI** (`cli/dist/index.js`, for humans/scripts) and the
-   **MCP server** (`mcp/dist/server.js`, 38 tools for agents incl. first-class parity tools — live truth is
+   **MCP server** (`mcp/dist/server.js`, 50 tools for agents incl. first-class parity tools — live truth is
    `tools/list`; reload a running server with `/reload-mcp` after pulling, or it advertises its old count). Both
    are thin wrappers over the engine — the order path (`placeEquityOrder`) and the wheel engine
    (`computeWheelState`) are literally the same functions on both surfaces.
@@ -614,7 +614,7 @@ settings/permissions, never print the token value.
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` (38 tools incl. accounts/positions/portfolio/buy/sell/cancel/order-status/buying-power/wheel/options-holdings/options-inspect/settings/recurring/quote/history/watchlist/options-enumerate parity: route inspection, browser/account
+Tools surface as `mcp__robinhood-cli__*` (50 tools incl. accounts/positions/portfolio/buy/sell/cancel/order-status/buying-power/wheel/options-holdings/options-inspect/settings/recurring/quote/history/watchlist/options-enumerate parity: route inspection, browser/account
 context, options strategy workflows/plans, exact-contract link bundles, stock
 profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute). `robinhood_buy`/`robinhood_sell`
 run the same shared engine as the CLI commands — pending-order dedup (5-min window; `force: true` skips),

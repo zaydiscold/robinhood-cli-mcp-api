@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/accounts/{account_number}/buying_power_breakdown
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

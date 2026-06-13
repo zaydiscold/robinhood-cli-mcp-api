@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { createPrivateKey, sign } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createPrivateKey, randomUUID, sign } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -2429,6 +2429,10 @@ export async function gatedBrokerageWrite(opts: {
   body?: unknown;
   dryRun?: boolean;
   liveWrite?: boolean;
+  /** Human context for the universal write log (e.g. "options order: GOOGL call debit spread"). */
+  logContext?: string;
+  /** Set by callers that write their OWN richer log entry (placeEquityOrder) to avoid double-logging. */
+  skipTradeLog?: boolean;
 }): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
   const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
@@ -2441,6 +2445,25 @@ export async function gatedBrokerageWrite(opts: {
   const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
   const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
   const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
+  // UNIVERSAL WRITE LOG (added 2026-06-11): every LIVE write that leaves this engine — options
+  // orders, cancels, settings, recurring, raw `brokerage execute` writes, from BOTH the CLI and the
+  // MCP — gets a machine log entry. Equity buy/sell skip here (skipTradeLog) because
+  // placeEquityOrder writes its own richer entry. Before this, only equity orders auto-logged and
+  // every options trade depended on manual discipline (which decays). Best-effort, never throws.
+  if (!effectiveDryRun && !opts.skipTradeLog) {
+    const bodyStr = typeof result.body === "string" ? result.body : JSON.stringify(result.body ?? "");
+    await logTrade({
+      when: new Date().toISOString(),
+      kind: "live-write",
+      context: opts.logContext ?? null,
+      method: opts.method,
+      route: route.url,
+      params: opts.params ?? {},
+      status: result.status,
+      requestBody: opts.body ?? null,
+      responseHead: bodyStr ? bodyStr.slice(0, 500) : null
+    });
+  }
   return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason, body: result.body };
 }
 
@@ -2514,6 +2537,8 @@ export interface EquityOrderResult {
   estimatedPrice: number;
   estimatedTotal: number;
   type: "market" | "limit";
+  /** True when an OTC order with no explicit limit was auto-limited at the marketable side (buy=ask, sell=bid). */
+  otcAutoLimit: boolean;
   live: boolean;
   dryRun: boolean;
   refId: string;
@@ -2521,13 +2546,16 @@ export interface EquityOrderResult {
   state: string | null;
   httpStatus: number | string;
   result: Awaited<ReturnType<typeof gatedBrokerageWrite>>;
+  /** Post-send order-history re-read (live sends only) — failure mode #20 encoded in code. */
+  evidence?: OrderEvidence;
 }
 
 /**
  * Place (or dry-run) a simple equity order. One source of truth for both surfaces:
  *   1. amount XOR shares validation
  *   2. instrument resolution + OTC/fractional guard (failure mode #4 — dollar orders on
- *      non-`tradable` fractional names are impossible; switch to whole shares + limit)
+ *      non-`tradable` fractional names are impossible IN BOTH DIRECTIONS; switch to whole
+ *      shares — OTC then auto-limits at the marketable side: BUY at the ask, SELL at the bid)
  *   3. live quote with a hard validity check (a dead quote must never become qty=Infinity)
  *   4. pending-duplicate check (live sends only; 5-min window; force skips)
  *   5. ref_id idempotency (safe to retry the SAME ref_id on 429 — nothing was placed)
@@ -2550,7 +2578,9 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   const iid = inst.id;
   const otc = Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
   if (input.amount && inst.fractional_tradability && inst.fractional_tradability !== "tradable") {
-    throw new Error(`${symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional order. Use shares (whole qty)${otc ? " (OTC: limit at the ask)" : ""}.`);
+    // BOTH directions: a "$X of <OTC>" dollar/fractional order is impossible whether buying or
+    // selling — switch to whole shares (the engine then auto-limits at the marketable side).
+    throw new Error(`${symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional ${side} order. Use shares (whole qty)${otc ? ` (OTC: auto-limits at the ${side === "buy" ? "ask" : "bid"})` : ""}.`);
   }
 
   // 2. Quote — hard-fail on a dead/missing quote so sizing math can't divide by zero.
@@ -2562,10 +2592,30 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   const rawShares = input.amount ? Number(input.amount) / last : Number(input.shares);
   const shares = Number(rawShares.toFixed(4));
   if (!Number.isFinite(shares) || shares <= 0) throw new Error(`Computed share quantity is invalid (${rawShares}) for ${symbol}`);
+  if (otc && !Number.isInteger(shares)) {
+    throw new Error(`${symbol}: OTC/ADR names trade in WHOLE shares only — got ${shares}. Round to a whole quantity.`);
+  }
 
-  const isMarket = input.limitPrice == null;
-  const tif = isMarket ? "gfd" : "gtc";
-  const price = isMarket ? last.toFixed(2) : Number(input.limitPrice).toFixed(2);
+  // 3b. OTC marketable-limit guard, BOTH directions (verified live: OTC rejects market orders).
+  // Without an explicit limit price, auto-limit at the marketable side of the live book:
+  // BUY at the ASK, SELL at the BID (never the ask — that limit may sit unfilled above the
+  // market). Falls back to last on a one-sided/dead book; the dead-quote hard-fail above
+  // already guarantees `last` is usable.
+  let effectiveLimit = input.limitPrice;
+  let otcAutoLimit = false;
+  if (otc && effectiveLimit == null) {
+    const ask = Number(q?.ask_price);
+    const bid = Number(q?.bid_price);
+    effectiveLimit = side === "buy"
+      ? (Number.isFinite(ask) && ask > 0 ? ask : last)
+      : (Number.isFinite(bid) && bid > 0 ? bid : last);
+    otcAutoLimit = true;
+  }
+
+  const isMarket = effectiveLimit == null;
+  // An OTC auto-limit is market-intent (fill today), so it keeps gfd; explicit limits stay gtc.
+  const tif = isMarket || otcAutoLimit ? "gfd" : "gtc";
+  const price = isMarket ? last.toFixed(2) : Number(effectiveLimit).toFixed(2);
   const liveWrite = Boolean(input.liveWrite);
 
   // 4. Dedup: pending same-side orders on this instrument+account inside the window block the
@@ -2595,6 +2645,7 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   // 5. Send (ref_id = broker-level idempotency; a 429 retries the SAME ref_id safely).
   const refId = `${symbol}-${input.accountNumber}-${now()}`;
   const result = await write({
+    skipTradeLog: true, // placeEquityOrder writes its own richer log entry below — avoid double-logging
     url: "https://api.robinhood.com/orders/",
     method: "POST",
     body: {
@@ -2626,22 +2677,42 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
         ts: new Date().toISOString(),
         symbol, account: input.accountNumber, side,
         type: isMarket ? "market" : "limit",
-        shares, price: isMarket ? last : Number(input.limitPrice),
+        shares, price: isMarket ? last : Number(effectiveLimit),
         estimatedTotal: shares * last, refId,
         orderId: (rb as any)?.id ?? null, state: (rb as any)?.state ?? null, httpStatus: result.status
       });
     } catch { /* best-effort */ }
   }
 
+  // 7. POST-SEND EVIDENCE (live sends only): after a 2xx, re-read the order from order history so
+  // the result carries proof, not just an HTTP status (failure mode #20 — a lone 201 is not proof).
+  // A failed/absent re-read is LOUD: confirmed:false + warning, never a silent success.
+  // Zayd Khan // cold // www.zayd.wtf
+  let evidence: OrderEvidence | undefined;
+  if (!result.dryRun) {
+    const sentId = (rb as any)?.id ?? null;
+    const status = Number(result.status);
+    if (status >= 200 && status < 300 && sentId) {
+      evidence = await verifyOrderEvidence(String(sentId), "equity", { getJson });
+    } else {
+      evidence = {
+        confirmed: false, id: sentId, state: (rb as any)?.state ?? null,
+        warning: `EVIDENCE UNCONFIRMED: live send returned ${result.status}${sentId ? "" : " with no order id"} — treat as NOT executed until it appears in order history (the only proof an order happened).`
+      };
+    }
+  }
+
   return {
     symbol, account: input.accountNumber, side, shares,
     estimatedPrice: last, estimatedTotal: shares * last,
     type: isMarket ? "market" : "limit",
+    otcAutoLimit,
     live: !result.dryRun, dryRun: result.dryRun, refId,
     orderId: (rb as any)?.id ?? (rb as any)?.url ?? null,
     state: (rb as any)?.state ?? null,
     httpStatus: result.status,
-    result
+    result,
+    evidence
   };
 }
 
@@ -2663,6 +2734,695 @@ export async function getOrderStatus(idOrUrl: string, deps: { getJson?: typeof b
     }
   }
   return order;
+}
+
+// ───────────────────── Order evidence + cancel + panic + pretrade engines (shared CLI + MCP) ─────────────────────
+// Zayd Khan // cold // www.zayd.wtf
+//
+// Failure mode #20 ("order history is the only proof an order happened") encoded as CODE, not
+// discipline: every live send/cancel re-reads the order from order history and carries the result
+// as `evidence`. A failed or absent re-read is LOUD (confirmed:false + warning), never silent.
+
+export type OrderKind = "equity" | "options";
+
+export interface OrderEvidence {
+  /** True only when the order was re-read from brokerage order history after the live call. */
+  confirmed: boolean;
+  id: string | null;
+  state: string | null;
+  /** Present when confirmed is false (or the state contradicts the action) — surface it, never swallow it. */
+  warning?: string;
+}
+
+/**
+ * Re-read one order from brokerage order history (orders/{id}/ or options/orders/{id}/) and report
+ * whether it actually exists there. This is the order-evidence rule as a function: a 201 alone is
+ * NOT proof; the history record is. Never throws — a failed re-read returns confirmed:false with a
+ * loud warning so callers can't mistake "couldn't verify" for "verified".
+ */
+export async function verifyOrderEvidence(
+  idOrUrl: string,
+  kind: OrderKind = "equity",
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<OrderEvidence> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const id = extractOrderId(idOrUrl);
+  const url = kind === "options"
+    ? "https://api.robinhood.com/options/orders/{0}/"
+    : "https://api.robinhood.com/orders/{0}/";
+  try {
+    const order = await getJson(url, { "0": id });
+    if (order && (order.id || order.state)) {
+      return { confirmed: true, id: order.id ?? id, state: order.state ?? null };
+    }
+    return {
+      confirmed: false, id, state: null,
+      warning: `EVIDENCE UNCONFIRMED: ${kind} order ${id} re-read returned no order record — do NOT report this action as executed; brokerage order history is the only proof (failure mode #20).`
+    };
+  } catch (error) {
+    return {
+      confirmed: false, id, state: null,
+      warning: `EVIDENCE UNCONFIRMED: ${kind} order ${id} re-read failed (${(error as Error).message.slice(0, 100)}) — do NOT report this action as executed; check order history directly (failure mode #20).`
+    };
+  }
+}
+
+export interface CancelOrderResult {
+  orderId: string;
+  kind: OrderKind;
+  live: boolean;
+  dryRun: boolean;
+  httpStatus: number | string;
+  state: string | null;
+  /** Post-cancel order-history re-read (live sends only). */
+  evidence?: OrderEvidence;
+  gateReason?: string;
+}
+
+/**
+ * Shared cancel path for equity AND options orders — single source for the CLI `cancel` command,
+ * the MCP `robinhood_cancel` tool, and `panicCancelAll`. Double-gated via gatedBrokerageWrite
+ * (dry-run by default; live needs liveWrite + ROBINHOOD_ALLOW_LIVE_WRITE=1). After a live 2xx it
+ * re-reads the order and reports evidence; a cancel whose re-read is not cancelled/pending gets a
+ * warning (it may have filled before the cancel landed).
+ */
+export async function cancelOrder(
+  input: { idOrUrl: string; kind?: OrderKind; liveWrite?: boolean; dryRun?: boolean; logContext?: string },
+  deps: { write?: typeof gatedBrokerageWrite; getJson?: typeof brokerageGetJson } = {}
+): Promise<CancelOrderResult> {
+  const write = deps.write ?? gatedBrokerageWrite;
+  const kind: OrderKind = input.kind ?? "equity";
+  const id = extractOrderId(input.idOrUrl);
+  const url = kind === "options"
+    ? "https://api.robinhood.com/options/orders/{0}/cancel/"
+    : "https://api.robinhood.com/orders/{0}/cancel/";
+  const liveWrite = Boolean(input.liveWrite);
+  const result = await write({
+    url, method: "POST", params: { "0": id },
+    dryRun: input.dryRun ?? !liveWrite, liveWrite,
+    logContext: input.logContext ?? `cancel ${kind} order ${id}`
+  });
+  const rb = (() => {
+    try { return typeof result.body === "string" ? JSON.parse(result.body) : result.body; }
+    catch { return undefined; }
+  })();
+  let evidence: OrderEvidence | undefined;
+  if (!result.dryRun) {
+    const status = Number(result.status);
+    if (status >= 200 && status < 300) {
+      evidence = await verifyOrderEvidence(id, kind, deps);
+      if (evidence.confirmed && evidence.state && !/cancel/i.test(evidence.state)) {
+        evidence = {
+          ...evidence,
+          warning: `Cancel accepted (${result.status}) but the order re-reads as '${evidence.state}' — it may have filled before the cancel landed; verify in order history.`
+        };
+      }
+    } else {
+      evidence = {
+        confirmed: false, id, state: (rb as any)?.state ?? null,
+        warning: `EVIDENCE UNCONFIRMED: cancel returned ${result.status} — the order may still be open; check order history.`
+      };
+    }
+  }
+  return {
+    orderId: id, kind, live: !result.dryRun, dryRun: result.dryRun,
+    httpStatus: result.status, state: (rb as any)?.state ?? null, evidence, gateReason: result.reason
+  };
+}
+
+// ── Open-order enumeration (orders open + panic's read half) ──────────────────────────────────
+
+/** States Robinhood reports for not-yet-terminal orders (verified live: options/orders/?states= accepts a comma list). */
+export const OPEN_ORDER_STATES = ["queued", "unconfirmed", "confirmed", "partially_filled"] as const;
+const TERMINAL_ORDER_STATES = new Set(["filled", "cancelled", "rejected", "failed", "expired", "voided"]);
+
+/** True when an order state is non-terminal (open/pending). Unknown states count as open — safer for panic. */
+export function isOpenOrderState(state: unknown): boolean {
+  const s = String(state ?? "").toLowerCase();
+  return s !== "" && !TERMINAL_ORDER_STATES.has(s);
+}
+
+export interface OpenOrderRow {
+  kind: OrderKind;
+  id: string;
+  accountNumber: string;
+  accountLabel: string;
+  symbol: string;
+  description: string;
+  side: string | null;
+  state: string;
+  quantity: number;
+  /** Limit price per share/contract (NaN for market). */
+  price: number;
+  /** Order notional in dollars (options ×100). NaN when unpriceable. */
+  notionalUsd: number;
+  timeInForce: string | null;
+  createdAt: string | null;
+  ageHours: number | null;
+  cancelCommand: string;
+}
+
+/**
+ * Every open/pending order across ALL owned accounts (or one): equity orders/ (is_closed=false)
+ * + options/orders/ (states=queued,confirmed,unconfirmed,partially_filled), symbol-resolved
+ * (equity instrument UUIDs batch-joined), with age, TIF, limit, and the exact cancel command.
+ * Shared by the CLI `orders open`, `panic`, and the MCP robinhood_orders_open/robinhood_panic.
+ * Read-only; per-account failures degrade to warnings.
+ */
+export async function listOpenOrders(
+  opts: { accountNumber?: string } = {},
+  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {}
+): Promise<{ accountsScanned: string[]; orders: OpenOrderRow[]; warnings: string[] }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const now = deps.now ?? Date.now;
+  const n = (v: unknown) => Number(v);
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const warnings: string[] = [];
+  const orders: OpenOrderRow[] = [];
+  const ageOf = (created: unknown): number | null => {
+    const t = Date.parse(String(created ?? ""));
+    return Number.isFinite(t) ? Math.round(((now() - t) / 3_600_000) * 10) / 10 : null;
+  };
+
+  for (const { acct, label } of accts) {
+    try {
+      const eq = await getJson("https://api.robinhood.com/orders/", {}, { account_numbers: acct, is_closed: "false" });
+      for (const o of (eq?.results ?? []).filter((r: any) => isOpenOrderState(r?.state))) {
+        const qty = n(o.quantity);
+        const price = o.price != null ? n(o.price) : Number.NaN;
+        orders.push({
+          kind: "equity", id: String(o.id ?? ""), accountNumber: acct, accountLabel: label,
+          symbol: o.symbol ?? String(o.instrument_id ?? o.instrument ?? "?"), // resolved below if UUID
+          description: `${o.side ?? "?"} ${o.quantity ?? "?"} sh ${o.type ?? "?"}${Number.isFinite(price) ? ` @ $${price.toFixed(2)}` : ""}`,
+          side: o.side ?? null, state: String(o.state ?? "?"), quantity: qty, price,
+          notionalUsd: Number.isFinite(price) && Number.isFinite(qty) ? price * qty : Number.NaN,
+          timeInForce: o.time_in_force ?? null, createdAt: o.created_at ?? null, ageHours: ageOf(o.created_at),
+          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind equity   # dry-run; add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to send`
+        });
+      }
+    } catch (e) { warnings.push(`equity open-orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    try {
+      const op = await getJson("https://api.robinhood.com/options/orders/", {}, { account_numbers: acct, states: OPEN_ORDER_STATES.join(",") });
+      for (const o of (op?.results ?? []).filter((r: any) => isOpenOrderState(r?.state))) {
+        const qty = n(o.quantity);
+        const price = o.price != null ? n(o.price) : Number.NaN;
+        const strat = o.opening_strategy ?? o.closing_strategy ?? "";
+        orders.push({
+          kind: "options", id: String(o.id ?? ""), accountNumber: acct, accountLabel: label,
+          symbol: o.chain_symbol ?? "?",
+          description: `${strat} ${o.direction ? `(${o.direction})` : ""} ${o.quantity ?? "?"}×${Number.isFinite(price) ? ` @ $${price.toFixed(2)}` : ""}`.trim(),
+          side: o.direction ?? null, state: String(o.state ?? "?"), quantity: qty, price,
+          notionalUsd: Number.isFinite(price) && Number.isFinite(qty) ? price * qty * 100 : Number.NaN,
+          timeInForce: o.time_in_force ?? null, createdAt: o.created_at ?? null, ageHours: ageOf(o.created_at),
+          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind options   # dry-run; add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to send`
+        });
+      }
+    } catch (e) { warnings.push(`options open-orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+  }
+
+  // Equity orders carry instrument UUIDs, not tickers — batch-resolve any unresolved symbols.
+  const unresolved = orders.filter((o) => o.kind === "equity" && /[0-9a-f]{8}-[0-9a-f]{4}/i.test(o.symbol));
+  if (unresolved.length) {
+    try {
+      const ids = [...new Set(unresolved.map((o) => {
+        const m = /instruments\/([0-9a-f-]{8,})/i.exec(o.symbol);
+        return m ? m[1] : o.symbol;
+      }))];
+      const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: ids.join(",") });
+      const bySym = new Map<string, string>();
+      for (const r of data?.results ?? []) if (r?.id && r?.symbol) bySym.set(String(r.id), String(r.symbol));
+      for (const o of unresolved) {
+        const m = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(o.symbol);
+        const sym = m ? bySym.get(m[1]) : undefined;
+        if (sym) o.symbol = sym;
+      }
+    } catch { warnings.push("equity instrument→ticker resolution failed — some open orders show UUIDs"); }
+  }
+
+  orders.sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
+  return { accountsScanned: accts.map((a) => a.acct), orders, warnings };
+}
+
+export interface PanicCancelRecord {
+  httpStatus: number | string;
+  dryRun: boolean;
+  state: string | null;
+  evidence?: OrderEvidence;
+  gateReason?: string;
+  error?: string;
+}
+
+export interface PanicResult {
+  dryRun: boolean;
+  accountsScanned: string[];
+  found: number;
+  cancelled: number;
+  failed: number;
+  orders: Array<OpenOrderRow & { cancel: PanicCancelRecord }>;
+  warnings: string[];
+  summary: string;
+}
+
+/**
+ * PANIC: enumerate every open/pending order across ALL owned accounts and cancel each one —
+ * every cancel individually double-gated through gatedBrokerageWrite (logContext "panic
+ * cancel-all"). Dry-run by default: shows the full would-cancel list and sends NOTHING; a live
+ * run needs liveWrite + ROBINHOOD_ALLOW_LIVE_WRITE=1 and re-reads each order for evidence.
+ * One failed cancel never stops the sweep.
+ */
+export async function panicCancelAll(
+  opts: { accountNumber?: string; liveWrite?: boolean; dryRun?: boolean } = {},
+  deps: { getJson?: typeof brokerageGetJson; write?: typeof gatedBrokerageWrite; now?: () => number } = {}
+): Promise<PanicResult> {
+  const open = await listOpenOrders({ accountNumber: opts.accountNumber }, deps);
+  const liveWrite = Boolean(opts.liveWrite);
+  const rows: Array<OpenOrderRow & { cancel: PanicCancelRecord }> = [];
+  let cancelled = 0;
+  let failed = 0;
+  for (const o of open.orders) {
+    try {
+      const r = await cancelOrder({
+        idOrUrl: o.id, kind: o.kind, liveWrite,
+        dryRun: opts.dryRun ?? !liveWrite,
+        logContext: `panic cancel-all: ${o.kind} ${o.symbol} ${o.description} (acct …${o.accountNumber.slice(-4)})`
+      }, deps);
+      if (!r.dryRun) {
+        const ok = Number(r.httpStatus) >= 200 && Number(r.httpStatus) < 300 && r.evidence?.confirmed !== false;
+        if (ok) cancelled++; else failed++;
+      }
+      rows.push({ ...o, cancel: { httpStatus: r.httpStatus, dryRun: r.dryRun, state: r.state, evidence: r.evidence, gateReason: r.gateReason } });
+    } catch (error) {
+      failed++;
+      rows.push({ ...o, cancel: { httpStatus: "error", dryRun: !liveWrite, state: null, error: (error as Error).message } });
+    }
+  }
+  const dryRun = rows.length > 0 ? rows.every((r) => r.cancel.dryRun) : !(liveWrite && process.env.ROBINHOOD_ALLOW_LIVE_WRITE === "1");
+  const summary = rows.length === 0
+    ? `No open/pending orders found across ${open.accountsScanned.length} account(s) — nothing to cancel.`
+    : dryRun
+      ? `DRY RUN: ${rows.length} open order(s) WOULD be cancelled — nothing was sent. Re-run with --live-write (liveWrite:true) AND ROBINHOOD_ALLOW_LIVE_WRITE=1 to cancel for real.`
+      : `${rows.length} open order(s) found: ${cancelled} cancelled, ${failed} failed (evidence re-read per cancel; order history is the source of truth).`;
+  return { dryRun, accountsScanned: open.accountsScanned, found: rows.length, cancelled, failed, orders: rows, warnings: open.warnings, summary };
+}
+
+// ── Account capability classification (shared by `accounts`, pretrade) ───────────────────────
+
+/** Capability class for an account record (cash vs margin vs IRA) — moved here from the CLI so pretrade shares it. */
+export function accountCapabilities(account: Record<string, any>): {
+  canMarginBorrow: boolean;
+  canRollOnMargin: boolean;
+  canNakedShort: boolean;
+  note: string;
+} {
+  const type = String(account?.type ?? "").toLowerCase();
+  const brokType = String(account?.brokerage_account_type ?? "").toLowerCase();
+  const isIra = brokType.includes("ira") || brokType.includes("roth") || type.includes("ira") || type.includes("roth");
+  const isMargin = type === "margin" && !isIra;
+  if (isIra) {
+    return {
+      canMarginBorrow: false,
+      canRollOnMargin: false,
+      canNakedShort: false,
+      note: "IRA: long options, defined-risk spreads, and covered calls only — no margin borrowing and no naked/undefined-risk shorts."
+    };
+  }
+  if (isMargin) {
+    return {
+      canMarginBorrow: true,
+      canRollOnMargin: true,
+      canNakedShort: true,
+      note: "Margin: can borrow, roll, and run spreads/shorts that need buying power. PDT lifted on RH - no $25k day-trade cap (FINRA eliminated it 2026-06-04); maintenance margin still applies."
+    };
+  }
+  return {
+    canMarginBorrow: false,
+    canRollOnMargin: false,
+    canNakedShort: false,
+    note: "Cash: buy/sell, cash-secured puts, covered calls, and debit spreads only. No margin borrowing, no naked/undefined-risk shorts, and no margin rolls — rolling is limited to closing then re-opening with SETTLED cash (T+1; watch good-faith violations)."
+  };
+}
+
+// ── Pre-trade checklist engine ─────────────────────────────────────────────────────────────────
+
+export type PretradeStatus = "PASS" | "WARN" | "BLOCK" | "MANUAL" | "SKIP";
+
+export interface PretradeCheck {
+  id: string;
+  status: PretradeStatus;
+  detail: string;
+}
+
+export interface PretradeReport {
+  accountNumber: string;
+  accountClass: string | null;
+  checks: PretradeCheck[];
+  clear: boolean;
+  summary: string;
+  resolved: Record<string, unknown>;
+  note: string;
+}
+
+export interface PretradeInput {
+  accountNumber: string;
+  symbol?: string;
+  chainId?: string;
+  strike?: number;
+  expiration?: string;
+  optionType?: "call" | "put";
+  limitPrice?: number;
+}
+
+/**
+ * Pre-trade PASS/WARN/BLOCK checklist — every check it can run with the inputs given, each
+ * degrading independently (a failed read is a WARN, never a crash):
+ *   (a) account exists + capability class (cash/margin/IRA gating)
+ *   (b) buying_power_breakdown (+ the overnight-BP note for GTC option opens)
+ *   (c) options buying power / fees / collateral (readOptionsOrderFlow; collateral when chain known)
+ *   (d) min-tick vs --limit-price (the ARKG $0.05 trap; reads options/chains/{id} min_ticks)
+ *   (e) marketability — a POST, so it is surfaced as a manual gated command, NEVER sent from here
+ *   (f) OTC/fractional guard for the equity symbol
+ *   (+) exact-contract existence when strike/expiration/type are given
+ * STRICTLY READ-ONLY: this engine never POSTs anything. Summary: "CLEAR TO BUILD ORDER" or
+ * "BLOCKED: <reasons>" (only BLOCK blocks; WARN/MANUAL/SKIP are advisory).
+ */
+export async function runPretradeChecks(
+  opts: PretradeInput,
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {}
+): Promise<PretradeReport> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const n = (v: unknown) => Number(v);
+  const checks: PretradeCheck[] = [];
+  const resolved: Record<string, unknown> = {};
+  let accountClass: string | null = null;
+  const acct = String(opts.accountNumber);
+
+  // (a) account exists + capability class
+  try {
+    const accts = await listOwnedTradingAccounts(getJson);
+    const hit = accts.find((a) => a.acct === acct);
+    if (!hit) {
+      checks.push({ id: "account", status: "BLOCK", detail: `Account ${acct} is not one of your trading accounts (${accts.map((a) => "…" + a.acct.slice(-4)).join(", ")}) — wrong-account risk; refusing to plan against it.` });
+    } else {
+      // transfer graph type distinguishes IRA; cash/margin needs the per-account detail read.
+      const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
+      const rows: any[] = Array.isArray(graph?.results) ? graph.results : [];
+      const graphRow = rows.find((r) => String(r?.account_number) === acct);
+      const isIra = String(graphRow?.type ?? "").includes("ira");
+      let detail: Record<string, any> = {};
+      try { detail = await getJson("https://api.robinhood.com/accounts/{account_number}/", { account_number: acct }); } catch { /* degrade to graph type */ }
+      const acctRecord = { ...detail, ...(isIra ? { brokerage_account_type: "ira_roth" } : {}) };
+      const caps = accountCapabilities(acctRecord);
+      accountClass = isIra ? "ira" : String(detail?.type ?? "unverified").toLowerCase();
+      resolved.accountClass = accountClass;
+      resolved.accountLabel = hit.label;
+      checks.push({ id: "account", status: "PASS", detail: `Account …${acct.slice(-4)}${hit.label ? ` (${hit.label})` : ""} owned; class=${accountClass}. ${caps.note}` });
+    }
+  } catch (e) { checks.push({ id: "account", status: "WARN", detail: `account check failed: ${(e as Error).message.slice(0, 80)}` }); }
+
+  // (b) buying power breakdown
+  try {
+    const bp = await getJson("https://api.robinhood.com/accounts/{account_number}/buying_power_breakdown", { account_number: acct });
+    const regular = n(bp?.buying_power);
+    resolved.buyingPower = regular;
+    checks.push({
+      id: "buying-power", status: Number.isFinite(regular) ? "PASS" : "WARN",
+      detail: `Regular BP $${Number.isFinite(regular) ? regular.toFixed(2) : "?"}; intraday $${Number.isFinite(n(bp?.intraday_buying_power)) ? n(bp.intraday_buying_power).toFixed(2) : "?"}. NOTE: GTC option OPENS are gated by OVERNIGHT options buying power, not regular BP — regular BP looking fine does not mean a GTC open clears (see options-buying-power check).`
+    });
+  } catch (e) { checks.push({ id: "buying-power", status: "WARN", detail: `buying_power_breakdown read failed: ${(e as Error).message.slice(0, 80)}` }); }
+
+  // Resolve the chain when only a symbol was given (needed for collateral + min-tick).
+  let chainId = opts.chainId;
+  let instrument: any;
+  if (opts.symbol) {
+    try {
+      instrument = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: opts.symbol.toUpperCase() })).results?.[0];
+      if (instrument && !chainId && instrument.tradable_chain_id) chainId = String(instrument.tradable_chain_id);
+      if (chainId) resolved.chainId = chainId;
+    } catch { /* the dependent checks degrade below */ }
+  }
+
+  // (c) options buying power / fees / collateral — shared pre-trade reads, each degrades inside.
+  try {
+    const flow = await readOptionsOrderFlow({ accountNumber: acct, chainId }, { getJson });
+    const obp = n(flow.buyingPower?.options_buying_power ?? flow.buyingPower?.buying_power ?? flow.buyingPower?.amount);
+    checks.push({
+      id: "options-buying-power",
+      status: flow.buyingPower ? "PASS" : "WARN",
+      detail: flow.buyingPower
+        ? `Options buying power read OK${Number.isFinite(obp) ? ` ($${obp.toFixed(2)})` : ""} — this (and overnight BP for GTC opens) is the real gate on option opens.`
+        : `options buying power unavailable: ${flow.warnings.join("; ").slice(0, 100)}`
+    });
+    checks.push({
+      id: "collateral",
+      status: flow.collateral ? "PASS" : chainId ? "WARN" : "SKIP",
+      detail: flow.collateral
+        ? `Collateral requirements read OK${chainId ? ` for chain ${chainId}` : " (account-level)"} — covered calls need 100 shares/contract in the SAME account; CSPs need the cash.`
+        : chainId
+          ? `collateral read failed: ${flow.warnings.join("; ").slice(0, 100)}`
+          : "no --symbol/--chain-id given; per-chain collateral skipped."
+    });
+    if (flow.fees) resolved.feesRead = true;
+  } catch (e) { checks.push({ id: "options-buying-power", status: "WARN", detail: `options order-flow reads failed: ${(e as Error).message.slice(0, 80)}` }); }
+
+  // (d) min-tick vs limit price (the ARKG $0.05 trap)
+  if (chainId) {
+    try {
+      const chain = await getJson("https://api.robinhood.com/options/chains/{id}/", { id: chainId });
+      const mt = chain?.min_ticks ?? {};
+      const below = n(mt.below_tick);
+      const above = n(mt.above_tick);
+      const cutoff = n(mt.cutoff_price);
+      resolved.minTicks = { belowTick: below, aboveTick: above, cutoffPrice: cutoff };
+      if (opts.limitPrice == null) {
+        checks.push({ id: "min-tick", status: "SKIP", detail: `No --limit-price given. Chain min_ticks: $${below} below the $${cutoff} cutoff, $${above} above — limits must land on the tick ($0.01 on a $0.05 chain → 400).` });
+      } else {
+        const price = Number(opts.limitPrice);
+        const tick = Number.isFinite(cutoff) && price < cutoff ? below : above;
+        const onTick = Number.isFinite(tick) && tick > 0 ? Math.abs(price / tick - Math.round(price / tick)) < 1e-6 : true;
+        checks.push({
+          id: "min-tick",
+          status: onTick ? "PASS" : "BLOCK",
+          detail: onTick
+            ? `Limit $${price} satisfies the chain tick ($${tick} ${price < cutoff ? "below" : "at/above"} the $${cutoff} cutoff).`
+            : `Limit $${price} is NOT a multiple of the chain tick $${tick} (cutoff $${cutoff}) — Robinhood 400s with "Price does not satisfy the min tick value" (the ARKG $0.05 trap). Nearest valid: $${(Math.round(price / tick) * tick).toFixed(2)}.`
+        });
+      }
+    } catch (e) { checks.push({ id: "min-tick", status: "WARN", detail: `chain min_ticks read failed: ${(e as Error).message.slice(0, 80)}` }); }
+  } else if (opts.limitPrice != null) {
+    checks.push({ id: "min-tick", status: "WARN", detail: "limit price given but no chain resolved (--symbol or --chain-id needed) — min-tick can't be verified; do not assume $0.01 is valid." });
+  }
+
+  // (+) exact-contract existence when strike/expiration/type are given
+  if (chainId && opts.strike != null && opts.expiration && opts.optionType) {
+    try {
+      const rows = await getAll(
+        "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}",
+        { chain_id: chainId, expiration_dates: opts.expiration, type: opts.optionType }
+      );
+      const hit = rows.find((r: any) => Math.abs(n(r?.strike_price) - Number(opts.strike)) < 1e-6);
+      if (hit) {
+        resolved.optionInstrumentId = hit.id;
+        checks.push({ id: "contract", status: "PASS", detail: `${opts.symbol ?? chainId} ${opts.expiration} $${opts.strike} ${opts.optionType} exists — option_instrument_id ${hit.id}.` });
+      } else {
+        const strikes = rows.map((r: any) => n(r?.strike_price)).filter(Number.isFinite).sort((a: number, b: number) => a - b);
+        checks.push({ id: "contract", status: "BLOCK", detail: `No active $${opts.strike} ${opts.optionType} for ${opts.expiration} on this chain. ${strikes.length} strikes listed (${strikes.slice(0, 5).join(", ")} … ${strikes.slice(-3).join(", ")}).` });
+      }
+    } catch (e) { checks.push({ id: "contract", status: "WARN", detail: `contract enumeration failed: ${(e as Error).message.slice(0, 80)}` }); }
+  }
+
+  // (e) marketability — POST-only; surfaced as a manual gated step, never sent from here.
+  checks.push({
+    id: "marketability",
+    status: "MANUAL",
+    detail: `manual step (POST, gated): options/orders/marketability/ is a POST — pretrade never sends it. To probe marketability yourself, dry-run first: node cli/dist/index.js brokerage execute "https://bonfire.robinhood.com/options/orders/marketability/" --method POST --body-json '<order body>' --dry-run --json   (a live probe needs --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1).`
+  });
+
+  // (f) OTC / fractional guard for the equity symbol
+  if (opts.symbol) {
+    if (instrument) {
+      const frac = String(instrument.fractional_tradability ?? "");
+      const otc = Boolean(instrument.otc_market_tier) || frac === "position_closing_only";
+      resolved.fractionalTradability = frac;
+      checks.push({
+        id: "otc-fractional",
+        status: frac === "tradable" && !otc ? "PASS" : "WARN",
+        detail: frac === "tradable" && !otc
+          ? `${opts.symbol.toUpperCase()} is fractional-tradable — dollar-notional orders OK.`
+          : `${opts.symbol.toUpperCase()}: fractional_tradability=${frac || "?"}${otc ? " (OTC)" : ""} — a "$X of ${opts.symbol.toUpperCase()}" dollar order is IMPOSSIBLE; use whole shares + a marketable limit (failure mode #4).`
+      });
+    } else {
+      checks.push({ id: "otc-fractional", status: "WARN", detail: `instrument lookup failed for ${opts.symbol.toUpperCase()} — OTC/fractional status unknown.` });
+    }
+  }
+
+  const blocks = checks.filter((c) => c.status === "BLOCK");
+  const clear = blocks.length === 0;
+  return {
+    accountNumber: acct,
+    accountClass,
+    checks,
+    clear,
+    summary: clear ? "CLEAR TO BUILD ORDER" : `BLOCKED: ${blocks.map((b) => `${b.id} — ${b.detail}`).join(" | ")}`,
+    resolved,
+    note: "READ-ONLY preflight: nothing was sent. CLEAR means no hard blocker was found with the inputs given — it is NOT order approval; build the dry-run body next, then send only with both write gates."
+  };
+}
+
+// ── Options close engine (sell-to-close / buy-to-close, never open) ───────────────────────────
+
+/**
+ * Pure mapping from a position's direction to the CLOSING leg orientation. The whole point of
+ * `options close`: position_effect is ALWAYS "close" — long closes sell (credit), short closes
+ * buy (debit). Never infers an open. Throws on an unknown direction instead of guessing.
+ */
+export function closeLegOrientation(positionType: string): { side: "buy" | "sell"; positionEffect: "close"; direction: "debit" | "credit" } {
+  const p = String(positionType ?? "").toLowerCase();
+  if (p === "long") return { side: "sell", positionEffect: "close", direction: "credit" };
+  if (p === "short") return { side: "buy", positionEffect: "close", direction: "debit" };
+  throw new Error(`Unknown position direction "${positionType}" — cannot infer the closing side; inspect the position (options inspect) and build the order manually.`);
+}
+
+export interface OptionsCloseCandidate {
+  accountNumber: string;
+  accountLabel: string;
+  symbol: string;
+  strategy: string;
+  positionType: string;
+  optionType: string | null;
+  strike: number | null;
+  expiration: string | null;
+  quantity: number;
+  averageOpenPrice: number;
+  optionId: string | null;
+  multiLeg: boolean;
+}
+
+/**
+ * Build a DRY-RUN close plan for an open option position: finds the position(s) for SYMBOL across
+ * all owned accounts (aggregate_positions per account), requires --account/--strike/--expiration
+ * disambiguation when several match, then derives the closing side/effect from the position's
+ * direction (closeLegOrientation), quotes live bid/ask, computes a tick-rounded mid limit, and
+ * emits the exact order body + the gated send command. NEVER sends anything itself; multi-leg
+ * positions are listed but not auto-closed (use strategy-quote/roll-plan).
+ */
+export async function buildOptionsClosePlan(
+  opts: { symbol: string; accountNumber?: string; strike?: number; expiration?: string; optionType?: "call" | "put"; quantity?: number },
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {}
+): Promise<any> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const n = (v: unknown) => Number(v);
+  const symbol = opts.symbol.toUpperCase();
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const warnings: string[] = [];
+
+  // 1. Find every open position on the symbol across the scanned accounts.
+  const candidates: OptionsCloseCandidate[] = [];
+  for (const { acct, label } of accts) {
+    try {
+      const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
+      for (const p of agg) {
+        if (String(p?.symbol ?? "").toUpperCase() !== symbol || !(n(p?.quantity) > 0)) continue;
+        const legs = Array.isArray(p?.legs) ? p.legs : [];
+        const leg = legs[0] ?? {};
+        candidates.push({
+          accountNumber: acct, accountLabel: label, symbol,
+          strategy: String(p?.strategy ?? ""),
+          positionType: String(leg?.position_type ?? (String(p?.strategy ?? "").startsWith("short") ? "short" : String(p?.strategy ?? "").startsWith("long") ? "long" : "")),
+          optionType: leg?.option_type ?? null,
+          strike: Number.isFinite(n(leg?.strike_price)) ? n(leg?.strike_price) : null,
+          expiration: leg?.expiration_date ?? null,
+          quantity: n(p?.quantity),
+          averageOpenPrice: n(p?.average_open_price),
+          optionId: leg?.option_id ?? null,
+          multiLeg: legs.length > 1
+        });
+      }
+    } catch (e) { warnings.push(`option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+  }
+  if (candidates.length === 0) {
+    throw new Error(`No open ${symbol} option position found across ${accts.length} account(s)${opts.accountNumber ? ` (account …${String(opts.accountNumber).slice(-4)})` : ""}. \`options close\` only closes existing positions — it never opens.`);
+  }
+
+  // 2. Apply disambiguators.
+  let matches = candidates;
+  if (opts.strike != null) matches = matches.filter((c) => c.strike != null && Math.abs(c.strike - Number(opts.strike)) < 1e-6);
+  if (opts.expiration) matches = matches.filter((c) => c.expiration === opts.expiration);
+  if (opts.optionType) matches = matches.filter((c) => c.optionType === opts.optionType);
+  if (matches.length === 0) {
+    return { symbol, needsDisambiguation: true, matched: 0, candidates, warnings, hint: "Filters matched nothing — the held contracts are listed in `candidates`; re-run with a strike/expiration/type from that list." };
+  }
+  if (matches.length > 1) {
+    return { symbol, needsDisambiguation: true, matched: matches.length, candidates: matches, warnings, hint: "Multiple open positions match — re-run with --account/--strike/--expiration (and --type) to pick exactly one." };
+  }
+  const pos = matches[0];
+  if (pos.multiLeg) {
+    return { symbol, needsDisambiguation: false, multiLeg: true, position: pos, warnings, hint: "This is a MULTI-LEG position — `options close` only automates single-leg closes. Close it as a package via `options strategy-quote` (closing legs) or `options roll-plan`." };
+  }
+  if (!pos.optionId) throw new Error(`Matched the ${symbol} position but it carries no option_instrument_id — inspect with \`options holdings\`.`);
+
+  // 3. Orientation from the position's direction — position_effect is ALWAYS close.
+  const orientation = closeLegOrientation(pos.positionType);
+
+  // 4. Live quote + tick-rounded mid limit.
+  const mark = (await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", { ids: pos.optionId })).results?.[0] ?? {};
+  const bid = n(mark.bid_price);
+  const ask = n(mark.ask_price);
+  const adj = n(mark.adjusted_mark_price ?? mark.mark_price);
+  let mid = Number.isFinite(bid) && Number.isFinite(ask) && (bid > 0 || ask > 0) ? (bid + ask) / 2 : adj;
+  let tick: number | null = null;
+  try {
+    const meta = await getJson("https://api.robinhood.com/options/instruments/{0}/", { "0": pos.optionId });
+    if (meta?.chain_id) {
+      const chain = await getJson("https://api.robinhood.com/options/chains/{id}/", { id: String(meta.chain_id) });
+      const mt = chain?.min_ticks ?? {};
+      const cutoff = n(mt.cutoff_price);
+      tick = Number.isFinite(cutoff) && mid < cutoff ? n(mt.below_tick) : n(mt.above_tick);
+      if (Number.isFinite(tick) && (tick as number) > 0) mid = Math.max(tick as number, Math.round(mid / (tick as number)) * (tick as number));
+    }
+  } catch { warnings.push("chain min_ticks read failed — mid limit not tick-rounded; check the chain before sending"); }
+  if (!Number.isFinite(mid) || mid <= 0) {
+    warnings.push("no usable bid/ask/mark — limit price left at 0.01 placeholder; re-quote before sending");
+    mid = 0.01;
+  }
+
+  // 5. The exact dry-run body + gated send command (this function NEVER sends).
+  const quantity = opts.quantity != null ? Number(opts.quantity) : pos.quantity;
+  if (!(quantity > 0) || quantity > pos.quantity) throw new Error(`Close quantity ${quantity} is invalid for a position of ${pos.quantity} contract(s).`);
+  const body = {
+    account: `https://api.robinhood.com/accounts/${pos.accountNumber}/`,
+    direction: orientation.direction,
+    legs: [{
+      side: orientation.side,
+      option: `https://api.robinhood.com/options/instruments/${pos.optionId}/`,
+      position_effect: orientation.positionEffect,
+      ratio_quantity: 1
+    }],
+    type: "limit",
+    time_in_force: "gfd",
+    trigger: "immediate",
+    price: (Math.round(mid * 100) / 100).toFixed(2),
+    quantity: String(quantity),
+    ref_id: randomUUID()
+  };
+  const bodyJson = JSON.stringify(body);
+  return {
+    symbol,
+    needsDisambiguation: false,
+    position: pos,
+    orientation,
+    action: orientation.side === "sell" ? "sell-to-close" : "buy-to-close",
+    quote: { bid, ask, mark: adj, midLimit: Number(body.price), tick },
+    dryRun: true,
+    dryRunBody: body,
+    commands: {
+      dryRun: `node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orders/" --method POST --body-json '${bodyJson}' --json`,
+      gatedSend: `ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orders/" --method POST --body-json '${bodyJson}' --live-write --json`
+    },
+    warnings,
+    note: "DRY-RUN plan only — nothing was sent. position_effect is always close (never infers an open). Re-quote bid/ask before a live send; after sending, verify in order history (the only proof)."
+  };
 }
 
 // ───────────────────────── Wheel engine (status + next leg, shared CLI + MCP) ─────────────────────────
@@ -2933,6 +3693,1195 @@ export async function computeWheelState(
     disclaimer: "Descriptive, not prescriptive — evidence + the conventional next leg. Live sends always need both write gates."
   };
 }
+
+// ───────────────── Dividends / Documents / Margin engines (shared CLI + MCP) ─────────────────
+// Three first-class read surfaces live-verified 2026-06-11. Same alignment invariant as
+// computePortfolioPnl: the engine lives HERE, the CLI renders it, the MCP returns it as JSON.
+
+/**
+ * Enumerate owned trading accounts (rhs + ira_roth) from the COMPLETE transfer graph —
+ * the same pattern as computePortfolioPnl/computeWheelState (bare accounts/ under-reports).
+ * Scopes to one account when given; throws on an unowned/typo'd account number.
+ */
+export async function listOwnedTradingAccounts(
+  getJson: typeof brokerageGetJson,
+  accountNumber?: string
+): Promise<Array<{ acct: string; label: string }>> {
+  const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
+  const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+  let accts = rows
+    .filter((a) => (a?.type === "rhs" || a?.type === "ira_roth") && a?.account_number)
+    .map((a) => ({ acct: String(a.account_number), label: String(a.account_name || a.display_title || "") }));
+  if (accountNumber) {
+    accts = accts.filter((a) => a.acct === String(accountNumber));
+    if (!accts.length) throw new Error(`Account ${accountNumber} is not one of your trading accounts.`);
+  }
+  return accts;
+}
+
+const round2 = (value: number): number => (Number.isFinite(value) ? Math.round(value * 100) / 100 : Number.NaN);
+
+// ── Dividends ──────────────────────────────────────────────────────────────────────────────────
+
+export type DividendCadence = "weekly" | "monthly" | "quarterly" | "semiannual" | "annual" | "irregular";
+
+/**
+ * Detect a payout cadence from payable dates — the math is IN-ENGINE so callers can't botch it.
+ * Median gap in days between unique sorted payable dates:
+ *   ~5-9 → weekly · ~25-35 → monthly · ~80-100 → quarterly · ~170-190 → semiannual ·
+ *   ~350-380 → annual · else irregular.
+ * Median (not mean) so one suspended/special payout doesn't flip the classification. The weekly
+ * band exists because weekly-pay income ETFs (QDTE et al.) are real and otherwise their income —
+ * often the LARGEST payer in the account — would silently drop out of the projection.
+ */
+export function detectDividendCadence(payableDates: Array<string | null | undefined>): {
+  cadence: DividendCadence;
+  periodsPerYear: number;
+  medianGapDays: number;
+} {
+  const times = [...new Set(payableDates.filter(Boolean).map(String))]
+    .map((d) => Date.parse(d))
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b);
+  if (times.length < 2) return { cadence: "irregular", periodsPerYear: 0, medianGapDays: Number.NaN };
+  const gaps = times.slice(1).map((t, i) => (t - times[i]) / 86_400_000).sort((a, b) => a - b);
+  const mid = Math.floor(gaps.length / 2);
+  const median = gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+  const cadence: DividendCadence =
+    median >= 5 && median <= 9 ? "weekly"
+    : median >= 25 && median <= 35 ? "monthly"
+    : median >= 80 && median <= 100 ? "quarterly"
+    : median >= 170 && median <= 190 ? "semiannual"
+    : median >= 350 && median <= 380 ? "annual"
+    : "irregular";
+  const periodsPerYear = { weekly: 52, monthly: 12, quarterly: 4, semiannual: 2, annual: 1, irregular: 0 }[cadence];
+  return { cadence, periodsPerYear, medianGapDays: Math.round(median * 10) / 10 };
+}
+
+/**
+ * Dividend income engine across all owned accounts (or one): history totals, per-symbol cadence,
+ * upcoming payouts, last-12-months by month, and a PROJECTION in dollars. Hard-won field notes
+ * (live-verified 2026-06-11):
+ *   - dividends/ is ACCOUNT-SCOPED — the bare read silently returns only the default account, so
+ *     fan out per account with ?account_number= (the wrong-account trap, read edition).
+ *   - states seen live: paid | reinvested (DRIP — still income) | pending (upcoming) | voided.
+ *   - `amount` is the position-sized dollar payout; `rate` is per-share; records carry an
+ *     instrument URL, not a ticker → batch-resolve via instruments/?ids=.
+ *   - projection counts CURRENTLY HELD symbols only (cross-checked against nonzero positions/),
+ *     so a sold payer never inflates forecast income.
+ * Per-account reads degrade to warnings; never throws on one bad account.
+ */
+export async function computeDividends(
+  opts: { accountNumber?: string; symbol?: string } = {},
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults; now?: () => number } = {}
+): Promise<any> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const nowMs = (deps.now ?? Date.now)();
+  const n = (v: unknown) => Number(v);
+  const warnings: string[] = [];
+  const wantSymbol = opts.symbol?.trim().toUpperCase() || undefined;
+  const today = new Date(nowMs).toISOString().slice(0, 10);
+
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+
+  // Per-account dividends + held positions, in parallel; each read degrades independently.
+  const perAcct = await Promise.all(accts.map(async ({ acct, label }) => {
+    const out = { acct, label, dividends: [] as any[], heldSymbols: new Set<string>() };
+    try {
+      out.dividends = await getAll("https://api.robinhood.com/dividends/", {}, { account_number: acct });
+    } catch (e) { warnings.push(`dividends read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    try {
+      const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
+      for (const p of eq) if (p?.symbol && n(p.quantity) > 0) out.heldSymbols.add(String(p.symbol).toUpperCase());
+    } catch (e) { warnings.push(`positions read failed (…${acct.slice(-4)}) — held-symbol cross-check degraded: ${(e as Error).message.slice(0, 60)}`); }
+    return out;
+  }));
+
+  // Resolve instrument URLs → tickers (batched; a dead/delisted instrument keeps its UUID stub).
+  const allRaw = perAcct.flatMap((a) => a.dividends.map((d) => ({ ...d, _acct: a.acct })));
+  const instId = (d: any): string | undefined => {
+    const m = String(d?.instrument ?? "").match(/\/instruments\/([^/]+)\/?/);
+    return m?.[1] ?? (d?.active_instrument_id ? String(d.active_instrument_id) : undefined);
+  };
+  const ids = [...new Set(allRaw.map(instId).filter(Boolean))] as string[];
+  const symbolById = new Map<string, string>();
+  try {
+    for (let i = 0; i < ids.length; i += 40) {
+      const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: ids.slice(i, i + 40).join(",") });
+      for (const r of data?.results ?? []) if (r?.id && r?.symbol) symbolById.set(String(r.id), String(r.symbol).toUpperCase());
+    }
+  } catch (e) { warnings.push(`instrument resolve failed — some dividends keep an instrument UUID instead of a ticker (${(e as Error).message.slice(0, 60)})`); }
+
+  const records = allRaw
+    .map((d) => {
+      const iid = instId(d);
+      return {
+        symbol: (iid && symbolById.get(iid)) || (iid ? `(${iid.slice(0, 8)}…)` : "(unknown)"),
+        account: String(d._acct),
+        state: String(d.state ?? ""),
+        amountUsd: n(d.amount),
+        ratePerShare: n(d.rate),
+        position: n(d.position),
+        withholdingUsd: n(d.withholding),
+        exDividendDate: d.ex_dividend_date ?? null,
+        recordDate: d.record_date ?? null,
+        payableDate: d.payable_date ?? null,
+        paidAt: d.paid_at ?? null,
+        dripEnabled: d.drip_enabled ?? null
+      };
+    })
+    .filter((d) => !wantSymbol || d.symbol === wantSymbol);
+
+  // Received = paid OR reinvested (DRIP is income too); voided never counts; pending not yet.
+  const received = records.filter((d) => (d.state === "paid" || d.state === "reinvested") && Number.isFinite(d.amountUsd));
+  const recvDate = (d: any): string => String(d.paidAt ?? d.payableDate ?? "").slice(0, 10);
+  const sumUsd = (xs: any[]) => round2(xs.reduce((s, d) => s + d.amountUsd, 0));
+  const cutoff12mo = new Date(nowMs - 365 * 86_400_000).toISOString().slice(0, 10);
+  const totals = {
+    allTimeUsd: sumUsd(received),
+    ytdUsd: sumUsd(received.filter((d) => recvDate(d).startsWith(today.slice(0, 4)))),
+    last12moUsd: sumUsd(received.filter((d) => recvDate(d) >= cutoff12mo))
+  };
+
+  // Per-symbol: totals, cadence, annualized. Cadence reads ALL non-voided payable dates
+  // (a pending payout is a real scheduled date and the freshest "regular amount").
+  const heldSymbols = new Set<string>(perAcct.flatMap((a) => [...a.heldSymbols]));
+  const bySymbolMap = new Map<string, any[]>();
+  for (const d of records) {
+    if (d.state === "voided") continue;
+    const list = bySymbolMap.get(d.symbol) ?? [];
+    list.push(d);
+    bySymbolMap.set(d.symbol, list);
+  }
+  const bySymbol = [...bySymbolMap.entries()].map(([symbol, recs]) => {
+    const recv = recs.filter((d) => d.state === "paid" || d.state === "reinvested");
+    const dated = recs.filter((d) => d.payableDate).sort((a, b) => String(a.payableDate).localeCompare(String(b.payableDate)));
+    const lastRec = dated[dated.length - 1];
+    const { cadence, periodsPerYear, medianGapDays } = detectDividendCadence(recs.map((d) => d.payableDate));
+    const lastAmountUsd = Number.isFinite(lastRec?.amountUsd) ? lastRec.amountUsd : Number.NaN;
+    const annualizedUsd = periodsPerYear > 0 && Number.isFinite(lastAmountUsd) ? round2(lastAmountUsd * periodsPerYear) : Number.NaN;
+    return {
+      symbol,
+      totalUsd: sumUsd(recv),
+      count: recv.length,
+      lastAmountUsd,
+      lastPayableDate: lastRec?.payableDate ?? null,
+      cadence,
+      medianGapDays,
+      annualizedUsd,
+      currentlyHeld: heldSymbols.has(symbol)
+    };
+  }).sort((a, b) => (b.totalUsd || 0) - (a.totalUsd || 0));
+
+  // Upcoming: pending state, or a future payable date that hasn't paid out yet.
+  const upcoming = records
+    .filter((d) => d.state === "pending" || (!d.paidAt && d.state !== "voided" && d.state !== "paid" && d.state !== "reinvested" && d.payableDate && String(d.payableDate) >= today))
+    .map((d) => ({ symbol: d.symbol, amountUsd: d.amountUsd, payableDate: d.payableDate, exDividendDate: d.exDividendDate, state: d.state, account: d.account }))
+    .sort((a, b) => String(a.payableDate ?? "").localeCompare(String(b.payableDate ?? "")));
+
+  // Last 12 calendar months of received income, zero-filled so a dry month is visible.
+  const anchor = new Date(nowMs);
+  const byMonth: Array<{ month: string; totalUsd: number }> = [];
+  for (let i = 11; i >= 0; i--) {
+    const key = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - i, 1)).toISOString().slice(0, 7);
+    byMonth.push({ month: key, totalUsd: sumUsd(received.filter((d) => recvDate(d).startsWith(key))) });
+  }
+
+  // Projection: regular-cadence symbols the operator STILL HOLDS. Sold payers are listed, not counted.
+  const projected = bySymbol.filter((s) => s.currentlyHeld && Number.isFinite(s.annualizedUsd) && s.annualizedUsd > 0);
+  const excludedSold = bySymbol.filter((s) => !s.currentlyHeld && Number.isFinite(s.annualizedUsd) && s.annualizedUsd > 0).map((s) => s.symbol);
+  const annualUsd = round2(projected.reduce((s, x) => s + x.annualizedUsd, 0));
+  const projection = {
+    dailyUsd: round2(annualUsd / 365),
+    weeklyUsd: round2(annualUsd / 52),
+    monthlyUsd: round2(annualUsd / 12),
+    quarterlyUsd: round2(annualUsd / 4),
+    annualUsd,
+    projectedSymbols: projected.map((s) => s.symbol),
+    excludedSoldSymbols: excludedSold,
+    method:
+      "per symbol: cadence = median payable-date gap (~5-9d weekly, ~25-35d monthly, ~80-100d quarterly, ~170-190d semiannual, ~350-380d annual, else irregular); " +
+      "annualizedUsd = most recent regular dividend amount × periods/year; projection sums annualizedUsd across CURRENTLY HELD symbols only " +
+      "(cross-checked against nonzero positions/ so sold positions don't project income); irregular cadences excluded. " +
+      "Granularity: dailyUsd = annualUsd/365, weeklyUsd = annualUsd/52, monthlyUsd = annualUsd/12, quarterlyUsd = annualUsd/4."
+  };
+
+  return {
+    accountsScanned: accts.map((a) => "…" + a.acct.slice(-4)),
+    symbol: wantSymbol ?? null,
+    recordCount: records.length,
+    totals,
+    bySymbol,
+    upcoming,
+    byMonth,
+    projection,
+    warnings
+  };
+}
+
+// ── Documents ──────────────────────────────────────────────────────────────────────────────────
+
+export interface DocumentRecord {
+  id: string;
+  type: string;
+  date: string;
+  /** Filter/filename year. For tax forms (1099*, 5498*) this is the TAX YEAR — issue year − 1, because a 1099 dated 2026-02 covers tax year 2025 (live-verified). Otherwise the document date's calendar year. */
+  year: string;
+  accountNumber: string;
+  accountLast4: string;
+  filetype: string;
+  downloadUrl: string;
+  createdAt: string | null;
+}
+
+const TAX_FORM_PREFIXES = ["1099", "5498"]; // covers 1099, 1099_crypto, 1099r_roth, 5498_roth
+
+/** Year a document belongs to for filtering/filenames: tax forms map to their TAX year (issue year − 1). */
+export function documentYear(type: string, date: string): string {
+  const docYear = Number(String(date).slice(0, 4));
+  if (!Number.isFinite(docYear) || docYear <= 0) return "unknown";
+  return TAX_FORM_PREFIXES.some((p) => String(type).startsWith(p)) ? String(docYear - 1) : String(docYear);
+}
+
+/** Deterministic local filename: <year>-<type>-<acct last4>-<date>.<filetype> (path-safe). */
+export function documentFilename(doc: { type: string; date: string; year: string; accountLast4: string; filetype?: string | null }): string {
+  const ext = String(doc.filetype || "pdf").toLowerCase().replace(/[^a-z0-9]/g, "") || "pdf";
+  const clean = (s: unknown) => String(s).replace(/[^A-Za-z0-9._-]/g, "_");
+  return `${clean(doc.year)}-${clean(doc.type)}-${clean(doc.accountLast4)}-${clean(doc.date)}.${ext}`;
+}
+
+/**
+ * List account documents (statements, trade confirms, tax forms) across ALL accounts in one read —
+ * documents/ is cursor-paginated via `next` (followed to the end) and, unlike dividends/, spans
+ * every account without a fan-out (live-verified 2026-06-11). Filters:
+ *   - type is PREFIX-matched, so type="1099" catches 1099 + 1099_crypto + 1099r_roth in one shot.
+ *   - year matches the TAX year for tax forms and the calendar year otherwise (see documentYear).
+ *   - accountNumber is exact.
+ */
+export async function listDocuments(
+  opts: { type?: string; year?: string; accountNumber?: string } = {},
+  deps: { getAll?: typeof brokerageGetAllResults } = {}
+): Promise<{ count: number; documents: DocumentRecord[]; byType: Record<string, number>; warnings: string[] }> {
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const rows = await getAll("https://api.robinhood.com/documents/", {}, {});
+  const documents = rows
+    .map((d: any): DocumentRecord => {
+      const accountNumber = String(d?.account ?? "").match(/\/accounts\/([^/]+)\/?/)?.[1] ?? "";
+      const type = String(d?.type ?? "");
+      const date = String(d?.date ?? "");
+      return {
+        id: String(d?.id ?? ""),
+        type,
+        date,
+        year: documentYear(type, date),
+        accountNumber,
+        accountLast4: accountNumber.slice(-4),
+        filetype: String(d?.filetype ?? "pdf"),
+        downloadUrl: String(d?.download_url ?? ""),
+        createdAt: d?.created_at ?? null
+      };
+    })
+    .filter((d: DocumentRecord) =>
+      (!opts.type || d.type.startsWith(opts.type)) &&
+      (!opts.year || d.year === String(opts.year)) &&
+      (!opts.accountNumber || d.accountNumber === String(opts.accountNumber)))
+    .sort((a: DocumentRecord, b: DocumentRecord) => b.date.localeCompare(a.date));
+  const byType: Record<string, number> = {};
+  for (const d of documents) byType[d.type] = (byType[d.type] ?? 0) + 1;
+  return { count: documents.length, documents, byType, warnings: [] };
+}
+
+/**
+ * Download matching documents to local/documents/ (gitignored). The tax-season one-shot:
+ * downloadDocuments({ type: "1099", year: "2025" }) pulls every 1099 — brokerage, crypto, Roth —
+ * for tax year 2025 in one call. Raw fetch with the same bearer auth the engine uses;
+ * download_url 302s to storage and fetch follows (auth is dropped cross-origin by undici).
+ * Per-file failures are collected, never thrown.
+ */
+export async function downloadDocuments(
+  opts: { type?: string; year?: string; accountNumber?: string; limit?: number } = {},
+  deps: { getAll?: typeof brokerageGetAllResults; fetchImpl?: typeof fetch; outDir?: string } = {}
+): Promise<{
+  directory: string;
+  downloaded: Array<{ file: string; type: string; date: string; bytes: number }>;
+  failures: Array<{ file: string; error: string }>;
+  skipped: number;
+}> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const listing = await listDocuments(opts, deps);
+  const docs = opts.limit && opts.limit > 0 ? listing.documents.slice(0, opts.limit) : listing.documents;
+  const directory = deps.outDir ?? join(repoRoot(), "local", "documents");
+  mkdirSync(directory, { recursive: true });
+  const token = process.env.ROBINHOOD_BROKERAGE_TOKEN;
+  const headers: Record<string, string> = {
+    accept: "*/*",
+    "user-agent": process.env.ROBINHOOD_USER_AGENT ?? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    origin: "https://robinhood.com",
+    referer: "https://robinhood.com/"
+  };
+  if (token) headers.authorization = `Bearer ${token}`;
+  const downloaded: Array<{ file: string; type: string; date: string; bytes: number }> = [];
+  const failures: Array<{ file: string; error: string }> = [];
+  for (const d of docs) {
+    const file = documentFilename(d);
+    try {
+      if (!d.downloadUrl) throw new Error("no download_url on record");
+      const res = await fetchImpl(d.downloadUrl, { headers, redirect: "follow" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      writeFileSync(join(directory, file), buf);
+      downloaded.push({ file, type: d.type, date: d.date, bytes: buf.length });
+    } catch (e) {
+      failures.push({ file, error: (e as Error).message.slice(0, 120) });
+    }
+  }
+  return { directory, downloaded, failures, skipped: listing.documents.length - docs.length };
+}
+
+// ── Margin health ──────────────────────────────────────────────────────────────────────────────
+
+/** Unwrap a Robinhood money object ({amount, currency_code, …}) or a bare numeric string. */
+function moneyUsd(value: unknown): number {
+  const raw = value && typeof value === "object" && "amount" in (value as Record<string, unknown>)
+    ? (value as Record<string, unknown>).amount
+    : value;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+export interface MarginHealth {
+  accountNumber: string;
+  label: string;
+  borrowedUsd: number;
+  marginInterestRatePct: number;
+  nextBillingDate: string | null;
+  marginAvailableUsd: number;
+  buyingPowerWithMarginUsd: number;
+  projectedIntradayBpUsd: number;
+  marginUsedIncludingCashHeldUsd: number;
+  interestExemptionUsd: number;
+}
+
+/**
+ * Margin health: am I borrowing, how much, at what rate, billed when. Reads
+ * margin/{account_number}/investing_info/ for every owned account (or one) in parallel.
+ * Field note (live-verified 2026-06-11): most fields are MONEY OBJECTS ({amount, currency_code}),
+ * margin_interest_rate is a bare percent string ("5.0000" → 5%), next_billing_date can be null.
+ * An account with no margin data (404/error) degrades SILENTLY into `skipped` — that absence IS
+ * the answer for that account; one dead read never blanks the others.
+ */
+export async function getMarginHealth(
+  accountNumber?: string,
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<{ accounts: MarginHealth[]; scanned: string[]; skipped: string[]; warnings: string[] }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const accts = await listOwnedTradingAccounts(getJson, accountNumber);
+  const skipped: string[] = [];
+  const results = await Promise.all(accts.map(async ({ acct, label }): Promise<MarginHealth | null> => {
+    try {
+      const m = await getJson("https://api.robinhood.com/margin/{account_number}/investing_info/", { account_number: acct });
+      if (!m || (m.amount_borrowed === undefined && m.margin_available === undefined)) {
+        skipped.push("…" + acct.slice(-4));
+        return null;
+      }
+      return {
+        accountNumber: acct,
+        label: label || "…" + acct.slice(-4),
+        borrowedUsd: moneyUsd(m.amount_borrowed),
+        marginInterestRatePct: finiteNumber(m.margin_interest_rate),
+        nextBillingDate: m.next_billing_date ?? null,
+        marginAvailableUsd: moneyUsd(m.margin_available),
+        buyingPowerWithMarginUsd: moneyUsd(m.buying_power_with_margin),
+        projectedIntradayBpUsd: moneyUsd(m.projected_intraday_buying_power),
+        marginUsedIncludingCashHeldUsd: moneyUsd(m.margin_used_including_cash_held),
+        interestExemptionUsd: moneyUsd(m.interest_exemption_amount)
+      };
+    } catch {
+      skipped.push("…" + acct.slice(-4)); // 404 / no margin product — silent per-account degrade
+      return null;
+    }
+  }));
+  return {
+    accounts: results.filter((r): r is MarginHealth => r !== null),
+    scanned: accts.map((a) => "…" + a.acct.slice(-4)),
+    skipped,
+    warnings: []
+  };
+}
+
+// ── Film-study: trade review engine (round trips, realized P&L, notes) ─────────────────────────
+// The operator's "athlete watching tape" mode: pull what actually FILLED, pair entries to exits,
+// and put the realized DOLLAR outcomes in front of the operator with their own notes attached.
+// Math lives here in the engine — agents must not hand-compute P&L or win rates.
+
+export interface TradeNote {
+  /** Timestamp header of the entry ("YYYY-MM-DD HH:MM"). */
+  when: string;
+  /** Freeform reference: an order id, a symbol, or symbol+date — matched by substring/token. */
+  ref: string;
+  note: string;
+}
+
+export const TRADE_NOTES_FILE = "trade-notes.md";
+
+/** Render one trade-notes.md entry: `### YYYY-MM-DD HH:MM | <ref>` + the note + `---`. */
+export function formatTradeNote(input: { ref: string; note: string; now?: Date }): string {
+  const d = input.now ?? new Date();
+  const pad = (x: number) => String(x).padStart(2, "0");
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `\n### ${stamp} | ${input.ref.trim()}\n\n${input.note.trim()}\n\n---\n`;
+}
+
+/**
+ * Append a film-study note to repo-root trade-notes.md (committed, operator-facing — the same
+ * spirit as trading-log.md). LOCAL FILE ONLY: this never touches the brokerage account, so it
+ * needs no write gate — but it DOES write the markdown file, so callers should say so.
+ */
+export function addTradeNote(
+  input: { ref: string; note: string },
+  deps: { file?: string; now?: Date } = {}
+): { file: string; entry: string } {
+  if (!input.ref?.trim() || !input.note?.trim()) {
+    throw new Error("A trade note needs both a ref (order id / symbol / symbol+date) and the note text.");
+  }
+  const file = deps.file ?? join(repoRoot(), TRADE_NOTES_FILE);
+  const entry = formatTradeNote({ ref: input.ref, note: input.note, now: deps.now });
+  appendFileSync(file, entry);
+  return { file, entry };
+}
+
+/** Parse trade-notes.md content into entries. Tolerates prose between entries; `---` ends a note. */
+export function parseTradeNotes(content: string): TradeNote[] {
+  const notes: TradeNote[] = [];
+  let current: TradeNote | null = null;
+  let body: string[] = [];
+  const flush = () => {
+    if (current && current.ref) notes.push({ ...current, note: body.join("\n").trim() });
+    current = null;
+    body = [];
+  };
+  for (const line of content.split(/\r?\n/)) {
+    const m = /^###\s+(.+?)\s*\|\s*(.+?)\s*$/.exec(line);
+    if (m) {
+      flush();
+      current = { when: m[1].trim(), ref: m[2].trim(), note: "" };
+      continue;
+    }
+    if (current) {
+      if (/^---\s*$/.test(line)) { flush(); continue; }
+      body.push(line);
+    }
+  }
+  flush();
+  return notes;
+}
+
+export function loadTradeNotes(deps: { file?: string } = {}): TradeNote[] {
+  const file = deps.file ?? join(repoRoot(), TRADE_NOTES_FILE);
+  try {
+    return parseTradeNotes(readFileSync(file, "utf8"));
+  } catch {
+    return []; // no notes file yet — review still works, just unannotated
+  }
+}
+
+/**
+ * Does a note's ref point at this trade? Two matchers, per the ledger's freeform ref contract:
+ *   - order id: substring either way (≥6 chars so a short ref can't match every UUID), or
+ *   - symbol: the ref contains the symbol as a standalone token ("HPE 2026-06-10" → HPE trades).
+ */
+export function noteMatchesTrade(ref: string, trade: { symbol: string; orderIds: string[] }): boolean {
+  const r = ref.trim().toLowerCase();
+  if (!r) return false;
+  for (const id of trade.orderIds) {
+    const i = String(id ?? "").toLowerCase();
+    if (!i) continue;
+    if ((r.length >= 6 && i.includes(r)) || (i.length >= 6 && r.includes(i))) return true;
+  }
+  const tokens = ref.toUpperCase().split(/[^A-Z0-9.]+/).filter(Boolean);
+  return tokens.includes(String(trade.symbol ?? "").toUpperCase());
+}
+
+export interface ReviewFill {
+  kind: OrderKind;
+  symbol: string;
+  /** Options only: "HPE $30 call 2026-09-18" (best-effort resolve; UUID stub on failure). */
+  contract: string | null;
+  account: string;
+  side: "buy" | "sell";
+  /** Options only; equity fills carry null. */
+  positionEffect: "open" | "close" | null;
+  quantity: number;
+  /** Per share (equity) / per contract premium (options). */
+  priceUsd: number;
+  /** quantity × price × (100 for options). */
+  notionalUsd: number;
+  timestamp: string;
+  orderId: string;
+  /** True when some/all of this fill could NOT be FIFO-matched (still open, partial, or the
+   * other side filled outside the window). Never silently dropped. */
+  openLeg: boolean;
+  unmatchedQuantity: number;
+  notes: TradeNote[];
+}
+
+export interface ReviewRoundTrip {
+  kind: OrderKind;
+  symbol: string;
+  contract: string | null;
+  account: string;
+  quantity: number;
+  direction: "long" | "short";
+  openedAt: string;
+  closedAt: string;
+  holdDays: number;
+  entryUsd: number;
+  exitUsd: number;
+  realizedPnlUsd: number;
+  win: boolean;
+  orderIds: string[];
+  notes: TradeNote[];
+}
+
+export interface TradeReviewSummary {
+  trades: number;
+  roundTrips: number;
+  winners: number;
+  losers: number;
+  /** winners / roundTrips × 100 (scratch trades count in the denominator). */
+  winRatePct: number;
+  totalRealizedUsd: number;
+  bestTrade: { symbol: string; contract: string | null; realizedPnlUsd: number; account: string } | null;
+  worstTrade: { symbol: string; contract: string | null; realizedPnlUsd: number; account: string } | null;
+  avgHoldDays: number;
+  openLegs: number;
+}
+
+/**
+ * FILM-STUDY MODE: pull every FILLED equity + options order across owned accounts (or one) inside
+ * the window, resolve tickers/contracts, FIFO-pair entries→exits per account+instrument, and
+ * compute per-round-trip DOLLAR outcomes (entryUsd, exitUsd, realizedPnlUsd, holdDays, win/loss).
+ * Pairing rules:
+ *   - equity: buys open lots, sells consume them FIFO (RH equity is long-only — a sell with no
+ *     lot in-window is an unmatched leg, not a short).
+ *   - options: position_effect=open adds a lot (its side remembered), close consumes the opposite
+ *     side FIFO; long P&L = (close − open) × 100 × qty, short P&L = (open − close) × 100 × qty.
+ *   - anything unmatched (still open / opened before the window / partial) is flagged
+ *     openLeg:true with its unmatchedQuantity — never silently dropped.
+ * Notes from trade-notes.md attach to trades AND round trips by ref match (order id or symbol).
+ * Read-only against the account; the only proof a trade happened remains order history — which is
+ * exactly what this reads.
+ */
+export async function computeTradeReview(
+  opts: { days?: number; symbol?: string; accountNumber?: string } = {},
+  deps: {
+    getJson?: typeof brokerageGetJson;
+    getAll?: typeof brokerageGetAllResults;
+    now?: () => number;
+    loadNotes?: () => TradeNote[];
+  } = {}
+): Promise<{
+  days: number;
+  accountsScanned: string[];
+  trades: ReviewFill[];
+  roundTrips: ReviewRoundTrip[];
+  summary: TradeReviewSummary;
+  warnings: string[];
+}> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const nowMs = (deps.now ?? Date.now)();
+  const days = opts.days && opts.days > 0 ? opts.days : 90;
+  const cutoffMs = nowMs - days * 86_400_000;
+  const wantSymbol = opts.symbol?.trim().toUpperCase() || undefined;
+  const warnings: string[] = [];
+  const n = (v: unknown) => Number(v);
+
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+
+  // 1. Collect fills (execution-level, so multi-fill orders FIFO correctly).
+  interface RawFill extends Omit<ReviewFill, "notes"> { instrumentKey: string; }
+  const fills: RawFill[] = [];
+  const equityInstrumentIds = new Set<string>();
+  const optionInstrumentIds = new Set<string>();
+  const instId = (url: unknown): string | null =>
+    String(url ?? "").match(/\/instruments\/([^/]+)\/?/)?.[1] ?? null;
+
+  for (const { acct } of accts) {
+    try {
+      const eq = await getAll("https://api.robinhood.com/orders/", {}, { account_numbers: acct }, { maxPages: 20 });
+      for (const o of eq) {
+        if (o?.state !== "filled") continue;
+        const iid = instId(o.instrument) ?? String(o.instrument_id ?? "");
+        if (!iid) continue;
+        const side = o.side === "sell" ? "sell" : "buy";
+        const executions = Array.isArray(o.executions) && o.executions.length
+          ? o.executions
+          : [{ price: o.average_price ?? o.price, quantity: o.cumulative_quantity ?? o.quantity, timestamp: o.updated_at ?? o.created_at }];
+        for (const ex of executions) {
+          const ts = String(ex.timestamp ?? o.updated_at ?? o.created_at ?? "");
+          const t = Date.parse(ts);
+          if (!Number.isFinite(t) || t < cutoffMs) continue;
+          const qty = n(ex.quantity);
+          const price = n(ex.price);
+          if (!(qty > 0) || !Number.isFinite(price)) continue;
+          equityInstrumentIds.add(iid);
+          fills.push({
+            kind: "equity", symbol: o.symbol ?? iid, contract: null, account: acct, side,
+            positionEffect: null, quantity: qty, priceUsd: price, notionalUsd: round2(qty * price),
+            timestamp: ts, orderId: String(o.id ?? ""), openLeg: false, unmatchedQuantity: 0,
+            instrumentKey: `equity|${iid}`
+          });
+        }
+      }
+    } catch (e) { warnings.push(`equity orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    try {
+      const op = await getAll("https://api.robinhood.com/options/orders/", {}, { account_numbers: acct, states: "filled" }, { maxPages: 20 });
+      for (const o of op) {
+        if (o?.state !== "filled") continue;
+        for (const leg of o.legs ?? []) {
+          const oid = String(leg.option ?? "").match(/\/options\/instruments\/([^/]+)\/?/)?.[1] ?? null;
+          if (!oid) continue;
+          const side = leg.side === "sell" ? "sell" : "buy";
+          const effect = leg.position_effect === "close" ? "close" : "open";
+          for (const ex of leg.executions ?? []) {
+            const ts = String(ex.timestamp ?? o.updated_at ?? o.created_at ?? "");
+            const t = Date.parse(ts);
+            if (!Number.isFinite(t) || t < cutoffMs) continue;
+            const qty = n(ex.quantity);
+            const price = n(ex.price);
+            if (!(qty > 0) || !Number.isFinite(price)) continue;
+            optionInstrumentIds.add(oid);
+            fills.push({
+              kind: "options", symbol: String(o.chain_symbol ?? "?"), contract: oid, account: acct, side,
+              positionEffect: effect, quantity: qty, priceUsd: price, notionalUsd: round2(qty * price * 100),
+              timestamp: ts, orderId: String(o.id ?? ""), openLeg: false, unmatchedQuantity: 0,
+              instrumentKey: `options|${oid}`
+            });
+          }
+        }
+      }
+    } catch (e) { warnings.push(`options orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+  }
+
+  // 2. Resolve equity instrument UUIDs → tickers (orders carry instrument URLs, not symbols).
+  if (equityInstrumentIds.size) {
+    try {
+      const ids = [...equityInstrumentIds];
+      const bySym = new Map<string, string>();
+      for (let i = 0; i < ids.length; i += 40) {
+        const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: ids.slice(i, i + 40).join(",") });
+        for (const r of data?.results ?? []) if (r?.id && r?.symbol) bySym.set(String(r.id), String(r.symbol).toUpperCase());
+      }
+      for (const f of fills) {
+        if (f.kind !== "equity") continue;
+        const iid = f.instrumentKey.split("|")[1];
+        f.symbol = bySym.get(iid) ?? f.symbol;
+      }
+    } catch (e) { warnings.push(`instrument→ticker resolve failed — some equity trades show UUIDs (${(e as Error).message.slice(0, 60)})`); }
+  }
+
+  // 3. Resolve option contracts → "$strike type expiration" labels (best-effort batch; UUID stub on failure).
+  if (optionInstrumentIds.size) {
+    try {
+      const ids = [...optionInstrumentIds];
+      const byContract = new Map<string, string>();
+      for (let i = 0; i < ids.length; i += 40) {
+        const data = await getJson("https://api.robinhood.com/options/instruments/", {}, { ids: ids.slice(i, i + 40).join(",") });
+        for (const r of data?.results ?? []) {
+          if (!r?.id) continue;
+          byContract.set(String(r.id), `${r.chain_symbol ?? ""} $${Number(r.strike_price)} ${r.type ?? "?"} ${r.expiration_date ?? "?"}`.trim());
+        }
+      }
+      for (const f of fills) {
+        if (f.kind !== "options" || !f.contract) continue;
+        f.contract = byContract.get(f.contract) ?? `${f.symbol} ${f.contract.slice(0, 8)}…`;
+      }
+    } catch {
+      warnings.push("option contract resolve failed — contracts shown as UUID stubs");
+      for (const f of fills) if (f.kind === "options" && f.contract) f.contract = `${f.symbol} ${f.contract.slice(0, 8)}…`;
+    }
+  }
+
+  // 4. Optional symbol scope, then FIFO pairing per account+instrument.
+  const scoped = wantSymbol ? fills.filter((f) => f.symbol === wantSymbol) : fills;
+  scoped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  interface Lot { qty: number; price: number; ts: string; orderId: string; side: "buy" | "sell"; fill: RawFill; }
+  const lots = new Map<string, Lot[]>();
+  const roundTrips: ReviewRoundTrip[] = [];
+  for (const f of scoped) {
+    const key = `${f.account}|${f.instrumentKey}`;
+    const mult = f.kind === "options" ? 100 : 1;
+    const opens = f.kind === "options" ? f.positionEffect === "open" : f.side === "buy";
+    if (opens) {
+      const list = lots.get(key) ?? [];
+      list.push({ qty: f.quantity, price: f.priceUsd, ts: f.timestamp, orderId: f.orderId, side: f.side, fill: f });
+      lots.set(key, list);
+      continue;
+    }
+    // closing fill: consume opposite-side lots FIFO
+    let remaining = f.quantity;
+    const queue = lots.get(key) ?? [];
+    while (remaining > 1e-9 && queue.length) {
+      const lotIndex = queue.findIndex((l) => l.side !== f.side || f.kind === "equity");
+      if (lotIndex === -1) break;
+      const lot = queue[lotIndex];
+      // 8dp rounding kills FIFO float-subtraction noise (0.0247259999… → 0.024726) while
+      // preserving Robinhood's 4dp fractional-share granularity with room to spare.
+      const matched = Math.round(Math.min(remaining, lot.qty) * 1e8) / 1e8;
+      const long = lot.side === "buy";
+      const entryUsd = round2(lot.price * matched * mult);
+      const exitUsd = round2(f.priceUsd * matched * mult);
+      const realized = round2((long ? f.priceUsd - lot.price : lot.price - f.priceUsd) * matched * mult);
+      const holdMs = Date.parse(f.timestamp) - Date.parse(lot.ts);
+      roundTrips.push({
+        kind: f.kind, symbol: f.symbol, contract: f.contract, account: f.account,
+        quantity: matched, direction: long ? "long" : "short",
+        openedAt: lot.ts, closedAt: f.timestamp,
+        holdDays: Number.isFinite(holdMs) ? Math.round((holdMs / 86_400_000) * 10) / 10 : Number.NaN,
+        entryUsd, exitUsd, realizedPnlUsd: realized, win: realized > 0,
+        orderIds: [...new Set([lot.orderId, f.orderId])], notes: []
+      });
+      lot.qty -= matched;
+      remaining -= matched;
+      if (lot.qty <= 1e-9) queue.splice(lotIndex, 1);
+    }
+    if (remaining > 1e-9) {
+      f.openLeg = true; // close with no in-window entry (opened pre-window) — flagged, not dropped
+      f.unmatchedQuantity = Math.round(remaining * 10000) / 10000;
+    }
+  }
+  // leftover lots = positions still open (or partially closed) — flag their source fills
+  for (const queue of lots.values()) {
+    for (const lot of queue) {
+      lot.fill.openLeg = true;
+      lot.fill.unmatchedQuantity = Math.round((lot.fill.unmatchedQuantity + lot.qty) * 10000) / 10000;
+    }
+  }
+
+  // 5. Attach operator notes (trade-notes.md) by ref match — order id or symbol token.
+  const notes = (deps.loadNotes ?? loadTradeNotes)();
+  const trades: ReviewFill[] = scoped.map((f) => ({
+    ...f,
+    notes: notes.filter((note) => noteMatchesTrade(note.ref, { symbol: f.symbol, orderIds: [f.orderId] }))
+  }));
+  for (const rt of roundTrips) {
+    rt.notes = notes.filter((note) => noteMatchesTrade(note.ref, { symbol: rt.symbol, orderIds: rt.orderIds }));
+  }
+
+  // 6. Summary — the film-study scoreboard, all in dollars.
+  const winners = roundTrips.filter((r) => r.realizedPnlUsd > 0).length;
+  const losers = roundTrips.filter((r) => r.realizedPnlUsd < 0).length;
+  const totalRealizedUsd = round2(roundTrips.reduce((s, r) => s + r.realizedPnlUsd, 0));
+  const holdVals = roundTrips.map((r) => r.holdDays).filter((x) => Number.isFinite(x));
+  const best = roundTrips.reduce<ReviewRoundTrip | null>((acc, r) => (acc === null || r.realizedPnlUsd > acc.realizedPnlUsd ? r : acc), null);
+  const worst = roundTrips.reduce<ReviewRoundTrip | null>((acc, r) => (acc === null || r.realizedPnlUsd < acc.realizedPnlUsd ? r : acc), null);
+  const summary: TradeReviewSummary = {
+    trades: trades.length,
+    roundTrips: roundTrips.length,
+    winners,
+    losers,
+    winRatePct: roundTrips.length ? Math.round((winners / roundTrips.length) * 1000) / 10 : Number.NaN,
+    totalRealizedUsd,
+    bestTrade: best ? { symbol: best.symbol, contract: best.contract, realizedPnlUsd: best.realizedPnlUsd, account: best.account } : null,
+    worstTrade: worst ? { symbol: worst.symbol, contract: worst.contract, realizedPnlUsd: worst.realizedPnlUsd, account: worst.account } : null,
+    avgHoldDays: holdVals.length ? Math.round((holdVals.reduce((s, x) => s + x, 0) / holdVals.length) * 10) / 10 : Number.NaN,
+    openLegs: trades.filter((t) => t.openLeg).length
+  };
+
+  // strip the internal pairing key from the public rows
+  const publicTrades = trades.map(({ instrumentKey: _k, ...rest }: any) => rest as ReviewFill);
+  return { days, accountsScanned: accts.map((a) => "…" + a.acct.slice(-4)), trades: publicTrades, roundTrips, summary, warnings };
+}
+
+// ── Hotlist: operator-maintained ticker watchlist (hotlist.md) ──────────────────────────────────
+
+export interface HotlistEntry {
+  symbol: string;
+  thesis: string | null;
+  line: number;
+}
+
+export const HOTLIST_FILE = "hotlist.md";
+
+/**
+ * Parse hotlist.md content: one ticker per line, `TICKER — optional thesis/note` (em/en/plain
+ * dash). Ignored: blank lines, headers/comments (#, <!--, >), and lines marked "(example)".
+ */
+export function parseHotlist(content: string): HotlistEntry[] {
+  const out: HotlistEntry[] = [];
+  content.split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("<!--") || line.startsWith("-->") || line.startsWith(">")) return;
+    if (/\(example\)/i.test(line)) return;
+    const m = /^([A-Z][A-Z0-9.\-]{0,9})\s*(?:[—–-]+\s*(.*))?$/.exec(line);
+    if (!m) return;
+    out.push({ symbol: m[1], thesis: m[2]?.trim() || null, line: i + 1 });
+  });
+  return out;
+}
+
+export function loadHotlist(deps: { file?: string } = {}): HotlistEntry[] {
+  const file = deps.file ?? join(repoRoot(), HOTLIST_FILE);
+  try {
+    return parseHotlist(readFileSync(file, "utf8"));
+  } catch {
+    return []; // no hotlist yet — callers explain how to seed it
+  }
+}
+
+/**
+ * Hotlist + live quotes: parse hotlist.md and quote every ticker (batched), returning last,
+ * day $ and % change (per share), and the operator's thesis. Shared by the CLI `hotlist`
+ * command and the MCP robinhood_hotlist tool. Read-only.
+ */
+export async function computeHotlist(
+  deps: { getJson?: typeof brokerageGetJson; entries?: HotlistEntry[] } = {}
+): Promise<{
+  count: number;
+  rows: Array<{ symbol: string; thesis: string | null; lastUsd: number; dayChangeUsd: number; dayChangePct: number; found: boolean }>;
+  warnings: string[];
+}> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const entries = deps.entries ?? loadHotlist();
+  const warnings: string[] = [];
+  if (!entries.length) {
+    return { count: 0, rows: [], warnings: [`${HOTLIST_FILE} has no active entries — add lines like "NVDA — ai capex thesis" (example-marked lines are ignored).`] };
+  }
+  const resolved = await Promise.all(entries.map(async (e) => {
+    try {
+      const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: e.symbol })).results?.[0];
+      return { ...e, instrumentId: inst?.id ? String(inst.id) : null };
+    } catch {
+      return { ...e, instrumentId: null };
+    }
+  }));
+  const ids = resolved.map((r) => r.instrumentId).filter((x): x is string => Boolean(x));
+  const quotes = new Map<string, any>();
+  try {
+    for (let i = 0; i < ids.length; i += 40) {
+      const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: ids.slice(i, i + 40).join(",") });
+      for (const r of data?.results ?? []) if (r?.instrument_id) quotes.set(String(r.instrument_id), r);
+    }
+  } catch (e) { warnings.push(`quote batch failed (${(e as Error).message.slice(0, 60)})`); }
+  const rows = resolved.map((r) => {
+    const q = r.instrumentId ? quotes.get(r.instrumentId) : undefined;
+    const last = Number(q?.last_trade_price ?? q?.last_extended_hours_trade_price);
+    const prev = Number(q?.adjusted_previous_close ?? q?.previous_close);
+    const ok = Number.isFinite(last) && last > 0;
+    return {
+      symbol: r.symbol,
+      thesis: r.thesis,
+      lastUsd: ok ? last : Number.NaN,
+      dayChangeUsd: ok && Number.isFinite(prev) ? round2(last - prev) : Number.NaN,
+      dayChangePct: ok && prev > 0 ? Math.round(((last - prev) / prev) * 1000) / 10 : Number.NaN,
+      found: Boolean(q)
+    };
+  });
+  for (const r of rows) if (!r.found) warnings.push(`${r.symbol}: no quote (unknown/delisted ticker?)`);
+  return { count: rows.length, rows, warnings };
+}
+
+// ── Knowledge library access: knowledge/ modules + playbooks + the docs/ index ─────────────────
+// Closes the "if a user only has the MCP, do they get the knowledge base?" gap: ONE engine serves
+// the CLI `knowledge` command and the MCP robinhood_knowledge tool, so an MCP-only agent can pull
+// the same operating modules a repo-local agent reads off disk.
+// Zayd Khan // cold // www.zayd.wtf
+
+export interface KnowledgeEntry {
+  /** Stable id: file basename without .md ("wheel", "broker-call"); a colliding docs/ id gets a "docs-" prefix. */
+  id: string;
+  /** Repo-relative path ("knowledge/wheel.md"). */
+  path: string;
+  /** First markdown heading line, #s stripped. */
+  title: string;
+  /** First "When to load this" blockquote (knowledge modules/playbooks only) — the routing hint. */
+  whenToLoad: string | null;
+  kind: "module" | "playbook" | "doc";
+}
+
+function firstMarkdownHeading(content: string): string | null {
+  for (const line of content.split(/\r?\n/)) {
+    const m = /^#+\s+(.+?)\s*$/.exec(line);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** Extract the leading "> **When to load this:** …" blockquote (multi-line) from a module. */
+function whenToLoadBlock(content: string): string | null {
+  const lines = content.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^>\s*\*\*When to load/i.test(l));
+  if (start === -1) return null;
+  const collected: string[] = [];
+  for (let i = start; i < lines.length; i++) {
+    const m = /^>\s?(.*)$/.exec(lines[i]);
+    if (!m) break;
+    collected.push(m[1]);
+  }
+  return collected
+    .join(" ")
+    .replace(/\*\*When to load this:\*\*\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim() || null;
+}
+
+/**
+ * Index the knowledge library: every knowledge/ module + knowledge/playbooks/ playbook (with the
+ * "When to load this" routing hint), plus a docs/ reference index (filenames + first heading ONLY —
+ * deep docs stay progressive-disclosure; load one via readKnowledge(id) when a module links there).
+ */
+export function listKnowledge(deps: { root?: string } = {}): KnowledgeEntry[] {
+  const root = deps.root ?? repoRoot();
+  const out: KnowledgeEntry[] = [];
+  const seen = new Set<string>();
+  const scan = (dir: string, kind: KnowledgeEntry["kind"], withHints: boolean) => {
+    let files: string[] = [];
+    try {
+      files = readdirSync(join(root, dir)).filter((f) => f.toLowerCase().endsWith(".md")).sort();
+    } catch {
+      return; // directory absent (e.g. partial checkout) — index still serves what exists
+    }
+    for (const f of files) {
+      let content: string;
+      try {
+        content = readFileSync(join(root, dir, f), "utf8");
+      } catch {
+        continue;
+      }
+      let id = f.replace(/\.md$/i, "").toLowerCase();
+      if (seen.has(id)) id = `docs-${id}`; // docs/README.md must not shadow knowledge/README.md
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({
+        id,
+        path: `${dir}/${f}`,
+        title: firstMarkdownHeading(content) ?? f,
+        whenToLoad: withHints ? whenToLoadBlock(content) : null,
+        kind
+      });
+    }
+  };
+  scan("knowledge", "module", true);
+  scan("knowledge/playbooks", "playbook", true);
+  scan("docs", "doc", false);
+  return out;
+}
+
+/** Cheap did-you-mean for knowledge ids: substring containment, then shared-prefix/char overlap. */
+function closestKnowledgeIds(want: string, ids: string[]): string[] {
+  const w = want.toLowerCase();
+  const scored = ids
+    .map((id) => {
+      let score = 0;
+      if (id.includes(w) || w.includes(id)) score += 3;
+      let prefix = 0;
+      while (prefix < Math.min(id.length, w.length) && id[prefix] === w[prefix]) prefix++;
+      score += Math.min(prefix, 3);
+      const overlap = [...new Set(w)].filter((c) => id.includes(c)).length / Math.max(1, new Set(w).size);
+      score += overlap;
+      return { id, score };
+    })
+    .filter((s) => s.score >= 2)
+    .sort((a, b) => b.score - a.score);
+  return scored.slice(0, 3).map((s) => s.id);
+}
+
+/** Read one knowledge module/playbook/doc in full by id (basename without .md). Did-you-mean on a miss. */
+export function readKnowledge(
+  id: string,
+  deps: { root?: string } = {}
+): { id: string; path: string; title: string; kind: KnowledgeEntry["kind"]; content: string } {
+  const root = deps.root ?? repoRoot();
+  const entries = listKnowledge(deps);
+  const want = id.trim().toLowerCase().replace(/\.md$/i, "");
+  const hit = entries.find((e) => e.id === want);
+  if (!hit) {
+    const close = closestKnowledgeIds(want, entries.map((e) => e.id));
+    throw new Error(
+      `No knowledge module "${id}".${close.length ? ` Did you mean: ${close.join(", ")}?` : ""} Run \`knowledge\` (or robinhood_knowledge action=index) for the full index.`
+    );
+  }
+  return { id: hit.id, path: hit.path, title: hit.title, kind: hit.kind, content: readFileSync(join(root, hit.path), "utf8") };
+}
+
+// ── Pending-roll ledger (rolls.md): cash-account kosher rolls are TWO-DAY trades ────────────────
+// Close today, open next business day with settled cash — and sessions die between the legs. The
+// pending intent lives in repo-root rolls.md so the NEXT session (CLI or MCP) picks the open leg
+// back up. PENDING entries only: completion REMOVES the entry (the file stays clean), and the
+// removed entry is returned so callers can log it to trading-log.md. Order history remains the
+// only proof either leg actually executed.
+// Zayd Khan // cold // www.zayd.wtf
+
+export const ROLLS_FILE = "rolls.md";
+
+export interface PendingRoll {
+  symbol: string;
+  /** Date the close leg was staged ("opened" in the header), YYYY-MM-DD. */
+  opened: string;
+  closedLeg: string | null;
+  openIntent: string | null;
+  earliestOpenDate: string | null;
+  account: string | null;
+  notes: string | null;
+  /** Exact block text in rolls.md — used for surgical removal on completion. */
+  block: string;
+}
+
+/**
+ * Parse rolls.md content into pending entries. Contract: `### PENDING | SYMBOL | opened YYYY-MM-DD`
+ * then `- field: value` lines. Headers marked EXAMPLE are ignored (the seeded sample), as is the
+ * format template in the file header (its date placeholder never matches a real date).
+ */
+export function parsePendingRolls(content: string): PendingRoll[] {
+  const rolls: PendingRoll[] = [];
+  const lines = content.split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length) {
+    const m = /^###\s+PENDING\s*\|\s*([^|]+?)\s*\|\s*opened\s+(\d{4}-\d{2}-\d{2})\s*(.*)$/.exec(lines[i]);
+    if (!m) {
+      i++;
+      continue;
+    }
+    const start = i;
+    i++;
+    while (i < lines.length && !/^###\s/.test(lines[i])) i++;
+    const block = lines.slice(start, i).join("\n");
+    if (/\bEXAMPLE\b/i.test(m[3] ?? "")) continue; // example entry — parser ignores
+    const field = (name: string): string | null => {
+      const fm = new RegExp(`^[-*]\\s*${name}\\s*:\\s*(.+)$`, "im").exec(block);
+      const v = fm?.[1]?.trim();
+      return v && v !== "—" ? v : null;
+    };
+    rolls.push({
+      symbol: m[1].trim().toUpperCase(),
+      opened: m[2],
+      closedLeg: field("closed leg"),
+      openIntent: field("intended open leg"),
+      earliestOpenDate: field("earliest open date"),
+      account: field("account"),
+      notes: field("notes"),
+      block
+    });
+  }
+  return rolls;
+}
+
+/** Render one rolls.md entry block (the exact shape parsePendingRolls reads back). */
+export function formatPendingRoll(input: {
+  symbol: string;
+  closedLeg?: string;
+  openIntent?: string;
+  earliestOpenDate?: string;
+  account?: string;
+  notes?: string;
+  now?: Date;
+}): string {
+  const d = input.now ?? new Date();
+  const pad = (x: number) => String(x).padStart(2, "0");
+  const opened = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const acct = input.account?.trim();
+  return [
+    "",
+    `### PENDING | ${input.symbol.trim().toUpperCase()} | opened ${opened}`,
+    `- closed leg: ${input.closedLeg?.trim() || "—"}`,
+    `- intended open leg: ${input.openIntent?.trim() || "fresh quote on the open day"}`,
+    `- earliest open date: ${input.earliestOpenDate?.trim() || "next business day after the close"}`,
+    `- account: ${acct ? `…${acct.slice(-4)}` : "—"}`,
+    `- notes: ${input.notes?.trim() || "—"}`,
+    ""
+  ].join("\n");
+}
+
+/** Append a pending kosher-roll intent to rolls.md. Local file only — never touches the account. */
+export function addPendingRoll(
+  input: { symbol: string; closedLeg?: string; openIntent?: string; earliestOpenDate?: string; account?: string; notes?: string },
+  deps: { file?: string; now?: Date } = {}
+): { file: string; entry: string } {
+  if (!input.symbol?.trim()) throw new Error("A pending roll needs at least a symbol.");
+  const file = deps.file ?? join(repoRoot(), ROLLS_FILE);
+  const entry = formatPendingRoll({ ...input, now: deps.now });
+  appendFileSync(file, entry);
+  return { file, entry };
+}
+
+export function listPendingRolls(deps: { file?: string } = {}): PendingRoll[] {
+  const file = deps.file ?? join(repoRoot(), ROLLS_FILE);
+  try {
+    return parsePendingRolls(readFileSync(file, "utf8"));
+  } catch {
+    return []; // no ledger yet — nothing pending
+  }
+}
+
+/**
+ * Complete (or abandon) a pending roll: REMOVE its entry from rolls.md and return it so the caller
+ * can append the completion to trading-log.md. Match by "SYMBOL" or "SYMBOL YYYY-MM-DD"; ambiguity
+ * and misses fail loud with the live pending list. Overwrites the file with the entry excised —
+ * completed entries never accumulate.
+ */
+export function completePendingRoll(
+  symbolOrId: string,
+  deps: { file?: string } = {}
+): { file: string; removed: PendingRoll; remaining: number } {
+  const file = deps.file ?? join(repoRoot(), ROLLS_FILE);
+  let content: string;
+  try {
+    content = readFileSync(file, "utf8");
+  } catch {
+    throw new Error(`${ROLLS_FILE} not found — nothing pending to complete.`);
+  }
+  const rolls = parsePendingRolls(content);
+  const want = symbolOrId.trim().toUpperCase();
+  const [sym, date] = want.split(/\s+/);
+  const matches = rolls.filter((r) => r.symbol === sym && (!date || r.opened === date));
+  if (matches.length === 0) {
+    throw new Error(
+      `No pending roll matches "${symbolOrId}". Pending: ${rolls.map((r) => `${r.symbol} (opened ${r.opened})`).join(", ") || "none"}.`
+    );
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `${matches.length} pending rolls match ${sym} — disambiguate with "SYMBOL YYYY-MM-DD": ${matches.map((r) => `${r.symbol} ${r.opened}`).join(", ")}.`
+    );
+  }
+  const removed = matches[0];
+  const next = content.replace(removed.block, "").replace(/\n{3,}/g, "\n\n");
+  writeFileSync(file, next.endsWith("\n") ? next : next + "\n");
+  return { file, removed, remaining: rolls.length - 1 };
+}
+
+/**
+ * Append the roll-completion bookkeeping entry to trading-log.md (committed, operator-facing).
+ * Local file write only; STATUS stays honest — order history is the only proof the open leg filled.
+ */
+export function appendRollCompletionLog(
+  removed: PendingRoll,
+  deps: { file?: string; now?: Date } = {}
+): { file: string; entry: string } {
+  const file = deps.file ?? join(repoRoot(), "trading-log.md");
+  const d = deps.now ?? new Date();
+  const pad = (x: number) => String(x).padStart(2, "0");
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} local`;
+  const entry = [
+    "",
+    "=== TRADE LOG ENTRY",
+    `WHEN:    ${stamp}`,
+    `ACCOUNT: ${removed.account ?? "…????"}`,
+    `ACTION:  roll-ledger done ${removed.symbol} (pending kosher-roll intent cleared from rolls.md)`,
+    `SIZE:    n/a           ORDER-ID: n/a`,
+    `STATUS:  bookkeeping   (order history remains the only proof the open leg itself executed)`,
+    `INTENT:  Cash-account staged roll resolved — open leg filled or the plan was dropped.`,
+    `THREAD:  was: close=${removed.closedLeg ?? "?"}; open intent=${removed.openIntent ?? "?"} (staged ${removed.opened})`,
+    "=== END",
+    ""
+  ].join("\n");
+  appendFileSync(file, entry);
+  return { file, entry };
+}
+
+// Zayd Khan // cold // www.zayd.wtf
 
 export async function executeCryptoRequest(
   plan: PlannedCryptoRequest,
@@ -3354,4 +5303,4 @@ export function printTable(rows: Array<Record<string, unknown>>, columns: string
   }
 }
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

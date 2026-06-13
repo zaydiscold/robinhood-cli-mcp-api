@@ -1,32 +1,489 @@
 {
   "_note": "Intent → the ONE command to run. Surfaced by `recipes` (CLI) + `robinhood_recipes` (MCP). Each recipe maps a plain-English intent + trigger phrases to the verified first-class CLI command and its MCP-tool equivalent. Keep this in sync when adding commands; it is the agent's intent-routing table. Reads are live/free; writes are double-gated (--live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1).",
+  "_provenance": "Zayd Khan // cold // www.zayd.wtf",
   "recipes": [
-    { "id": "down-today", "intent": "Why am I down/up today or after hours? What's bleeding me?", "triggers": ["down today", "after hours", "what's bleeding", "biggest losers", "how's my portfolio", "p&l", "pnl"], "command": "portfolio --after-hours   (or --day)", "mcpTool": "robinhood_portfolio", "risk": "sensitive-read", "notes": "One call: per-account day Δ + after-hours Δ, drivers by underlying in DOLLARS, reconciliation. Don't hand-stitch from positions+quote." },
-    { "id": "holdings-equity", "intent": "What stocks do I own?", "triggers": ["what do I own", "my positions", "my shares", "holdings"], "command": "positions --account <N>", "mcpTool": "robinhood_positions", "risk": "sensitive-read", "notes": "Resolves instrument UUIDs to tickers + quotes." },
-    { "id": "holdings-options", "intent": "What option contracts do I hold?", "triggers": ["my options", "options positions", "contracts I hold"], "command": "options positions   (or options holdings)", "mcpTool": "robinhood_options_holdings", "risk": "sensitive-read", "notes": "Every held contract: UUID + strike + bid/ask/last + qty + link, across accounts." },
-    { "id": "quote", "intent": "Quote a symbol or several", "triggers": ["quote", "price of", "what's X trading at"], "command": "quote <SYM> [<SYM> ...]", "mcpTool": "robinhood_quote", "risk": "read", "notes": "Live equity/ETF quotes." },
-    { "id": "options-chain", "intent": "Show the options chain / expirations", "triggers": ["options chain", "expirations", "strikes for"], "command": "options chain <SYM> --expiration <D> --type call|put   ·   options expirations <SYM>", "mcpTool": "robinhood_options_enumerate", "risk": "read", "notes": "Bulk-enumerate first — option UUIDs are random v4, never computable." },
-    { "id": "enumerate-uuids", "intent": "Get every option_instrument_id for a chain/expiration", "triggers": ["enumerate options", "option uuids", "instrument ids"], "command": "options enumerate <SYM> --expiration <YYYY-MM-DD> --type both", "mcpTool": "robinhood_options_enumerate", "risk": "read", "notes": "The backbone of every options flow. One API call per chain/expiration/type." },
-    { "id": "price-spread", "intent": "Price a spread / iron condor / straddle (dry-run)", "triggers": ["price a spread", "iron condor", "credit spread", "strategy quote"], "command": "options strategy-quote <strategy> --account <N> --symbol <S> --expiration <D> --leg <leg>=<strike> ... --pricing-mode mid", "mcpTool": "robinhood_options_strategy_plan", "risk": "read", "notes": "Resolves ids, reads bid/ask/Greeks, computes net credit/debit + a limit, fills the dry-run body. Sends nothing." },
-    { "id": "plan-strategy", "intent": "Plan a named options strategy (template body)", "triggers": ["plan a strategy", "strategy template", "covered call plan"], "command": "api-map options-strategy-plan <id> --param key=value", "mcpTool": "robinhood_options_strategy_plan", "risk": "read", "notes": "Emits reviewContract + lookup steps + options/orders/ body template." },
-    { "id": "roll", "intent": "Roll an option position (staged close+open)", "triggers": ["roll my", "roll out", "roll up"], "command": "options roll-plan --account <N> --symbol <S> --type call|put --close-expiration <D1> --close-strike <K1> --open-expiration <D2> --open-strike <K2> [--cash-account]", "mcpTool": "robinhood_options_strategy_plan", "risk": "read", "notes": "Cash-account aware (T+1 kosher roll). Dry-run plan only." },
-    { "id": "inspect-contract", "intent": "Pull all info on one owned contract (Greeks + fills)", "triggers": ["inspect contract", "contract details", "my fills on"], "command": "options inspect <option_uuid>", "mcpTool": "robinhood_options_inspect", "risk": "sensitive-read", "notes": "Metadata + live Greeks + fill history + buy/sell handoff." },
-    { "id": "history", "intent": "What transactions went through (today/recently)?", "triggers": ["transactions", "order history", "what filled", "recent activity"], "command": "history --days <n> [--account <N>]", "mcpTool": "robinhood_history", "risk": "sensitive-read", "notes": "Merges equity + options + crypto orders + ACH transfers, newest first." },
-    { "id": "stock-profile", "intent": "Full stock detail page (quote + fundamentals + borrow + margin)", "triggers": ["stock profile", "fundamentals", "borrow rate"], "command": "stock profile <SYM> --account <N>", "mcpTool": "robinhood_stock_profile", "risk": "sensitive-read", "notes": "Joins quote, description, fundamentals, shorting/borrow, buying-power, margin." },
-    { "id": "watchlist", "intent": "Read my watchlists", "triggers": ["watchlist", "my lists"], "command": "watchlist list", "mcpTool": "robinhood_watchlist", "risk": "read", "notes": "owner_type=custom is mandatory (handled internally)." },
-    { "id": "accounts", "intent": "List all my accounts + capabilities", "triggers": ["my accounts", "how many accounts", "account types"], "command": "accounts", "mcpTool": "robinhood_accounts", "risk": "sensitive-read", "notes": "Full graph via transfer/accounts/ (bare accounts/ under-reports). Never hardcode account numbers." },
-    { "id": "buy-equity", "intent": "Buy a stock (dollars or shares)", "triggers": ["buy stock", "buy shares", "buy $X of"], "command": "brokerage buy <SYM> --account <N> --dollars <$>   (or --shares <n>) --live-write", "mcpTool": "robinhood_brokerage_execute", "risk": "write-mutate", "notes": "Double-gated. Ground the ticker with `brokerage search` first; OTC auto-limits at ask (whole shares only)." },
-    { "id": "options-order-flow", "intent": "Pre-trade options context: buying power, fees, collateral", "triggers": ["options buying power", "options fees", "collateral", "can I afford this option", "pre-trade options"], "command": "options order-flow --account <N> [--chain-id <id>]", "mcpTool": "robinhood_options_order_flow", "risk": "sensitive-read", "notes": "Options buying power is the REAL gate on opens (not regular BP, esp. GTC overnight). The options/orders/review preview is a gated POST until verified non-mutating." },
-    { "id": "place-option-order", "intent": "Place/cancel an options order", "triggers": ["place an order", "buy to open", "sell to close", "cancel order"], "command": "brokerage execute \"options/orders/\" --method POST --live-write   ·   cancel: \"options/orders/{0}/cancel/\" --param 0=<id>", "mcpTool": "robinhood_brokerage_execute", "risk": "write-mutate", "notes": "Double-gated. Classify the strategy + bulk-enumerate UUIDs first; keep the {0} placeholder + --param." },
-    { "id": "settings", "intent": "Read/toggle an account setting (DRIP, PDT-protection, sweep, lending)", "triggers": ["drip", "turn on drip", "account settings", "stock lending"], "command": "settings ... [--live-write]", "mcpTool": "robinhood_settings", "risk": "write-or-sensitive", "notes": "Reads free; writes double-gated. DRIP write is PATCH corp_actions/drip/account_settings/{account_number}/, NOT drip/enrollment/." },
-    { "id": "recurring", "intent": "List / pause / resume recurring buys", "triggers": ["recurring", "auto invest", "pause buys", "resume buys"], "command": "recurring list | pause | resume [--all] [--live-write]", "mcpTool": "robinhood_recurring", "risk": "write-mutate", "notes": "pause --all only pauses ACTIVE; resume --all only resumes PAUSED. Report what actually changed." },
-    { "id": "find-route", "intent": "Find / understand an API route (what it needs + returns)", "triggers": ["which route", "what endpoint", "map a route", "what fields does"], "command": "brokerage describe <url>   ·   api-map directory --domain <d>", "mcpTool": "robinhood_brokerage_describe", "risk": "read", "notes": "describe = self-documenting card (tokens, query keys, response fields, command); directory = by-domain index." },
-    { "id": "map-new-endpoint", "intent": "Capture a NEW endpoint not yet in the map", "triggers": ["new endpoint", "capture an endpoint", "undocumented route"], "command": "use the api-capture-kit (enumerate-site-api skill): arm interceptor → drive UI → harvest → add to brokerage-routes.json → rebuild", "mcpTool": "robinhood_browser_routes", "risk": "read", "notes": "Capture, don't guess. Mark unverified write bodies as research. Re-run scripts/harvest-response-fields.mjs to attach fields." },
-    { "id": "wheel-status", "intent": "Where am I in the Wheel on a symbol? What's the next wheel leg?", "triggers": ["wheel", "wheel status", "next leg", "got assigned", "covered call after assignment", "run the wheel", "wheel on"], "command": "wheel [SYMBOL] [--account <N>]", "mcpTool": "robinhood_wheel", "risk": "sensitive-read", "notes": "Reads shares + short puts/calls per account from EVIDENCE, classifies the stage (CSP open → assigned/holding → CC open), flags undercovered short calls, and emits the literal next-leg dry-run command. Works with no position too (discussion mode). Background: docs/strategy-deep-dive-the-wheel-2026-06-04.md." },
-    { "id": "wheel-start-csp", "intent": "Start the wheel / sell a cash-secured put for income", "triggers": ["cash secured put", "csp", "start the wheel", "sell a put for income", "wheel entry"], "command": "options strategy-quote cash-secured-short-put --account <N> --symbol <S> --expiration <D> --leg short_put=<K> --pricing-mode safe-sell-probe --json", "mcpTool": "robinhood_options_strategy_plan", "risk": "sensitive-read", "notes": "Wheel leg 1. Collateral = strike × 100 settled cash per contract. Quote is dry-run; the live send is a separate double-gated step. Pick strikes from `options chain <S>`." },
-    { "id": "wheel-covered-call", "intent": "Sell a covered call against shares I hold", "triggers": ["covered call", "cc on my shares", "sell calls against", "write a call"], "command": "options strategy-quote covered-call --account <N> --symbol <S> --expiration <D> --leg short_call=<K> --pricing-mode safe-sell-probe --json", "mcpTool": "robinhood_options_strategy_plan", "risk": "sensitive-read", "notes": "Wheel leg 3. Needs 100 shares per contract in the SAME account (run `wheel <S>` first — it checks coverage and suggests strikes vs cost basis). Strike below basis locks a loss if assigned." },
-    { "id": "order-simple", "intent": "Buy or sell a stock the simple way (one command, deduped)", "triggers": ["just buy", "simple buy", "sell my shares", "market order", "limit order"], "command": "buy|sell -s <SYM> -a <N> -m <$> | -q <shares> [-p <limit>] [--live]", "mcpTool": "robinhood_buy", "risk": "write-mutate", "notes": "Double-gated like every write (--live + ROBINHOOD_ALLOW_LIVE_WRITE=1; dry-run by default). Auto: OTC/fractional guard, pending-order dedup (5-min; --force skips), ref_id idempotency, trade log. Same engine as robinhood_sell. For OTC names needing auto-limit-at-ask use `brokerage buy`." },
-    { "id": "order-status-check", "intent": "Did my order go through? Check one order's state/fills", "triggers": ["order status", "did it fill", "check my order", "order go through"], "command": "order-status -i <order_id_or_url>", "mcpTool": "robinhood_order_status", "risk": "sensitive-read", "notes": "Returns the REAL ticker (UUID resolved), state, fills, prices. Order history is the only proof a trade happened (failure mode #20)." },
-    { "id": "buying-power", "intent": "How much buying power do I have? Margin health?", "triggers": ["buying power", "how much can I buy", "margin health", "bp"], "command": "buying-power [--account <N>]", "mcpTool": "robinhood_buying_power", "risk": "sensitive-read", "notes": "Per-account regular/unleveraged/intraday BP + cash + margin usage. Options opens are gated by OPTIONS/overnight BP — use `options order-flow` for that." }
+    {
+      "id": "down-today",
+      "intent": "Why am I down/up today or after hours? What's bleeding me?",
+      "triggers": [
+        "down today",
+        "after hours",
+        "what's bleeding",
+        "biggest losers",
+        "how's my portfolio",
+        "p&l",
+        "pnl"
+      ],
+      "command": "portfolio --after-hours   (or --day)",
+      "mcpTool": "robinhood_portfolio",
+      "risk": "sensitive-read",
+      "notes": "One call: per-account day Δ + after-hours Δ, drivers by underlying in DOLLARS, reconciliation. Don't hand-stitch from positions+quote."
+    },
+    {
+      "id": "holdings-equity",
+      "intent": "What stocks do I own?",
+      "triggers": [
+        "what do I own",
+        "my positions",
+        "my shares",
+        "holdings"
+      ],
+      "command": "positions --account <N>",
+      "mcpTool": "robinhood_positions",
+      "risk": "sensitive-read",
+      "notes": "Resolves instrument UUIDs to tickers + quotes."
+    },
+    {
+      "id": "holdings-options",
+      "intent": "What option contracts do I hold?",
+      "triggers": [
+        "my options",
+        "options positions",
+        "contracts I hold"
+      ],
+      "command": "options positions   (or options holdings)",
+      "mcpTool": "robinhood_options_holdings",
+      "risk": "sensitive-read",
+      "notes": "Every held contract: UUID + strike + bid/ask/last + qty + link, across accounts."
+    },
+    {
+      "id": "quote",
+      "intent": "Quote a symbol or several",
+      "triggers": [
+        "quote",
+        "price of",
+        "what's X trading at"
+      ],
+      "command": "quote <SYM> [<SYM> ...]",
+      "mcpTool": "robinhood_quote",
+      "risk": "read",
+      "notes": "Live equity/ETF quotes."
+    },
+    {
+      "id": "options-chain",
+      "intent": "Show the options chain / expirations",
+      "triggers": [
+        "options chain",
+        "expirations",
+        "strikes for"
+      ],
+      "command": "options chain <SYM> --expiration <D> --type call|put   ·   options expirations <SYM>",
+      "mcpTool": "robinhood_options_enumerate",
+      "risk": "read",
+      "notes": "Bulk-enumerate first — option UUIDs are random v4, never computable."
+    },
+    {
+      "id": "enumerate-uuids",
+      "intent": "Get every option_instrument_id for a chain/expiration",
+      "triggers": [
+        "enumerate options",
+        "option uuids",
+        "instrument ids"
+      ],
+      "command": "options enumerate <SYM> --expiration <YYYY-MM-DD> --type both",
+      "mcpTool": "robinhood_options_enumerate",
+      "risk": "read",
+      "notes": "The backbone of every options flow. One API call per chain/expiration/type."
+    },
+    {
+      "id": "price-spread",
+      "intent": "Price a spread / iron condor / straddle (dry-run)",
+      "triggers": [
+        "price a spread",
+        "iron condor",
+        "credit spread",
+        "strategy quote"
+      ],
+      "command": "options strategy-quote <strategy> --account <N> --symbol <S> --expiration <D> --leg <leg>=<strike> ... --pricing-mode mid",
+      "mcpTool": "robinhood_options_strategy_plan",
+      "risk": "read",
+      "notes": "Resolves ids, reads bid/ask/Greeks, computes net credit/debit + a limit, fills the dry-run body. Sends nothing."
+    },
+    {
+      "id": "plan-strategy",
+      "intent": "Plan a named options strategy (template body)",
+      "triggers": [
+        "plan a strategy",
+        "strategy template",
+        "covered call plan"
+      ],
+      "command": "api-map options-strategy-plan <id> --param key=value",
+      "mcpTool": "robinhood_options_strategy_plan",
+      "risk": "read",
+      "notes": "Emits reviewContract + lookup steps + options/orders/ body template."
+    },
+    {
+      "id": "roll",
+      "intent": "Roll an option position (staged close+open)",
+      "triggers": [
+        "roll my",
+        "roll out",
+        "roll up"
+      ],
+      "command": "options roll-plan --account <N> --symbol <S> --type call|put --close-expiration <D1> --close-strike <K1> --open-expiration <D2> --open-strike <K2> [--cash-account]",
+      "mcpTool": "robinhood_options_strategy_plan",
+      "risk": "read",
+      "notes": "Cash-account aware (T+1 kosher roll). Dry-run plan only."
+    },
+    {
+      "id": "inspect-contract",
+      "intent": "Pull all info on one owned contract (Greeks + fills)",
+      "triggers": [
+        "inspect contract",
+        "contract details",
+        "my fills on"
+      ],
+      "command": "options inspect <option_uuid>",
+      "mcpTool": "robinhood_options_inspect",
+      "risk": "sensitive-read",
+      "notes": "Metadata + live Greeks + fill history + buy/sell handoff."
+    },
+    {
+      "id": "history",
+      "intent": "What transactions went through (today/recently)?",
+      "triggers": [
+        "transactions",
+        "order history",
+        "what filled",
+        "recent activity"
+      ],
+      "command": "history --days <n> [--account <N>]",
+      "mcpTool": "robinhood_history",
+      "risk": "sensitive-read",
+      "notes": "Merges equity + options + crypto orders + ACH transfers, newest first."
+    },
+    {
+      "id": "stock-profile",
+      "intent": "Full stock detail page (quote + fundamentals + borrow + margin)",
+      "triggers": [
+        "stock profile",
+        "fundamentals",
+        "borrow rate"
+      ],
+      "command": "stock profile <SYM> --account <N>",
+      "mcpTool": "robinhood_stock_profile",
+      "risk": "sensitive-read",
+      "notes": "Joins quote, description, fundamentals, shorting/borrow, buying-power, margin."
+    },
+    {
+      "id": "watchlist",
+      "intent": "Read my watchlists",
+      "triggers": [
+        "watchlist",
+        "my lists"
+      ],
+      "command": "watchlist list",
+      "mcpTool": "robinhood_watchlist",
+      "risk": "read",
+      "notes": "owner_type=custom is mandatory (handled internally)."
+    },
+    {
+      "id": "accounts",
+      "intent": "List all my accounts + capabilities",
+      "triggers": [
+        "my accounts",
+        "how many accounts",
+        "account types"
+      ],
+      "command": "accounts",
+      "mcpTool": "robinhood_accounts",
+      "risk": "sensitive-read",
+      "notes": "Full graph via transfer/accounts/ (bare accounts/ under-reports). Never hardcode account numbers."
+    },
+    {
+      "id": "buy-equity",
+      "intent": "Buy a stock (dollars or shares)",
+      "triggers": [
+        "buy stock",
+        "buy shares",
+        "buy $X of"
+      ],
+      "command": "brokerage buy <SYM> --account <N> --dollars <$>   (or --shares <n>) --live-write",
+      "mcpTool": "robinhood_brokerage_execute",
+      "risk": "write-mutate",
+      "notes": "Double-gated. Ground the ticker with `brokerage search` first; OTC auto-limits at the marketable side (buy=ask, sell=bid; whole shares only, both directions)."
+    },
+    {
+      "id": "options-order-flow",
+      "intent": "Pre-trade options context: buying power, fees, collateral",
+      "triggers": [
+        "options buying power",
+        "options fees",
+        "collateral",
+        "can I afford this option",
+        "pre-trade options"
+      ],
+      "command": "options order-flow --account <N> [--chain-id <id>]",
+      "mcpTool": "robinhood_options_order_flow",
+      "risk": "sensitive-read",
+      "notes": "Options buying power is the REAL gate on opens (not regular BP, esp. GTC overnight). The options/orders/review preview is a gated POST until verified non-mutating."
+    },
+    {
+      "id": "place-option-order",
+      "intent": "Place/cancel an options order",
+      "triggers": [
+        "place an order",
+        "buy to open",
+        "sell to close",
+        "cancel order"
+      ],
+      "command": "brokerage execute \"options/orders/\" --method POST --live-write   ·   cancel: \"options/orders/{0}/cancel/\" --param 0=<id>",
+      "mcpTool": "robinhood_brokerage_execute",
+      "risk": "write-mutate",
+      "notes": "Double-gated. Classify the strategy + bulk-enumerate UUIDs first; keep the {0} placeholder + --param."
+    },
+    {
+      "id": "settings",
+      "intent": "Read/toggle an account setting (DRIP, PDT-protection, sweep, lending)",
+      "triggers": [
+        "drip",
+        "turn on drip",
+        "account settings",
+        "stock lending"
+      ],
+      "command": "settings ... [--live-write]",
+      "mcpTool": "robinhood_settings",
+      "risk": "write-or-sensitive",
+      "notes": "Reads free; writes double-gated. DRIP write is PATCH corp_actions/drip/account_settings/{account_number}/, NOT drip/enrollment/."
+    },
+    {
+      "id": "recurring",
+      "intent": "List / pause / resume recurring buys",
+      "triggers": [
+        "recurring",
+        "auto invest",
+        "pause buys",
+        "resume buys"
+      ],
+      "command": "recurring list | pause | resume [--all] [--live-write]",
+      "mcpTool": "robinhood_recurring",
+      "risk": "write-mutate",
+      "notes": "pause --all only pauses ACTIVE; resume --all only resumes PAUSED. Report what actually changed."
+    },
+    {
+      "id": "find-route",
+      "intent": "Find / understand an API route (what it needs + returns)",
+      "triggers": [
+        "which route",
+        "what endpoint",
+        "map a route",
+        "what fields does"
+      ],
+      "command": "brokerage describe <url>   ·   api-map directory --domain <d>",
+      "mcpTool": "robinhood_brokerage_describe",
+      "risk": "read",
+      "notes": "describe = self-documenting card (tokens, query keys, response fields, command); directory = by-domain index."
+    },
+    {
+      "id": "map-new-endpoint",
+      "intent": "Capture a NEW endpoint not yet in the map",
+      "triggers": [
+        "new endpoint",
+        "capture an endpoint",
+        "undocumented route"
+      ],
+      "command": "use the api-capture-kit (enumerate-site-api skill): arm interceptor → drive UI → harvest → add to brokerage-routes.json → rebuild",
+      "mcpTool": "robinhood_browser_routes",
+      "risk": "read",
+      "notes": "Capture, don't guess. Mark unverified write bodies as research. Re-run scripts/harvest-response-fields.mjs to attach fields."
+    },
+    {
+      "id": "wheel-status",
+      "intent": "Where am I in the Wheel on a symbol? What's the next wheel leg?",
+      "triggers": [
+        "wheel",
+        "wheel status",
+        "next leg",
+        "got assigned",
+        "covered call after assignment",
+        "run the wheel",
+        "wheel on"
+      ],
+      "command": "wheel [SYMBOL] [--account <N>]",
+      "mcpTool": "robinhood_wheel",
+      "risk": "sensitive-read",
+      "notes": "Reads shares + short puts/calls per account from EVIDENCE, classifies the stage (CSP open → assigned/holding → CC open), flags undercovered short calls, and emits the literal next-leg dry-run command. Works with no position too (discussion mode). Background: docs/strategy-deep-dive-the-wheel-2026-06-04.md."
+    },
+    {
+      "id": "wheel-start-csp",
+      "intent": "Start the wheel / sell a cash-secured put for income",
+      "triggers": [
+        "cash secured put",
+        "csp",
+        "start the wheel",
+        "sell a put for income",
+        "wheel entry"
+      ],
+      "command": "options strategy-quote cash-secured-short-put --account <N> --symbol <S> --expiration <D> --leg short_put=<K> --pricing-mode safe-sell-probe --json",
+      "mcpTool": "robinhood_options_strategy_plan",
+      "risk": "sensitive-read",
+      "notes": "Wheel leg 1. Collateral = strike × 100 settled cash per contract. Quote is dry-run; the live send is a separate double-gated step. Pick strikes from `options chain <S>`."
+    },
+    {
+      "id": "wheel-covered-call",
+      "intent": "Sell a covered call against shares I hold",
+      "triggers": [
+        "covered call",
+        "cc on my shares",
+        "sell calls against",
+        "write a call"
+      ],
+      "command": "options strategy-quote covered-call --account <N> --symbol <S> --expiration <D> --leg short_call=<K> --pricing-mode safe-sell-probe --json",
+      "mcpTool": "robinhood_options_strategy_plan",
+      "risk": "sensitive-read",
+      "notes": "Wheel leg 3. Needs 100 shares per contract in the SAME account (run `wheel <S>` first — it checks coverage and suggests strikes vs cost basis). Strike below basis locks a loss if assigned."
+    },
+    {
+      "id": "order-simple",
+      "intent": "Buy or sell a stock the simple way (one command, deduped)",
+      "triggers": [
+        "just buy",
+        "simple buy",
+        "sell my shares",
+        "market order",
+        "limit order"
+      ],
+      "command": "buy|sell -s <SYM> -a <N> -m <$> | -q <shares> [-p <limit>] [--live]",
+      "mcpTool": "robinhood_buy",
+      "risk": "write-mutate",
+      "notes": "Double-gated like every write (--live + ROBINHOOD_ALLOW_LIVE_WRITE=1; dry-run by default). Auto: OTC/fractional guard, pending-order dedup (5-min; --force skips), ref_id idempotency, trade log. Same engine as robinhood_sell. For OTC names needing auto-limit-at-ask use `brokerage buy`."
+    },
+    {
+      "id": "order-status-check",
+      "intent": "Did my order go through? Check one order's state/fills",
+      "triggers": [
+        "order status",
+        "did it fill",
+        "check my order",
+        "order go through"
+      ],
+      "command": "order-status -i <order_id_or_url>",
+      "mcpTool": "robinhood_order_status",
+      "risk": "sensitive-read",
+      "notes": "Returns the REAL ticker (UUID resolved), state, fills, prices. Order history is the only proof a trade happened (failure mode #20)."
+    },
+    {
+      "id": "buying-power",
+      "intent": "How much buying power do I have? Margin health?",
+      "triggers": [
+        "buying power",
+        "how much can I buy",
+        "margin health",
+        "bp"
+      ],
+      "command": "buying-power [--account <N>]",
+      "mcpTool": "robinhood_buying_power",
+      "risk": "sensitive-read",
+      "notes": "Per-account regular/unleveraged/intraday BP + cash + margin usage. Options opens are gated by OPTIONS/overnight BP — use `options order-flow` for that."
+    },
+    {
+      "id": "panic-cancel-all",
+      "intent": "Cancel everything — pull every open/pending order across all accounts NOW",
+      "triggers": [
+        "panic",
+        "cancel all",
+        "cancel everything",
+        "pull all orders",
+        "kill all orders",
+        "flatten my orders"
+      ],
+      "command": "panic   (dry-run by default — shows the would-cancel list; live needs --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1)",
+      "mcpTool": "robinhood_panic",
+      "risk": "destructive",
+      "notes": "Enumerates orders/ + options/orders/ across ALL owned accounts; each cancel is individually double-gated and evidence-re-read from order history. Zayd Khan // cold // www.zayd.wtf"
+    },
+    {
+      "id": "orders-open",
+      "intent": "What orders are still open/working right now?",
+      "triggers": [
+        "open orders",
+        "pending orders",
+        "working orders",
+        "what's still open",
+        "unfilled orders"
+      ],
+      "command": "orders open [--account N]",
+      "mcpTool": "robinhood_orders_open",
+      "risk": "sensitive-read",
+      "notes": "Equity + options open orders across all accounts, symbol-resolved, with age/TIF/limit and the exact cancel command for each. Read-only."
+    },
+    {
+      "id": "pretrade-preflight",
+      "intent": "Am I clear to build this order? Preflight the account/chain/price before any order body",
+      "triggers": [
+        "pretrade",
+        "preflight",
+        "can I place this",
+        "check before trading",
+        "min tick",
+        "overnight buying power"
+      ],
+      "command": "pretrade --account N [--symbol S] [--chain-id ID] [--strike K --expiration D --type call|put] [--limit-price P]",
+      "mcpTool": "robinhood_pretrade",
+      "risk": "sensitive-read",
+      "notes": "PASS/WARN/BLOCK checklist: account class, BP (overnight-BP note for GTC opens), options BP/collateral, min-tick (the ARKG $0.05 trap), contract existence, OTC/fractional guard. READ-ONLY — never POSTs; marketability is surfaced as a manual gated command."
+    },
+    {
+      "id": "options-close",
+      "intent": "Close my option position (sell-to-close / buy-to-close)",
+      "triggers": [
+        "close my call",
+        "close my put",
+        "sell to close",
+        "buy to close",
+        "exit my option",
+        "take profit on my option"
+      ],
+      "command": "options close <SYMBOL> [--account N --strike K --expiration D --type call|put]   (emits the dry-run body + the gated send command; never sends)",
+      "mcpTool": "robinhood_options_close",
+      "risk": "sensitive-read",
+      "notes": "Finds the position across accounts, derives side/effect from its direction — position_effect is ALWAYS close, never infers an open. Multiple matches require disambiguation; the live send stays behind both write gates (double-gated brokerage execute)."
+    },
+    {
+      "id": "trade-review",
+      "intent": "Film-study my trades: what did I actually make or lose, what worked, what didn't?",
+      "triggers": [
+        "review my trades",
+        "how did my trades do",
+        "win rate",
+        "best trade",
+        "worst trade",
+        "realized p&l",
+        "film study",
+        "watch the tape"
+      ],
+      "command": "review [--days 90] [--symbol HPE] [--account N] [--json]",
+      "mcpTool": "robinhood_review",
+      "risk": "read",
+      "notes": "FIFO-pairs filled orders into round trips with DOLLAR outcomes (entry/exit/pnl/hold days), win rate, best/worst; unmatched legs flagged openLeg, never dropped. trade-notes.md lessons attach by ref. Math in-engine — don't hand-compute."
+    },
+    {
+      "id": "trade-review-note",
+      "intent": "Attach a film-study note / lesson to a trade",
+      "triggers": [
+        "note on my trade",
+        "remember this lesson",
+        "annotate the trade",
+        "trade journal note"
+      ],
+      "command": "review note <ref> \"<text>\"   (ref = order id, symbol, or symbol+date)",
+      "mcpTool": "robinhood_review_note",
+      "risk": "read",
+      "notes": "Appends to repo-root trade-notes.md (LOCAL file — never touches the account, no live-write gate). `review` joins notes onto matching trades by ref."
+    },
+    {
+      "id": "hotlist",
+      "intent": "How's my watchlist/hotlist doing right now?",
+      "triggers": [
+        "hotlist",
+        "my watchlist tickers",
+        "quote my list",
+        "how are my names doing"
+      ],
+      "command": "hotlist [--json]",
+      "mcpTool": "robinhood_hotlist",
+      "risk": "read",
+      "notes": "Reads repo-root hotlist.md (one `TICKER — thesis` per line; example-marked lines ignored) and quotes every ticker live: last, day $ and %, thesis. Operators maintain the file; agents read it alongside ball-knowledge.md."
+    }
   ]
 }

@@ -14,4 +14,4 @@ Route template:
 https://minerva.robinhood.com/history/transactions/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

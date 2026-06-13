@@ -113,4 +113,4 @@ describe("computePortfolioPnl — metric definitions (golden fixtures)", () => {
   });
 });
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

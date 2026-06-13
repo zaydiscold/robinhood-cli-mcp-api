@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

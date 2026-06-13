@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/documents/edocs_v2/ira/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

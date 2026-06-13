@@ -338,4 +338,4 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | yes | destructive | POST | crypto, official, trading, orders-write | trading.robinhood.com | official-crypto-openapi | `https://trading.robinhood.com/api/v2/crypto/trading/orders/{id}/cancel/` |
 | no | read | GET | crypto, official, trading, trading-pairs | trading.robinhood.com | official-crypto-openapi | `https://trading.robinhood.com/api/v2/crypto/trading/trading_pairs/` |
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

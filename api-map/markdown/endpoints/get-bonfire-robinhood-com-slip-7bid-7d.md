@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/slip/{id}/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

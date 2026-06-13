@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/instruments/?symbol={symbol}
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

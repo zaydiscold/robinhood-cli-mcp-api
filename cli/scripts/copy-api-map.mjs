@@ -11,4 +11,4 @@ await rm(dest, { recursive: true, force: true });
 await mkdir(dest, { recursive: true });
 await cp(source, dest, { recursive: true });
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

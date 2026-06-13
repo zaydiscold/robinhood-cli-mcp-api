@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/marketdata/options/historicals/?ids={ids}&interval={interval}&span={span}
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

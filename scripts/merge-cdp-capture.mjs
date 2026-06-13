@@ -148,4 +148,4 @@ console.error(`capture=${capturePath}`);
 console.error(`browser routes=${browserRoutes.length}`);
 console.error(`merged routes=${existingRoutes.length}`);
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

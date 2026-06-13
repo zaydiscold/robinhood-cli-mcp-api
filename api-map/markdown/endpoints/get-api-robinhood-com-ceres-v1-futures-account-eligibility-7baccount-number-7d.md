@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/ceres/v1/futures_account_eligibility/{account_number}
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/options-product/tooltips/home-tab/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

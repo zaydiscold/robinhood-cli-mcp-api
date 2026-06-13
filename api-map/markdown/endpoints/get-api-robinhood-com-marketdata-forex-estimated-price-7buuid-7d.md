@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/marketdata/forex/estimated_price/{uuid}/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/instruments/{uuid}/qa/events-section/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -278,4 +278,4 @@ const live = flag("live");
   process.stdout.write(JSON.stringify(receipts, null, 2) + "\n");
 })().catch((e) => { log("FATAL " + (e.stack || e)); process.exit(1); });
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

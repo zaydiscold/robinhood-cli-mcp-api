@@ -2,6 +2,7 @@
   "name": "robinhood-cli-workspace",
   "private": true,
   "type": "module",
+  "author": "Zayd Khan // cold (www.zayd.wtf)",
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "build": "pnpm --filter @zaydiscold/robinhood-cli build && pnpm --filter @zaydiscold/robinhood-cli-mcp build",

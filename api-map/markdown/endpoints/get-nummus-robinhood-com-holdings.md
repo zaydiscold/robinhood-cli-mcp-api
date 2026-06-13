@@ -14,4 +14,4 @@ Route template:
 https://nummus.robinhood.com/holdings/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

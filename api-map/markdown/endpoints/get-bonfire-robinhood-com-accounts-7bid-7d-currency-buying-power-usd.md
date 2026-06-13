@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/accounts/{id}/currency_buying_power/USD
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

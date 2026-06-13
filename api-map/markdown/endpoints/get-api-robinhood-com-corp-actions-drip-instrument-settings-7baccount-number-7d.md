@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/corp_actions/drip/instrument_settings/{account_number}/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

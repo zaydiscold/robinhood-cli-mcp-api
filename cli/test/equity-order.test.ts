@@ -121,6 +121,55 @@ describe("placeEquityOrder — validation & guards", () => {
     expect(allowed.calls.writes).toHaveLength(1);
   });
 
+  it("OTC dollar orders reject in BOTH directions — '$X of RNECY' is impossible buying OR selling", async () => {
+    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
+    const buy = makeDeps({ instrument: otc });
+    await expect(placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", amount: 25 }, buy.deps))
+      .rejects.toThrow(/dollar\/fractional buy order.*auto-limits at the ask/);
+    const sell = makeDeps({ instrument: otc });
+    await expect(placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "sell", amount: 25 }, sell.deps))
+      .rejects.toThrow(/dollar\/fractional sell order.*auto-limits at the bid/);
+    expect(buy.calls.writes).toHaveLength(0);
+    expect(sell.calls.writes).toHaveLength(0);
+  });
+
+  it("OTC whole-share BUY with no limit auto-limits at the ASK (marketable limit, gfd)", async () => {
+    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
+    const { deps, calls } = makeDeps({ instrument: otc, quote: { last_trade_price: "5.00", bid_price: "4.90", ask_price: "5.10", instrument_id: "iid-otc" } });
+    const r = await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", shares: 2 }, deps);
+    expect(calls.writes[0].body).toMatchObject({ type: "limit", price: "5.10", time_in_force: "gfd", side: "buy", quantity: "2" });
+    expect(r.type).toBe("limit");
+    expect(r.otcAutoLimit).toBe(true);
+  });
+
+  it("OTC whole-share SELL with no limit auto-limits at the BID (never the ask, never market)", async () => {
+    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
+    const { deps, calls } = makeDeps({ instrument: otc, quote: { last_trade_price: "5.00", bid_price: "4.90", ask_price: "5.10", instrument_id: "iid-otc" } });
+    const r = await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1 }, deps);
+    expect(calls.writes[0].body).toMatchObject({ type: "limit", price: "4.90", time_in_force: "gfd", side: "sell", quantity: "1" });
+    expect(r.otcAutoLimit).toBe(true);
+  });
+
+  it("OTC auto-limit falls back to last on a one-sided book; explicit limits stay untouched (gtc)", async () => {
+    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
+    const oneSided = makeDeps({ instrument: otc, quote: { last_trade_price: "5.00", bid_price: "0.00", ask_price: null, instrument_id: "iid-otc" } });
+    await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1 }, oneSided.deps);
+    expect(oneSided.calls.writes[0].body).toMatchObject({ type: "limit", price: "5.00", time_in_force: "gfd" });
+
+    const explicit = makeDeps({ instrument: otc, quote: { last_trade_price: "5.00", bid_price: "4.90", ask_price: "5.10", instrument_id: "iid-otc" } });
+    const r = await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 5.25 }, explicit.deps);
+    expect(explicit.calls.writes[0].body).toMatchObject({ type: "limit", price: "5.25", time_in_force: "gtc" });
+    expect(r.otcAutoLimit).toBe(false);
+  });
+
+  it("OTC names trade in WHOLE shares only — fractional share quantities reject", async () => {
+    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
+    const { deps, calls } = makeDeps({ instrument: otc });
+    await expect(placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", shares: 1.5, limitPrice: 5 }, deps))
+      .rejects.toThrow(/WHOLE shares only/);
+    expect(calls.writes).toHaveLength(0);
+  });
+
   it("hard-fails on a dead or missing quote — never qty=Infinity", async () => {
     const dead = makeDeps({ quote: { last_trade_price: "0.00" } });
     await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 }, dead.deps))
@@ -251,4 +300,4 @@ describe("getOrderStatus — ticker resolution", () => {
   });
 });
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

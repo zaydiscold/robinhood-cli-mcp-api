@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/midlands/lists/default/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

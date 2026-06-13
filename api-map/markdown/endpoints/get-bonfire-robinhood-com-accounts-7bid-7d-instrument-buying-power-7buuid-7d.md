@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/accounts/{id}/instrument_buying_power/{uuid}/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/marketdata/forex/historicals/{0}/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

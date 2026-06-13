@@ -14,4 +14,4 @@ Route template:
 https://identi.robinhood.com/sorting_hat/v1/user_state/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

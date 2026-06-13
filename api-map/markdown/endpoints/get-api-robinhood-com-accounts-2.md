@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/accounts/?default_to_all_accounts=true
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

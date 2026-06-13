@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/gold/sweep_flow_splash/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

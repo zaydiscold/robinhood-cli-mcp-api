@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/portfolio/{id}/positions_v2
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

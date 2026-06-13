@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/margin/{account_number}/upgrade_restrictions/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

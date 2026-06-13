@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/instruments/{0}/popularity/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

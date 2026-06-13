@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/accounts/sweeps/timeline_summary/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

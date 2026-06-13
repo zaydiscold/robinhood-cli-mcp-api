@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/accounts/stock_loan_payments/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

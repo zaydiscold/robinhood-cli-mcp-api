@@ -14,4 +14,4 @@ Route template:
 https://cashier.robinhood.com/ach/deposit_schedules/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

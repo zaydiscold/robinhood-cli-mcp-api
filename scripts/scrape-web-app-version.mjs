@@ -104,4 +104,4 @@ writeFileSync(envPath, env);
 console.log(`x-robinhood-web-app-version: ${version}`);
 console.log(`written to .env as ROBINHOOD_WEB_APP_VERSION (engine prefers env over its baked fallback)`);
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/equity_trading/order_type_selector/sell/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

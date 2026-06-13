@@ -28,11 +28,28 @@ import {
   brokerageGetJson,
   brokerageGetAllResults,
   computePortfolioPnl,
+  computeDividends,
+  computeTradeReview,
+  addTradeNote,
+  computeHotlist,
+  listKnowledge,
+  readKnowledge,
+  listPendingRolls,
+  addPendingRoll,
+  completePendingRoll,
+  appendRollCompletionLog,
+  listDocuments,
+  getMarginHealth,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   placeEquityOrder,
   getOrderStatus,
   extractOrderId,
+  cancelOrder,
+  listOpenOrders,
+  panicCancelAll,
+  runPretradeChecks,
+  buildOptionsClosePlan,
   computeWheelState,
   signCryptoRequest,
   summarizeApiMap,
@@ -46,10 +63,18 @@ import {
 
 type RiskLevel = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
 
-const server = new McpServer({
-  name: "robinhood-cli-mcp",
-  version: "0.1.0"
-});
+const server = new McpServer(
+  {
+    name: "robinhood-cli-mcp",
+    title: "Robinhood CLI MCP — Zayd Khan // cold // zayd.wtf",
+    version: "0.1.0"
+  },
+  {
+    // Boot pointer for MCP-only agents (no repo checkout needed) — Zayd Khan // cold // www.zayd.wtf
+    instructions:
+      "Control plane for a REAL Robinhood account: reads run live; writes are dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. At session start on any trading topic, pull the operator knowledge library via robinhood_knowledge (action=index, then read the module that matches the task) and check robinhood_roll_ledger (action=list) for pending cash-account kosher rolls whose open leg may be due — they are two-day trades and sessions die between the legs. After any live write append a trading-log.md entry; brokerage order history is the ONLY proof an order happened."
+  }
+);
 
 function jsonResponse(value: unknown) {
   return {
@@ -66,6 +91,15 @@ function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
     "mcp:read-only": readOnly,
     "mcp:risk": risk
   } as any;
+}
+
+// Live-flag alias resolution (param-consistency pass 2026-06-11): the parity tools historically
+// took `live` while the executor tools took `liveWrite`. Every write tool now accepts BOTH —
+// `liveWrite` is canonical, `live` is the accepted alias — so neither spelling silently no-ops a
+// caller's intent (either way the env gate ROBINHOOD_ALLOW_LIVE_WRITE=1 is still required).
+// Zayd Khan // cold // www.zayd.wtf
+function resolveLiveFlag(liveWrite?: boolean, live?: boolean): boolean {
+  return Boolean(liveWrite ?? live);
 }
 
 // selectRouteByQueryAndMethod is imported from the shared lib — single source of truth with the
@@ -599,7 +633,7 @@ server.registerTool(
   "robinhood_brokerage_execute",
   {
     title: "Robinhood Brokerage Execute",
-    description: "Execute a Robinhood brokerage/account request using caller-owned auth env. Reads run live; writes are dry-run by default and require liveWrite=true plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan. After any live write, append a trading-log.md entry (intent + strategy thread); brokerage order history is the only proof an order happened (order-evidence rule).",
+    description: "Execute a Robinhood brokerage/account request using caller-owned auth env. Reads run live; writes are dry-run by default and require liveWrite=true (canonical; `live` accepted as alias) plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan. After any live write, append a trading-log.md entry (intent + strategy thread); brokerage order history is the only proof an order happened (order-evidence rule).",
     annotations: toolAnnotations(false, "write-or-sensitive"),
     inputSchema: z.object({
       query: z.string(),
@@ -607,11 +641,13 @@ server.registerTool(
       params: z.array(z.string()).default([]),
       body: z.unknown().optional(),
       dryRun: z.boolean().default(false),
-      liveWrite: z.boolean().default(false),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional(),
       fullBody: z.boolean().default(false)
     })
   },
-  async ({ query, method, params, body, dryRun, liveWrite, fullBody }) => {
+  async ({ query, method, params, body, dryRun, liveWrite: liveWriteParam, live, fullBody }) => {
+    const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, method);
     if (!route) {
@@ -710,7 +746,7 @@ server.registerTool(
   "robinhood_crypto_execute",
   {
     title: "Robinhood Crypto Execute",
-    description: "Execute an official Robinhood Crypto API request using caller-owned API key env. Reads run live; writes (orders/cancels) are dry-run by default and require liveWrite=true plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan.",
+    description: "Execute an official Robinhood Crypto API request using caller-owned API key env. Reads run live; writes (orders/cancels) are dry-run by default and require liveWrite=true (canonical; `live` accepted as alias) plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan.",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       query: z.string(),
@@ -719,11 +755,13 @@ server.registerTool(
       queryParams: z.array(z.string()).default([]),
       body: z.string().optional(),
       dryRun: z.boolean().default(false),
-      liveWrite: z.boolean().default(false),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional(),
       fullBody: z.boolean().default(false)
     })
   },
-  async ({ query, method, params, queryParams, body, dryRun, liveWrite, fullBody }) => {
+  async ({ query, method, params, queryParams, body, dryRun, liveWrite: liveWriteParam, live, fullBody }) => {
+    const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const matches = filterRobinhoodRoutes(loadRobinhoodRoutes(), { host: "trading.robinhood.com", query });
     const route = selectRouteByQueryAndMethod(matches, query, method);
     if (!route) {
@@ -861,24 +899,25 @@ server.registerTool(
   {
     title: "Robinhood Buy Order",
     description:
-      "Place an equity buy order. Market buys are fractional, limit orders are whole shares. Dry-run by default; set live=true and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Auto-resolves symbol, fetches live quote, sizes shares from dollar amount, blocks OTC/non-fractional dollar orders, dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, and logs live sends to the trading log — same shared engine as the CLI `buy` command.",
+      "Place an equity buy order. Market buys are fractional, limit orders are whole shares. Dry-run by default; set liveWrite=true (canonical; `live` accepted as alias) and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Auto-resolves symbol, fetches live quote, sizes shares from dollar amount, blocks OTC/non-fractional dollar orders, dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, logs live sends to the trading log, and re-reads the order from order history after a live send (`evidence.confirmed`) — same shared engine as the CLI `buy` command.",
     inputSchema: z.object({
       symbol: z.string(),
       account_number: z.string(),
       amount: z.number().positive().optional(),
       shares: z.number().positive().optional(),
       price: z.number().positive().optional(),
-      live: z.boolean().default(false),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional(),
       force: z.boolean().default(false),
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ symbol, account_number, amount, shares, price: limitPrice, live, force }) => {
+  async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force }) => {
     try {
       const r = await placeEquityOrder({
         symbol, accountNumber: account_number, side: "buy",
         amount, shares, limitPrice,
-        liveWrite: Boolean(live), force: Boolean(force)
+        liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force)
       });
       const { result: _raw, ...summary } = r;
       return jsonResponse(summary);
@@ -893,21 +932,22 @@ server.registerTool(
   "robinhood_sell",
   {
     title: "Robinhood Sell Order",
-    description: "Place an equity sell order. Market sells are fractional. Dry-run by default; set live=true and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, and logs live sends to the trading log — same shared engine as the CLI `sell` command.",
+    description: "Place an equity sell order. Market sells are fractional. Dry-run by default; set liveWrite=true (canonical; `live` accepted as alias) and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, logs live sends to the trading log, and re-reads the order from order history after a live send (`evidence.confirmed`) — same shared engine as the CLI `sell` command.",
     inputSchema: z.object({
       symbol: z.string(), account_number: z.string(),
       amount: z.number().positive().optional(), shares: z.number().positive().optional(),
-      price: z.number().positive().optional(), live: z.boolean().default(false),
+      price: z.number().positive().optional(),
+      liveWrite: z.boolean().optional(), live: z.boolean().optional(),
       force: z.boolean().default(false),
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ symbol, account_number, amount, shares, price: limitPrice, live, force }) => {
+  async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force }) => {
     try {
       const r = await placeEquityOrder({
         symbol, accountNumber: account_number, side: "sell",
         amount, shares, limitPrice,
-        liveWrite: Boolean(live), force: Boolean(force)
+        liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force)
       });
       const { result: _raw, ...summary } = r;
       return jsonResponse(summary);
@@ -915,24 +955,116 @@ server.registerTool(
   }
 );
 
-// ── robinhood_cancel: cancel order by ID ──
+// ── robinhood_cancel: cancel order by ID (equity or options, evidence re-read on live sends) ──
+// Zayd Khan // cold // www.zayd.wtf
 server.registerTool(
   "robinhood_cancel",
   {
     title: "Robinhood Cancel Order",
-    description: "Cancel a pending order by ID.",
-    inputSchema: z.object({ order_id: z.string(), live: z.boolean().default(false) }),
+    description: "Cancel a pending order by ID (kind=equity|options). Dry-run by default; liveWrite=true (canonical; `live` accepted as alias) + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Live cancels re-read the order from order history and return `evidence` (confirmed/state) — order history is the only proof the cancel took.",
+    inputSchema: z.object({
+      order_id: z.string(),
+      kind: z.enum(["equity", "options"]).default("equity"),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional()
+    }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ order_id, live }) => {
+  async ({ order_id, kind, liveWrite, live }) => {
     try {
-      const result = await gatedBrokerageWrite({
-        url: "https://api.robinhood.com/orders/{0}/cancel/", method: "POST",
-        params: { "0": extractOrderId(order_id) },
-        dryRun: !live, liveWrite: Boolean(live)
-      });
-      const rb = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-      return jsonResponse({ orderId: order_id, live: !result.dryRun, state: rb?.state ?? null, httpStatus: result.status });
+      // Shared engine (cancelOrder in lib.ts) — same path as the CLI `cancel` command and `panic`.
+      const r = await cancelOrder({ idOrUrl: order_id, kind, liveWrite: resolveLiveFlag(liveWrite, live) });
+      return jsonResponse(r);
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_orders_open: every open/pending order across accounts (panic's read half) ──
+// Zayd Khan // cold // www.zayd.wtf
+server.registerTool(
+  "robinhood_orders_open",
+  {
+    title: "Robinhood Open Orders",
+    description: "All open/pending equity + options orders across ALL owned accounts (or one), symbol-resolved, with state, age, TIF, limit price, and the exact cancel command for each. Read-only; per-account read failures degrade to warnings. Same shared engine as the CLI `orders open` and the read half of `panic`.",
+    inputSchema: z.object({ account_number: z.string().optional() }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ account_number }) => {
+    try { return jsonResponse(await listOpenOrders({ accountNumber: account_number })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_panic: enumerate + cancel EVERY open order (each cancel double-gated) ──
+// Zayd Khan // cold // www.zayd.wtf
+server.registerTool(
+  "robinhood_panic",
+  {
+    title: "Robinhood Panic Cancel-All",
+    description: "PANIC: enumerate every open/pending equity + options order across ALL owned accounts (or one) and cancel each — every cancel individually double-gated (logContext 'panic cancel-all'). DRY-RUN by default: returns the full would-cancel list and sends NOTHING. A live sweep needs liveWrite=true (canonical; `live` accepted as alias) AND ROBINHOOD_ALLOW_LIVE_WRITE=1, and re-reads each order from order history for evidence. Summary reports found/cancelled/failed.",
+    inputSchema: z.object({
+      account_number: z.string().optional(),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional()
+    }),
+    annotations: toolAnnotations(false, "destructive")
+  },
+  async ({ account_number, liveWrite, live }) => {
+    try { return jsonResponse(await panicCancelAll({ accountNumber: account_number, liveWrite: resolveLiveFlag(liveWrite, live) })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_pretrade: PASS/WARN/BLOCK preflight checklist (read-only, never POSTs) ──
+// Zayd Khan // cold // www.zayd.wtf
+server.registerTool(
+  "robinhood_pretrade",
+  {
+    title: "Robinhood Pre-trade Preflight",
+    description: "Pre-trade PASS/WARN/BLOCK checklist with the inputs given, each check degrading independently: account ownership + capability class (cash/margin/IRA), buying_power_breakdown (with the overnight-BP-gates-GTC-option-opens note), options buying power/fees/collateral, chain min-tick vs limit_price (the ARKG $0.05 trap), exact-contract existence, OTC/fractional guard. Marketability is a POST and is surfaced as a manual gated command — this tool NEVER sends anything. Summary: 'CLEAR TO BUILD ORDER' or 'BLOCKED: <reasons>'.",
+    inputSchema: z.object({
+      account_number: z.string(),
+      symbol: z.string().optional(),
+      chain_id: z.string().optional(),
+      strike: z.number().optional(),
+      expiration: z.string().optional(),
+      option_type: z.enum(["call", "put"]).optional(),
+      limit_price: z.number().optional()
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ account_number, symbol, chain_id, strike, expiration, option_type, limit_price }) => {
+    try {
+      return jsonResponse(await runPretradeChecks({
+        accountNumber: account_number, symbol, chainId: chain_id,
+        strike, expiration, optionType: option_type, limitPrice: limit_price
+      }));
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_options_close: dry-run close plan for an open option position ──
+// Zayd Khan // cold // www.zayd.wtf
+server.registerTool(
+  "robinhood_options_close",
+  {
+    title: "Robinhood Options Close Plan",
+    description: "Build the DRY-RUN close order for an open option position: finds the position(s) for the symbol across all owned accounts, requires account_number/strike/expiration disambiguation when several match, derives sell-to-close (long) or buy-to-close (short) from the position's direction — position_effect is ALWAYS close, never infers an open — quotes live bid/ask, computes a tick-rounded mid limit, and returns the exact order body + the gated send command. NEVER sends anything; multi-leg positions are flagged for strategy-quote/roll-plan instead.",
+    inputSchema: z.object({
+      symbol: z.string(),
+      account_number: z.string().optional(),
+      strike: z.number().optional(),
+      expiration: z.string().optional(),
+      option_type: z.enum(["call", "put"]).optional(),
+      quantity: z.number().positive().optional()
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ symbol, account_number, strike, expiration, option_type, quantity }) => {
+    try {
+      return jsonResponse(await buildOptionsClosePlan({
+        symbol, accountNumber: account_number, strike, expiration, optionType: option_type, quantity
+      }));
     } catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );
@@ -1038,18 +1170,20 @@ server.registerTool(
   "robinhood_settings",
   {
     title: "Robinhood Account Settings",
-    description: "Read or toggle account settings (double-gated). action=show reads all; drip/expiration/pdt/lending/sweep toggle the corresponding setting. Writes are dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Cash-sweep only supports disable (enroll needs the agreement-sign flow). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
+    description: "Read or toggle account settings (double-gated). action=show reads all; drip/expiration/pdt/lending/sweep toggle the corresponding setting. Writes are dry-run unless liveWrite=true (canonical; `live` accepted as alias) AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Cash-sweep only supports disable (enroll needs the agreement-sign flow). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
     inputSchema: z.object({
       account_number: z.string(),
       action: z.enum(["show", "drip", "expiration", "pdt", "lending", "sweep"]),
       enable: z.boolean().optional(),
       instrument_id: z.string().optional(),
       dryRun: z.boolean().default(false),
-      liveWrite: z.boolean().default(false)
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional()
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ account_number, action, enable, instrument_id, dryRun, liveWrite }) => {
+  async ({ account_number, action, enable, instrument_id, dryRun, liveWrite: liveWriteParam, live }) => {
+    const liveWrite = resolveLiveFlag(liveWriteParam, live);
     if (action === "show") {
       const get = async (url: string) => { try { return await brokerageGetJson(url, { account_number: account_number }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
       const [drip, opt, margin, sweep, lending] = await Promise.all([
@@ -1085,7 +1219,7 @@ server.registerTool(
   "robinhood_recurring",
   {
     title: "Robinhood Recurring Schedules",
-    description: "List or mutate recurring investment schedules (double-gated writes). action=list reads all; create/edit/end mutate. Writes dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
+    description: "List or mutate recurring investment schedules (double-gated writes). action=list reads all; create/edit/end mutate. Writes dry-run unless liveWrite=true (canonical; `live` accepted as alias) AND ROBINHOOD_ALLOW_LIVE_WRITE=1. After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
     inputSchema: z.object({
       action: z.enum(["list", "create", "edit", "end"]),
       id: z.string().optional(),
@@ -1095,11 +1229,13 @@ server.registerTool(
       frequency: z.enum(["weekly", "biweekly", "monthly"]).optional(),
       start_date: z.string().optional(),
       dryRun: z.boolean().default(false),
-      liveWrite: z.boolean().default(false)
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional()
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ action, id, account_number, symbol, amount, frequency, start_date, dryRun, liveWrite }) => {
+  async ({ action, id, account_number, symbol, amount, frequency, start_date, dryRun, liveWrite: liveWriteParam, live }) => {
+    const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const LIST = "https://bonfire.robinhood.com/recurring_schedules/";
     const ITEM = "https://bonfire.robinhood.com/recurring_schedules/{0}/";
     if (action === "list") {
@@ -1204,7 +1340,176 @@ server.registerTool(
   }
 );
 
+// ── robinhood_dividends: income engine — history, cadence, projected income in dollars ──
+server.registerTool(
+  "robinhood_dividends",
+  {
+    title: "Robinhood Dividends",
+    description:
+      "Dividend income engine across ALL owned accounts (or one): all-time/YTD/last-12-months totals in DOLLARS, per-symbol cadence detection (weekly/monthly/quarterly/semiannual/annual via median payable-date gap), upcoming payouts, last 12 months by month, and PROJECTED income at every granularity ($/day · $/wk · $/mo · $/qtr · $/yr) from CURRENTLY HELD symbols only (cross-checked against nonzero positions so sold payers don't project). Math is done in-engine — do not hand-compute cadence or annualization. Same shared engine as the CLI `dividends` command. Live read; no gate.",
+    inputSchema: z.object({ account_number: z.string().optional(), symbol: z.string().optional() }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ account_number, symbol }) => {
+    try { return jsonResponse(await computeDividends({ accountNumber: account_number, symbol })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_documents: statements, trade confirms, tax forms — list + download URLs only ──
+server.registerTool(
+  "robinhood_documents",
+  {
+    title: "Robinhood Documents",
+    description:
+      "List account documents (account statements, trade confirms, 1099/1099_crypto/1099r_roth/5498_roth tax forms) across all accounts with their download_urls. LIST ONLY — this tool never writes files; hand the download_url to the operator or use the CLI `documents download` for local PDFs. type is PREFIX-matched ('1099' catches every 1099 variant — the tax-season one-shot is type=1099 + year=2025). year is the TAX year for tax forms (a 1099 dated Feb 2026 is tax year 2025) and the calendar year otherwise. Live read; no gate.",
+    inputSchema: z.object({ type: z.string().optional(), year: z.string().optional(), account_number: z.string().optional() }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ type, year, account_number }) => {
+    try { return jsonResponse(await listDocuments({ type, year, accountNumber: account_number })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_margin: am I borrowing, how much, at what rate, billed when ──
+server.registerTool(
+  "robinhood_margin",
+  {
+    title: "Robinhood Margin Health",
+    description:
+      "Margin health per account: am I borrowing, how much, at what rate, billed when — amount borrowed, margin interest rate %, next billing date, margin available, buying power with margin, projected intraday BP. Scans every owned account when account_number is omitted; accounts without margin data degrade silently into `skipped`. Same shared engine as the CLI `margin` command. Live read; no gate.",
+    inputSchema: z.object({ account_number: z.string().optional() }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ account_number }) => {
+    try { return jsonResponse(await getMarginHealth(account_number)); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_review: FILM-STUDY MODE — round trips, realized P&L, operator notes attached ──
+server.registerTool(
+  "robinhood_review",
+  {
+    title: "Robinhood Trade Review (Film Study)",
+    description:
+      "Film-study mode: pull FILLED equity + options orders across owned accounts in the window, FIFO-pair entries→exits per contract/symbol, and return per-round-trip DOLLAR outcomes (entryUsd, exitUsd, realizedPnlUsd, holdDays, win/loss) plus a summary (winners/losers, winRatePct, totalRealizedUsd, best/worst trade, avgHoldDays). Unmatchable legs (still open / opened pre-window / partial) come back flagged openLeg:true, never silently dropped. Operator notes from trade-notes.md attach to matching trades by ref (order id or symbol). Math is done in-engine — do not hand-compute P&L or win rates. Same shared engine as the CLI `review` command. Live read; no gate.",
+    inputSchema: z.object({
+      days: z.number().int().min(1).max(3650).default(90),
+      symbol: z.string().optional(),
+      account_number: z.string().optional()
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ days, symbol, account_number }) => {
+    try { return jsonResponse(await computeTradeReview({ days, symbol, accountNumber: account_number })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_review_note: append a film-study note to trade-notes.md (local file only) ──
+server.registerTool(
+  "robinhood_review_note",
+  {
+    title: "Robinhood Review Note",
+    description:
+      "Append a film-study note to repo-root trade-notes.md (format: `### YYYY-MM-DD HH:MM | <ref>` + note + `---`). ref is freeform — an order id, a symbol, or symbol+date — and `review`/robinhood_review attach the note to matching trades by ref. NOTE: this WRITES the local markdown file (committed, operator-facing — same spirit as trading-log.md) but never touches the brokerage account, so no live-write gate applies.",
+    inputSchema: z.object({
+      ref: z.string(),
+      note: z.string()
+    }),
+    annotations: toolAnnotations(false, "write-safe")
+  },
+  async ({ ref, note }) => {
+    try { return jsonResponse(addTradeNote({ ref, note })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_hotlist: operator-maintained ticker watchlist (hotlist.md) + live quotes ──
+server.registerTool(
+  "robinhood_hotlist",
+  {
+    title: "Robinhood Hotlist",
+    description:
+      "Quote the operator's hotlist (repo-root hotlist.md — one `TICKER — optional thesis` per line; agents read it on finance tasks alongside ball-knowledge.md). Returns live last, day $ and % change, and the operator's thesis per ticker. Headers/blank/example-marked lines are ignored. Same shared engine as the CLI `hotlist` command. Live read; no gate.",
+    inputSchema: z.object({}),
+    annotations: toolAnnotations(true, "read")
+  },
+  async () => {
+    try { return jsonResponse(await computeHotlist()); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_knowledge: the operator knowledge library, served over MCP ──
+// Zayd Khan // cold // www.zayd.wtf
+server.registerTool(
+  "robinhood_knowledge",
+  {
+    title: "Robinhood Knowledge Library",
+    description:
+      "The operator knowledge library (knowledge/ operating modules + playbooks + the docs/ deep-dive index) served over MCP, so an MCP-only agent gets the same knowledge base a repo-local agent reads off disk. action=index (default) lists every module with its id, title, and when-to-load routing hint; action=read with id returns the full module text. ALWAYS check the index at session start when trading topics arise; modules end with APPLY-IT sections mapping knowledge onto live account commands. Same shared engine as the CLI `knowledge` command. Local file read; never calls the brokerage.",
+    inputSchema: z.object({
+      action: z.enum(["index", "read"]).default("index"),
+      id: z.string().optional()
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ action, id }) => {
+    try {
+      if (action === "read") {
+        if (!id) throw new Error("action=read needs an id — run action=index for the list (e.g. wheel, rolling, broker-call).");
+        return jsonResponse(readKnowledge(id));
+      }
+      const entries = listKnowledge();
+      return jsonResponse({ count: entries.length, entries });
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_roll_ledger: pending cash-account (kosher) roll intents — rolls.md ──
+// Zayd Khan // cold // www.zayd.wtf
+server.registerTool(
+  "robinhood_roll_ledger",
+  {
+    title: "Robinhood Pending-Roll Ledger",
+    description:
+      "Pending kosher-roll ledger (repo-root rolls.md). A cash-account roll is a TWO-DAY trade — close today, open next business day with settled cash — and sessions die between the legs: CHECK action=list at session start so a staged open leg is never orphaned. action=list (default, read-only) returns every pending intent; action=add stages one (symbol required; closed/open_intent/earliest/account/note optional); action=done removes the matched entry (symbol, or 'SYMBOL YYYY-MM-DD' to disambiguate) and appends the completion to trading-log.md. Same shared engine as the CLI `roll-ledger` command. Local markdown bookkeeping only — never places orders; brokerage order history stays the only proof either leg executed.",
+    inputSchema: z.object({
+      action: z.enum(["list", "add", "done"]).default("list"),
+      symbol: z.string().optional(),
+      account: z.string().optional(),
+      closed: z.string().optional(),
+      open_intent: z.string().optional(),
+      earliest: z.string().optional(),
+      note: z.string().optional()
+    }),
+    annotations: toolAnnotations(false, "write-safe")
+  },
+  async ({ action, symbol, account, closed, open_intent, earliest, note }) => {
+    try {
+      if (action === "add") {
+        if (!symbol?.trim()) throw new Error("action=add needs a symbol.");
+        return jsonResponse(addPendingRoll({ symbol, account, closedLeg: closed, openIntent: open_intent, earliestOpenDate: earliest, notes: note }));
+      }
+      if (action === "done") {
+        if (!symbol?.trim()) throw new Error('action=done needs a symbol (or "SYMBOL YYYY-MM-DD" to disambiguate).');
+        const r = completePendingRoll(symbol);
+        const log = appendRollCompletionLog(r.removed);
+        const { block: _b, ...removed } = r.removed;
+        return jsonResponse({ file: r.file, removed, remaining: r.remaining, tradingLog: log.file });
+      }
+      const rolls = listPendingRolls().map(({ block: _b, ...rest }) => rest);
+      return jsonResponse({ count: rolls.length, rolls });
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// Zayd Khan // cold // www.zayd.wtf
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

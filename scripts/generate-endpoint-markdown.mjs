@@ -50,7 +50,7 @@ Route template:
 ${route.url}
 \`\`\`
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->
 `;
   await writeFile(resolve(outDir, `${slug}.md`), content);
 }

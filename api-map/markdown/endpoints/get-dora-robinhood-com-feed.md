@@ -14,4 +14,4 @@ Route template:
 https://dora.robinhood.com/feed/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

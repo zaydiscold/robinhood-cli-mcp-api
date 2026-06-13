@@ -122,4 +122,4 @@ async function placeAndCancel(label, body) {
   try { mkdirSync(join(REPO, "info", "order-receipts"), { recursive: true }); writeFileSync(join(REPO, "info", "order-receipts", "live-order-smoke.json"), JSON.stringify(receipts, null, 1)); } catch {}
 })().catch((e) => log("FATAL " + (e.stack || e)));
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

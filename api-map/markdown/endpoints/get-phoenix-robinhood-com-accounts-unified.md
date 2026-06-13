@@ -14,4 +14,4 @@ Route template:
 https://phoenix.robinhood.com/accounts/unified
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

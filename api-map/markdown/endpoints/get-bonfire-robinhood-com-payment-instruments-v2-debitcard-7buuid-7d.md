@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/payment_instruments/v2/debitcard/{uuid}/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

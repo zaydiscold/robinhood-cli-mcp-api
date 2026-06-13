@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/ceres/v1/accounts/{id}/aggregated_positions
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

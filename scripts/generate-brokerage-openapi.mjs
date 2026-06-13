@@ -179,4 +179,4 @@ await writeFile(outPath, `${JSON.stringify(spec, null, 2)}\n`);
 console.error(`wrote ${outPath}`);
 console.error(`brokerage routes=${routes.length} openapi paths=${Object.keys(spec.paths).length} operations=${grouped.size}`);
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

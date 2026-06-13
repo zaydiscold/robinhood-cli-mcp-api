@@ -14,4 +14,4 @@ Route template:
 https://identi.robinhood.com/user_info/profile_info/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -23,7 +23,7 @@ for (const route of routes) {
   lines.push("");
 }
 
-lines.push("# made with love by Zayd Khan / cold", "");
+lines.push("# Zayd Khan // cold // www.zayd.wtf", "");
 
 await mkdir(dirname(outPath), { recursive: true });
 await writeFile(outPath, `${lines.join("\n")}`);

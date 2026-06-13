@@ -14,4 +14,4 @@ Route template:
 https://minerva.robinhood.com/cards/declined_transactions/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

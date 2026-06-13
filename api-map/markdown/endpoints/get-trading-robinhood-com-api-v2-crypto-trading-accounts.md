@@ -14,4 +14,4 @@ Route template:
 https://trading.robinhood.com/api/v2/crypto/trading/accounts/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

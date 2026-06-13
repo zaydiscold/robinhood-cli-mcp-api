@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "MCP server for personal live Robinhood read/write API-map tools.",
+  "author": "Zayd Khan // cold (www.zayd.wtf)",
   "bin": {
     "robinhood-cli-mcp": "dist/server.js"
   },

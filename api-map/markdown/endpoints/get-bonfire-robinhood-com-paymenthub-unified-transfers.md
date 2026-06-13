@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/paymenthub/unified_transfers/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

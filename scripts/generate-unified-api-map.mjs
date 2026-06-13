@@ -169,7 +169,7 @@ const markdown = [
   "|---|---|---|---|---|---|---|",
   ...markdownRows(unifiedRoutes),
   "",
-  "<!-- made with love by Zayd Khan / cold -->"
+  "<!-- Zayd Khan // cold // www.zayd.wtf -->"
 ].join("\n");
 
 await writeFile(markdownOutPath, `${markdown}\n`);

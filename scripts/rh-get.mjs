@@ -45,4 +45,4 @@ process.stderr.write(`${res.status} ${url}\n`);
 try { process.stdout.write(JSON.stringify(JSON.parse(text), null, 2) + "\n"); }
 catch { process.stdout.write(text + "\n"); }
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

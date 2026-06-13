@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/accounts/{0}/recent_day_trades/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

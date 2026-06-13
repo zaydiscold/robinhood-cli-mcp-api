@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/ceres/v1/manual_cash_correction
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

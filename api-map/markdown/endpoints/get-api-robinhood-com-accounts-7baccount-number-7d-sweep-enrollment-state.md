@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

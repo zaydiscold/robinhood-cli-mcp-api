@@ -25,4 +25,4 @@ if (!r.some((x) => (x.url || x.url_template) === U && (x.methods || [x.method]).
 writeFileSync(PATH, JSON.stringify(r, null, 2) + "\n");
 console.log("routes:", r.length);
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

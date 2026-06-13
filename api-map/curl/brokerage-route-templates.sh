@@ -927,4 +927,4 @@
 # sensitive-read GET https://api.robinhood.com/orders/{0}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/orders/{0}/'
 
-# made with love by Zayd Khan / cold
+# Zayd Khan // cold // www.zayd.wtf

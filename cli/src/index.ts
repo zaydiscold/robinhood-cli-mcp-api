@@ -23,12 +23,31 @@ import {
   brokerageGetJson,
   brokerageGetAllResults,
   computePortfolioPnl,
+  computeDividends,
+  computeTradeReview,
+  addTradeNote,
+  computeHotlist,
+  listKnowledge,
+  readKnowledge,
+  listPendingRolls,
+  addPendingRoll,
+  completePendingRoll,
+  appendRollCompletionLog,
+  listDocuments,
+  downloadDocuments,
+  getMarginHealth,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   logTrade,
   placeEquityOrder,
   getOrderStatus,
   extractOrderId,
+  cancelOrder,
+  listOpenOrders,
+  panicCancelAll,
+  runPretradeChecks,
+  buildOptionsClosePlan,
+  accountCapabilities,
   computeWheelState,
   executeBrokerageRequest,
   executeCryptoRequest,
@@ -72,6 +91,9 @@ program
   .name("robinhood-cli")
   .description("Personal live Robinhood API map CLI. Crypto signing helper plus brokerage/account route inventory and executor.")
   .version("0.1.0");
+
+// Help-only credit line — must never print on normal or --json command output.
+program.addHelpText("after", "\nby zayd @ zayd.wtf");
 
 function parseJsonBody(value?: string): unknown {
   if (!value) return undefined;
@@ -2241,7 +2263,12 @@ options
           "Dry-run only; no close or open order was sent.",
           "For cash accounts, do not assume sell proceeds are settled for the open leg on the same day.",
           "Requote before any live order. A far safe-sell-probe limit is intentionally away from the market."
-        ]
+        ],
+        // Kosher rolls outlive the session — hand back the literal ledger command so the staged
+        // open leg survives into the next one (rolls.md; `roll-ledger list` at session start).
+        recordTip: opts.cashAccount
+          ? `node cli/dist/index.js roll-ledger add --symbol ${symbol} --account ${opts.account} --closed "${quantity}x ${symbol} $${opts.closeStrike} ${optionType} ${opts.closeExpiration} ${closeSide}-to-close @ $${optionMoney(closeLimit)} (order-id: fill in once the close fills)" --open-intent "${openSide}-to-open ${symbol} $${opts.openStrike} ${optionType} ${opts.openExpiration} — fresh quote on the open day" --earliest ${nextBusinessDay()}`
+          : undefined
       };
       if (opts.json) {
         printJson(output);
@@ -2258,6 +2285,11 @@ options
       if (opts.cashAccount) process.stdout.write(`cash-account open leg not before: ${(output.orders.openOrder as any).notBeforeDate}\n`);
       process.stdout.write(`\nclose order (not sent):\n${JSON.stringify(closeOrder, null, 2)}\n`);
       process.stdout.write(`\nopen order (not sent):\n${JSON.stringify(output.orders.openOrder, null, 2)}\n`);
+      if (output.recordTip) {
+        process.stdout.write(`\ntip: record this staged roll so the next session picks up the open leg (sessions die between the two days):\n  ${output.recordTip}\n`);
+      }
+      const pendingRolls = listPendingRolls();
+      if (pendingRolls.length) process.stdout.write(`\n⏳ ${pendingRolls.length} pending kosher roll(s) — run roll-ledger list\n`);
       for (const warning of output.warnings) process.stderr.write(`warning: ${warning}\n`);
     }
   );
@@ -2283,6 +2315,66 @@ options
       return;
     }
     process.stdout.write(`${symbol} — ${expirations.length} expirations:\n${expirations.join("\n")}\n`);
+  });
+
+// ── options close: dry-run close plan for an OPEN position (sell-to-close / buy-to-close) ──
+// Zayd Khan // cold // www.zayd.wtf
+options
+  .command("close")
+  .description("Build the DRY-RUN close order for an open option position: finds the position across accounts, derives sell-to-close (long) or buy-to-close (short) from its direction, quotes live bid/ask, computes a tick-rounded mid limit, and emits the exact gated send command. Never sends; position_effect is always close.")
+  .argument("<symbol>", "underlying ticker, e.g. NVDA")
+  .option("-a, --account <number>", "Limit to one account (disambiguator)")
+  .option("--strike <k>", "Strike (disambiguator)")
+  .option("--expiration <date>", "Expiration YYYY-MM-DD (disambiguator)")
+  .option("--type <type>", "Option type: call or put (disambiguator)")
+  .option("-q, --quantity <n>", "Contracts to close (default: full position)")
+  .option("--json", "emit JSON")
+  .action(async (symbolArg: string, opts: any) => {
+    if (opts.type && opts.type !== "call" && opts.type !== "put") throw new Error(`--type must be call or put (got "${opts.type}")`);
+    const r = await buildOptionsClosePlan({
+      symbol: symbolArg,
+      accountNumber: opts.account,
+      strike: opts.strike != null ? Number(opts.strike) : undefined,
+      expiration: opts.expiration,
+      optionType: opts.type,
+      quantity: opts.quantity != null ? Number(opts.quantity) : undefined
+    });
+    if (opts.json) {
+      printJson({ generatedAt: new Date().toISOString(), ...r });
+      return;
+    }
+    if (r.needsDisambiguation) {
+      process.stdout.write(`${r.symbol}: ${r.matched ?? r.candidates.length} position(s) match — disambiguate with --account/--strike/--expiration${opts.type ? "" : "/--type"}:\n`);
+      printTable(
+        r.candidates.map((c: any) => ({
+          account: `…${c.accountNumber.slice(-4)}`,
+          dir: c.positionType || c.strategy,
+          type: c.optionType ?? "?",
+          strike: c.strike ?? "?",
+          exp: c.expiration ?? "?",
+          qty: c.quantity,
+          avg: usd(c.averageOpenPrice),
+          legs: c.multiLeg ? "multi" : "single"
+        })),
+        ["account", "dir", "type", "strike", "exp", "qty", "avg", "legs"]
+      );
+      process.stdout.write(`\n${r.hint}\n`);
+      return;
+    }
+    if (r.multiLeg) {
+      process.stdout.write(`${r.symbol}: matched a MULTI-LEG position (${r.position.strategy}) — ${r.hint}\n`);
+      return;
+    }
+    const p = r.position;
+    process.stdout.write(`DRY RUN ${r.action}: ${r.symbol} $${p.strike} ${p.optionType} ${p.expiration} ×${r.dryRunBody.quantity}  acct=…${p.accountNumber.slice(-4)}\n`);
+    process.stdout.write(`position: ${p.positionType} ${p.quantity} contract(s) @ avg ${usd(p.averageOpenPrice)}\n`);
+    process.stdout.write(`quote: bid ${usd(r.quote.bid)} / ask ${usd(r.quote.ask)} (mark ${usd(r.quote.mark)}) → mid limit ${usd(r.quote.midLimit)}${r.quote.tick ? ` (tick $${r.quote.tick})` : ""}\n`);
+    process.stdout.write(`leg: ${r.orientation.side} / position_effect=${r.orientation.positionEffect} / direction=${r.orientation.direction}\n`);
+    process.stdout.write(`\norder body (NOT sent):\n${JSON.stringify(r.dryRunBody, null, 2)}\n`);
+    process.stdout.write(`\ndry-run it:   ${r.commands.dryRun}\n`);
+    process.stdout.write(`gated send:   ${r.commands.gatedSend}\n`);
+    process.stdout.write(`\n${r.note}\n`);
+    for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
   });
 
 program.addCommand(options);
@@ -2356,40 +2448,7 @@ program
 // Account-aware capability reader: lists every account and annotates what each
 // account TYPE can and cannot do, so an agent states constraints (e.g. a cash
 // account cannot roll on margin) before planning a write. Read-only.
-function accountCapabilities(account: Record<string, any>): {
-  canMarginBorrow: boolean;
-  canRollOnMargin: boolean;
-  canNakedShort: boolean;
-  note: string;
-} {
-  const type = String(account?.type ?? "").toLowerCase();
-  const brokType = String(account?.brokerage_account_type ?? "").toLowerCase();
-  const isIra = brokType.includes("ira") || brokType.includes("roth") || type.includes("ira") || type.includes("roth");
-  const isMargin = type === "margin" && !isIra;
-  const isCash = type === "cash" || (!isMargin && !isIra);
-  if (isIra) {
-    return {
-      canMarginBorrow: false,
-      canRollOnMargin: false,
-      canNakedShort: false,
-      note: "IRA: long options, defined-risk spreads, and covered calls only — no margin borrowing and no naked/undefined-risk shorts."
-    };
-  }
-  if (isMargin) {
-    return {
-      canMarginBorrow: true,
-      canRollOnMargin: true,
-      canNakedShort: true,
-      note: "Margin: can borrow, roll, and run spreads/shorts that need buying power. PDT lifted on RH - no $25k day-trade cap (FINRA eliminated it 2026-06-04); maintenance margin still applies."
-    };
-  }
-  return {
-    canMarginBorrow: false,
-    canRollOnMargin: false,
-    canNakedShort: false,
-    note: "Cash: buy/sell, cash-secured puts, covered calls, and debit spreads only. No margin borrowing, no naked/undefined-risk shorts, and no margin rolls — rolling is limited to closing then re-opening with SETTLED cash (T+1; watch good-faith violations)."
-  };
-}
+// accountCapabilities moved to lib.ts (shared with the pretrade engine) — imported above.
 
 program
   .command("accounts")
@@ -2828,6 +2887,332 @@ program
     if (errs.length) process.stdout.write(`\n⚠️  ${errs.length} account(s) failed: ${errs.map((e: any) => `…${String(e.accountNumber).slice(-4)}: ${e.error}`).join("; ")}\n`);
   });
 
+// ── dividends: income engine — history, cadence, projected income, all in DOLLARS ──
+program
+  .command("dividends")
+  .aliases(["divs"])
+  .description("Dividend income engine: history, cadence, and PROJECTED income in dollars at every granularity ($/day · $/wk · $/mo · $/qtr · $/yr) — math done in-engine, do not hand-compute. Totals (all-time/YTD/12mo), per-symbol cadence (weekly/monthly/quarterly/semiannual/annual via median payable-date gap), upcoming payouts, and a projection from CURRENT holdings only (sold payers don't project). Live read.")
+  .option("--upcoming", "show upcoming (pending / not-yet-paid) payouts")
+  .option("--by-month", "show the last 12 months of received income by month")
+  .option("--symbol <symbol>", "scope to one symbol")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { upcoming?: boolean; byMonth?: boolean; symbol?: string; account?: string; json?: boolean }) => {
+    // Shared engine — identical code path to the MCP robinhood_dividends tool (alignment invariant).
+    const r = await computeDividends({ accountNumber: opts.account, symbol: opts.symbol });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+
+    process.stdout.write(`Dividends — ${r.accountsScanned.length} account(s)${r.symbol ? ` — ${r.symbol}` : ""}\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    process.stdout.write(`Received: ${usd(r.totals.allTimeUsd)} all-time · ${usd(r.totals.ytdUsd)} YTD · ${usd(r.totals.last12moUsd)} last 12 months\n\n`);
+
+    if (opts.upcoming) {
+      if (!r.upcoming.length) { process.stdout.write("No upcoming payouts on record.\n"); return; }
+      printTable(
+        r.upcoming.map((u: any) => ({ symbol: u.symbol, amount: usd(u.amountUsd), payable: u.payableDate ?? "—", ex_date: u.exDividendDate ?? "—", state: u.state, acct: `…${String(u.account).slice(-4)}` })),
+        ["symbol", "amount", "payable", "ex_date", "state", "acct"]
+      );
+      process.stdout.write(`\n${r.upcoming.length} upcoming payout(s), ${usd(r.upcoming.reduce((s: number, u: any) => s + (Number.isFinite(u.amountUsd) ? u.amountUsd : 0), 0))} total.\n`);
+    } else if (opts.byMonth) {
+      printTable(r.byMonth.map((m: any) => ({ month: m.month, received: usd(m.totalUsd) })), ["month", "received"]);
+    } else {
+      if (r.bySymbol.length) {
+        printTable(
+          r.bySymbol.map((s: any) => ({
+            symbol: s.symbol, total: usd(s.totalUsd), payouts: s.count, last: usd(s.lastAmountUsd),
+            last_payable: s.lastPayableDate ?? "—", cadence: s.cadence, annualized: usd(s.annualizedUsd), held: s.currentlyHeld ? "yes" : "no"
+          })),
+          ["symbol", "total", "payouts", "last", "last_payable", "cadence", "annualized", "held"]
+        );
+      } else {
+        process.stdout.write("No dividend history found.\n");
+      }
+      const p = r.projection;
+      process.stdout.write(`\nProjected income: ${usd(p.dailyUsd)}/day · ${usd(p.weeklyUsd)}/wk · ${usd(p.monthlyUsd)}/mo · ${usd(p.quarterlyUsd)}/qtr · ${usd(p.annualUsd)}/yr from ${p.projectedSymbols.length} current holding(s)${p.excludedSoldSymbols.length ? ` (sold payers excluded: ${p.excludedSoldSymbols.join(", ")})` : ""}.\n`);
+      if (r.upcoming.length) process.stdout.write(`${r.upcoming.length} upcoming payout(s) pending — run \`dividends --upcoming\`.\n`);
+    }
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
+  });
+
+// ── documents: statements, trade confirms, and the tax-season one-shot ──
+const documents = new Command("documents").description(
+  "Account documents: statements, trade confirms, and tax forms across all accounts. The tax-season one-shot: `documents download --type 1099 --year 2025` grabs every 1099 (incl 1099_crypto, 1099r_roth) for tax year 2025 in one command. Type is prefix-matched; tax-form years are TAX years (a 1099 dated Feb 2026 is tax year 2025). Reads + local downloads only."
+);
+
+documents
+  .command("list")
+  .description("List documents (newest first) with type, date, tax/statement year, account, and download URL. --type is prefix-matched (1099 catches 1099_crypto + 1099r_roth); --year is the tax year for tax forms, calendar year otherwise.")
+  .option("--type <type>", "1099 | 1099_crypto | 1099r_roth | 5498_roth | account_statement | trade_confirm (prefix match)")
+  .option("--year <yyyy>", "tax year for tax forms; calendar year for statements/confirms")
+  .option("--account <number>", "scope to one account")
+  .option("--json", "emit JSON")
+  .action(async (opts: { type?: string; year?: string; account?: string; json?: boolean }) => {
+    const r = await listDocuments({ type: opts.type, year: opts.year, accountNumber: opts.account });
+    if (opts.json) { printJson(r); return; }
+    if (!r.count) { process.stdout.write("No documents match those filters.\n"); return; }
+    printTable(
+      r.documents.map((d) => ({ date: d.date, year: d.year, type: d.type, acct: `…${d.accountLast4}`, file: d.filetype })),
+      ["date", "year", "type", "acct", "file"]
+    );
+    process.stdout.write(`\n${r.count} document(s): ${Object.entries(r.byType).map(([t, c]) => `${t}×${c}`).join(", ")}.\n`);
+    process.stdout.write("Download with: documents download [--type T] [--year YYYY] [--account N] [--limit N]\n");
+  });
+
+documents
+  .command("download")
+  .description("Download matching documents to local/documents/ (gitignored). The tax-season one-shot: `documents download --type 1099 --year 2025` = every 1099 (brokerage + crypto + Roth) for tax year 2025, named <year>-<type>-<acct last4>-<date>.<ext>.")
+  .option("--type <type>", "document type, prefix-matched (1099 catches all 1099 variants)")
+  .option("--year <yyyy>", "tax year for tax forms; calendar year otherwise")
+  .option("--account <number>", "scope to one account")
+  .option("--limit <n>", "download at most N (newest first)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { type?: string; year?: string; account?: string; limit?: string; json?: boolean }) => {
+    const r = await downloadDocuments({ type: opts.type, year: opts.year, accountNumber: opts.account, limit: opts.limit ? Number(opts.limit) : undefined });
+    if (opts.json) { printJson(r); return; }
+    for (const f of r.downloaded) process.stdout.write(`saved ${f.file} (${f.bytes.toLocaleString("en-US")} bytes)\n`);
+    for (const f of r.failures) process.stdout.write(`FAILED ${f.file}: ${f.error}\n`);
+    process.stdout.write(`\n${r.downloaded.length} document(s) saved to ${r.directory}${r.skipped ? ` (${r.skipped} more matched — raise --limit)` : ""}${r.failures.length ? `; ${r.failures.length} failed` : ""}.\n`);
+  });
+
+program.addCommand(documents);
+
+// ── margin: am I borrowing, how much, at what rate, billed when ──
+program
+  .command("margin")
+  .description("Margin health: am I borrowing, how much, at what rate, billed when — plus margin available, buying power with margin, and projected intraday BP, per account. Accounts without margin data are skipped silently. Live read.")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; json?: boolean }) => {
+    // Shared engine — identical code path to the MCP robinhood_margin tool (alignment invariant).
+    const r = await getMarginHealth(opts.account);
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    if (!r.accounts.length) {
+      process.stdout.write(`No margin data on any scanned account (${r.scanned.join(", ")}).\n`);
+      return;
+    }
+    process.stdout.write(`Margin health — ${r.accounts.length} of ${r.scanned.length} account(s) report margin\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    printTable(
+      r.accounts.map((a) => ({
+        account: `${a.label} (…${a.accountNumber.slice(-4)})`,
+        borrowed: usd(a.borrowedUsd),
+        rate: Number.isFinite(a.marginInterestRatePct) ? `${a.marginInterestRatePct.toFixed(2)}%` : "—",
+        next_billing: a.nextBillingDate ?? "—",
+        margin_available: usd(a.marginAvailableUsd),
+        bp_with_margin: usd(a.buyingPowerWithMarginUsd),
+        intraday_bp: usd(a.projectedIntradayBpUsd)
+      })),
+      ["account", "borrowed", "rate", "next_billing", "margin_available", "bp_with_margin", "intraday_bp"]
+    );
+    process.stdout.write("\n");
+    for (const a of r.accounts) {
+      const who = `…${a.accountNumber.slice(-4)}`;
+      process.stdout.write(a.borrowedUsd > 0
+        ? `${who} is borrowing ${usd(a.borrowedUsd)} at ${Number.isFinite(a.marginInterestRatePct) ? a.marginInterestRatePct.toFixed(2) : "?"}%${a.nextBillingDate ? ` — next billed ${a.nextBillingDate}` : ""}.\n`
+        : `${who} is not borrowing on margin${Number.isFinite(a.marginAvailableUsd) && a.marginAvailableUsd > 0 ? ` (${usd(a.marginAvailableUsd)} margin available)` : ""}.\n`);
+    }
+    if (r.skipped.length) process.stdout.write(`\n${r.skipped.length} account(s) without margin data: ${r.skipped.join(", ")}.\n`);
+  });
+
+// ── review: FILM-STUDY MODE — study what worked, attach lessons, revisit best/worst trades ──
+const review = new Command("review").description(
+  "Film-study mode (the athlete-watching-tape loop): pair your FILLED orders into round trips and show what each trade actually MADE or LOST in dollars — entry/exit, hold days, win rate, best and worst performances — with your own trade-notes.md lessons attached to the trades they reference. Study what worked, write down why, revisit it before the next trade. Read-only against the account; `review note` appends to trade-notes.md (a local file, not the brokerage)."
+);
+
+review
+  .option("--days <n>", "look-back window in days (default 90)", "90")
+  .option("--symbol <symbol>", "scope to one underlying, e.g. HPE")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { days?: string; symbol?: string; account?: string; json?: boolean }) => {
+    // Shared engine — identical code path to the MCP robinhood_review tool (alignment invariant).
+    const r = await computeTradeReview({ days: Number(opts.days ?? "90"), symbol: opts.symbol, accountNumber: opts.account });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+
+    process.stdout.write(`Trade review — last ${r.days} day(s), ${r.accountsScanned.length} account(s)${opts.symbol ? ` — ${opts.symbol.toUpperCase()}` : ""}\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    if (r.roundTrips.length) {
+      printTable(
+        r.roundTrips.map((t) => ({
+          trade: t.contract ?? t.symbol,
+          dir: t.direction,
+          qty: t.quantity,
+          pnl_usd: usd(t.realizedPnlUsd),
+          hold_days: Number.isFinite(t.holdDays) ? t.holdDays : "—",
+          entry: usd(t.entryUsd),
+          exit: usd(t.exitUsd),
+          acct: `…${t.account.slice(-4)}`,
+          notes: t.notes.length ? `${t.notes.length}×📝` : ""
+        })),
+        ["trade", "dir", "qty", "pnl_usd", "hold_days", "entry", "exit", "acct", "notes"]
+      );
+    } else {
+      process.stdout.write("No completed round trips in the window.\n");
+    }
+    const s = r.summary;
+    const fmtBest = (t: typeof s.bestTrade) => (t ? `${t.contract ?? t.symbol} ${t.realizedPnlUsd >= 0 ? "+" : "-"}$${Math.abs(t.realizedPnlUsd).toFixed(2)}` : "—");
+    process.stdout.write(`\n${s.roundTrips} round trip(s): ${s.winners}W/${s.losers}L${Number.isFinite(s.winRatePct) ? ` (${s.winRatePct.toFixed(1)}% win)` : ""}, ${s.totalRealizedUsd >= 0 ? "+" : "-"}$${Math.abs(s.totalRealizedUsd).toFixed(2)} net; best ${fmtBest(s.bestTrade)}, worst ${fmtBest(s.worstTrade)}${Number.isFinite(s.avgHoldDays) ? `; avg hold ${s.avgHoldDays}d` : ""}.\n`);
+    if (s.openLegs) process.stdout.write(`${s.openLegs} open/unmatched leg(s) excluded from round-trip math (flagged openLeg — still open or the other side filled outside the window).\n`);
+    const annotated = r.roundTrips.filter((t) => t.notes.length);
+    if (annotated.length) {
+      process.stdout.write(`\nFilm-study notes:\n`);
+      for (const t of annotated) {
+        for (const note of t.notes) process.stdout.write(`  ${t.contract ?? t.symbol} · ${note.when} | ${note.ref}\n    ${note.note.split("\n").join("\n    ")}\n`);
+      }
+    }
+    process.stdout.write(`\nAttach a lesson: review note <ref> "<text>"  (ref = order id, symbol, or symbol+date)\n`);
+    for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
+  });
+
+review
+  .command("note")
+  .description("Append a film-study note to repo-root trade-notes.md. ref = order id, symbol, or symbol+date (freeform); `review` attaches it to matching trades by ref. Local file write only — never touches the account.")
+  .argument("<ref>", "order id, symbol, or symbol+date the note refers to")
+  .argument("<text...>", "the note text (quote it)")
+  .option("--json", "emit JSON")
+  .action((ref: string, textParts: string[], opts: { json?: boolean }) => {
+    const r = addTradeNote({ ref, note: textParts.join(" ") });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`noted → ${r.file}\n${r.entry}`);
+  });
+
+program.addCommand(review);
+
+// ── hotlist: operator-maintained ticker watchlist (hotlist.md) + live quotes ──
+program
+  .command("hotlist")
+  .description("Quote the operator's hotlist (repo-root hotlist.md — one `TICKER — thesis` per line, agents read it on finance tasks alongside ball-knowledge.md): live last, day $ and % change, and the thesis for every listed ticker. Headers/blank/example-marked lines are ignored. Live read.")
+  .option("--json", "emit JSON")
+  .action(async (opts: { json?: boolean }) => {
+    // Shared engine — identical code path to the MCP robinhood_hotlist tool (alignment invariant).
+    const r = await computeHotlist();
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    if (!r.count) {
+      // The engine's only warning in this state repeats this same message — don't double-print.
+      process.stdout.write("hotlist.md has no active entries — add lines like `NVDA — ai capex thesis` (example-marked lines are ignored).\n");
+      return;
+    } else {
+      printTable(
+        r.rows.map((row) => ({
+          ticker: row.symbol,
+          last: row.found ? usd(row.lastUsd) : "not found",
+          day_usd: Number.isFinite(row.dayChangeUsd) ? `${row.dayChangeUsd >= 0 ? "+" : "-"}$${Math.abs(row.dayChangeUsd).toFixed(2)}` : "—",
+          day_pct: pct(row.dayChangePct),
+          thesis: row.thesis ?? "—"
+        })),
+        ["ticker", "last", "day_usd", "day_pct", "thesis"]
+      );
+    }
+    for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
+  });
+
+// ── knowledge: the operator knowledge library (knowledge/ + playbooks + docs/ index) ──
+// Zayd Khan // cold // www.zayd.wtf
+program
+  .command("knowledge")
+  .argument("[id]", "module id to print (basename without .md), e.g. wheel, rolling, broker-call")
+  .description("Operator knowledge library. No arg → the index: every knowledge/ module + playbook with its when-to-load routing hint, plus the docs/ deep-dive index (titles only). With <id> → print that module in full. Shared engine with the MCP robinhood_knowledge tool. Local file read; never calls the brokerage.")
+  .option("--json", "emit JSON")
+  .action((id: string | undefined, opts: { json?: boolean }) => {
+    // Shared engine — identical code path to the MCP robinhood_knowledge tool (alignment invariant).
+    if (id) {
+      const mod = readKnowledge(id);
+      if (opts.json) { printJson(mod); return; }
+      process.stdout.write(mod.content.endsWith("\n") ? mod.content : `${mod.content}\n`);
+      return;
+    }
+    const entries = listKnowledge();
+    if (opts.json) { printJson({ count: entries.length, entries }); return; }
+    const modules = entries.filter((e) => e.kind !== "doc");
+    const docs = entries.filter((e) => e.kind === "doc");
+    process.stdout.write(`Knowledge library — ${modules.length} operating module(s), ${docs.length} deep-dive doc(s)\n\n`);
+    printTable(
+      modules.map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        when_to_load: e.whenToLoad ? (e.whenToLoad.length > 88 ? `${e.whenToLoad.slice(0, 88)}…` : e.whenToLoad) : "—"
+      })),
+      ["id", "kind", "when_to_load"]
+    );
+    process.stdout.write(`\nDeep-dive docs (same reader): ${docs.map((d) => d.id).join(", ")}\n`);
+    process.stdout.write(`\nRead one: knowledge <id>   (e.g. knowledge wheel)\n`);
+  });
+
+// ── roll-ledger: pending cash-account (kosher) roll intents — rolls.md bookkeeping ──
+// Zayd Khan // cold // www.zayd.wtf
+const rollLedger = new Command("roll-ledger").description(
+  "Pending kosher-roll ledger (repo-root rolls.md). A cash-account roll is a TWO-DAY trade — close today, open next business day with settled cash — and sessions die between the legs; this ledger carries the staged intent across them. `list` (default) shows what's pending, `add` records a staged roll, `done <symbol>` removes the entry once the open leg fills (and logs the completion to trading-log.md). Local markdown bookkeeping only — order history remains the only proof either leg executed."
+);
+
+rollLedger
+  .command("list", { isDefault: true })
+  .description("List every pending kosher-roll intent (the example entry is ignored). Default subcommand.")
+  .option("--json", "emit JSON")
+  .action((opts: { json?: boolean }) => {
+    const rolls = listPendingRolls();
+    if (opts.json) { printJson({ count: rolls.length, rolls: rolls.map(({ block: _b, ...rest }) => rest) }); return; }
+    if (!rolls.length) {
+      process.stdout.write("No pending kosher rolls. Stage one with `roll-ledger add --symbol <SYM> ...` (or take the tip line from `options roll-plan --cash-account`).\n");
+      return;
+    }
+    printTable(
+      rolls.map((r) => ({
+        symbol: r.symbol,
+        opened: r.opened,
+        earliest_open: r.earliestOpenDate ?? "—",
+        account: r.account ?? "—",
+        closed_leg: r.closedLeg ?? "—",
+        open_intent: r.openIntent ?? "—"
+      })),
+      ["symbol", "opened", "earliest_open", "account", "closed_leg", "open_intent"]
+    );
+    process.stdout.write(`\n${rolls.length} pending roll(s). When an open leg fills: roll-ledger done <symbol> — order history is the proof, this file is just the thread.\n`);
+  });
+
+rollLedger
+  .command("add")
+  .description("Record a staged cash-account roll: the closed leg (done today) + the open-leg intent (next business day). Appends to rolls.md.")
+  .requiredOption("--symbol <symbol>", "underlying ticker, e.g. F")
+  .option("--account <number>", "account it lives in (stored masked to last-4)")
+  .option("--closed <desc>", 'closed leg: contract, qty, price, order-id — e.g. "1x F $11p 6/12 BTC @ $0.18, order-id abc123"')
+  .option("--open-intent <desc>", "intended open leg: expiration/strike/type + target price or 'fresh quote Monday'")
+  .option("--earliest <date>", "earliest open date YYYY-MM-DD (next business day after the close)")
+  .option("--note <text>", "anything the next session should know")
+  .option("--json", "emit JSON")
+  .action((opts: { symbol: string; account?: string; closed?: string; openIntent?: string; earliest?: string; note?: string; json?: boolean }) => {
+    const r = addPendingRoll({
+      symbol: opts.symbol,
+      account: opts.account,
+      closedLeg: opts.closed,
+      openIntent: opts.openIntent,
+      earliestOpenDate: opts.earliest,
+      notes: opts.note
+    });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`staged → ${r.file}\n${r.entry}`);
+  });
+
+rollLedger
+  .command("done")
+  .description('Mark a pending roll complete (open leg filled, or plan dropped): removes the entry from rolls.md and appends the completion to trading-log.md. Disambiguate duplicates with "SYMBOL YYYY-MM-DD".')
+  .argument("<symbol...>", 'symbol of the completed roll (optionally "SYMBOL YYYY-MM-DD")')
+  .option("--json", "emit JSON")
+  .action((symbolParts: string[], opts: { json?: boolean }) => {
+    const r = completePendingRoll(symbolParts.join(" "));
+    const log = appendRollCompletionLog(r.removed);
+    if (opts.json) {
+      printJson({ generatedAt: new Date().toISOString(), file: r.file, removed: { ...r.removed, block: undefined }, remaining: r.remaining, tradingLog: log.file });
+      return;
+    }
+    process.stdout.write(`cleared ${r.removed.symbol} (staged ${r.removed.opened}) from ${r.file} — ${r.remaining} pending roll(s) remain.\n`);
+    process.stdout.write(`completion logged → ${log.file}\n`);
+    process.stdout.write(`Reminder: order history is the only proof the open leg executed — verify with \`orders open\` / order-status if you haven't.\n`);
+  });
+
+program.addCommand(rollLedger);
+
+// Zayd Khan // cold // www.zayd.wtf
+
 // ── buy: simple market/limit order — one command, no raw JSON needed ──
 program
   .command("buy")
@@ -2902,31 +3287,148 @@ program
     else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 
-// ── cancel: cancel a pending order by ID ──
+// ── cancel: cancel a pending order by ID (equity or options) ──
+// Zayd Khan // cold // www.zayd.wtf
 program
   .command("cancel")
-  .description("Cancel a pending order by ID. Dry-run by default; pass --live and set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.")
+  .description("Cancel a pending order by ID (equity or options). Dry-run by default; pass --live and set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Live cancels re-read the order from order history (evidence).")
   .requiredOption("-i, --id <order_id>", "Order ID or URL to cancel")
+  .option("-k, --kind <kind>", "Order kind: equity (default) or options", "equity")
   .option("--live", "Send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
   .option("--force", "Skip duplicate order check")
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
-    const id = extractOrderId(opts.id);
-    const liveWrite = Boolean(opts.live);
-    const result = await gatedBrokerageWrite({
-      url: "https://api.robinhood.com/orders/{0}/cancel/",
-      method: "POST",
-      params: { "0": id },
-      dryRun: !liveWrite,
-      liveWrite
-    });
+    const kind = String(opts.kind ?? "equity").toLowerCase();
+    if (kind !== "equity" && kind !== "options") throw new Error(`--kind must be equity or options (got "${opts.kind}")`);
+    // Shared engine (cancelOrder in lib.ts) — same path as MCP robinhood_cancel and `panic`:
+    // gated write + post-cancel order-history evidence re-read on live sends.
+    const r = await cancelOrder({ idOrUrl: opts.id, kind, liveWrite: Boolean(opts.live) });
     if (opts.json) {
-      const rb = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-      printJson({ generatedAt: new Date().toISOString(), orderId: id, live: !result.dryRun, state: rb?.state ?? null, httpStatus: result.status });
+      printJson({ generatedAt: new Date().toISOString(), ...r });
       return;
     }
-    const mode = result.dryRun ? "DRY RUN" : "LIVE";
-    process.stdout.write(`${mode} cancel: ${id}  status=${result.status}\n`);
+    const mode = r.dryRun ? "DRY RUN" : "LIVE";
+    process.stdout.write(`${mode} cancel (${r.kind}): ${r.orderId}  status=${r.httpStatus}\n`);
+    if (r.dryRun) process.stdout.write("Nothing was sent. Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
+    if (r.evidence) {
+      process.stdout.write(`evidence: confirmed=${r.evidence.confirmed} state=${r.evidence.state ?? "?"}\n`);
+      if (r.evidence.warning) process.stdout.write(`⚠️  ${r.evidence.warning}\n`);
+    }
+  });
+
+// ── orders: open/pending order views across all accounts ──
+// Zayd Khan // cold // www.zayd.wtf
+const ordersCmd = new Command("orders").description("Order views across all owned accounts");
+
+ordersCmd
+  .command("open")
+  .description("All open/pending equity + options orders across accounts, symbol-resolved, with age, TIF, limit price, and the cancel command for each. Read-only.")
+  .option("-a, --account <number>", "Limit to one account")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; json?: boolean }) => {
+    const r = await listOpenOrders({ accountNumber: opts.account });
+    if (opts.json) {
+      printJson({ generatedAt: new Date().toISOString(), ...r });
+      return;
+    }
+    process.stdout.write(`Open orders across ${r.accountsScanned.length} account(s): ${r.orders.length}\n`);
+    if (r.orders.length > 0) {
+      printTable(
+        r.orders.map((o) => ({
+          kind: o.kind,
+          symbol: o.symbol,
+          detail: o.description,
+          state: o.state,
+          tif: o.timeInForce ?? "—",
+          limit: Number.isFinite(o.price) ? `$${o.price.toFixed(2)}` : "mkt",
+          age_h: o.ageHours ?? "—",
+          account: `…${o.accountNumber.slice(-4)}`,
+          id: o.id.slice(0, 8)
+        })),
+        ["kind", "symbol", "detail", "state", "tif", "limit", "age_h", "account", "id"]
+      );
+      process.stdout.write("\nCancel any of these (dry-run by default):\n");
+      for (const o of r.orders) process.stdout.write(`  ${o.cancelCommand}\n`);
+    } else {
+      process.stdout.write("No open/pending orders — nothing is working in the market right now.\n");
+    }
+    for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
+  });
+
+program.addCommand(ordersCmd);
+
+// ── panic: enumerate and cancel EVERY open order across all accounts (double-gated per cancel) ──
+// Zayd Khan // cold // www.zayd.wtf
+program
+  .command("panic")
+  .description("Cancel-all: list every open/pending equity+options order across ALL accounts and cancel each (each cancel individually double-gated). DRY-RUN by default — shows the would-cancel list and sends NOTHING; live needs --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .option("-a, --account <number>", "Limit to one account")
+  .option("--live-write", "Send the cancels live (still requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; liveWrite?: boolean; json?: boolean }) => {
+    const r = await panicCancelAll({ accountNumber: opts.account, liveWrite: Boolean(opts.liveWrite) });
+    if (opts.json) {
+      printJson({ generatedAt: new Date().toISOString(), ...r });
+      return;
+    }
+    process.stdout.write(`PANIC ${r.dryRun ? "(DRY RUN — nothing sent)" : "(LIVE)"} — ${r.summary}\n`);
+    if (r.orders.length > 0) {
+      printTable(
+        r.orders.map((o) => ({
+          kind: o.kind,
+          symbol: o.symbol,
+          detail: o.description,
+          state: o.state,
+          account: `…${o.accountNumber.slice(-4)}`,
+          cancel: o.cancel.dryRun ? "WOULD CANCEL" : `${o.cancel.httpStatus}${o.cancel.evidence ? ` (${o.cancel.evidence.confirmed ? `confirmed:${o.cancel.evidence.state}` : "UNCONFIRMED"})` : ""}`
+        })),
+        ["kind", "symbol", "detail", "state", "account", "cancel"]
+      );
+      for (const o of r.orders) {
+        if (o.cancel.evidence?.warning) process.stdout.write(`⚠️  ${o.symbol} ${o.id.slice(0, 8)}: ${o.cancel.evidence.warning}\n`);
+        if (o.cancel.error) process.stdout.write(`⚠️  ${o.symbol} ${o.id.slice(0, 8)}: cancel failed — ${o.cancel.error}\n`);
+      }
+    }
+    for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
+  });
+
+// ── pretrade: PASS/WARN/BLOCK preflight checklist before building any order (read-only) ──
+// Zayd Khan // cold // www.zayd.wtf
+program
+  .command("pretrade")
+  .description("Pre-trade preflight: account class, buying power (incl. the overnight-BP-for-GTC note), options BP/collateral, chain min-tick vs --limit-price, OTC/fractional guard, contract existence. READ-ONLY — never POSTs. Summary: CLEAR TO BUILD ORDER or BLOCKED.")
+  .requiredOption("-a, --account <number>", "Account number to preflight")
+  .option("-s, --symbol <symbol>", "Underlying symbol (enables chain/OTC checks)")
+  .option("--chain-id <id>", "Options chain id (skips the symbol→chain resolution)")
+  .option("--strike <k>", "Strike (with --expiration and --type, verifies the exact contract exists)")
+  .option("--expiration <date>", "Expiration YYYY-MM-DD")
+  .option("--type <type>", "Option type: call or put")
+  .option("--limit-price <p>", "Intended limit price (enables the min-tick check)")
+  .option("--json", "emit JSON")
+  .action(async (opts: any) => {
+    if (opts.type && opts.type !== "call" && opts.type !== "put") throw new Error(`--type must be call or put (got "${opts.type}")`);
+    const r = await runPretradeChecks({
+      accountNumber: opts.account,
+      symbol: opts.symbol,
+      chainId: opts.chainId,
+      strike: opts.strike != null ? Number(opts.strike) : undefined,
+      expiration: opts.expiration,
+      optionType: opts.type,
+      limitPrice: opts.limitPrice != null ? Number(opts.limitPrice) : undefined
+    });
+    if (opts.json) {
+      printJson({ generatedAt: new Date().toISOString(), ...r });
+      return;
+    }
+    process.stdout.write(`Pre-trade preflight — account …${String(opts.account).slice(-4)}${r.accountClass ? ` (${r.accountClass})` : ""}  [read-only; nothing sent]\n\n`);
+    printTable(
+      r.checks.map((c) => ({ check: c.id, status: c.status, detail: c.detail.length > 110 ? `${c.detail.slice(0, 107)}...` : c.detail })),
+      ["check", "status", "detail"]
+    );
+    for (const c of r.checks) {
+      if (c.detail.length > 110) process.stdout.write(`\n${c.id} [${c.status}]: ${c.detail}\n`);
+    }
+    process.stdout.write(`\n${r.clear ? "✅" : "⛔"} ${r.summary}\n${r.note}\n`);
   });
 
 // ── order: check status of a single order by ID ──
@@ -2979,6 +3481,9 @@ program
     }
     for (const note of r.notes) process.stdout.write(`\n⚠️  ${note}\n`);
     process.stdout.write(`\nBackground: ${r.reference} — ${r.disclaimer}\n`);
+    // Pending kosher rolls are two-day trades that outlive sessions — surface them wherever rolling context appears.
+    const pendingRolls = listPendingRolls();
+    if (pendingRolls.length) process.stdout.write(`\n⏳ ${pendingRolls.length} pending kosher roll(s) — run roll-ledger list\n`);
   });
 
 const watchlist = new Command("watchlist").description("Inspect your custom watchlists (read)");
@@ -3200,4 +3705,4 @@ program.parseAsync(process.argv).catch((error: unknown) => {
   process.exitCode = 1;
 });
 
-// made with love by Zayd Khan / cold
+// Zayd Khan // cold // www.zayd.wtf

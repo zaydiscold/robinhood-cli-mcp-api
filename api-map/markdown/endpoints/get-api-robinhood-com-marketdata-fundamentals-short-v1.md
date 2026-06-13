@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/marketdata/fundamentals/short/v1/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

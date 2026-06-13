@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/corp_actions/adr_fees/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/margin/{id}/buying_power_hub_view
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

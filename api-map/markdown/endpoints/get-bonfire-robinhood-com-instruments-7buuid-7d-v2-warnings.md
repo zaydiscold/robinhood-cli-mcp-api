@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/instruments/{uuid}/v2/warnings/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

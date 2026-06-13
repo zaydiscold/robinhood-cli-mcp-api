@@ -14,4 +14,4 @@ Route template:
 https://api.robinhood.com/midlands/tags/tag/100-most-popular/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

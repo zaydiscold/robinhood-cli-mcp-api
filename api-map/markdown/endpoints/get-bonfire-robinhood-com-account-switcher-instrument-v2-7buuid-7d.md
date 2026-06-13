@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/account_switcher/instrument/v2/{uuid}/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

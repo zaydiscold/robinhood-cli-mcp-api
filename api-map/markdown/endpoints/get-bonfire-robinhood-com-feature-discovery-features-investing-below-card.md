@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/feature-discovery/features/investing_below_card
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

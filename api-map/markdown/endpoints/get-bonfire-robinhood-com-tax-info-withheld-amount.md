@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/tax_info/withheld_amount/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

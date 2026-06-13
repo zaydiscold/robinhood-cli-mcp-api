@@ -14,4 +14,4 @@ Route template:
 https://identi.robinhood.com/user_info/agreements/v2/sign/
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

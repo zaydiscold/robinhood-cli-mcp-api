@@ -14,4 +14,4 @@ Route template:
 https://bonfire.robinhood.com/rewards/sdp_referral/card/{uuid}
 ```
 
-<!-- made with love by Zayd Khan / cold -->
+<!-- Zayd Khan // cold // www.zayd.wtf -->

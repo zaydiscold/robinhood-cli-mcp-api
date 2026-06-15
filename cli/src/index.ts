@@ -3241,12 +3241,13 @@ program
     });
 
     if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, live: r.live, refId: r.refId, result: r.result });
+      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, live: r.live, refId: r.refId, result: r.result });
       return;
     }
 
     const mode = r.dryRun ? "DRY RUN" : "LIVE";
-    process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${r.shares.toFixed(6)} sh @ ~$${r.estimatedPrice.toFixed(2)} ≈ $${r.estimatedTotal.toFixed(2)}  acct=…${String(opts.account).slice(-4)}\n`);
+    const sizing = r.dollarBased ? `$${r.estimatedTotal.toFixed(2)} (dollar-based ≈ ${r.shares.toFixed(6)} sh)` : `${r.shares.toFixed(6)} sh ≈ $${r.estimatedTotal.toFixed(2)}`;
+    process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${sizing} @ ~$${r.estimatedPrice.toFixed(2)}  acct=…${String(opts.account).slice(-4)}\n`);
     if (r.dryRun) process.stdout.write("Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
     else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
@@ -3277,12 +3278,13 @@ program
     });
 
     if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, live: r.live, refId: r.refId, result: r.result });
+      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, live: r.live, refId: r.refId, result: r.result });
       return;
     }
 
     const mode = r.dryRun ? "DRY RUN" : "LIVE";
-    process.stdout.write(`${mode} ${r.type} sell: ${r.symbol} ${r.shares.toFixed(6)} sh @ ~$${r.estimatedPrice.toFixed(2)} ≈ $${r.estimatedTotal.toFixed(2)}  acct=…${String(opts.account).slice(-4)}\n`);
+    const sizing = r.dollarBased ? `$${r.estimatedTotal.toFixed(2)} (dollar-based ≈ ${r.shares.toFixed(6)} sh)` : `${r.shares.toFixed(6)} sh ≈ $${r.estimatedTotal.toFixed(2)}`;
+    process.stdout.write(`${mode} ${r.type} sell: ${r.symbol} ${sizing} @ ~$${r.estimatedPrice.toFixed(2)}  acct=…${String(opts.account).slice(-4)}\n`);
     if (r.dryRun) process.stdout.write("Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
     else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });

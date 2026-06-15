@@ -183,8 +183,9 @@ describe("placeEquityOrder — validation & guards", () => {
 });
 
 describe("placeEquityOrder — order body & dry-run semantics", () => {
-  it("builds the exact market-buy body: 4dp sizing, ref_id, order_form_version 7, gfd", async () => {
-    const { deps, calls } = makeDeps();
+  it("dollar-notional market buy uses the NATIVE dollar_based_amount body + live collar (web parity, not a computed quantity)", async () => {
+    // Fractional-tradable name, dollar sizing, market → the body robinhood.com itself posts.
+    const { deps, calls } = makeDeps({ quote: { last_trade_price: "100.00", bid_price: "99.98", ask_price: "100.02", updated_at: "2026-06-14T20:00:00Z", instrument_id: "iid-123" } });
     const r = await placeEquityOrder({ symbol: "aapl", accountNumber: "A1", side: "buy", amount: 250 }, deps);
 
     expect(calls.writes).toHaveLength(1);
@@ -200,18 +201,61 @@ describe("placeEquityOrder — order body & dry-run semantics", () => {
       time_in_force: "gfd",
       trigger: "immediate",
       side: "buy",
-      quantity: "2.5",
-      price: "100.00",
+      dollar_based_amount: { amount: "250.00", currency_code: "USD" },
+      market_hours: "regular_hours",
+      position_effect: "open",
+      bid_price: "99.98",
+      ask_price: "100.02",
+      bid_ask_timestamp: "2026-06-14T20:00:00Z",
       order_form_version: "7",
       ref_id: `AAPL-A1-${NOW}`
     });
-    expect(r).toMatchObject({ symbol: "AAPL", shares: 2.5, estimatedTotal: 250, type: "market", dryRun: true, live: false, refId: `AAPL-A1-${NOW}` });
+    // The native dollar body carries NO computed quantity/price — the broker derives the fill.
+    expect(w.body).not.toHaveProperty("quantity");
+    expect(w.body).not.toHaveProperty("price");
+    // The result still reports the informational share estimate for display.
+    expect(r).toMatchObject({ symbol: "AAPL", shares: 2.5, estimatedTotal: 250, type: "market", dollarBased: true, dryRun: true, live: false, refId: `AAPL-A1-${NOW}` });
   });
 
-  it("limit orders use gtc and the 2dp limit price", async () => {
+  it("a dollar-notional sell uses position_effect:close", async () => {
+    const { deps, calls } = makeDeps({ quote: { last_trade_price: "100.00", bid_price: "99.98", ask_price: "100.02", updated_at: "2026-06-14T20:00:00Z", instrument_id: "iid-123" } });
+    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 }, deps);
+    expect(calls.writes[0].body).toMatchObject({ dollar_based_amount: { amount: "50.00", currency_code: "USD" }, position_effect: "close", side: "sell" });
+  });
+
+  it("the dollar body omits collar fields on a one-sided/dead book rather than sending 0/NaN", async () => {
+    const { deps, calls } = makeDeps({ quote: { last_trade_price: "100.00", bid_price: "0.00", ask_price: null, instrument_id: "iid-123" } });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+    const b = calls.writes[0].body;
+    expect(b).toMatchObject({ dollar_based_amount: { amount: "250.00", currency_code: "USD" }, market_hours: "regular_hours", position_effect: "open" });
+    expect(b).not.toHaveProperty("bid_price");
+    expect(b).not.toHaveProperty("ask_price");
+    expect(b).not.toHaveProperty("bid_ask_timestamp");
+    expect(r.dollarBased).toBe(true);
+  });
+
+  it("SHARE sizing keeps the quantity+price body (no dollar form), gfd market", async () => {
     const { deps, calls } = makeDeps();
-    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", shares: 3, limitPrice: 95.5 }, deps);
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 2.5 }, deps);
+    expect(calls.writes[0].body).toMatchObject({ type: "market", time_in_force: "gfd", quantity: "2.5", price: "100.00", order_form_version: "7" });
+    expect(calls.writes[0].body).not.toHaveProperty("dollar_based_amount");
+    expect(r.dollarBased).toBe(false);
+  });
+
+  it("limit orders use gtc and the 2dp limit price (quantity body, never dollar)", async () => {
+    const { deps, calls } = makeDeps();
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", shares: 3, limitPrice: 95.5 }, deps);
     expect(calls.writes[0].body).toMatchObject({ type: "limit", time_in_force: "gtc", price: "95.50", side: "sell", quantity: "3" });
+    expect(calls.writes[0].body).not.toHaveProperty("dollar_based_amount");
+    expect(r.dollarBased).toBe(false);
+  });
+
+  it("a dollar-notional LIMIT order stays on the quantity+price body (dollar form is market-only)", async () => {
+    const { deps, calls } = makeDeps();
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250, limitPrice: 99 }, deps);
+    expect(calls.writes[0].body).toMatchObject({ type: "limit", quantity: "2.5", price: "99.00" });
+    expect(calls.writes[0].body).not.toHaveProperty("dollar_based_amount");
+    expect(r.dollarBased).toBe(false);
   });
 
   it("dry-run never queries the pending-order list and never logs a trade", async () => {

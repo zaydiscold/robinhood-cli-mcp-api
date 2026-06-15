@@ -2539,6 +2539,8 @@ export interface EquityOrderResult {
   type: "market" | "limit";
   /** True when an OTC order with no explicit limit was auto-limited at the marketable side (buy=ask, sell=bid). */
   otcAutoLimit: boolean;
+  /** True when the send used the native `dollar_based_amount` fractional body (dollar-notional market order on a fractional-tradable name) rather than a computed quantity. */
+  dollarBased: boolean;
   live: boolean;
   dryRun: boolean;
   refId: string;
@@ -2644,23 +2646,52 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
 
   // 5. Send (ref_id = broker-level idempotency; a 429 retries the SAME ref_id safely).
   const refId = `${symbol}-${input.accountNumber}-${now()}`;
+
+  // Body shape — two faithful forms, matching what robinhood.com itself sends:
+  //   • Dollar-notional MARKET order on a fractional-tradable (non-OTC) name → the NATIVE fractional
+  //     body: `dollar_based_amount {amount,currency_code}` (NOT a computed quantity) plus the live
+  //     bid/ask collar (`bid_price`/`ask_price`/`bid_ask_timestamp`), `market_hours`, and
+  //     `position_effect`. This is the exact body the web app posts for "$X of AAPL", and lets the
+  //     broker — not us — derive the fill quantity from the dollar amount. (Capture: 2026-06-14.)
+  //   • Everything else (whole shares, any limit order, OTC) → the quantity+price body. OTC and limit
+  //     orders have no native dollar form; shares are already exact.
+  // The collar fields come from the SAME live quote fetched above, so the timestamp is fresh (a stale
+  // collar is the one thing Robinhood rejects on the dollar path). Missing/one-sided book → the field
+  // is omitted rather than sent as 0/NaN. Zayd Khan // cold // www.zayd.wtf
+  const dollarBased = input.amount != null && !otc && isMarket;
+  const baseBody: Record<string, unknown> = {
+    account: `https://api.robinhood.com/accounts/${input.accountNumber}/`,
+    instrument: `https://api.robinhood.com/instruments/${iid}/`,
+    symbol,
+    type: isMarket ? "market" : "limit",
+    time_in_force: tif,
+    trigger: "immediate",
+    side,
+    order_form_version: "7",
+    ref_id: refId
+  };
+  let body: Record<string, unknown>;
+  if (dollarBased) {
+    const bid = Number(q?.bid_price);
+    const ask = Number(q?.ask_price);
+    body = {
+      ...baseBody,
+      dollar_based_amount: { amount: Number(input.amount).toFixed(2), currency_code: "USD" },
+      market_hours: "regular_hours",
+      position_effect: side === "buy" ? "open" : "close",
+      ...(Number.isFinite(bid) && bid > 0 ? { bid_price: bid.toFixed(2) } : {}),
+      ...(Number.isFinite(ask) && ask > 0 ? { ask_price: ask.toFixed(2) } : {}),
+      ...(q?.updated_at ? { bid_ask_timestamp: String(q.updated_at) } : {})
+    };
+  } else {
+    body = { ...baseBody, quantity: String(shares), price };
+  }
+
   const result = await write({
     skipTradeLog: true, // placeEquityOrder writes its own richer log entry below — avoid double-logging
     url: "https://api.robinhood.com/orders/",
     method: "POST",
-    body: {
-      account: `https://api.robinhood.com/accounts/${input.accountNumber}/`,
-      instrument: `https://api.robinhood.com/instruments/${iid}/`,
-      symbol,
-      type: isMarket ? "market" : "limit",
-      time_in_force: tif,
-      trigger: "immediate",
-      side,
-      quantity: String(shares),
-      price,
-      order_form_version: "7",
-      ref_id: refId
-    },
+    body,
     dryRun: !liveWrite,
     liveWrite
   });
@@ -2707,6 +2738,7 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
     estimatedPrice: last, estimatedTotal: shares * last,
     type: isMarket ? "market" : "limit",
     otcAutoLimit,
+    dollarBased,
     live: !result.dryRun, dryRun: result.dryRun, refId,
     orderId: (rb as any)?.id ?? (rb as any)?.url ?? null,
     state: (rb as any)?.state ?? null,

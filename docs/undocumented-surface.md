@@ -58,8 +58,14 @@ Current counts after the 2026-06-03 options/account-settings hardening pass:
   `x-robinhood-web-app-version`, `x-hyper-ex: enabled`, web `user-agent`, `origin`/`referer` —
   and (2) `order_form_version: 7` + a live bid/ask collar
   (`bid_price`/`ask_price`/`bid_ask_timestamp`) + `market_hours` + `position_effect: open`.
-  Fractional buys use `dollar_based_amount: {amount, currency_code}` (server computes shares);
-  whole-share/OTC buys use `price` + `quantity`. Full body shapes in `AGENTS.md`.
+  Dollar-notional MARKET orders on a fractional-tradable name use the NATIVE
+  `dollar_based_amount: {amount, currency_code}` body — the broker derives the fill quantity, and
+  NO `quantity`/`price` is sent (matching robinhood.com exactly; engine parity landed 2026-06-14,
+  `placeEquityOrder`, pinned by `equity-order.test.ts`). The collar (`bid_price`/`ask_price`/
+  `bid_ask_timestamp`) is taken from the same live quote so it is fresh — a stale collar is the one
+  thing the dollar path rejects on; a one-sided/dead book omits the collar fields rather than sending
+  0/NaN. Whole-share, any LIMIT order, and OTC all use `price` + `quantity` (no native dollar form).
+  Full body shapes in `AGENTS.md`.
 - **OTC names** (`otc_market_tier` non-empty, `fractional_tradability: "position_closing_only"`,
   e.g. RNECY) **reject `type: market`** — buy AND sell are both supported, but only as whole
   shares with a marketable **limit** at the marketable side (buy at the ask, sell at the bid;

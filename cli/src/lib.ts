@@ -2506,6 +2506,71 @@ export function filterRecentPending(orders: any[], side: "buy" | "sell", nowMs: 
   });
 }
 
+// ── Market-session awareness ────────────────────────────────────────────────────────────────────
+// The order body's `market_hours` and the "will it fill now or queue?" question both depend on the
+// CURRENT US-equity session. We derive it from Robinhood's OWN market-hours endpoint (holiday- and
+// half-day-aware — never a hardcoded 9:30–16:00 clock), with an ET-clock fallback only if that read
+// fails. Zayd Khan // cold // www.zayd.wtf
+export type MarketSession = "pre_market" | "regular" | "after_hours" | "closed";
+
+export interface MarketSessionInfo {
+  session: MarketSession;
+  /** Is today a trading day at all (false on weekends/holidays). */
+  isTradingDay: boolean;
+  /** True when authoritative RH hours were used; false when the ET-clock fallback was. */
+  authoritative: boolean;
+}
+
+/** ET calendar date `YYYY-MM-DD` for an epoch ms — DST-correct via Intl (en-CA yields ISO order). */
+export function etDateString(nowMs: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date(nowMs));
+}
+
+/** ET-clock session heuristic — the fallback ONLY (no holiday/half-day awareness). */
+export function etClockSession(nowMs: number): MarketSession {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).formatToParts(new Date(nowMs));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const wd = get("weekday");
+  if (wd === "Sat" || wd === "Sun") return "closed";
+  const mins = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  if (mins >= 9 * 60 + 30 && mins < 16 * 60) return "regular";
+  if (mins >= 4 * 60 && mins < 9 * 60 + 30) return "pre_market";
+  if (mins >= 16 * 60 && mins < 20 * 60) return "after_hours";
+  return "closed";
+}
+
+/**
+ * Classify the current US-equity session from Robinhood's authoritative hours endpoint.
+ * Best-effort: any read failure falls back to the ET clock (still useful, just holiday-blind).
+ */
+export async function computeMarketSession(
+  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {}
+): Promise<MarketSessionInfo> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const nowMs = (deps.now ?? Date.now)();
+  let hours: any;
+  try {
+    hours = await getJson("https://api.robinhood.com/markets/{market}/hours/{date}/", {
+      market: "XNYS", date: etDateString(nowMs)
+    });
+  } catch {
+    return { session: etClockSession(nowMs), isTradingDay: etClockSession(nowMs) !== "closed", authoritative: false };
+  }
+  if (!hours?.is_open) return { session: "closed", isTradingDay: false, authoritative: true };
+  const t = (s?: string) => (s ? Date.parse(s) : NaN);
+  const open = t(hours.opens_at), close = t(hours.closes_at);
+  const extOpen = t(hours.extended_opens_at), extClose = t(hours.extended_closes_at);
+  let session: MarketSession = "closed";
+  if (Number.isFinite(open) && Number.isFinite(close) && nowMs >= open && nowMs < close) session = "regular";
+  else if (Number.isFinite(extOpen) && Number.isFinite(open) && nowMs >= extOpen && nowMs < open) session = "pre_market";
+  else if (Number.isFinite(close) && Number.isFinite(extClose) && nowMs >= close && nowMs < extClose) session = "after_hours";
+  return { session, isTradingDay: true, authoritative: true };
+}
+
 export interface EquityOrderInput {
   symbol: string;
   accountNumber: string;
@@ -2527,6 +2592,8 @@ export interface EquityOrderDeps {
   write?: typeof gatedBrokerageWrite;
   log?: typeof logTrade;
   now?: () => number;
+  /** Injectable session detector (tests pass a fake; default reads RH's live hours). */
+  getMarketSession?: typeof computeMarketSession;
 }
 
 export interface EquityOrderResult {
@@ -2541,6 +2608,10 @@ export interface EquityOrderResult {
   otcAutoLimit: boolean;
   /** True when the send used the native `dollar_based_amount` fractional body (dollar-notional market order on a fractional-tradable name) rather than a computed quantity. */
   dollarBased: boolean;
+  /** Detected US-equity session at send time (`regular`/`pre_market`/`after_hours`/`closed`); undefined if detection was skipped/failed. */
+  session?: MarketSession;
+  /** Set when the order will QUEUE rather than fill now (e.g. a fractional/market order placed outside regular hours). */
+  sessionWarning?: string;
   live: boolean;
   dryRun: boolean;
   refId: string;
@@ -2569,6 +2640,7 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   const write = deps.write ?? gatedBrokerageWrite;
   const log = deps.log ?? logTrade;
   const now = deps.now ?? Date.now;
+  const getMarketSession = deps.getMarketSession ?? computeMarketSession;
   const symbol = input.symbol.toUpperCase();
   const side = input.side;
   if (!input.amount && !input.shares) throw new Error("Must specify amount (dollars) or shares (quantity)");
@@ -2659,6 +2731,25 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   // collar is the one thing Robinhood rejects on the dollar path). Missing/one-sided book → the field
   // is omitted rather than sent as 0/NaN. Zayd Khan // cold // www.zayd.wtf
   const dollarBased = input.amount != null && !otc && isMarket;
+
+  // Session awareness — detect the CURRENT session so the order can (a) carry the right `market_hours`
+  // and (b) tell the operator whether it fills NOW or queues to the next regular session. Best-effort:
+  // a detection failure never blocks a send (session stays undefined, no warning). Fractional dollar
+  // orders are regular-hours-only, so their `market_hours` is always "regular_hours" — but when placed
+  // off-session we say so loudly, because "queued, not filled" is exactly the surprise to prevent.
+  let session: MarketSession | undefined;
+  let sessionWarning: string | undefined;
+  try {
+    session = (await getMarketSession({ getJson, now })).session;
+  } catch { /* best-effort — leave session undefined */ }
+  if (session && session !== "regular") {
+    if (dollarBased) {
+      sessionWarning = `Session is ${session}: fractional dollar orders fill ONLY in regular hours, so this will QUEUE to the next regular session — it will not fill now.`;
+    } else if (isMarket) {
+      sessionWarning = `Session is ${session}: a market order will QUEUE to the next regular session — it will not fill now. Use a limit order for extended-hours execution.`;
+    }
+  }
+
   const baseBody: Record<string, unknown> = {
     account: `https://api.robinhood.com/accounts/${input.accountNumber}/`,
     instrument: `https://api.robinhood.com/instruments/${iid}/`,
@@ -2739,6 +2830,8 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
     type: isMarket ? "market" : "limit",
     otcAutoLimit,
     dollarBased,
+    session,
+    sessionWarning,
     live: !result.dryRun, dryRun: result.dryRun, refId,
     orderId: (rb as any)?.id ?? (rb as any)?.url ?? null,
     state: (rb as any)?.state ?? null,

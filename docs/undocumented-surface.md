@@ -66,6 +66,14 @@ Current counts after the 2026-06-03 options/account-settings hardening pass:
   thing the dollar path rejects on; a one-sided/dead book omits the collar fields rather than sending
   0/NaN. Whole-share, any LIMIT order, and OTC all use `price` + `quantity` (no native dollar form).
   Full body shapes in `AGENTS.md`.
+- **Session awareness (`markets/{mic}/hours/{date}/`, verified live).** The engine classifies the
+  CURRENT US-equity session from Robinhood's own hours endpoint — `is_open` + `opens_at`/`closes_at`
+  (regular) + `extended_opens_at`/`extended_closes_at` — so it is holiday- and half-day-aware (never a
+  hardcoded 9:30–16:00 clock; the ET-clock heuristic is the fallback only). Fractional dollar orders
+  stay `market_hours: "regular_hours"` (the only value RH accepts there), but `placeEquityOrder` now
+  returns the detected `session` and a `sessionWarning` when a fractional/market order is placed
+  off-session — it will QUEUE to the next regular session, not fill now. Pinned by
+  `equity-order.test.ts` (`computeMarketSession` classification + the queue warnings). Landed 2026-06-14.
 - **OTC names** (`otc_market_tier` non-empty, `fractional_tradability: "position_closing_only"`,
   e.g. RNECY) **reject `type: market`** — buy AND sell are both supported, but only as whole
   shares with a marketable **limit** at the marketable side (buy at the ask, sell at the bid;

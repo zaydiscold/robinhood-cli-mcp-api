@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   DEDUP_WINDOW_MS,
+  etClockSession,
+  computeMarketSession,
   extractOrderId,
   filterRecentPending,
   getOrderStatus,
-  placeEquityOrder
+  placeEquityOrder,
+  type MarketSession
 } from "../src/lib.js";
 
 // Golden-behavior tests for the shared equity-order engine — the single code path behind the CLI
@@ -22,6 +25,7 @@ interface Fix {
   pendingOrders: any[];
   writeResult: { status: number; dryRun: boolean; body: unknown };
   orderListThrows?: boolean;
+  session: MarketSession;
 }
 
 function makeDeps(overrides: Partial<Fix> = {}) {
@@ -30,11 +34,13 @@ function makeDeps(overrides: Partial<Fix> = {}) {
     quote: { last_trade_price: "100.00", instrument_id: "iid-123" },
     pendingOrders: [],
     writeResult: { status: 0, dryRun: true, body: "{}" },
+    session: "regular",
     ...overrides
   };
   const calls = { writes: [] as any[], logs: [] as any[], orderListQueries: 0 };
   const deps = {
     now: () => NOW,
+    getMarketSession: async () => ({ session: fix.session, isTradingDay: fix.session !== "closed", authoritative: true }),
     getJson: async (url: string) => {
       if (url.includes("instruments/?symbol")) return { results: fix.instrument ? [fix.instrument] : [] };
       if (url.includes("marketdata/quotes")) return { results: fix.quote ? [fix.quote] : [] };
@@ -298,6 +304,84 @@ describe("placeEquityOrder — live-send dedup & logging", () => {
     expect(calls.logs).toHaveLength(1);
     expect(calls.logs[0]).toMatchObject({ symbol: "AAPL", account: "A1", side: "buy", refId: `AAPL-A1-${NOW}`, orderId: "ord-1", httpStatus: 201 });
     expect(r).toMatchObject({ live: true, dryRun: false, orderId: "ord-1", state: "queued", httpStatus: 201 });
+  });
+});
+
+describe("placeEquityOrder — session awareness", () => {
+  it("regular hours: no queue warning, session attached", async () => {
+    const { deps } = makeDeps({ session: "regular", quote: { last_trade_price: "100.00", bid_price: "99.98", ask_price: "100.02", updated_at: "t", instrument_id: "iid-123" } });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+    expect(r.session).toBe("regular");
+    expect(r.sessionWarning).toBeUndefined();
+  });
+
+  it("off-session dollar order: market_hours stays regular_hours BUT a loud queue warning is attached", async () => {
+    for (const session of ["pre_market", "after_hours", "closed"] as MarketSession[]) {
+      const { deps, calls } = makeDeps({ session });
+      const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+      // Fractional dollar orders are regular-hours-only — the body value never changes…
+      expect(calls.writes[0].body).toMatchObject({ market_hours: "regular_hours", dollar_based_amount: { amount: "250.00", currency_code: "USD" } });
+      // …but the operator is told it will QUEUE, not fill now.
+      expect(r.session).toBe(session);
+      expect(r.sessionWarning).toMatch(/QUEUE to the next regular session/);
+      expect(r.sessionWarning).toContain(session);
+    }
+  });
+
+  it("off-session whole-share MARKET order warns it will queue (suggests a limit for extended hours)", async () => {
+    const { deps } = makeDeps({ session: "after_hours" });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 3 }, deps);
+    expect(r.sessionWarning).toMatch(/market order will QUEUE/);
+    expect(r.sessionWarning).toMatch(/limit order for extended-hours/);
+  });
+
+  it("off-session LIMIT order gets NO queue warning (a limit can rest/execute extended)", async () => {
+    const { deps } = makeDeps({ session: "after_hours" });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", shares: 3, limitPrice: 95.5 }, deps);
+    expect(r.session).toBe("after_hours");
+    expect(r.sessionWarning).toBeUndefined();
+  });
+
+  it("a failed session detection never blocks the send (session undefined, no warning)", async () => {
+    const { deps, calls } = makeDeps({ session: "closed" });
+    (deps as any).getMarketSession = async () => { throw new Error("hours endpoint down"); };
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+    expect(r.session).toBeUndefined();
+    expect(r.sessionWarning).toBeUndefined();
+    expect(calls.writes).toHaveLength(1); // order still planned
+  });
+});
+
+describe("computeMarketSession — authoritative RH hours classification", () => {
+  // 2026-06-12 hours (real shape): regular 13:30Z–20:00Z, extended 11:00Z–00:00Z(+1).
+  const HOURS = { is_open: true, opens_at: "2026-06-12T13:30:00Z", closes_at: "2026-06-12T20:00:00Z", extended_opens_at: "2026-06-12T11:00:00Z", extended_closes_at: "2026-06-13T00:00:00Z" };
+  const at = (iso: string) => ({ getJson: (async () => HOURS) as any, now: () => Date.parse(iso) });
+
+  it("classifies regular / pre_market / after_hours / closed from the live window", async () => {
+    expect((await computeMarketSession(at("2026-06-12T15:00:00Z"))).session).toBe("regular");
+    expect((await computeMarketSession(at("2026-06-12T12:00:00Z"))).session).toBe("pre_market");
+    expect((await computeMarketSession(at("2026-06-12T22:00:00Z"))).session).toBe("after_hours");
+    expect((await computeMarketSession(at("2026-06-12T02:00:00Z"))).session).toBe("closed");
+  });
+
+  it("a non-trading day (is_open:false) is closed and not a trading day", async () => {
+    const r = await computeMarketSession({ getJson: (async () => ({ is_open: false })) as any, now: () => Date.parse("2026-06-14T15:00:00Z") });
+    expect(r).toMatchObject({ session: "closed", isTradingDay: false, authoritative: true });
+  });
+
+  it("falls back to the ET clock (non-authoritative) when the hours read fails", async () => {
+    const r = await computeMarketSession({ getJson: (async () => { throw new Error("down"); }) as any, now: () => Date.parse("2026-06-12T15:00:00Z") });
+    expect(r.authoritative).toBe(false);
+    expect(r.session).toBe("regular"); // 15:00Z Fri = 11:00 ET → regular
+  });
+});
+
+describe("etClockSession — fallback heuristic", () => {
+  it("maps ET wall-clock windows and treats weekends as closed", () => {
+    expect(etClockSession(Date.parse("2026-06-12T15:00:00Z"))).toBe("regular");    // Fri 11:00 ET
+    expect(etClockSession(Date.parse("2026-06-12T12:00:00Z"))).toBe("pre_market"); // Fri 08:00 ET
+    expect(etClockSession(Date.parse("2026-06-12T22:30:00Z"))).toBe("after_hours");// Fri 18:30 ET
+    expect(etClockSession(Date.parse("2026-06-14T16:00:00Z"))).toBe("closed");     // Sunday
   });
 });
 

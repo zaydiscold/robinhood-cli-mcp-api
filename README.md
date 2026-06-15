@@ -305,13 +305,13 @@ robinhood-cli options chain NVDA --expiration 2026-07-02 --type put --width 10 -
 ```
 
 ```text
-$ robinhood-cli options positions          # illustrative output (not real holdings)
+$ robinhood-cli options positions          # illustrative output — EXAMPLE DATA, not real holdings
 contract            acct   qty  entry  mark    value_usd  pl_usd    day_usd  return    delta
 ------------------  -----  ---  -----  ------  ---------  --------  -------  --------  -----
-DRAM $50 Call 6/18  …9919  1    $1.30  $18.65  $[redacted]   $[redacted]  $112.00  +1334.6%  0.93
-HPE $30 Call 9/18   …6346  1    $1.68  $19.00  $[redacted]   $[redacted]  $86.00   +1031.0%  0.88
+ACME $50 Call 6/18  …XXXX  1    $1.30  $1.95   $195.00    $65.00    $12.00   +50.0%   0.61
+EXMP $30 Call 9/18  …XXXX  1    $1.60  $2.10   $210.00    $50.00    $9.00    +31.3%   0.55
 ...
-TOTAL: value $[redacted] | unrealized $[redacted] | day $198.00
+TOTAL: value $405.00 | unrealized $115.00 | day $21.00
 ```
 
 Both are pure reads (no write gate). `--json` emits structured rows for piping into a spreadsheet or an agent.

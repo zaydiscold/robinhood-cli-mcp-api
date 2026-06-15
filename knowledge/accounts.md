@@ -60,9 +60,9 @@ Almost every Robinhood surface is account-scoped, and the bare endpoints + web U
 
 The headline balance is a mirage. On a **margin account, `cash` can be negative — that is the
 margin loan**, `equity` is net liquidation value, and the spendable figure is a small
-buying-power number that splits by purpose. Live example (2026-06-04, account …0497): equity
-≈ $[redacted], market value ≈ $[redacted], `cash` ≈ **$[redacted]** (margin debit), actual `buying_power` ≈
-**$[redacted]**.
+buying-power number that splits by purpose. On a margin account `equity` is the net liquidation
+value, `cash` can be **negative** (the margin loan), and the actual `buying_power` is typically a
+small fraction of either — read it live with `portfolio` / `margin`; never infer it from the headline.
 
 Read the family before sizing any order:
 

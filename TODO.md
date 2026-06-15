@@ -27,7 +27,7 @@
   the PDF). Build: list + filter by type/year + download-all-1099s. Tax-season one-shot.
 - [x] **`margin` health command** (BUILT 2026-06-11: all-account scan, money-object unwrap, plain-English borrow line; MCP robinhood_margin): `margin/{account_number}/investing_info/` live-verified on the api
   host — amount_borrowed, margin_interest_rate, next_billing_date, projected intraday BP. Surface in
-  `portfolio` too: an account borrowing on margin should say so (live: …0497 borrowing $[redacted] @ rate).
+  `portfolio` too: an account borrowing on margin should say so.
 - [ ] **phoenix.robinhood.com is TLS-walled** (handshake refused, like ceres futures) — the app-only
   unified-balances host. Don't chase it; the per-account composition already covers balances.
 - [ ] **Options per-position P&L endpoint still unknown** (web UI shows it) — needs a CDP capture pass

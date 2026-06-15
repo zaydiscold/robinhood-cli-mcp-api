@@ -52,6 +52,67 @@
 - [ ] Auto-journal nudge — after a fill, prompt a `review note` so film-study notes accumulate at the moment of the trade.
 - [ ] `exposure` — concentration by underlying/sector + portfolio-wide net Greeks.
 
+## Watchlist writes — add/remove/create — SHIPPED 2026-06-15
+
+The watchlist surface is now read **+ write**, wired across all three places behind the double gate.
+**Correction to the original assumption:** the write endpoint is **`discovery/lists/items/`**, NOT
+`midlands/lists/items/` — captured + verified live 2026-06-15 (the `midlands/lists/*` entries are
+unrelated read routes). Contract: `POST discovery/lists/items/` with a list-id-keyed batch body
+`{ "<list_id>": [ {object_id, object_type, operation: create|delete} ] }`; create = `POST
+discovery/lists/` (201); delete-list = `DELETE discovery/lists/{id}/` (204). Full write-up in
+`docs/undocumented-surface.md`.
+
+- [x] **Captured the write contract** (CDP network capture, then API-verified add/remove/create/delete).
+- [x] **Route map** — added `discovery/lists/items/` POST (`write-mutate`); create/delete-list entries
+  already present. Rebuilt + regenerated api-map markdown/openapi/curl.
+- [x] **Engine** (`cli/src/lib.ts`) — `resolveInstrumentId`, `resolveWatchlist`, `watchlistMutateItems`,
+  `createWatchlist`, `deleteWatchlist` — all through `gatedBrokerageWrite`. No logic in the front doors.
+- [x] **CLI** — `watchlist add|remove <list> <SYM...>`, `watchlist create <name>` (thin wrappers).
+- [x] **MCP** — `robinhood_watchlist_add|remove|create` (tool count 50 → 53).
+- [x] **Test** — `cli/test/watchlist-write.test.ts` (method + URL + body shape); `mcp-tool-count` bumped.
+- [x] **Live-verified** — created "Homie index" + "Og handle fund", batched adds, add→remove round-trip
+  (all 200/201, readbacks confirmed) + recipes added for the intent router.
+
+## Undocumented route-body audit (2026-06-14)
+
+Audit of `api-map/brokerage-routes.json`: **219 of 310 routes are `fieldsSource: "undocumented"`** (51
+verified, 40 inferred). That number is *not* a 219-item backlog — read it correctly:
+
+- **137 are `sensitive-read` GETs** (balances, PII, profile, portfolios). They are **usable today** — you
+  call them and read the response; the empty `fields` only means the *response shape* isn't catalogued.
+  Optional polish (backfill response fields for nicer typed output), **not** a capability blocker.
+- **50 are plain `read`** — same story, usable now.
+- **32 are write-tier** (`write-safe`/`write-mutate`/`write-or-sensitive`/`destructive`) — these are the
+  ones where a **missing request body = the capability can't be used** (the watchlist-items case). Of
+  those 32: ~12 are **already wired** (the engine builds the body even though `fields` is empty: `orders/`
+  + cancel, `options/orders/` + cancel, `nummus/orders/` crypto + cancel, account-wide DRIP,
+  `recurring_schedules`, `marketability`/`review` via `pretrade`); 5 are **already tracked** below in
+  "Live auth needed" (sweep, instrument DRIP, `settings/margin`, slip/stock-lending, options_settings).
+
+### Genuinely untracked write bodies to reverse-engineer (CDP capture → fields + method → rebuild)
+
+- [ ] **Whole-watchlist CRUD** — `POST discovery/lists/` (create a custom list), `DELETE/PATCH
+  discovery/lists/{id}/` (delete/rename). Both `destructive`, category `watchlists`, empty fields.
+  Natural companion to the items add/remove in the Watchlist-writes section above — capture them in the
+  same session.
+- [ ] **DRIP enrollment** — `corp_actions/drip/enrollment/{account_number}/` (`write-or-sensitive`,
+  empty fields). Distinct from the account-wide `drip/account_settings/` toggle that's already built;
+  capture the enroll/unenroll body.
+- [ ] **Sweep enroll (alt host)** — `bonfire .../sms/sweep/agree_and_enroll` (`write-mutate`). Same cash-
+  sweep capability already tracked via `accounts/{account}/sweep_enrollment_state/`; capture both bodies
+  when doing the sweep toggle so we know which host the web app actually uses.
+
+### Explicitly NOT building (so nobody burns time capturing them)
+
+- **Money-movement cluster** — `ach/transfers/`, `ach/relationships/` (+ `/unlink/`), `wire/transfers`,
+  `acats/`, `nimbus/v1/asset_transfers`, `crypto-transfers/*`. These move **real cash off-platform**;
+  out of scope for a reads+trades tool by default. Revisit ONLY on an explicit decision to add
+  deposit/withdrawal automation.
+- **Telemetry / cosmetics** — `goku/*` log events, `app-comms/receipt/seen/`, upsell/promo/tooltip/
+  onboarding surfaces. No operator value.
+- **Sensitive identity writes** — `identi .../user_info/agreements/v2/sign/`, `subscription_fees/`. High
+  blast radius, near-zero operator benefit; leave parked.
+
 ## Social / showcase layer (parked 2026-06-11 — v2, after core)
 
 - [ ] **Trade cards + success graphics framework**: HTML template framework that renders a trade

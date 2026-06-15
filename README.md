@@ -41,7 +41,7 @@ node cli/dist/index.js --help
 | Surface | Current state |
 |---------|---------------|
 | API map | 300+ brokerage/account route entries (incl. instrument search + the `midlands/` sentiment layer) + the official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates. Every entry carries field-level response provenance (`verified`/`inferred`/`undocumented`, test-enforced). Trust the live count (`brokerage routes --json`), never a hardcoded number. |
-| CLI | TypeScript command-line tool: live reads (`quote`, `positions`, `portfolio` (one-call day/after-hours P&L in dollars, by underlying), `accounts`, `history`, `order-status` (UUID→ticker resolved), `buying-power`, `options positions/chain/enumerate/inspect/holdings`, `stock profile`, `watchlist`, `recipes` (intent → the one command)), first-class order lifecycle (`buy` / `sell` / `cancel` — OTC-aware, deduped, `ref_id`-idempotent), options strategy quoting + rolling, first-class `settings` (DRIP/expiration/PDT/lending/sweep) and `recurring` (list/pause/resume/create/edit/end) — all writes double-gated — plus route planning and dry-run order bodies. |
+| CLI | TypeScript command-line tool: live reads (`quote`, `positions`, `portfolio` (one-call day/after-hours P&L in dollars, by underlying), `accounts`, `history`, `order-status` (UUID→ticker resolved), `buying-power`, `options positions/chain/enumerate/inspect/holdings`, `stock profile`, `watchlist`, `recipes` (intent → the one command)), first-class order lifecycle (`buy` / `sell` / `cancel` — OTC-aware, deduped, `ref_id`-idempotent), options strategy quoting + rolling, first-class `settings` (DRIP/expiration/PDT/lending/sweep), `recurring` (list/pause/resume/create/edit/end), and `watchlist` (list/add/remove/create) — all writes double-gated — plus route planning and dry-run order bodies. |
 | MCP | The full agent-tool surface (live truth: `tools/list`) sharing the same engine, auth, route map, and write gates as the CLI — full verb parity. `robinhood_buy`/`robinhood_sell` run the exact same shared order engine as the CLI commands (same dedup, same `ref_id`, same OTC guard), so the two surfaces cannot drift. `robinhood_wheel` reads your actual wheel state (shares + short puts/calls) and returns the next-leg dry-run command. |
 | Memory | `ball-knowledge.md` (market beliefs/themes/sources) + `trading-log.md` (execution + intent history) — the agent's cross-session brain. |
 | Research | A source-quality doctrine (X/Reddit pulse → news/`midlands` confirmer → institutional outlook → academic math, none gospel) + strategy deep-dives (Wheel, rolling, with quant appendices), institutional CMAs, tax-aware notes. |
@@ -80,7 +80,7 @@ The layers an agent reads to do that: **`SKILL.md`** (the lean, portable skill e
 - **Orders** — equity and options order history, status (single-order lookup with the instrument UUID resolved to a real ticker), placement, and cancellation — with pending-duplicate dedup and `ref_id` idempotency on every send.
 - **Portfolio P&L** — `portfolio` (aliases `pnl`/`snapshot`): one call → per-account day Δ + after-hours Δ + per-account buying power, drivers rolled up by underlying in **dollars** across all accounts, with a reconciliation line.
 - **Recipes** — `recipes "<intent>"`: free-text intent → the one CLI command (and MCP tool) that answers it.
-- **Watchlists** — list, add, remove.
+- **Watchlists** — list, add, remove, create (writes double-gated; the real endpoint is `discovery/lists/items/`, captured + verified live).
 - **Margin health** — `margin`: per-account answer to "am I borrowing, how much, at what rate, billed when" — amount borrowed in dollars, interest rate, next billing date, margin available, and buying power with margin; accounts without margin data degrade silently.
 - **Recurring investments** — first-class list, pause, resume, **create, edit, and end** (all double-gated; create/edit body shapes verified live).
 - **Account settings** — first-class `settings` group: DRIP (account-wide + per-stock), trade-on-expiration, PDT protection, stock lending, cash-sweep unenroll — double-gated, several verified live.
@@ -207,6 +207,8 @@ robinhood-cli options roll-plan --account <ACCOUNT_NUMBER> --symbol DRAM --type 
 robinhood-cli api-map options-contract-links --account <ACCOUNT_NUMBER> --symbol DRAM --expiration 2026-12-18 --type call --side buy --strike 80 --json
 robinhood-cli stock profile DRAM --account <ACCOUNT_NUMBER> --json
 robinhood-cli watchlist list                          # your custom watchlists + sizes
+robinhood-cli watchlist add "Homie index" NVDA AMAT   # add tickers (double-gated, dry-run by default)
+robinhood-cli watchlist create "Og handle fund"       # make a new list (double-gated)
 robinhood-cli brokerage routes --category orders      # browse mapped routes
 robinhood-cli brokerage plan "https://api.robinhood.com/accounts/{0}/" --param 0=ACCOUNT_ID --json
 ```
@@ -232,6 +234,7 @@ One line per question. All reads are live and free; the order/settings commands 
 | `buy` / `sell` / `cancel` / `order-status` | The order lifecycle — dollar or share sizing, dedup + `ref_id` idempotency, real-ticker status |
 | `buying-power [--account N]` | "What can I actually spend?" — the BP family, not the headline number |
 | `recurring list/pause/resume/create/edit/end` | "What's on autopilot, and change it" |
+| `watchlist list/add/remove/create` | "Show my custom lists, and edit them" — add/remove tickers (resolved by name) or make a new list (double-gated) |
 | `settings show/drip/expiration/pdt/lending/sweep` | "Read or toggle account settings" (double-gated) |
 | `history --days N` | "What actually executed?" — unified equity + options + crypto + transfers, newest first |
 | `quote <SYM...>` | Live last/bid/ask/day-change for any symbols |
@@ -521,6 +524,12 @@ robinhood-cli positions --account <ROTH_ACCOUNT_NUMBER>     # Roth IRA
 
 # Your custom watchlists and how many symbols each holds.
 robinhood-cli watchlist list
+
+# Edit watchlists — add/remove tickers (resolved by name) or create a list.
+# Writes are dry-run until BOTH gates are set, like every other write here.
+robinhood-cli watchlist create "AI memory"
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli watchlist add "AI memory" MU AMAT LRCX --live-write
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli watchlist remove "AI memory" LRCX --live-write
 
 # Option expirations for a symbol (handy before `options chain`).
 robinhood-cli options expirations MRVL

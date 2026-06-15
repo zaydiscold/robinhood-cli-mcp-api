@@ -5823,6 +5823,38 @@
         ],
         "x-robinhood-seen-on": [],
         "x-robinhood-source": "brokerage-browser-map"
+      },
+      "post": {
+        "operationId": "brokerage_post_discovery_lists_items",
+        "summary": "Watchlists brokerage route",
+        "description": "Personal route map entry. Risk: write-mutate. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "watchlists"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "write-mutate",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/discovery/lists/items/"
+        ],
+        "x-robinhood-sources": [
+          "cdp-2026-06-14 watchlist-capture (verified live: add+remove each returned 200",
+          "the REAL endpoint is discovery/lists/items/, NOT midlands/lists/items/)"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-source": "brokerage-browser-map"
       }
     },
     "/discovery/lists/user_items/": {
@@ -8543,6 +8575,50 @@
           "stock-nvda-options",
           "stock-tsla"
         ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/margin/{account_number}/investing_info/": {
+      "get": {
+        "operationId": "brokerage_get_margin_account_number_investing_info",
+        "summary": "Account brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "account",
+          "margin"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder account_number. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/margin/{account_number}/investing_info/"
+        ],
+        "x-robinhood-sources": [
+          "live-verified-2026-06-11 on the api host (200 with amount_borrowed/margin_interest_rate/next_billing_date). The margin-health read: answers 'am I borrowing, at what rate, billed when'. Sibling day_trades_card/ returns 404 (retired with the PDT elimination, FINRA 26-10)."
+        ],
+        "x-robinhood-seen-on": [],
         "x-robinhood-source": "brokerage-browser-map"
       }
     },
@@ -12468,6 +12544,50 @@
         "x-robinhood-sources": [
           "self-extension 2026-05-28: options order PLACEMENT (POST). Same reason as equity orders",
           "supports legs[] for single/multi-leg. Double-gated."
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/options/orders/{param_0}/": {
+      "get": {
+        "operationId": "brokerage_get_options_orders_param_0",
+        "summary": "Options brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "options",
+          "orders"
+        ],
+        "parameters": [
+          {
+            "name": "param_0",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder param_0. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/options/orders/{0}/"
+        ],
+        "x-robinhood-sources": [
+          "self-extension 2026-06-11: single OPTIONS order lookup by ID, for the post-cancel/post-send evidence re-read (order-evidence rule). Live-verified 200 against a filled SPXW order."
         ],
         "x-robinhood-seen-on": [],
         "x-robinhood-source": "brokerage-browser-map"

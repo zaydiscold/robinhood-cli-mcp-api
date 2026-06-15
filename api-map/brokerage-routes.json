@@ -7991,6 +7991,30 @@
     "source": "manual"
   },
   {
+    "url": "https://api.robinhood.com/discovery/lists/items/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Add or remove items in custom watchlists. Body is an object keyed by list_id -> array of {object_id (instrument UUID, NOT ticker), object_type (instrument|currency_pair|option_strategy), operation (create=add | delete=remove)}. Batches multiple items and multiple lists in one call. Reversible (add/remove items; not destructive like deleting a list).",
+    "bodyKeys": [
+      "object_id",
+      "object_type",
+      "operation"
+    ],
+    "source": "cdp-2026-06-14 watchlist-capture (verified live: add+remove each returned 200; the REAL endpoint is discovery/lists/items/, NOT midlands/lists/items/)",
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [],
+    "fieldsSource": "verified"
+  },
+  {
     "url": "https://api.robinhood.com/discovery/lists/{id}/",
     "host": "api.robinhood.com",
     "categories": [

@@ -603,6 +603,9 @@
 # sensitive-read GET https://bonfire.robinhood.com/margin/{id}/investing_info/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/margin/{id}/investing_info/'
 
+# sensitive-read GET https://api.robinhood.com/margin/{account_number}/investing_info/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/margin/{account_number}/investing_info/'
+
 # sensitive-read GET https://bonfire.robinhood.com/margin/{id}/settings/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/margin/{id}/settings/'
 
@@ -837,6 +840,9 @@
 # sensitive-read GET https://api.robinhood.com/discovery/lists/?owner_type=custom
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/?owner_type=custom'
 
+# write-mutate POST https://api.robinhood.com/discovery/lists/items/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/items/'
+
 # destructive PATCH https://api.robinhood.com/discovery/lists/{id}/
 # curl -sS -X PATCH -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/discovery/lists/{id}/'
 
@@ -926,5 +932,8 @@
 
 # sensitive-read GET https://api.robinhood.com/orders/{0}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/orders/{0}/'
+
+# sensitive-read GET https://api.robinhood.com/options/orders/{0}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/orders/{0}/'
 
 # Zayd Khan // cold // www.zayd.wtf

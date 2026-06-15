@@ -91,6 +91,29 @@ Current counts after the 2026-06-03 options/account-settings hardening pass:
 - Reference impl: `cli/src/index.ts` `brokerage buy` / `brokerage search`, `scripts/equity-buy.mjs`,
   `scripts/rh-get.mjs`. Receipts (account numbers + order ids) stay in gitignored `info/`.
 
+## 2026-06-15 — Watchlist write surface (`discovery/lists/items/`)
+
+Captured live to wire `watchlist add/remove/create` across CLI + MCP. **Corrects a prior assumption**:
+the write endpoint is `discovery/lists/items/`, *not* `midlands/lists/items/` (the `midlands/lists/*`
+entries are unrelated read routes).
+
+1. **Discovery source.** CDP network capture on `robinhood.com` (Add-to-Lists modal → Save), then
+   independently API-verified each verb with the session bearer.
+2. **Request method + body shape.**
+   - Add/remove items — `POST https://api.robinhood.com/discovery/lists/items/`, body keyed by list id:
+     `{ "<list_id>": [ { "object_id": "<instrument_uuid>", "object_type": "instrument", "operation": "create" | "delete" } ] }`
+     (`create` = add, `delete` = remove; batches many items / many lists in one call). `object_id` is the
+     instrument UUID (resolve via `instruments/?symbol=`), never the ticker. `object_type` mirrors the
+     list's `allowed_object_types` (`instrument` for equities, `currency_pair`/`option_strategy` otherwise).
+   - Create list — `POST https://api.robinhood.com/discovery/lists/`, body `{ "display_name": "...", "icon_emoji"?: "..." }` → 201 (server defaults emoji 💡 + the standard equity `allowed_object_types`).
+   - Delete list — `DELETE https://api.robinhood.com/discovery/lists/{id}/` → 204.
+3. **Auth/session.** Web-session bearer (`Authorization: Bearer …`) + the standard web headers (origin/referer/`x-robinhood-web-app-version`). Same auth as every other brokerage write.
+4. **Response shape.** Items POST echoes the request body (200). Create returns the full list object (id, display_name, owner UUID, allowed_object_types, item_count). Lists are **user-level, not account-scoped** — no `account_number` anywhere.
+5. **Rate-limit behavior.** None observed across the capture + verification writes.
+6. **Risk classification.** `discovery/lists/items/` POST = `write-mutate` (reversible add/remove);
+   `discovery/lists/` POST + `discovery/lists/{id}/` PATCH/DELETE = `destructive`. All double-gated; safe
+   for `brokerage execute` only behind both write gates. Wired as first-class `watchlist add/remove/create`.
+
 When a new undocumented route is discovered, record:
 
 1. Discovery source.

@@ -43,6 +43,8 @@ import {
   getMarginHealth,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
+  watchlistMutateItems,
+  createWatchlist,
   placeEquityOrder,
   getOrderStatus,
   extractOrderId,
@@ -1333,6 +1335,78 @@ server.registerTool(
     annotations: toolAnnotations(true, "read")
   },
   async () => jsonResponse(await brokerageGetJson("https://api.robinhood.com/discovery/lists/?owner_type=custom", {}, { owner_type: "custom" }))
+);
+
+server.registerTool(
+  "robinhood_watchlist_add",
+  {
+    title: "Robinhood Watchlist — Add",
+    description: "Add tickers to a custom watchlist (resolved by name or id). Watchlists are user-level, not account-scoped. Reads resolve the list + each symbol's instrument UUID; the write is dry-run unless liveWrite=true (canonical; `live` accepted) AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    annotations: toolAnnotations(false, "write-mutate"),
+    inputSchema: z.object({
+      list: z.string(),
+      symbols: z.array(z.string()).min(1),
+      dryRun: z.boolean().default(false),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional()
+    })
+  },
+  async ({ list, symbols, dryRun, liveWrite: liveWriteParam, live }) => {
+    const liveWrite = resolveLiveFlag(liveWriteParam, live);
+    const out = await watchlistMutateItems({ list, symbols, operation: "create", dryRun, liveWrite });
+    return writeStatus(
+      { list: out.list, operation: "add", items: out.items, status: out.result.status, body: out.result.body },
+      { dryRun: out.result.dryRun, reason: out.result.reason }
+    );
+  }
+);
+
+server.registerTool(
+  "robinhood_watchlist_remove",
+  {
+    title: "Robinhood Watchlist — Remove",
+    description: "Remove tickers from a custom watchlist (resolved by name or id). Dry-run unless liveWrite=true (canonical; `live` accepted) AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    annotations: toolAnnotations(false, "write-mutate"),
+    inputSchema: z.object({
+      list: z.string(),
+      symbols: z.array(z.string()).min(1),
+      dryRun: z.boolean().default(false),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional()
+    })
+  },
+  async ({ list, symbols, dryRun, liveWrite: liveWriteParam, live }) => {
+    const liveWrite = resolveLiveFlag(liveWriteParam, live);
+    const out = await watchlistMutateItems({ list, symbols, operation: "delete", dryRun, liveWrite });
+    return writeStatus(
+      { list: out.list, operation: "remove", items: out.items, status: out.result.status, body: out.result.body },
+      { dryRun: out.result.dryRun, reason: out.result.reason }
+    );
+  }
+);
+
+server.registerTool(
+  "robinhood_watchlist_create",
+  {
+    title: "Robinhood Watchlist — Create",
+    description: "Create a new custom watchlist (display_name, optional icon emoji). Dry-run unless liveWrite=true (canonical; `live` accepted) AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    annotations: toolAnnotations(false, "write-mutate"),
+    inputSchema: z.object({
+      name: z.string(),
+      emoji: z.string().optional(),
+      dryRun: z.boolean().default(false),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional()
+    })
+  },
+  async ({ name, emoji, dryRun, liveWrite: liveWriteParam, live }) => {
+    const liveWrite = resolveLiveFlag(liveWriteParam, live);
+    const out = await createWatchlist({ displayName: name, iconEmoji: emoji, dryRun, liveWrite });
+    return writeStatus(
+      { displayName: name, status: out.result.status, body: out.result.body },
+      { dryRun: out.result.dryRun, reason: out.result.reason }
+    );
+  }
 );
 
 server.registerTool(

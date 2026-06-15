@@ -4,8 +4,8 @@ Source: reverse-engineered routes plus sanitized authenticated Chrome/CDP captur
 
 Personal repo semantics: mapped routes can be executed live with caller-owned `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE`. Pass `--dry-run` when you want a non-sending test plan.
 
-Current count: 308 route templates.
-Risk counts: destructive=9, read=86, sensitive-read=190, write-mutate=10, write-or-sensitive=7, write-safe=6.
+Current count: 311 route templates.
+Risk counts: destructive=9, read=86, sensitive-read=192, write-mutate=11, write-or-sensitive=7, write-safe=6.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -211,6 +211,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | GET | account | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/margin/{id}/buying_power_hub_view` |
 | sensitive-read | GET | account, telemetry-config | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/margin/{id}/eligibility` |
 | sensitive-read | GET | account | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/margin/{id}/investing_info/` |
+| sensitive-read | GET | account, margin | api.robinhood.com | live-verified-2026-06-11 on the api host (200 with amount_borrowed/margin_interest_rate/next_billing_date). The margin-health read: answers 'am I borrowing, at what rate, billed when'. Sibling day_trades_card/ returns 404 (retired with the PDT elimination, FINRA 26-10). | `https://api.robinhood.com/margin/{account_number}/investing_info/` |
 | sensitive-read | GET | account | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/margin/{id}/settings/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/market_indices` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/onboarding/{id}/` |
@@ -289,6 +290,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/user_items/` |
 | sensitive-read | inferred | uncategorized | api.robinhood.com | community-seed | `https://api.robinhood.com/discovery/lists/{0}/` |
 | sensitive-read | inferred | watchlists | api.robinhood.com | manual | `https://api.robinhood.com/discovery/lists/?owner_type=custom` |
+| write-mutate | POST | watchlists | api.robinhood.com | cdp-2026-06-14 watchlist-capture (verified live: add+remove each returned 200; the REAL endpoint is discovery/lists/items/, NOT midlands/lists/items/) | `https://api.robinhood.com/discovery/lists/items/` |
 | destructive | PATCH,DELETE | watchlists | api.robinhood.com | manual | `https://api.robinhood.com/discovery/lists/{id}/` |
 | destructive | POST | watchlists | api.robinhood.com | manual | `https://api.robinhood.com/discovery/lists/` |
 | destructive | PATCH,DELETE | recurring | bonfire.robinhood.com | wire-writes 2026-05-29 | `https://bonfire.robinhood.com/recurring_schedules/{0}/` |
@@ -319,5 +321,6 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | read | GET | marketdata | api.robinhood.com | cdp-2026-06-04-injected-capture (observed; price historicals per symbol) | `https://api.robinhood.com/marketdata/historicals/{symbol}/` |
 | read | GET | options, marketdata | bonfire.robinhood.com | cdp-2026-06-04-injected-capture (observed; option strategy historical chart; strategy_code = {option_uuid}_S1) | `https://bonfire.robinhood.com/options/{strategy_code}/historical-chart/` |
 | sensitive-read | GET | orders | api.robinhood.com | self-extension 2026-06-09: single order status lookup by ID | `https://api.robinhood.com/orders/{0}/` |
+| sensitive-read | GET | options, orders | api.robinhood.com | self-extension 2026-06-11: single OPTIONS order lookup by ID, for the post-cancel/post-send evidence re-read (order-evidence rule). Live-verified 200 against a filled SPXW order. | `https://api.robinhood.com/options/orders/{0}/` |
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

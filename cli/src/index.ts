@@ -38,6 +38,8 @@ import {
   getMarginHealth,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
+  watchlistMutateItems,
+  createWatchlist,
   logTrade,
   placeEquityOrder,
   getOrderStatus,
@@ -3490,7 +3492,7 @@ program
     if (pendingRolls.length) process.stdout.write(`\n⏳ ${pendingRolls.length} pending kosher roll(s) — run roll-ledger list\n`);
   });
 
-const watchlist = new Command("watchlist").description("Inspect your custom watchlists (read)");
+const watchlist = new Command("watchlist").description("Inspect (read) and edit (add/remove/create, double-gated) your custom watchlists");
 
 watchlist
   .command("list")
@@ -3519,6 +3521,49 @@ watchlist
       rows.map((row: any) => ({ name: row.name, items: Number.isFinite(row.items) ? row.items : "—", emoji: row.emoji, id: row.id })),
       ["name", "items", "emoji", "id"]
     );
+  });
+
+watchlist
+  .command("add <list> <symbols...>")
+  .description("Add tickers to a custom watchlist (by name or id). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .option("--dry-run", "plan only, send nothing")
+  .option("--live-write", "permit the live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--json", "emit JSON")
+  .action(async (list: string, symbols: string[], opts: { dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    const out = await watchlistMutateItems({ list, symbols, operation: "create", dryRun: opts.dryRun, liveWrite: opts.liveWrite });
+    if (out.result.dryRun && out.result.reason) process.stderr.write(`${out.result.reason}\n`);
+    if (opts.json) { printJson({ list: out.list, operation: "add", items: out.items, dryRun: out.result.dryRun, status: out.result.status, body: out.result.body }); return; }
+    process.stdout.write(`${out.result.dryRun ? "DRY-RUN" : out.result.status} add ${out.items.map((i) => i.symbol).join(", ")} -> "${out.list.display_name}" (${out.list.id})\n`);
+    if (out.result.body) process.stdout.write(`${out.result.body}\n`);
+  });
+
+watchlist
+  .command("remove <list> <symbols...>")
+  .description("Remove tickers from a custom watchlist (by name or id). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .option("--dry-run", "plan only, send nothing")
+  .option("--live-write", "permit the live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--json", "emit JSON")
+  .action(async (list: string, symbols: string[], opts: { dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    const out = await watchlistMutateItems({ list, symbols, operation: "delete", dryRun: opts.dryRun, liveWrite: opts.liveWrite });
+    if (out.result.dryRun && out.result.reason) process.stderr.write(`${out.result.reason}\n`);
+    if (opts.json) { printJson({ list: out.list, operation: "remove", items: out.items, dryRun: out.result.dryRun, status: out.result.status, body: out.result.body }); return; }
+    process.stdout.write(`${out.result.dryRun ? "DRY-RUN" : out.result.status} remove ${out.items.map((i) => i.symbol).join(", ")} <- "${out.list.display_name}" (${out.list.id})\n`);
+    if (out.result.body) process.stdout.write(`${out.result.body}\n`);
+  });
+
+watchlist
+  .command("create <name>")
+  .description("Create a new custom watchlist. Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .option("--emoji <emoji>", "icon emoji for the list")
+  .option("--dry-run", "plan only, send nothing")
+  .option("--live-write", "permit the live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--json", "emit JSON")
+  .action(async (name: string, opts: { emoji?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    const out = await createWatchlist({ displayName: name, iconEmoji: opts.emoji, dryRun: opts.dryRun, liveWrite: opts.liveWrite });
+    if (out.result.dryRun && out.result.reason) process.stderr.write(`${out.result.reason}\n`);
+    if (opts.json) { printJson({ displayName: name, dryRun: out.result.dryRun, status: out.result.status, body: out.result.body }); return; }
+    process.stdout.write(`${out.result.dryRun ? "DRY-RUN" : out.result.status} create watchlist "${name}"${opts.emoji ? ` ${opts.emoji}` : ""}\n`);
+    if (out.result.body) process.stdout.write(`${out.result.body}\n`);
   });
 
 program.addCommand(watchlist);

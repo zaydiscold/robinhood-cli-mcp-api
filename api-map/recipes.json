@@ -178,6 +178,45 @@
       "notes": "owner_type=custom is mandatory (handled internally)."
     },
     {
+      "id": "watchlist-add",
+      "intent": "Add tickers to a watchlist",
+      "triggers": [
+        "add to watchlist",
+        "add to my list",
+        "put on my watchlist"
+      ],
+      "command": "watchlist add <list> <SYM...> --live-write",
+      "mcpTool": "robinhood_watchlist_add",
+      "risk": "write-mutate",
+      "notes": "List resolved by name or id; tickers resolved to instrument UUIDs internally. Double-gated, dry-run by default."
+    },
+    {
+      "id": "watchlist-remove",
+      "intent": "Remove tickers from a watchlist",
+      "triggers": [
+        "remove from watchlist",
+        "take off my list",
+        "delete from watchlist"
+      ],
+      "command": "watchlist remove <list> <SYM...> --live-write",
+      "mcpTool": "robinhood_watchlist_remove",
+      "risk": "write-mutate",
+      "notes": "Same endpoint as add (operation=delete). Double-gated."
+    },
+    {
+      "id": "watchlist-create",
+      "intent": "Create a new watchlist",
+      "triggers": [
+        "make a watchlist",
+        "create a list",
+        "new watchlist"
+      ],
+      "command": "watchlist create <name> --live-write",
+      "mcpTool": "robinhood_watchlist_create",
+      "risk": "write-mutate",
+      "notes": "POST discovery/lists/ with display_name (+ optional icon emoji). Double-gated."
+    },
+    {
       "id": "accounts",
       "intent": "List all my accounts + capabilities",
       "triggers": [

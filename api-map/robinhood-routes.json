@@ -1502,6 +1502,30 @@
     "fieldsShape": "object"
   },
   {
+    "url": "https://api.robinhood.com/discovery/lists/items/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "watchlists"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Add or remove items in custom watchlists. Body is an object keyed by list_id -> array of {object_id (instrument UUID, NOT ticker), object_type (instrument|currency_pair|option_strategy), operation (create=add | delete=remove)}. Batches multiple items and multiple lists in one call. Reversible (add/remove items; not destructive like deleting a list).",
+    "bodyKeys": [
+      "object_id",
+      "object_type",
+      "operation"
+    ],
+    "source": "cdp-2026-06-14 watchlist-capture (verified live: add+remove each returned 200; the REAL endpoint is discovery/lists/items/, NOT midlands/lists/items/)",
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [],
+    "fieldsSource": "verified"
+  },
+  {
     "url_template": "https://api.robinhood.com/discovery/lists/user_items/",
     "method": "GET",
     "risk": "sensitive-read",
@@ -1576,8 +1600,35 @@
       "instrument_id",
       "page_size"
     ],
-    "fields": [],
-    "fieldsSource": "undocumented"
+    "fields": [
+      "account",
+      "active_instrument_id",
+      "amount",
+      "cash_dividend_id",
+      "days_early",
+      "drip_enabled",
+      "ex_dividend_date",
+      "fee",
+      "fx_order_id",
+      "gross_amount",
+      "id",
+      "instrument",
+      "is_early_dividend",
+      "is_primary_account",
+      "nra_withholding",
+      "paid_at",
+      "payable_date",
+      "position",
+      "rate",
+      "record_date",
+      "related_adjustments",
+      "state",
+      "url",
+      "withholding"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list",
+    "notes": "live-verified 2026-06-11: full dividend history (102 records on test account). First-class `dividends` command candidate: income by symbol/year, upcoming payouts via payable_date, per-dividend drip_enabled."
   },
   {
     "url": "https://api.robinhood.com/documents/",
@@ -1606,8 +1657,27 @@
       "type",
       "type__in"
     ],
-    "fields": [],
-    "fieldsSource": "undocumented"
+    "fields": [
+      "account",
+      "created_at",
+      "date",
+      "download_url",
+      "filetype",
+      "id",
+      "insert_1_url",
+      "insert_2_url",
+      "insert_3_url",
+      "insert_4_url",
+      "insert_5_url",
+      "insert_6_url",
+      "is_from_rhs",
+      "type",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list",
+    "notes": "live-verified 2026-06-11: cursor-paginated. type values seen: 1099, 1099_crypto, 1099r_roth, 5498_roth, account_statement, trade_confirm. download_url serves the PDF — first-class `documents` command candidate (tax-season: pull all 1099s in one shot)."
   },
   {
     "url": "https://api.robinhood.com/documents/edocs_v2/custodial/",
@@ -2433,6 +2503,35 @@
     ],
     "fieldsSource": "verified",
     "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/margin/{account_number}/investing_info/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account",
+      "margin"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "fields": [
+      "amount_borrowed",
+      "buying_power_with_margin",
+      "eligible_for_tiered_rates",
+      "gold_interest_exemption_amount",
+      "interest_exemption_amount",
+      "margin_available",
+      "margin_interest_rate",
+      "margin_limit_withheld_due_to_volatility",
+      "margin_used_including_cash_held",
+      "next_billing_date",
+      "projected_intraday_buying_power",
+      "projected_intraday_margin_available"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object",
+    "source": "live-verified-2026-06-11 on the api host (200 with amount_borrowed/margin_interest_rate/next_billing_date). The margin-health read: answers 'am I borrowing, at what rate, billed when'. Sibling day_trades_card/ returns 404 (retired with the PDT elimination, FINRA 26-10)."
   },
   {
     "url": "https://api.robinhood.com/margin/{account_number}/upgrade_restrictions",
@@ -4421,6 +4520,22 @@
       "ref_id",
       "override_day_trade_checks"
     ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/options/orders/{0}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-06-11: single OPTIONS order lookup by ID, for the post-cancel/post-send evidence re-read (order-evidence rule). Live-verified 200 against a filled SPXW order.",
+    "summary": "Get a single options order by ID (state, legs, fills, price, quantity)",
     "fields": [],
     "fieldsSource": "undocumented"
   },

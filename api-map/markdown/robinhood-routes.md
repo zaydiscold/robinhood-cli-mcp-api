@@ -4,10 +4,10 @@ Source: official Robinhood Crypto Trading OpenAPI plus sanitized authenticated C
 
 Crypto operations are official Robinhood-published endpoints and should use Ed25519 signing. Brokerage/account operations are browser-backed route-map entries and use caller-owned brokerage token or browser cookie auth.
 
-Current count: 324 route entries.
+Current count: 327 route entries.
 Official Crypto route entries: 16.
-Brokerage/account route entries: 308.
-Risk counts: destructive=11, read=92, sensitive-read=196, write-mutate=12, write-or-sensitive=7, write-safe=6.
+Brokerage/account route entries: 311.
+Risk counts: destructive=11, read=92, sensitive-read=198, write-mutate=13, write-or-sensitive=7, write-safe=6.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -67,6 +67,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | yes | destructive | PATCH,DELETE | watchlists | api.robinhood.com | manual | `https://api.robinhood.com/discovery/lists/{id}/` |
 | no | sensitive-read | inferred |  | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/discovery/lists/default/` |
 | no | sensitive-read | inferred |  | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/discovery/lists/items/` |
+| yes | write-mutate | POST | watchlists | api.robinhood.com | cdp-2026-06-14 watchlist-capture (verified live: add+remove each returned 200; the REAL endpoint is discovery/lists/items/, NOT midlands/lists/items/) | `https://api.robinhood.com/discovery/lists/items/` |
 | no | sensitive-read | inferred |  | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/discovery/lists/user_items/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/discovery/ratings/{id}/overview/` |
 | no | sensitive-read | GET | history-documents | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/dividends/` |
@@ -92,6 +93,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | read | inferred | marketdata | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/instruments/{0}/splits/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/instruments/{id}/shorting/` |
 | no | read | GET | telemetry-config | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/kaizen/experiments/{id}/` |
+| no | sensitive-read | GET | account, margin | api.robinhood.com | live-verified-2026-06-11 on the api host (200 with amount_borrowed/margin_interest_rate/next_billing_date). The margin-health read: answers 'am I borrowing, at what rate, billed when'. Sibling day_trades_card/ returns 404 (retired with the PDT elimination, FINRA 26-10). | `https://api.robinhood.com/margin/{account_number}/investing_info/` |
 | no | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/margin/{account_number}/upgrade_restrictions` |
 | no | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/margin/{account_number}/upgrade_restrictions/` |
 | no | read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/margin/calls/` |
@@ -162,6 +164,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | yes | write-or-sensitive | PATCH | options, settings, account | api.robinhood.com | web-ui-capture-2026-06-03 (account/settings/investing toggle) | `https://api.robinhood.com/options/option_settings/{account_number}/` |
 | no | sensitive-read | GET | options, orders | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/options/orders/` |
 | yes | write-mutate | POST | account, options, trading | api.robinhood.com | self-extension 2026-05-28: options order PLACEMENT (POST). Same reason as equity orders; supports legs[] for single/multi-leg. Double-gated. | `https://api.robinhood.com/options/orders/` |
+| no | sensitive-read | GET | options, orders | api.robinhood.com | self-extension 2026-06-11: single OPTIONS order lookup by ID, for the post-cancel/post-send evidence re-read (order-evidence rule). Live-verified 200 against a filled SPXW order. | `https://api.robinhood.com/options/orders/{0}/` |
 | yes | destructive | POST | options, orders | api.robinhood.com | wire-writes 2026-05-29 | `https://api.robinhood.com/options/orders/{0}/cancel/` |
 | no | read | GET | options, trading | api.robinhood.com | cdp-2026-06-04-dram-option-order-flow (observed; collateral pre-check, order passed url-encoded in ?order={json}) | `https://api.robinhood.com/options/orders/collateral/` |
 | no | sensitive-read | inferred | account, options | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/options/positions/` |

@@ -2478,6 +2478,145 @@ export async function logTrade(entry: Record<string, unknown>) {
   } catch { /* best-effort */ }
 }
 
+// ───────────────────────── Watchlist writes (shared CLI + MCP) ─────────────────────────
+// Robinhood custom watchlists ("Lists") are USER-level, NOT account-scoped — one set of lists per
+// login, shown across every account. The write surface is discovery/lists/* (captured + verified live
+// 2026-06-14 — the REAL endpoint is discovery/lists/items/, NOT the midlands/lists/items/ the route map
+// once assumed):
+//   add/remove items : POST   discovery/lists/items/   body { "<list_id>": [ {object_id, object_type, operation} ] }
+//   create a list    : POST   discovery/lists/         body { display_name, icon_emoji? }  (201)
+//   delete a list    : DELETE discovery/lists/{id}/    (204)
+// object_id is the instrument UUID (resolved from a ticker via instruments/?symbol=), never the symbol.
+// operation: "create" = add, "delete" = remove. Both ride the same items endpoint. As with every write
+// here, these go through gatedBrokerageWrite — dry-run unless BOTH gates (liveWrite + env) are set.
+
+export const DISCOVERY_LISTS_URL = "https://api.robinhood.com/discovery/lists/";
+export const DISCOVERY_LISTS_ITEMS_URL = "https://api.robinhood.com/discovery/lists/items/";
+
+/** Resolve an equity ticker to its Robinhood instrument UUID (instruments/?symbol=). */
+export async function resolveInstrumentId(
+  symbol: string,
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<string> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const sym = symbol.trim().toUpperCase();
+  const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: sym })).results?.[0];
+  if (!inst?.id) throw new Error(`Symbol ${sym} not found (instruments/?symbol= returned no match).`);
+  return inst.id as string;
+}
+
+export interface WatchlistRef {
+  id: string;
+  display_name: string;
+  allowed_object_types: string[];
+}
+
+/** Resolve a custom watchlist by id or (case-insensitive) display_name. Reads owner_type=custom only. */
+export async function resolveWatchlist(
+  nameOrId: string,
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<WatchlistRef> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const data = await getJson(DISCOVERY_LISTS_URL, {}, { owner_type: "custom" });
+  const lists: any[] = Array.isArray(data?.results) ? data.results : [];
+  const q = nameOrId.trim();
+  const match =
+    lists.find((l) => l.id === q) ??
+    lists.find((l) => String(l.display_name ?? "").toLowerCase() === q.toLowerCase());
+  if (!match) {
+    const names = lists.map((l) => l.display_name).filter(Boolean).join(", ") || "(none)";
+    throw new Error(`No custom watchlist matches "${nameOrId}". Existing custom lists: ${names}.`);
+  }
+  return { id: match.id, display_name: match.display_name, allowed_object_types: match.allowed_object_types ?? [] };
+}
+
+export interface WatchlistMutateInput {
+  /** List name or id. */
+  list: string;
+  symbols: string[];
+  /** "create" = add, "delete" = remove. */
+  operation: "create" | "delete";
+  /** Robinhood object type; defaults to "instrument" (equities). */
+  objectType?: string;
+  dryRun?: boolean;
+  liveWrite?: boolean;
+}
+
+export interface WatchlistMutateDeps {
+  getJson?: typeof brokerageGetJson;
+  write?: typeof gatedBrokerageWrite;
+  resolveInstrument?: (symbol: string) => Promise<string>;
+}
+
+/**
+ * Add or remove tickers in a custom watchlist. Resolves the list (by name/id) and each ticker (to an
+ * instrument UUID), builds the list-keyed batch body, and sends it through the double-gated write path.
+ */
+export async function watchlistMutateItems(input: WatchlistMutateInput, deps: WatchlistMutateDeps = {}) {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const write = deps.write ?? gatedBrokerageWrite;
+  const objectType = input.objectType ?? "instrument";
+  const resolveInstrument = deps.resolveInstrument ?? ((s: string) => resolveInstrumentId(s, { getJson }));
+  const symbols = input.symbols.map((s) => s.trim().toUpperCase()).filter(Boolean);
+  if (symbols.length === 0) throw new Error("No symbols given.");
+  const wl = await resolveWatchlist(input.list, { getJson });
+
+  const resolved: { symbol: string; object_id: string }[] = [];
+  for (const sym of symbols) {
+    const object_id = objectType === "instrument" ? await resolveInstrument(sym) : sym;
+    resolved.push({ symbol: sym, object_id });
+  }
+  const body = {
+    [wl.id]: resolved.map((r) => ({ object_id: r.object_id, object_type: objectType, operation: input.operation }))
+  };
+  const verb = input.operation === "create" ? "add" : "remove";
+  const result = await write({
+    url: DISCOVERY_LISTS_ITEMS_URL,
+    method: "POST",
+    body,
+    dryRun: input.dryRun,
+    liveWrite: input.liveWrite,
+    logContext: `watchlist ${verb}: ${symbols.join(",")} ${verb === "add" ? "->" : "<-"} ${wl.display_name}`
+  });
+  return { list: wl, operation: input.operation, items: resolved, body, result };
+}
+
+/** Create a new custom watchlist (POST discovery/lists/). Double-gated. */
+export async function createWatchlist(
+  input: { displayName: string; iconEmoji?: string; dryRun?: boolean; liveWrite?: boolean },
+  deps: { write?: typeof gatedBrokerageWrite } = {}
+) {
+  const write = deps.write ?? gatedBrokerageWrite;
+  const body: Record<string, unknown> = { display_name: input.displayName };
+  if (input.iconEmoji) body.icon_emoji = input.iconEmoji;
+  const result = await write({
+    url: DISCOVERY_LISTS_URL,
+    method: "POST",
+    body,
+    dryRun: input.dryRun,
+    liveWrite: input.liveWrite,
+    logContext: `watchlist create: ${input.displayName}`
+  });
+  return { displayName: input.displayName, body, result };
+}
+
+/** Delete a custom watchlist by id (DELETE discovery/lists/{id}/). Double-gated; irreversible. */
+export async function deleteWatchlist(
+  input: { id: string; dryRun?: boolean; liveWrite?: boolean },
+  deps: { write?: typeof gatedBrokerageWrite } = {}
+) {
+  const write = deps.write ?? gatedBrokerageWrite;
+  const result = await write({
+    url: "https://api.robinhood.com/discovery/lists/{id}/",
+    method: "DELETE",
+    params: { id: input.id },
+    dryRun: input.dryRun,
+    liveWrite: input.liveWrite,
+    logContext: `watchlist delete: ${input.id}`
+  });
+  return { id: input.id, result };
+}
+
 // ───────────────────────── Equity order engine (shared CLI + MCP) ─────────────────────────
 // The order-construction path is the dangerous one to duplicate (alignment invariant): the CLI
 // `buy`/`sell` commands and the MCP `robinhood_buy`/`robinhood_sell` tools both call

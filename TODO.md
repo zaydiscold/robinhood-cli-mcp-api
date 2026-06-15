@@ -35,7 +35,7 @@
 - [ ] **Doc contradictions to reconcile (found 2026-06-11, 9 items)**: iron-condor leg names differ
   between SKILL.md sections (catalog JSON ids are authoritative); naked-short-call leg id; after-hours
   options self-contradiction in SKILL.md; wash-sale strictness differs between rolling deep-dive and
-  tax doc; SKILL 38 vs TODO 37 tool count; account mask …7523 vs ••••2523; `?account=` vs
+  tax doc; SKILL 38 vs TODO 37 tool count; account-mask format inconsistent between two docs; `?account=` vs
   `?account_number=` in order-templates doc; PDT-lifted vs vestigial PDT toggles; "18 strategy
   workflows" vs 20 catalog ids.
 
@@ -198,13 +198,7 @@ verified, 40 inferred). That number is *not* a 219-item backlog — read it corr
 - [ ] Tax-loss harvesting helper (FRCB is $0.01, LWLG bleeding, UI underwater)
 
 ### Portfolio snapshot (Jun 3 live)
-| Account | Value |
-|---------|-------|
-| ••••6346 IRA Roth | $[redacted] (equity $[redacted] + options $[redacted]) |
-| ••••0497 far 9mo plus | $[redacted] (equity $[redacted] + options $[redacted], margin $[redacted]) |
-| ••••9919 near 3mo-roll | $[redacted] (equity $[redacted] + options $[redacted]) |
-| ••••9911 Agentic | $0 |
-| ••••2523 Agentic-long | $0 |
-| **TOTAL** | **$[redacted]** |
+_Redacted — real account tails and exact balances removed. Pull a live snapshot with `portfolio` /
+`accounts` when you need current numbers; don't commit real balances to the repo._
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -11,10 +11,10 @@
 //
 // Usage:
 //   node scripts/equity-buy.mjs --preflight
-//   node scripts/equity-buy.mjs --account 222222222 --symbol ARKG --dollars 5 [--live]
-//   node scripts/equity-buy.mjs --accounts 111111111,222222222,333333333 --symbol ARKG --dollars 5 [--live]
-//   node scripts/equity-buy.mjs --account 222222222 --all-positions --dollars 3 [--live]
-//   node scripts/equity-buy.mjs --account 222222222 --symbol RNECY --shares 1 [--live]   (OTC -> auto limit)
+//   node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --symbol ARKG --dollars 5 [--live]
+//   node scripts/equity-buy.mjs --accounts <ACCOUNT_NUMBER>,<ACCOUNT_NUMBER>,<ACCOUNT_NUMBER> --symbol ARKG --dollars 5 [--live]
+//   node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --all-positions --dollars 3 [--live]
+//   node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --symbol RNECY --shares 1 [--live]   (OTC -> auto limit)
 //
 // Auth: ROBINHOOD_BROKERAGE_TOKEN (and optional ROBINHOOD_COOKIE / ROBINHOOD_CSRF)
 // from the repo .env. Versions/UA overridable via env (see WEB_HEADERS).

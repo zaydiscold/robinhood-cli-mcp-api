@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-04
 **Method:** read-only / dry-run only. `brokerage search`, authed GET via `scripts/rh-get.mjs`. No `--live-write`, no `ROBINHOOD_ALLOW_LIVE_WRITE`, no orders placed.
-**Account context used for chain reads:** `111111111` (individual/cash).
+**Account context used for chain reads:** `{account_number}` (individual/cash).
 
 ---
 
@@ -58,7 +58,7 @@ The equity `instruments/` table has **no row** for any index — consistent with
 This is the decisive endpoint:
 
 ```
-GET options/chains/?account_number=111111111&underlying_symbol=SPX
+GET options/chains/?account_number={account_number}&underlying_symbol=SPX
   → SPX  (id a9f69c4e-9393-4554-9849-271f0297e70b)  can_open_position=true
   → SPXW (id 7a7fa2b1-b65e-4c75-a0b3-7f62749bee0a)  can_open_position=true
 GET ...underlying_symbol=XSP → XSP (bf82fd28-...) can_open_position=true
@@ -132,7 +132,7 @@ Corrected position:
 
 ### Caveats / open items (not blockers to the core finding)
 
-1. **Account entitlement.** Chain reads returned `can_open_position: true` for account `111111111`, but actually opening index-option positions may require an options-trading approval tier / index-options entitlement. Not order-tested (read/dry-run only by instruction). Verify entitlement before assuming executability.
+1. **Account entitlement.** Chain reads returned `can_open_position: true` for account `{account_number}`, but actually opening index-option positions may require an options-trading approval tier / index-options entitlement. Not order-tested (read/dry-run only by instruction). Verify entitlement before assuming executability.
 2. **No explicit settlement/exercise-style field** is returned by RH's option-instrument payload; cash-settled/European is inferred from `underlying_type=index` + empty `underlying_instruments` (the standard CBOE structure for these products). A live order ticket or a placed-then-cancelled dry-run would corroborate, but was out of scope here.
 3. **Min-tick differs** from equity options: SPX uses `below_tick 0.05 / above_tick 0.10, cutoff 3.00` (vs SPY's 0.01/0.01/0.00). Any future order math must read the chain's `min_ticks` (the repo already warns about per-chain ticks).
 
@@ -158,7 +158,7 @@ node cli/dist/index.js brokerage search "SPX" --json    # → ETFs only
 node scripts/rh-get.mjs "https://api.robinhood.com/instruments/?symbol=SPX"   # → results: []
 
 # the real index chains
-node scripts/rh-get.mjs "https://api.robinhood.com/options/chains/?account_number=111111111&underlying_symbol=SPX"
+node scripts/rh-get.mjs "https://api.robinhood.com/options/chains/?account_number={account_number}&underlying_symbol=SPX"
 node scripts/rh-get.mjs "https://api.robinhood.com/options/chains/a9f69c4e-9393-4554-9849-271f0297e70b/"   # underlying_instruments: []
 node scripts/rh-get.mjs "https://api.robinhood.com/options/instruments/?chain_id=a9f69c4e-9393-4554-9849-271f0297e70b&expiration_dates=2026-06-18&state=active&type=call"  # underlying_type: index
 node scripts/rh-get.mjs "https://api.robinhood.com/marketdata/options/?ids=89a6f0e5-95f1-4f96-bc88-4c7f7cd25d4f"  # live mark/bid/ask/OI

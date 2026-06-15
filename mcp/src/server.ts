@@ -24,6 +24,7 @@ import {
   planBrokerageRequest,
   planCryptoRequest,
   resolveLiveWriteGate,
+  riskIsWrite,
   selectRouteByQueryAndMethod,
   brokerageGetJson,
   brokerageGetAllResults,
@@ -80,6 +81,18 @@ function jsonResponse(value: unknown) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }]
   };
+}
+
+// Make the execution state of a WRITE tool UNMISSABLE. The operator runs live by default, so the
+// dangerous failure is a dry-run response that READS like a success — an agent (or human) sees an
+// order id / 201 / plan and assumes it's done. `executed` + a loud `executionStatus` are hoisted to
+// the TOP of every write response so "nothing was sent" can never be mistaken for "done". Reads never
+// call this. Zayd Khan // cold // www.zayd.wtf
+function writeStatus(result: object, opts: { dryRun: boolean; reason?: string }) {
+  const executionStatus = opts.dryRun
+    ? `⚠️ DRY RUN — NOT EXECUTED. Nothing was sent to Robinhood; no order was placed, changed, or cancelled.${opts.reason ? ` Reason: ${opts.reason}` : ""} To execute for real: pass liveWrite:true AND set ROBINHOOD_ALLOW_LIVE_WRITE=1 in the server's environment (both gates, every call).`
+    : `✅ LIVE — SENT to Robinhood. A 2xx alone is not proof: confirm the order in order history (evidence.confirmed).`;
+  return jsonResponse({ executed: !opts.dryRun, executionStatus, ...result });
 }
 
 function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
@@ -663,7 +676,10 @@ server.registerTool(
       dryRun: effectiveDryRun
     });
     const result = await executeBrokerageRequest(plan, { body, dryRun: effectiveDryRun, fullBody });
-    return jsonResponse(gate.forcedDryRun ? { ...result, liveWriteBlocked: gate.reason } : result);
+    const m = method?.toUpperCase();
+    const isWrite = riskIsWrite(route.risk) || (m !== undefined && m !== "GET" && m !== "HEAD");
+    if (isWrite) return writeStatus(result as object, { dryRun: effectiveDryRun, reason: gate.forcedDryRun ? gate.reason : undefined });
+    return jsonResponse(result);
   }
 );
 
@@ -778,7 +794,10 @@ server.registerTool(
       dryRun: effectiveDryRun
     });
     const result = await executeCryptoRequest(plan, { body, dryRun: effectiveDryRun, fullBody });
-    return jsonResponse(gate.forcedDryRun ? { ...result, liveWriteBlocked: gate.reason } : result);
+    const m = method?.toUpperCase();
+    const isWrite = riskIsWrite(route.risk) || (m !== undefined && m !== "GET" && m !== "HEAD");
+    if (isWrite) return writeStatus(result as object, { dryRun: effectiveDryRun, reason: gate.forcedDryRun ? gate.reason : undefined });
+    return jsonResponse(result);
   }
 );
 
@@ -920,7 +939,7 @@ server.registerTool(
         liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force)
       });
       const { result: _raw, ...summary } = r;
-      return jsonResponse(summary);
+      return writeStatus(summary, { dryRun: summary.dryRun });
     } catch (e: any) {
       return jsonResponse({ error: e.message });
     }
@@ -950,7 +969,7 @@ server.registerTool(
         liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force)
       });
       const { result: _raw, ...summary } = r;
-      return jsonResponse(summary);
+      return writeStatus(summary, { dryRun: summary.dryRun });
     } catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );
@@ -974,7 +993,7 @@ server.registerTool(
     try {
       // Shared engine (cancelOrder in lib.ts) — same path as the CLI `cancel` command and `panic`.
       const r = await cancelOrder({ idOrUrl: order_id, kind, liveWrite: resolveLiveFlag(liveWrite, live) });
-      return jsonResponse(r);
+      return writeStatus(r, { dryRun: r.dryRun, reason: (r as any).gateReason });
     } catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );
@@ -1010,8 +1029,10 @@ server.registerTool(
     annotations: toolAnnotations(false, "destructive")
   },
   async ({ account_number, liveWrite, live }) => {
-    try { return jsonResponse(await panicCancelAll({ accountNumber: account_number, liveWrite: resolveLiveFlag(liveWrite, live) })); }
-    catch (e: any) { return jsonResponse({ error: e.message }); }
+    try {
+      const r = await panicCancelAll({ accountNumber: account_number, liveWrite: resolveLiveFlag(liveWrite, live) });
+      return writeStatus(r, { dryRun: r.dryRun });
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );
 
@@ -1211,7 +1232,7 @@ server.registerTool(
       url = "https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/"; method = "POST"; body = { sweep_enrollment_action: "unenroll" };
     }
     const r = await gatedBrokerageWrite({ url, method, params, body, dryRun, liveWrite });
-    return jsonResponse(r.dryRun && r.reason ? { ...r, liveWriteBlocked: r.reason } : r);
+    return writeStatus(r, { dryRun: r.dryRun, reason: r.reason });
   }
 );
 
@@ -1248,7 +1269,7 @@ server.registerTool(
       if (!inst) throw new Error(`No instrument for ${symbol}.`);
       const body = { account_number, amount: { amount: Number(amount).toFixed(2), currency_code: "USD" }, frequency: frequency ?? "weekly", investment_asset: { asset_id: inst.id, asset_symbol: inst.symbol, asset_type: "equity" }, source_of_funds: "buying_power", start_date: start_date ?? new Date(Date.now() + 86400000).toISOString().slice(0, 10), ref_id: randomUUID() };
       const r = await gatedBrokerageWrite({ url: LIST, method: "POST", body, dryRun, liveWrite });
-      return jsonResponse(r.dryRun && r.reason ? { ...r, liveWriteBlocked: r.reason } : r);
+      return writeStatus(r, { dryRun: r.dryRun, reason: r.reason });
     }
     if (!id) throw new Error(`${action} needs a schedule id.`);
     let body: unknown;
@@ -1260,7 +1281,7 @@ server.registerTool(
       body = b;
     } else { body = { state: "deleted" }; } // end
     const r = await gatedBrokerageWrite({ url: ITEM, method: "PATCH", params: { "0": id }, body, dryRun, liveWrite });
-    return jsonResponse(r.dryRun && r.reason ? { ...r, liveWriteBlocked: r.reason } : r);
+    return writeStatus(r, { dryRun: r.dryRun, reason: r.reason });
   }
 );
 

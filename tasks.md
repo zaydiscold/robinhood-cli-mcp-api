@@ -38,3 +38,56 @@ Consolidated 2026-06-11. ONE list to grind line by line. Supersedes local/tasks.
 - [ ] Export command (T9) / IPO surface (T11) / CLI-MCP parity audit (T12) / global CLAUDE.md Twitter line (T14) — carried from local
 - [ ] local/ restructure decision: keep local/ strictly personal (thesis, private captures); project work lives here
 - [ ] GitHub SEO remainder (topics, social preview)
+
+## Backlog additions (2026-06-13 pass)
+Scoped from the 2026-06-13 ideas.md expansion. Unchecked, additive; existing tasks untouched.
+
+### Beginner empowerment
+- [ ] `coach explain <position|order>` command (cli/src/index.ts + new lib/coach.ts) — plain-English position/order breakdown with dollar math; pulls live positions + marketdata + knowledge/greeks.md; read-only. MCP twin `robinhood_coach`.
+- [ ] `define <greek|term>` command — per-position dollar-denominated Greek/term explainer off live marketdata + knowledge/greeks.md; no new surface.
+- [ ] `learn` guided first-trade walkthrough (cli/src/index.ts) — stepped dry-run-only order builder, narrates each field, gates stay on; reuses placeEquityOrder/options dry-run path.
+- [ ] `sandbox` paper-trade mode — local JSON ledger of make-believe orders vs live quotes, fake P&L in dollars; never touches account. New lib/sandbox.ts + sandbox-ledger.json (gitignored).
+- [ ] Ship knowledge/ glossary as `glossary` command + MCP resource (mcp/src/server.ts resources) — depends on MCP-resources task below.
+
+### Pro / aggressive
+- [ ] `ticket` multi-leg fast builder (cli/src/index.ts + lib reusing strategy-quote) — one-line strikes → auto-enumerate UUIDs → dry-run quote + payoff → gate-ready body. No new surface.
+- [ ] `scan spreads <SYM>` vertical scanner — rank strike pairs by credit-per-width/breakeven/net-Greeks in dollars; loops existing options chain reads. No new surface.
+- [ ] `pinradar` near-expiry assignment radar (cli + MCP) — short legs within N days: distance-to-strike in dollars, ITM/OTM, ex-div-before-expiry flag. Uses options positions + marketdata. No new surface.
+- [ ] `delta target` strike resolver — name target delta → nearest chain strike → dry-run. No new surface.
+- [ ] `ladder` strike/expiry ladder builder + quoter — one command, each rung dry-run-quoted. Builds on `ticket`.
+- [ ] `ivrank <SYM>` / `termstructure <SYM>` — needs CDP/probe capture of a historical IV series endpoint (surface mapping); ship snapshot-only version (current-chain IVs) first.
+- [ ] `0dte` guardrail wrapper — same-day-close reminder + gamma/theta-cliff dollar flag + refuse silent overnight roll. Layer over options order path in lib.
+
+### Risk & safety
+- [ ] `risk` portfolio risk scan (cli/src/index.ts + lib/risk.ts; MCP `robinhood_risk`) — portfolio max loss, assignment exposure, undercovered shorts, margin-call distance, expiry clusters, all in dollars. Composes positions + options + marketdata + buying-power.
+- [ ] `exposure` concentration + portfolio net Greeks in dollars (cli + MCP) — by underlying/sector; reuses risk.ts joins.
+- [ ] Notional guardrails in the shared order engine (placeEquityOrder + options order path in cli/src/lib.ts) — per-order & per-session $ caps + `--override`; scale suggestion to buying power. (Overlaps existing "Notional guardrails" Now item — fold together.)
+- [ ] Scaled confirmation friction — re-typed account+symbol+side+qty+price confirmation above a $ threshold; in the confirmation-contract path (lib + MCP gate).
+- [ ] `circuit breaker` session kill-switch — refuse opens after a user-set realized-day-loss $ threshold; reads/closes allowed; state in a local session file. Hooks the order engine.
+
+### Income & tax
+- [ ] `income` combined dividends + premium-collected view (cli + MCP `robinhood_income`) — by day/wk/mo/qtr/yr in dollars; joins dividends engine + options fills (premium = sell-to-open credits).
+- [ ] `harvest` TLH candidate finder mapped to live lots (cli + MCP) — rank unrealized losers by harvestable $, flag 61-day wash window, suggest correlated replacements; wires knowledge/tax-loss-harvesting.md. Needs per-lot cost basis read (verify positions/lots route; may need surface mapping).
+- [ ] `washradar` wash-sale scan — buys within 30d of a realized loss (or pending sell that trips it), $ disallowed; off history + open lots.
+- [ ] `taxplan` year-end mode — realized YTD gain/loss, harvestable losses, §1256 positions, suggested December actions (dry-run). Depends on `harvest` + documents/tax engine.
+
+### Research & memory
+- [ ] `calendar` held-name events command (cli + MCP) — expirations + ex-div + earnings for held names; drives the morning brief. Uses options positions + marketdata/earnings/ + corp-actions reads.
+- [ ] `brief signals` digest — RH midlands news/ratings/tags for held+hotlist, labeled by sourcing ladder; confirmer-layer. Reads only.
+- [ ] `thesis track` — ball-knowledge ticker theses joined to live position/P&L in dollars; append-only notes. Reads ball-knowledge.md + positions.
+- [ ] `review tape <SYM>` — join round-trips + trade-notes + ball-knowledge thesis into one per-name retro in dollars. Extends existing `review`.
+- [ ] Auto-journal nudge after live fills — prompt `review note` at the evidence step (post-send path in lib + MCP). (Already in ideas; small wiring task.)
+
+### Automation & scheduled
+- [ ] `brief` morning command (cli + MCP `robinhood_brief`) — day-delta + pending rolls + today's calendar + hotlist movers in dollars. Composes portfolio + roll-ledger + `calendar` + hotlist.
+- [ ] `recap` end-of-day command — fills, day P&L by underlying in dollars, tomorrow's expirations, journaling nudge. Composes history + portfolio + `calendar`.
+- [ ] Pending-roll Monday reminder — surface staged kosher rolls from roll-ledger needing the second (open) leg; recheck settled cash + fresh bid/ask. Extends roll-ledger; ties to scheduled-tasks if available.
+- [ ] Recurring-buy intelligence — flag recurring schedules that outpace buying power; sizing suggestion in dollars. Extends `recurring` read.
+- [ ] `watch <SYM> <trigger>` — local polling watch-and-alert on $/level/option-mark crossings; native RH alerts need surface mapping (CDP capture of bonfire alert endpoints) for the non-polling version.
+- [ ] Scheduled health-scan log — daily `risk`/`exposure` snapshot appended to a local log for drift tracking. Depends on `risk`/`exposure`.
+
+### Platform / reach
+- [ ] Multi-account roll-ups — `--all-accounts` variants of risk/exposure/income/brief with per-account dollar breakdown. Generalizes existing cross-account positions/wheel.
+- [ ] Export/reporting expansion (`export` command) — CSV/JSON for positions, fills, income, realized P&L (tax-ready) + printable monthly statement. Builds on documents engine. (Overlaps carried T9 export task — fold.)
+- [ ] MCP resources for knowledge library (mcp/src/server.ts) — expose knowledge/*.md (+ glossary) as MCP resources alongside the existing robinhood_knowledge tool.
+- [ ] Trade-card / success-graphic generator — evidence-backed HTML render of a completed round-trip (entry/exit, $ P&L, payoff diagram, thread). Driven off `review` round-trip join.

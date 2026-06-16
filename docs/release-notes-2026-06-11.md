@@ -89,7 +89,7 @@ both surfaces, so the CLI and MCP can never disagree about how a real-money orde
 - New `docs/error-code-reference-2026-06-11.md` — the error taxonomy (kind → trigger → fix),
   matching the `classifyRobinhoodError` implementation one-for-one.
 - README rewritten to match the current surface (engine parity, `portfolio`, `recipes`, order
-  lifecycle, 37 MCP tools); repo title/description shortened to "Robinhood API + MCP + CLI".
+  lifecycle, the full MCP tool surface — count per live `tools/list`, never hardcoded); repo title/description shortened to "Robinhood API + MCP + CLI".
 
 ## Safety rails session 2 — evidence in code, panic, pretrade, options close, orders open
 

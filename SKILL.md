@@ -176,7 +176,7 @@ is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
 - **Sell to open** — short call or short put / naked (`side:sell, position_effect:open`; needs option level + BP).
 - **Buy to close** — cover a short (`side:buy, position_effect:close`).
 
-**Options — multi-leg / strategies** (`options strategy-quote`, `api-map options-strategies`; 18+ workflows)
+**Options — multi-leg / strategies** (`options strategy-quote`, `api-map options-strategies`; 20 workflows)
 - Vertical spreads: call/put **debit** and **credit** spreads.
 - **Covered call (CC)** and **cash-secured put (CSP)** (coverage/collateral checked); covered put.
 - Straddles / strangles (long & short), butterflies, iron condors, calendars / diagonals.
@@ -435,7 +435,7 @@ Keep this split current when editing the skill:
 |---------|---------------|------------|
 | API map | ~300 brokerage/account route entries (live count via `brokerage routes --json`) plus official Crypto API routes | Rebuild after edits; runtime reads `cli/dist/api-map/` |
 | Read commands | `quote`, `positions`, `options positions`, `options expirations`, `options chain`, `watchlist list`, `recurring list`, route-map reads, crypto read plans | Live reads are allowed with caller-owned auth, but redact balances/tokens in shareable output |
-| Options research/planning | 18 strategy workflows; `options-strategy-plan` emits `reviewContract` | Planning only until exact user approval and write gates |
+| Options research/planning | 20 strategy workflows; `options-strategy-plan` emits `reviewContract` | Planning only until exact user approval and write gates |
 | Equity/options order writes | Route-map executor against `orders/`, `options/orders/`, and cancel routes | Must use `--method`, exact body, `--live-write`, and `ROBINHOOD_ALLOW_LIVE_WRITE=1`; dry-run first |
 | Recurring investments | First-class `recurring list`, `recurring resume`, `recurring pause`; route map also has GET one schedule and POST create | Resume/pause are the verified first-class writes. Create/edit amount/funding-source are route-map research unless a fresh capture verifies body shape |
 | Watchlist read / edit / basket-buy | `watchlist list`/`items` (read); `watchlist add`/`remove`/`create` + `watchlist buy` (basket) (MCP `robinhood_watchlist_add`/`_remove`/`_create`/`_items`/`_buy`) | Double-gated writes (verified 2026-06-14): add/remove batch `discovery/lists/items/`, create POSTs `discovery/lists/`; `watchlist buy` loops the shared order engine per ticker (BP-aware, OTC/dedup/`ref_id` guards, skips what won't fit); item reorder still route-map research |
@@ -538,7 +538,7 @@ screen into a tradeable research object:
 1. Resolve symbol -> instrument -> chain id -> expiration -> option instrument ids.
 2. Quote individual legs with `marketdata/options/`; quote multi-leg packages
    with `marketdata/options/strategy/quotes/` when available.
-3. Classify the strategy from the 18-workflow catalog before building an order.
+3. Classify the strategy from the 20-workflow catalog before building an order.
 4. Compute payoff math separately from Greek sensitivity math.
 5. Emit missing fields and blockers before any dry-run body.
 

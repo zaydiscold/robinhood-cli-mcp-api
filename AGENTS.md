@@ -537,6 +537,8 @@ robinhood-cli options chain MRVL --width 6        # chain around the money, near
 robinhood-cli options chain NVDA --expiration 2026-07-02 --type put
 robinhood-cli options expirations MRVL            # list expirations before pulling a chain
 robinhood-cli watchlist list                      # custom watchlists + item counts
+robinhood-cli watchlist items "<list>"            # a list's tickers + live price + equity-buyable flag
+robinhood-cli watchlist buy "<list>" --account <N> --amount 1   # BP-aware $1 basket (dry-run; add --live-write to send)
 ```
 
 Each joins the mapped routes it needs (`positions` joins `positions/` → `marketdata/quotes/`;

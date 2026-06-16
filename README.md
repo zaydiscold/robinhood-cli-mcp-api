@@ -46,7 +46,7 @@ node cli/dist/index.js --help
 | Memory | `ball-knowledge.md` (market beliefs/themes/sources) + `trading-log.md` (execution + intent history) — the agent's cross-session brain. |
 | Research | A source-quality doctrine (X/Reddit pulse → news/`midlands` confirmer → institutional outlook → academic math, none gospel) + strategy deep-dives (Wheel, rolling, with quant appendices), institutional CMAs, tax-aware notes. |
 | Auth | Browser-session bearer token loaded from local `.env`, with one-shot self-heal on `401` |
-| Safety | Reads run live; every write needs both `--live-write` and `ROBINHOOD_ALLOW_LIVE_WRITE=1`. Pending-duplicate dedup (5-min window) blocks accidental double-sends; `ref_id` idempotency makes 429 retries safe; resolver fails closed/loud; order-evidence rule = order history is the only proof a trade happened. |
+| Safety | Reads run live; every write is dry-run unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set (one switch, no per-call flag; `--dry-run` still previews). Pending-duplicate dedup (5-min window) blocks accidental double-sends; `ref_id` idempotency makes 429 retries safe; resolver fails closed/loud; order-evidence rule = order history is the only proof a trade happened. |
 
 This is a pretty damn American piece of software: local control, account-owner agency, dry-run rights, and a command surface that lets people, scripts, and agents work the same Robinhood account without pretending the browser is the product.
 

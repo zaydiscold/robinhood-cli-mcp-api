@@ -1758,15 +1758,28 @@ export interface LiveWriteGate {
 }
 
 /**
- * Writes never go live unless the caller both passes --live-write AND sets the
- * ROBINHOOD_ALLOW_LIVE_WRITE=1 environment gate. Reads and explicit --dry-run
- * runs are always allowed. This keeps the CLI from ever placing a real order on
- * its own: a write requires two deliberate, separate opt-ins.
+ * Live-write gate — single master switch.
+ *
+ * Writes go live ONLY when `ROBINHOOD_ALLOW_LIVE_WRITE=1` is present in the
+ * environment. That one switch is the toggle: set it (locally it lives in `.env`
+ * / the MCP server registration) and writes execute by default — no per-call
+ * `--live-write` / `liveWrite:true` flag is required. With the switch unset (the
+ * published / fresh-clone default) every write is forced to dry-run, so the tool
+ * can never place a real order out of the box.
+ *
+ * `--dry-run` / `dryRun:true` always forces a preview, even when the switch is on
+ * — the per-call escape hatch to inspect an exact live call without sending it.
+ *
+ * The legacy `liveWrite` field is still accepted (so existing callers/scripts keep
+ * compiling and reading clearly) but is no longer required and no longer the gate:
+ * the env switch is the single source of truth. Previously this required BOTH the
+ * env var AND a per-call flag; the per-call flag is now optional.
  */
 export function resolveLiveWriteGate(input: {
   risk: RouteRisk;
   dryRun: boolean;
-  liveWrite: boolean;
+  /** Legacy/optional: retained for back-compat. The env switch is the real gate. */
+  liveWrite?: boolean;
   /** HTTP method — when it's a write verb, the gate engages even if `risk` is mis-classified as read. */
   method?: string;
   env?: NodeJS.ProcessEnv;
@@ -1778,31 +1791,21 @@ export function resolveLiveWriteGate(input: {
   const m = input.method?.toUpperCase();
   const methodIsWrite = m !== undefined && m !== "GET" && m !== "HEAD";
   const isWrite = riskIsWrite(input.risk) || methodIsWrite;
+  // Explicit per-call preview, or a plain read: never sends.
   if (input.dryRun || !isWrite) {
     return { allowed: true, forcedDryRun: false };
   }
-  const envAllows = env.ROBINHOOD_ALLOW_LIVE_WRITE === "1";
-  if (input.liveWrite && envAllows) {
+  // Single master switch: ROBINHOOD_ALLOW_LIVE_WRITE=1 turns live writes ON by default,
+  // with no per-call flag required. Pass --dry-run / dryRun:true to preview instead.
+  if (env.ROBINHOOD_ALLOW_LIVE_WRITE === "1") {
     return { allowed: true, forcedDryRun: false };
   }
-  if (!input.liveWrite && !envAllows) {
-    return {
-      allowed: false,
-      forcedDryRun: true,
-      reason: "Live write blocked: pass --live-write and set ROBINHOOD_ALLOW_LIVE_WRITE=1 to send. Forced to dry-run."
-    };
-  }
-  if (!input.liveWrite) {
-    return {
-      allowed: false,
-      forcedDryRun: true,
-      reason: "Live write blocked: ROBINHOOD_ALLOW_LIVE_WRITE=1 is set but --live-write was not passed. Forced to dry-run."
-    };
-  }
+  // Switch off → writes are forced to dry-run (the safe default for the published tool).
   return {
     allowed: false,
     forcedDryRun: true,
-    reason: "Live write blocked: --live-write was passed but ROBINHOOD_ALLOW_LIVE_WRITE=1 is not set. Forced to dry-run."
+    reason:
+      "Live writes are OFF — forced to dry-run. Turn them on by setting ROBINHOOD_ALLOW_LIVE_WRITE=1 in the environment (locally it lives in .env / the MCP registration). Pass --dry-run / dryRun:true to preview a single call even when live writes are on."
   };
 }
 

@@ -98,7 +98,7 @@ Then the safety rails:
   default to a safe dry-run.
 - **Match a route by substring** of its URL, fill `{placeholders}` with `--param`.
 - **Rebuild after editing the route map** or your edits are silently ignored (§3).
-- **A live write needs BOTH `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1`** (§6).
+- **A live write needs the `ROBINHOOD_ALLOW_LIVE_WRITE=1` switch** (§6); the per-call `--live-write` / `liveWrite:true` flag is now optional.
 - **Never place an order the user didn't explicitly ask for.** Echo back the resolved
   account + symbol + side + qty + price and get a yes before sending (§8).
 - **Order history is the only proof a trade happened** (§20) — not a UI screen, not a lone `201`.
@@ -222,13 +222,15 @@ fills `{placeholders}` from `--param name=value`.
 ## 6. Writing — the double gate (non-negotiable)
 
 Any route whose risk is `write-safe`, `write-mutate`, `write-or-sensitive`, or
-`destructive` is **forced to a dry-run** unless BOTH gates are set:
+`destructive` is **forced to a dry-run** unless the single live-write switch is set:
 
-1. the `--live-write` flag, **and**
-2. the `ROBINHOOD_ALLOW_LIVE_WRITE=1` environment variable.
+- the `ROBINHOOD_ALLOW_LIVE_WRITE=1` environment variable.
 
-With one or neither, the request is planned but never sent; the result carries a
-`liveWriteBlocked` reason.
+When it is set, writes go live by default — **no per-call `--live-write` /
+`liveWrite:true` flag is required** (the flag is still accepted for back-compat, but
+it is now optional and no longer the gate). When it is unset, every write is planned
+but never sent; the result carries a `liveWriteBlocked` reason. Pass `--dry-run` /
+`dryRun:true` to preview a single call even when the switch is on.
 
 ### Turning dry-run off (going live)
 

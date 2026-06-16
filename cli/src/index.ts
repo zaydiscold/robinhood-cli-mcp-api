@@ -649,7 +649,7 @@ brokerage
 
 brokerage
   .command("execute")
-  .description("Execute a brokerage/account request. Reads run live; writes are dry-run by default and require --live-write plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Uses ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE.")
+  .description("Execute a brokerage/account request. Reads run live; writes are dry-run by default and require ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single live-write switch). Uses ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE.")
   .argument("<query>", "exact URL or URL substring")
   .option("--method <method>", "override inferred HTTP method")
   .option("--param <name=value>", "replace a route placeholder; repeatable", (value: string, previous: string[] = []) => [
@@ -658,7 +658,7 @@ brokerage
   ])
   .option("--body-json <json>", "JSON request body")
   .option("--dry-run", "print execution plan without sending")
-  .option("--live-write", "permit a live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "legacy/optional; the live-write switch is ROBINHOOD_ALLOW_LIVE_WRITE=1 (this flag is no longer required)")
   .option("--full", "print full response body instead of bounded preview")
   .option("--json", "emit JSON")
   .action(async (query: string, options: { method?: string; param?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; full?: boolean; json?: boolean }) => {
@@ -704,14 +704,14 @@ brokerage
 const ORDERS_URL = "https://api.robinhood.com/orders/";
 brokerage
   .command("buy <symbol>")
-  .description("Equity buy: --dollars (fractional/market) or --shares (whole; OTC auto-limit). Web order body. Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Equity buy: --dollars (fractional/market) or --shares (whole; OTC auto-limit). Web order body. Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1.")
   .requiredOption("--account <account_number>", "brokerage account number")
   .option("--dollars <amount>", "dollar-notional fractional buy (market, regular hours only)")
   .option("--shares <qty>", "share quantity (whole shares for OTC names)")
   .option("--limit <price>", "explicit limit price; else market with ask collar (OTC forces a limit at the ask)")
   .option("--tif <gfd|gtc>", "time in force", "gfd")
   .option("--dry-run", "print plan/body, send nothing")
-  .option("--live-write", "permit a live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "legacy/optional; the live-write switch is ROBINHOOD_ALLOW_LIVE_WRITE=1 (this flag is no longer required)")
   .option("--json", "emit JSON")
   .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
@@ -871,7 +871,7 @@ function collectId(value: string, previous: string[] = []): string[] {
 
 // Generic double-gated brokerage write. Pass the EXACT templated URL (with {placeholders}) so the
 // resolver matches one route and the ambiguity guard can't fire. Dry-run by default; a live send
-// needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Returns status + the (dry-run or live) body.
+// needs ROBINHOOD_ALLOW_LIVE_WRITE=1. Returns status + the (dry-run or live) body.
 // gatedBrokerageWrite is imported from ./lib.js — shared write executor (CLI + MCP).
 
 async function runRecurringSet(
@@ -952,7 +952,7 @@ recurring
 
 recurring
   .command("resume")
-  .description("Resume paused recurring buys. Live write — needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1 (else dry-run).")
+  .description("Resume paused recurring buys. Live write — needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (else dry-run).")
   .option("--id <id>", "schedule id to resume; repeatable", collectId, [])
   .option("--all", "resume ALL currently-paused schedules")
   .option("--account <num>", "limit --all to one account number")
@@ -965,7 +965,7 @@ recurring
 
 recurring
   .command("pause")
-  .description("Pause active recurring buys. Live write — needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1 (else dry-run).")
+  .description("Pause active recurring buys. Live write — needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (else dry-run).")
   .option("--id <id>", "schedule id to pause; repeatable", collectId, [])
   .option("--all", "pause ALL currently-active schedules")
   .option("--account <num>", "limit --all to one account number")
@@ -978,7 +978,7 @@ recurring
 
 recurring
   .command("create")
-  .description("Create a recurring investment schedule (PROVEN write). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Create a recurring investment schedule (PROVEN write). Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1.")
   .requiredOption("--account <account_number>", "account number")
   .requiredOption("--symbol <ticker>", "equity ticker to invest in")
   .requiredOption("--amount <usd>", "dollar amount per cycle")
@@ -3365,7 +3365,7 @@ program.addCommand(ordersCmd);
 // Zayd Khan // cold // www.zayd.wtf
 program
   .command("panic")
-  .description("Cancel-all: list every open/pending equity+options order across ALL accounts and cancel each (each cancel individually double-gated). DRY-RUN by default — shows the would-cancel list and sends NOTHING; live needs --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Cancel-all: list every open/pending equity+options order across ALL accounts and cancel each (each cancel individually double-gated). DRY-RUN by default — shows the would-cancel list and sends NOTHING; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1.")
   .option("-a, --account <number>", "Limit to one account")
   .option("--live-write", "Send the cancels live (still requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
   .option("--json", "emit JSON")
@@ -3631,7 +3631,7 @@ crypto
 
 crypto
   .command("execute")
-  .description("Execute an official Robinhood Crypto API request. Reads run live; writes (orders/cancels) are dry-run by default and require --live-write plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Uses ROBINHOOD_CRYPTO_API_KEY and ROBINHOOD_CRYPTO_PRIVATE_KEY_B64.")
+  .description("Execute an official Robinhood Crypto API request. Reads run live; writes (orders/cancels) are dry-run by default and require ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single live-write switch). Uses ROBINHOOD_CRYPTO_API_KEY and ROBINHOOD_CRYPTO_PRIVATE_KEY_B64.")
   .argument("<query>", "exact official Crypto URL or URL substring")
   .option("--method <method>", "override inferred HTTP method")
   .option("--param <name=value>", "replace a route placeholder; repeatable", (value: string, previous: string[] = []) => [
@@ -3645,7 +3645,7 @@ crypto
   .option("--body <body>", "exact request body string")
   .option("--body-json <json>", "JSON request body")
   .option("--dry-run", "print execution plan without sending")
-  .option("--live-write", "permit a live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "legacy/optional; the live-write switch is ROBINHOOD_ALLOW_LIVE_WRITE=1 (this flag is no longer required)")
   .option("--full", "print full response body instead of bounded preview")
   .option("--json", "emit JSON")
   .action(

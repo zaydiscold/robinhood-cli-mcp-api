@@ -326,7 +326,7 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
    clicked", app state, or agent logs are **not** proof. (Lived this session: a "nothing executed"
    scare resolved by reading the orders list — and the place→cancel tests were confirmed the same way.)
 
-> Golden rule: reads are free and live; **every write is dry-run until you deliberately pass both gates**.
+> Golden rule: reads are free and live; **every write is dry-run unless the `ROBINHOOD_ALLOW_LIVE_WRITE=1` switch is set**.
 > When unsure about account, side, position_effect, or amount — stop and confirm. A wrong write is real money.
 
 ---
@@ -1321,7 +1321,7 @@ claude mcp add robinhood-cli -s user -- \
 
 Same double-gate as CLI:
 - **Reads run live** — no gate needed.
-- **Writes are dry-run by default.** To go live: `liveWrite: true` + `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the server's environment.
+- **Writes are dry-run by default.** To go live: set `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the server's environment.
 - `dryRun: true` always forces a plan, even with both gates set — a deliberate "preview this exact live call" escape hatch.
 
 Reload MCP tools in-session with `/reload-mcp`.
@@ -1384,7 +1384,7 @@ Always try Syncthing before fighting with SSH.
 
 ### Writes & Safety
 
-11. **Writes need BOTH gates.** `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1`. One alone = dry-run. Never export the env var into your shell profile — keep it inline.
+11. **Writes need the ONE switch: `ROBINHOOD_ALLOW_LIVE_WRITE=1`.** Set it and writes go live by default (no per-call `--live-write` needed — the flag is accepted but optional). Unset = every write dry-runs. `--dry-run` previews a single call even when the switch is on.
 12. **Method-aware routing fails closed.** A forced `--method POST` (or PATCH/PUT/DELETE) on a URL with no matching write route now returns **no match** (clear error), instead of silently degrading to the GET route — so a forced write can never be mis-resolved into a read at the wrong risk class. (GET/HEAD stay permissive for legacy route entries without method metadata.)
 13. **`dryRun: true` always wins in MCP.** Even with both gates set, it forces a plan. Use it to preview exact live calls.
 

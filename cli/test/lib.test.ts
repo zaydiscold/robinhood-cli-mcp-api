@@ -541,34 +541,44 @@ describe("Robinhood API map", () => {
     );
   });
 
-  it("never sends a live write without both --live-write and the env gate", () => {
+  it("gates live writes behind the single ROBINHOOD_ALLOW_LIVE_WRITE master switch", () => {
     // Read routes always run live.
     expect(resolveLiveWriteGate({ risk: "read", dryRun: false, liveWrite: false, env: {} })).toEqual({
       allowed: true,
       forcedDryRun: false
     });
 
-    // Write with neither opt-in is forced to dry-run.
-    const neither = resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, liveWrite: false, env: {} });
-    expect(neither.allowed).toBe(false);
-    expect(neither.forcedDryRun).toBe(true);
+    // Write with the switch OFF is forced to dry-run.
+    const off = resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, liveWrite: false, env: {} });
+    expect(off.allowed).toBe(false);
+    expect(off.forcedDryRun).toBe(true);
 
-    // Flag alone is not enough.
+    // The legacy --live-write flag ALONE (switch off) is NOT enough — still dry-run.
     expect(
       resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, liveWrite: true, env: {} }).forcedDryRun
     ).toBe(true);
 
-    // Env alone is not enough.
+    // The switch ALONE now permits the live write — no per-call flag required (this is the change).
     expect(
       resolveLiveWriteGate({
         risk: "write-mutate",
         dryRun: false,
         liveWrite: false,
         env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" }
-      }).forcedDryRun
-    ).toBe(true);
+      })
+    ).toEqual({ allowed: true, forcedDryRun: false });
 
-    // Both opt-ins permit the live write.
+    // dryRun:true still forces a preview, even with the switch ON — the per-call escape hatch.
+    expect(
+      resolveLiveWriteGate({
+        risk: "destructive",
+        dryRun: true,
+        liveWrite: false,
+        env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" }
+      })
+    ).toEqual({ allowed: true, forcedDryRun: false });
+
+    // Switch on + the legacy flag also passed → still live (the flag is now a harmless no-op).
     expect(
       resolveLiveWriteGate({
         risk: "destructive",

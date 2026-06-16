@@ -1478,12 +1478,16 @@ export function planBrokerageRequest(input: {
   route: BrokerageRoute;
   method?: string;
   params?: Record<string, string>;
+  /** Arbitrary ?key=value query params appended AFTER route matching (parity with planCryptoRequest).
+   *  The route map matches on the path, so query params are applied here — this is what lets a caller
+   *  read e.g. discovery/lists/items/?list_id=... through `brokerage execute` instead of a one-off script. */
+  query?: Record<string, string>;
   body?: unknown;
   dryRun?: boolean;
 }): PlannedBrokerageRequest {
   const params = input.params ?? {};
   const missingParams: string[] = [];
-  const url = input.route.url.replace(/\{([^}]+)\}/g, (_match, name: string) => {
+  let url = input.route.url.replace(/\{([^}]+)\}/g, (_match, name: string) => {
     // Alias-aware: a route's {account_number} token is satisfied by a legacy --param account=/num= and
     // vice-versa, so the standardized map and pre-rename callers both resolve.
     const value = resolveParamValue(params, name);
@@ -1493,6 +1497,11 @@ export function planBrokerageRequest(input: {
     }
     return encodeURIComponent(value);
   });
+  if (input.query && Object.keys(input.query).length > 0) {
+    const parsed = new URL(url);
+    for (const [k, v] of Object.entries(input.query)) parsed.searchParams.set(k, v);
+    url = parsed.toString();
+  }
   const method = (input.method ?? inferBrokerageMethod(input.route)).toUpperCase();
   const warnings = riskWarnings(input.route.risk);
   const mutatesAccount = riskMutatesAccount(input.route.risk);
@@ -2617,6 +2626,173 @@ export async function deleteWatchlist(
   return { id: input.id, result };
 }
 
+export interface WatchlistItem {
+  symbol: string | null;
+  name: string | null;
+  object_type: string;
+  object_id: string | null;
+  us_tradability: string | null;
+  state: string | null;
+  /** True only for an active, US-tradable EQUITY instrument — i.e. something a $X basket buy can hit.
+   *  Futures/index/currency_pair entries (allowed on a list) are NOT equity-buyable and resolve false. */
+  tradable: boolean;
+  price: number | null;
+}
+
+/**
+ * Read a custom watchlist's ITEMS resolved to tickers. The list-metadata read (`watchlist list`) returns
+ * sizes only; the items live at discovery/lists/items/?list_id=&owner_type=custom and come back already
+ * carrying symbol + tradability + a live price. This is the read half of "operate on a watchlist" — no
+ * one-off script required. Reads are live and free (no gate).
+ */
+export async function getWatchlistItems(
+  nameOrId: string,
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<{ list: WatchlistRef; items: WatchlistItem[] }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const wl = await resolveWatchlist(nameOrId, { getJson });
+  const data = await getJson(DISCOVERY_LISTS_ITEMS_URL, {}, { list_id: wl.id, owner_type: "custom" });
+  const results: any[] = Array.isArray(data?.results) ? data.results : [];
+  const items: WatchlistItem[] = results.map((r) => {
+    const object_type = String(r.object_type ?? "instrument");
+    return {
+      symbol: r.symbol ?? r?.item?.symbol ?? null,
+      name: r.name ?? null,
+      object_type,
+      object_id: r.object_id ?? r.id ?? null,
+      us_tradability: r.us_tradability ?? null,
+      state: r.state ?? null,
+      tradable: object_type === "instrument" && r.us_tradability === "tradable" && r.state === "active" && Boolean(r.symbol),
+      price: r.price != null && Number.isFinite(Number(r.price)) ? Number(r.price) : null
+    };
+  });
+  return { list: wl, items };
+}
+
+export interface WatchlistBasketBuyInput {
+  /** List name or id. */
+  list: string;
+  /** Dollars per ticker (Robinhood minimum is $1.00). */
+  amount: number;
+  accountNumber: string;
+  dryRun?: boolean;
+  liveWrite?: boolean;
+  /** Skip per-order dedup AND the after-hours fractional pre-flight guard. */
+  force?: boolean;
+  /** Cap the number of tickers attempted (after tradability + BP filtering). */
+  limit?: number;
+  /** Pace between LIVE sends to respect Robinhood's fractional burst limit (~9 then 429). Default 2500ms. */
+  delayMs?: number;
+}
+
+export interface WatchlistBasketLeg {
+  symbol: string;
+  status: "placed" | "queued" | "dry-run" | "skipped" | "failed" | "blocked";
+  reason?: string;
+  shares?: number;
+  estimatedTotal?: number;
+  orderId?: string | null;
+  evidenceConfirmed?: boolean | null;
+  sessionWarning?: string;
+}
+
+export interface WatchlistBasketBuyResult {
+  list: WatchlistRef;
+  account: string;
+  amountPerTicker: number;
+  buyingPower?: number;
+  dryRun: boolean;
+  counts: { items: number; tradable: number; attempted: number; placed: number; skipped: number; failed: number; blocked: number };
+  legs: WatchlistBasketLeg[];
+}
+
+/**
+ * Buy $amount of EACH tradable item in a custom watchlist — the "operate on a watchlist" execution half.
+ * Thin loop over the shared `placeEquityOrder` engine, so every per-ticker order inherits the OTC/
+ * fractional guard, dedup, ref_id idempotency, the after-hours pre-flight guard, trade-log + evidence,
+ * AND the double write-gate (dry-run unless liveWrite + ROBINHOOD_ALLOW_LIVE_WRITE=1). BP-aware: reads
+ * the account's buying power and only attempts what fits ($amount each), so an underfunded basket places
+ * the affordable prefix and reports the rest as skipped rather than hammering doomed orders.
+ */
+export async function buyWatchlistBasket(
+  input: WatchlistBasketBuyInput,
+  deps: { getJson?: typeof brokerageGetJson; placeOrder?: typeof placeEquityOrder; sleep?: (ms: number) => Promise<void> } = {}
+): Promise<WatchlistBasketBuyResult> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const placeOrder = deps.placeOrder ?? placeEquityOrder;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount must be a positive dollar value (Robinhood minimum is $1.00).");
+  const delayMs = input.delayMs ?? 2500;
+  const liveWrite = !input.dryRun && !!input.liveWrite;
+
+  const { list, items } = await getWatchlistItems(input.list, { getJson });
+  const tradable = items.filter((i) => i.tradable && i.symbol);
+  const legs: WatchlistBasketLeg[] = [];
+
+  // Non-equity / non-tradable members are skipped loudly (futures/index/currency_pair, halted, etc.).
+  for (const i of items.filter((x) => !x.tradable)) {
+    legs.push({ symbol: i.symbol ?? i.object_id ?? "?", status: "skipped", reason: `not equity-buyable (object_type=${i.object_type}, us_tradability=${i.us_tradability ?? "?"}, state=${i.state ?? "?"})` });
+  }
+
+  // BP-aware sizing: read buying power once and only attempt what fits.
+  let buyingPower: number | undefined;
+  try {
+    const bp = await getJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", { num: input.accountNumber });
+    const v = Number(bp?.buying_power);
+    if (Number.isFinite(v)) buyingPower = v;
+  } catch { /* best-effort: if BP read fails, attempt all and let per-order rejection report */ }
+
+  let candidates = tradable;
+  if (input.limit && input.limit > 0) candidates = candidates.slice(0, input.limit);
+  let affordable = candidates;
+  if (buyingPower !== undefined) {
+    const maxN = Math.floor(buyingPower / amount);
+    if (candidates.length > maxN) {
+      affordable = candidates.slice(0, maxN);
+      for (const i of candidates.slice(maxN)) {
+        legs.push({ symbol: i.symbol as string, status: "skipped", reason: `insufficient buying power — basket of ${candidates.length}×$${amount.toFixed(2)}=$${(candidates.length * amount).toFixed(2)} exceeds BP $${buyingPower.toFixed(2)}; placed the first ${maxN}` });
+      }
+    }
+  }
+
+  let placed = 0;
+  for (let idx = 0; idx < affordable.length; idx++) {
+    const sym = affordable[idx].symbol as string;
+    let res: EquityOrderResult;
+    try {
+      res = await placeOrder({ symbol: sym, accountNumber: input.accountNumber, side: "buy", amount, liveWrite, force: input.force });
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      const nonBuyable = /fractional|otc/i.test(msg);
+      legs.push({ symbol: sym, status: nonBuyable ? "skipped" : "failed", reason: msg });
+      continue;
+    }
+    if (res.preflightBlocked) {
+      legs.push({ symbol: sym, status: "blocked", reason: res.sessionWarning, sessionWarning: res.sessionWarning });
+    } else if (res.dryRun) {
+      legs.push({ symbol: sym, status: "dry-run", shares: res.shares, estimatedTotal: res.estimatedTotal, sessionWarning: res.sessionWarning });
+    } else if (res.evidence?.confirmed === true) {
+      legs.push({ symbol: sym, status: "placed", shares: res.shares, estimatedTotal: res.estimatedTotal, orderId: res.orderId, evidenceConfirmed: true, sessionWarning: res.sessionWarning });
+      placed++;
+    } else {
+      legs.push({ symbol: sym, status: "failed", reason: res.evidence?.warning ?? res.sessionWarning ?? `live send returned ${res.httpStatus} — unconfirmed`, orderId: res.orderId, evidenceConfirmed: res.evidence?.confirmed ?? null, sessionWarning: res.sessionWarning });
+    }
+    if (liveWrite && delayMs > 0 && idx < affordable.length - 1) await sleep(delayMs);
+  }
+
+  return {
+    list, account: input.accountNumber, amountPerTicker: amount, buyingPower, dryRun: !liveWrite,
+    counts: {
+      items: items.length, tradable: tradable.length, attempted: affordable.length, placed,
+      skipped: legs.filter((l) => l.status === "skipped").length,
+      failed: legs.filter((l) => l.status === "failed").length,
+      blocked: legs.filter((l) => l.status === "blocked").length
+    },
+    legs
+  };
+}
+
 // ───────────────────────── Equity order engine (shared CLI + MCP) ─────────────────────────
 // The order-construction path is the dangerous one to duplicate (alignment invariant): the CLI
 // `buy`/`sell` commands and the MCP `robinhood_buy`/`robinhood_sell` tools both call
@@ -2753,11 +2929,14 @@ export interface EquityOrderResult {
   sessionWarning?: string;
   live: boolean;
   dryRun: boolean;
+  /** True when the engine PRE-EMPTED the send (nothing was attempted) — e.g. a fractional dollar-market
+   *  order outside regular hours, which Robinhood rejects (HTTP 500). `force` bypasses the guard. */
+  preflightBlocked?: boolean;
   refId: string;
   orderId: string | null;
   state: string | null;
   httpStatus: number | string;
-  result: Awaited<ReturnType<typeof gatedBrokerageWrite>>;
+  result?: Awaited<ReturnType<typeof gatedBrokerageWrite>>;
   /** Post-send order-history re-read (live sends only) — failure mode #20 encoded in code. */
   evidence?: OrderEvidence;
 }
@@ -2887,6 +3066,22 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
     } else if (isMarket) {
       sessionWarning = `Session is ${session}: a market order will QUEUE to the next regular session — it will not fill now. Use a limit order for extended-hours execution.`;
     }
+  }
+
+  // PRE-FLIGHT GUARD (failure mode: silent 500): a fractional dollar-MARKET order outside regular hours
+  // is REJECTED by Robinhood with HTTP 500 — it does NOT queue (fractional/market orders only fill in
+  // regular hours). Eating that raw 500 looks like an opaque failure. Pre-empt it with a clear,
+  // actionable result and send NOTHING. `force` bypasses (e.g. to capture the live error for research).
+  if (dollarBased && session && session !== "regular" && !input.force) {
+    const reason = `Pre-flight: a fractional $${input.amount} ${side} of ${symbol} can't be placed during ${session} — Robinhood rejects dollar/market orders outside regular hours (they only fill in the regular session). Wait for the regular session, or buy whole shares with a limit. Pass force to attempt anyway.`;
+    return {
+      symbol, account: input.accountNumber, side, shares,
+      estimatedPrice: last, estimatedTotal: shares * last,
+      type: "market", otcAutoLimit, dollarBased,
+      session, sessionWarning: reason,
+      live: false, dryRun: false, preflightBlocked: true,
+      refId, orderId: null, state: null, httpStatus: 0
+    };
   }
 
   const baseBody: Record<string, unknown> = {

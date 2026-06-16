@@ -40,6 +40,8 @@ import {
   gatedBrokerageWrite,
   watchlistMutateItems,
   createWatchlist,
+  getWatchlistItems,
+  buyWatchlistBasket,
   logTrade,
   placeEquityOrder,
   getOrderStatus,
@@ -658,12 +660,16 @@ brokerage
     ...previous,
     value
   ])
+  .option("--query-param <name=value>", "append or replace a URL query-string value; repeatable", (value: string, previous: string[] = []) => [
+    ...previous,
+    value
+  ])
   .option("--body-json <json>", "JSON request body")
   .option("--dry-run", "print execution plan without sending")
   .option("--live-write", "permit a live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
   .option("--full", "print full response body instead of bounded preview")
   .option("--json", "emit JSON")
-  .action(async (query: string, options: { method?: string; param?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; full?: boolean; json?: boolean }) => {
+  .action(async (query: string, options: { method?: string; param?: string[]; queryParam?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; full?: boolean; json?: boolean }) => {
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, options.method);
     if (!route) {
@@ -683,6 +689,7 @@ brokerage
       route,
       method: options.method,
       params: parseParamAssignments(options.param),
+      query: parseParamAssignments(options.queryParam),
       body: parseJsonBody(options.bodyJson),
       dryRun: effectiveDryRun
     });
@@ -3564,6 +3571,52 @@ watchlist
     if (opts.json) { printJson({ displayName: name, dryRun: out.result.dryRun, status: out.result.status, body: out.result.body }); return; }
     process.stdout.write(`${out.result.dryRun ? "DRY-RUN" : out.result.status} create watchlist "${name}"${opts.emoji ? ` ${opts.emoji}` : ""}\n`);
     if (out.result.body) process.stdout.write(`${out.result.body}\n`);
+  });
+
+watchlist
+  .command("items <list>")
+  .description("List a custom watchlist's tickers resolved live — symbol, price, and an equity-buyable flag (by name or id). Read.")
+  .option("--json", "emit JSON")
+  .action(async (list: string, opts: { json?: boolean }) => {
+    const { list: wl, items } = await getWatchlistItems(list);
+    if (opts.json) { printJson({ list: wl, items }); return; }
+    process.stdout.write(`"${wl.display_name}" (${wl.id}) — ${items.length} item(s); ${items.filter((i) => i.tradable).length} equity-buyable\n`);
+    printTable(
+      items.map((i) => ({ symbol: i.symbol ?? "—", price: i.price ?? "—", type: i.object_type, buyable: i.tradable ? "yes" : "no", name: i.name ?? "" })),
+      ["symbol", "price", "type", "buyable", "name"]
+    );
+  });
+
+watchlist
+  .command("buy <list>")
+  .description("Buy $<amount> of EACH equity-buyable ticker in a custom watchlist (BP-aware basket). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .requiredOption("--account <number>", "account number to buy into")
+  .option("--amount <dollars>", "dollars per ticker (Robinhood minimum $1.00)", "1")
+  .option("--limit <n>", "cap the number of tickers attempted")
+  .option("--delay <ms>", "pace between live sends (429 burst guard)", "2500")
+  .option("--force", "skip per-order dedup + the after-hours fractional pre-flight guard")
+  .option("--dry-run", "plan only, send nothing")
+  .option("--live-write", "permit the live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--json", "emit JSON")
+  .action(async (list: string, opts: { account: string; amount?: string; limit?: string; delay?: string; force?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    const out = await buyWatchlistBasket({
+      list,
+      amount: Number(opts.amount ?? "1"),
+      accountNumber: opts.account,
+      limit: opts.limit ? Number(opts.limit) : undefined,
+      delayMs: opts.delay ? Number(opts.delay) : undefined,
+      force: opts.force,
+      dryRun: opts.dryRun,
+      liveWrite: opts.liveWrite
+    });
+    if (opts.json) { printJson(out); return; }
+    const tag = out.dryRun ? "DRY-RUN" : "LIVE";
+    process.stdout.write(`${tag} basket buy $${out.amountPerTicker.toFixed(2)} × each → ${out.account} — "${out.list.display_name}"\n`);
+    process.stdout.write(`items ${out.counts.items} | tradable ${out.counts.tradable} | attempted ${out.counts.attempted} | placed ${out.counts.placed} | skipped ${out.counts.skipped} | failed ${out.counts.failed} | blocked ${out.counts.blocked}${out.buyingPower !== undefined ? ` | BP $${out.buyingPower.toFixed(2)}` : ""}\n`);
+    printTable(
+      out.legs.map((l) => ({ symbol: l.symbol, status: l.status, total: l.estimatedTotal != null ? `$${l.estimatedTotal.toFixed(2)}` : "—", note: (l.reason ?? l.sessionWarning ?? "").slice(0, 80) })),
+      ["symbol", "status", "total", "note"]
+    );
   });
 
 program.addCommand(watchlist);

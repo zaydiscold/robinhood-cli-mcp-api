@@ -58,7 +58,7 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
    manual login. (Details in §1.)
 
 4. **Two front doors** — the **CLI** (`cli/dist/index.js`, for humans/scripts) and the
-   **MCP server** (`mcp/dist/server.js`, 50 tools for agents incl. first-class parity tools — live truth is
+   **MCP server** (`mcp/dist/server.js`, the full first-class tool roster for agents — live truth is
    `tools/list`; reload a running server with `/reload-mcp` after pulling, or it advertises its old count). Both
    are thin wrappers over the engine — the order path (`placeEquityOrder`) and the wheel engine
    (`computeWheelState`) are literally the same functions on both surfaces.
@@ -458,11 +458,16 @@ encode the selected expiration, strike, side, or Builder legs. Resolve those fro
 
 ---
 
-## 8. Worked example — managing watchlists (create / rename / delete)
+## 8. Worked example — managing watchlists (create / rename / delete / item add+remove)
 
 Watchlists live under `discovery/lists/`. Every read AND the list endpoints need
-`owner_type=custom` as a discriminator. All three write verbs are proven live through
-the CLI (create 201, rename 200, delete 204).
+`owner_type=custom` as a discriminator. List create/rename/delete are proven live through
+the CLI (create 201, rename 200, delete 204), and **item add/remove are now mapped + tested**
+(verified 2026-06-14) via the first-class `watchlist add`/`remove`/`create` commands (double-gated;
+MCP `robinhood_watchlist_add`/`_remove`/`_create`), plus `watchlist items` (live read of a list's tickers +
+equity-buyable flag) and `watchlist buy` (BP-aware **basket buy**: $<amount> of every equity-buyable ticker,
+looping the shared `placeEquityOrder` engine per ticker; double-gated; MCP `robinhood_watchlist_items`/`_buy`).
+The raw `brokerage execute` recipes below still work, but prefer the first-class verbs for item edits.
 
 ```bash
 # List every watchlist (id + display_name). owner_type is REQUIRED.
@@ -500,8 +505,10 @@ Gotchas learned the hard way:
   too — it is not a CLI limitation. Every other list deletes cleanly.
 - **Method-aware routing** picks the right verb when a URL has several (GET vs POST on
   `discovery/lists/`, PATCH vs DELETE on `discovery/lists/{id}/`) — always pass `--method`.
-- Item add/remove/reorder (`discovery/lists/items/` POST) is **not yet mapped** — the
-  server returns `{"failed operations":""}` with no detail, so the exact body is unconfirmed.
+- Item **add/remove are mapped + tested** (verified 2026-06-14): `watchlist add`/`remove` POST a
+  list-id-keyed batch body to `discovery/lists/items/` —
+  `{"<list_id>":[{"object_id":"<uuid>","object_type":"instrument","operation":"create"|"delete"}]}` — and
+  resolve the target list by case-insensitive `display_name` or id. Item **reorder** (weight/sort) is still unmapped.
 
 ---
 
@@ -614,7 +621,7 @@ settings/permissions, never print the token value.
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` (50 tools incl. accounts/positions/portfolio/buy/sell/cancel/order-status/buying-power/wheel/options-holdings/options-inspect/settings/recurring/quote/history/watchlist/options-enumerate parity: route inspection, browser/account
+Tools surface as `mcp__robinhood-cli__*` (the full tool roster incl. accounts/positions/portfolio/buy/sell/cancel/order-status/buying-power/wheel/options-holdings/options-inspect/settings/recurring/quote/history/watchlist + the double-gated watchlist_add/remove/create/items/buy writes/options-enumerate parity: route inspection, browser/account
 context, options strategy workflows/plans, exact-contract link bundles, stock
 profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute). `robinhood_buy`/`robinhood_sell`
 run the same shared engine as the CLI commands — pending-order dedup (5-min window; `force: true` skips),

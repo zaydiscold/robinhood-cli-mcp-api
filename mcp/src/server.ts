@@ -45,6 +45,8 @@ import {
   gatedBrokerageWrite,
   watchlistMutateItems,
   createWatchlist,
+  getWatchlistItems,
+  buyWatchlistBasket,
   placeEquityOrder,
   getOrderStatus,
   extractOrderId,
@@ -648,12 +650,13 @@ server.registerTool(
   "robinhood_brokerage_execute",
   {
     title: "Robinhood Brokerage Execute",
-    description: "Execute a Robinhood brokerage/account request using caller-owned auth env. Reads run live; writes are dry-run by default and require liveWrite=true (canonical; `live` accepted as alias) plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan. After any live write, append a trading-log.md entry (intent + strategy thread); brokerage order history is the only proof an order happened (order-evidence rule).",
+    description: "Execute a Robinhood brokerage/account request using caller-owned auth env. Reads run live; writes are dry-run by default and require liveWrite=true (canonical; `live` accepted as alias) plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan. Pass queryParams:[\"key=value\"] to append URL query params AFTER route matching (e.g. queryParams:[\"list_id=<id>\",\"owner_type=custom\"] for discovery/lists/items/) — the route map matches on the path, so this is how you read query-param endpoints without a one-off script. After any live write, append a trading-log.md entry (intent + strategy thread); brokerage order history is the only proof an order happened (order-evidence rule).",
     annotations: toolAnnotations(false, "write-or-sensitive"),
     inputSchema: z.object({
       query: z.string(),
       method: z.string().optional(),
       params: z.array(z.string()).default([]),
+      queryParams: z.array(z.string()).default([]),
       body: z.unknown().optional(),
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
@@ -661,7 +664,7 @@ server.registerTool(
       fullBody: z.boolean().default(false)
     })
   },
-  async ({ query, method, params, body, dryRun, liveWrite: liveWriteParam, live, fullBody }) => {
+  async ({ query, method, params, queryParams, body, dryRun, liveWrite: liveWriteParam, live, fullBody }) => {
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, method);
@@ -674,6 +677,7 @@ server.registerTool(
       route,
       method,
       params: parseParamAssignments(params),
+      query: parseParamAssignments(queryParams),
       body,
       dryRun: effectiveDryRun
     });
@@ -1410,6 +1414,45 @@ server.registerTool(
 );
 
 server.registerTool(
+  "robinhood_watchlist_items",
+  {
+    title: "Robinhood Watchlist — Items",
+    description: "Read a custom watchlist's tickers (resolved by name or id) live — each item's symbol, price, object_type, and an equity-buyable flag (active + US-tradable instrument). The READ half of operating on a watchlist; pair with robinhood_watchlist_buy. Live read; no gate.",
+    inputSchema: z.object({ list: z.string() }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ list }) => {
+    const { list: wl, items } = await getWatchlistItems(list);
+    return jsonResponse({ list: wl, count: items.length, tradable: items.filter((i) => i.tradable).length, items });
+  }
+);
+
+server.registerTool(
+  "robinhood_watchlist_buy",
+  {
+    title: "Robinhood Watchlist — Basket Buy",
+    description: "Buy $<amount> of EACH equity-buyable ticker in a custom watchlist (BP-aware basket; the EXECUTION half of operating on a watchlist). Loops the SAME shared placeEquityOrder engine per ticker — OTC/fractional guard, pending dedup, ref_id idempotency, the after-hours fractional pre-flight guard, trade-log + order-history evidence — and reads the account's buying power so it only attempts what fits ($amount each), skipping the rest with reasons rather than hammering doomed orders. Dry-run unless liveWrite=true (canonical; `live` accepted) AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    annotations: toolAnnotations(false, "write-mutate"),
+    inputSchema: z.object({
+      list: z.string(),
+      account_number: z.string(),
+      amount: z.number().positive().default(1),
+      limit: z.number().int().positive().optional(),
+      delayMs: z.number().int().nonnegative().optional(),
+      force: z.boolean().default(false),
+      dryRun: z.boolean().default(false),
+      liveWrite: z.boolean().optional(),
+      live: z.boolean().optional()
+    })
+  },
+  async ({ list, account_number, amount, limit, delayMs, force, dryRun, liveWrite: liveWriteParam, live }) => {
+    const liveWrite = resolveLiveFlag(liveWriteParam, live);
+    const out = await buyWatchlistBasket({ list, amount, accountNumber: account_number, limit, delayMs, force, dryRun, liveWrite });
+    return writeStatus(out, { dryRun: out.dryRun });
+  }
+);
+
+server.registerTool(
   "robinhood_options_enumerate",
   {
     title: "Robinhood Options Enumerate",
@@ -1603,6 +1646,20 @@ server.registerTool(
 );
 
 // Zayd Khan // cold // www.zayd.wtf
+
+// Live-write discoverability (the silent-dry-run trap): writes need ROBINHOOD_ALLOW_LIVE_WRITE=1 in THIS
+// server's environment (the second gate). If it's unset, every write tool dry-runs no matter what the
+// caller passes — and that used to fail silently (a re-registered MCP without the env looked healthy but
+// could never trade). Announce it loudly at startup so the gap is visible, not discovered mid-trade.
+if (process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1") {
+  process.stderr.write(
+    "⚠️  robinhood-cli MCP: LIVE WRITES DISABLED — ROBINHOOD_ALLOW_LIVE_WRITE is not \"1\" in this server's " +
+    "environment, so EVERY write tool will dry-run regardless of liveWrite:true (the env is the second gate). " +
+    "Reads work normally. To enable real orders, re-register with the env gate and reload, e.g.:\n" +
+    "    claude mcp add robinhood-cli -s user -e ROBINHOOD_ALLOW_LIVE_WRITE=1 -- node <repo>/mcp/dist/server.js\n" +
+    "  then /reload-mcp (or restart the client).\n"
+  );
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

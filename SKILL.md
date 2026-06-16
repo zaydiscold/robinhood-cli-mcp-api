@@ -226,6 +226,14 @@ only via ETF proxies (USO/UVXY/BITO — normal equities, placeable via `brokerag
 strike + bid/ask/last + qty + link) across accounts; `options inspect <uuid>` opens one contract's
 full detail (metadata, Greeks, fill history, rare tax-timing note, buy/sell handoff).
 
+**Watchlists** — read custom lists (`watchlist list`) **and write them, double-gated** (verified 2026-06-14):
+`watchlist add <list> <symbols…>` / `watchlist remove <list> <symbols…>` (batch ops to `discovery/lists/items/`;
+resolve the list by case-insensitive `display_name` or id) and `watchlist create <name> [--emoji]` (POST
+`discovery/lists/`). MCP equivalents: `robinhood_watchlist_add`/`_remove`/`_create`. Read a list's live tickers
+with `watchlist items <list>` (symbol/price/equity-buyable flag), and **basket-buy** every equity-buyable name
+with `watchlist buy <list> --account <N> --amount <$>` — BP-aware, looping the shared `placeEquityOrder` engine
+per ticker (same OTC/dedup/`ref_id`/evidence guards; skips what won't fit; double-gated). Item **reorder** is not yet mapped.
+
 ### Strategy & tax knowledge (background — neutral, NOT risk guidance)
 Reference docs that give the agent broad options/tax background to reason about ANY strategy a user
 asks for. **Descriptive, not prescriptive** — they do NOT push a risk tolerance or steer toward "safe"
@@ -409,6 +417,11 @@ robinhood-cli options positions --json
 robinhood-cli options chain MRVL --width 6 --json
 robinhood-cli options expirations MRVL --json
 robinhood-cli watchlist list --json
+robinhood-cli watchlist add "My List" NVDA TSLA              # dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1
+robinhood-cli watchlist remove "My List" TSLA               # dry-run by default
+robinhood-cli watchlist create "Semis" --emoji 🛰️            # dry-run by default
+robinhood-cli watchlist items "Semis" --json                 # live read: tickers + price + equity-buyable flag
+robinhood-cli watchlist buy "Semis" --account <N> --amount 5 # BASKET BUY $5 of each buyable name — dry-run by default; double-gated
 robinhood-cli crypto routes --json
 robinhood-cli crypto sign --api-key "$ROBINHOOD_API_KEY" --private-key-b64 "$ROBINHOOD_PRIVATE_KEY_B64" --path /api/v1/crypto/trading/accounts/ --method GET
 robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/" --query-param symbol=BTC-USD --dry-run --json
@@ -425,6 +438,7 @@ Keep this split current when editing the skill:
 | Options research/planning | 18 strategy workflows; `options-strategy-plan` emits `reviewContract` | Planning only until exact user approval and write gates |
 | Equity/options order writes | Route-map executor against `orders/`, `options/orders/`, and cancel routes | Must use `--method`, exact body, `--live-write`, and `ROBINHOOD_ALLOW_LIVE_WRITE=1`; dry-run first |
 | Recurring investments | First-class `recurring list`, `recurring resume`, `recurring pause`; route map also has GET one schedule and POST create | Resume/pause are the verified first-class writes. Create/edit amount/funding-source are route-map research unless a fresh capture verifies body shape |
+| Watchlist read / edit / basket-buy | `watchlist list`/`items` (read); `watchlist add`/`remove`/`create` + `watchlist buy` (basket) (MCP `robinhood_watchlist_add`/`_remove`/`_create`/`_items`/`_buy`) | Double-gated writes (verified 2026-06-14): add/remove batch `discovery/lists/items/`, create POSTs `discovery/lists/`; `watchlist buy` loops the shared order engine per ticker (BP-aware, OTC/dedup/`ref_id` guards, skips what won't fit); item reorder still route-map research |
 | Money movement / funding | ACH relationships/transfers and cashier/deposit-schedule routes are mapped mostly as read or `write-or-sensitive` | Never mutate funding, ACH links, deposits, withdrawals, or transfers without a fresh route/body capture and explicit approval |
 | DRIP/options/account settings | DRIP GET/PATCH is method-split; account-setting routes are mapped or browser-observed | Treat account-setting writes as dry-run first; plan, obtain exact approval, send only with both gates, then verify reload state |
 | Crypto | Official Crypto API signing/planning/execution commands | Different auth from brokerage; crypto writes/cancels use the same double gate |
@@ -1255,9 +1269,9 @@ documented. To extend it safely:
 
 ## MCP Server
 
-50 tools (live truth: `tools/list`) surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_wheel` (evidence-based Wheel stage + next-leg command), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist`, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+The full first-class tool roster (live truth: `tools/list`, never a hardcoded count) surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_wheel` (evidence-based Wheel stage + next-leg command), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist` + the double-gated `robinhood_watchlist_add`/`robinhood_watchlist_remove`/`robinhood_watchlist_create` writes, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
-> **Count note:** the *source/dist* registers 50 tools (live truth: `tools/list`). A *running* MCP process started before the
+> **Count note:** the *source/dist* registers the full roster (live truth: `tools/list`, never a hardcoded count). A *running* MCP process started before the
 > last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
 > the server) after pulling, then confirm the client's `tools/list` count matches the current build.
 
@@ -1309,6 +1323,11 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_quote` | Live quote(s) for one or more equity/ETF symbols |
 | `robinhood_history` | Unified history (equity + options + crypto orders + transfers), newest first |
 | `robinhood_watchlist` | Read custom watchlists (`owner_type=custom`) |
+| `robinhood_watchlist_add` | Add ticker(s) to a custom watchlist by name/id — batch `discovery/lists/items/` write (double-gated) |
+| `robinhood_watchlist_remove` | Remove ticker(s) from a custom watchlist by name/id (double-gated) |
+| `robinhood_watchlist_create` | Create a new custom watchlist (optional emoji) via `discovery/lists/` (double-gated) |
+| `robinhood_watchlist_items` | Read a custom watchlist's tickers live (symbol, price, equity-buyable flag) — the read half; pair with `robinhood_watchlist_buy` |
+| `robinhood_watchlist_buy` | **Basket buy** — buy $<amount> of EACH equity-buyable ticker in a watchlist (BP-aware; loops the shared order engine per ticker — OTC/dedup/`ref_id`/evidence guards) (double-gated) |
 | `robinhood_options_enumerate` | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration |
 | `robinhood_buy` | Equity buy (dollar-notional fractional or shares) — shared engine: OTC guard, pending-order dedup (5-min, `force` skips), `ref_id` idempotency, trade log; double-gated |
 | `robinhood_sell` | Equity sell — same shared engine + gates as `robinhood_buy` |
@@ -1380,7 +1399,7 @@ Always try Syncthing before fighting with SSH.
 7. **`owner_type=custom` is MANDATORY.** Every watchlist read without it returns 400: `"owner_type of request must be specified"`.
 8. **Rename uses `display_name`, not `name`.** Wrong field → 200 with no change.
 9. **The Options Watchlist cannot be deleted.** Robinhood hard-blocks it server-side (not a CLI bug).
-10. **Item add/remove/reorder is not yet mapped.** POST to `discovery/lists/items/` returns `"failed operations":""` with no detail.
+10. **Item add/remove ARE mapped (verified 2026-06-14); only reorder is not.** `watchlist add`/`remove` (MCP `robinhood_watchlist_add`/`_remove`) POST a list-id-keyed batch body to `discovery/lists/items/` — `{"<list_id>":[{"object_id":"<uuid>","object_type":"instrument","operation":"create"|"delete"}]}` — double-gated like every write. Item **reorder** (weight/sort) is still unmapped.
 
 ### Writes & Safety
 

@@ -3,15 +3,16 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-// Tool-count guard. The MCP server's tool count is referenced by a hard number in SKILL.md,
-// AGENTS.md, and README — and it has rotted before (docs said 38 / 40+ / 48 while the source
-// registered 50; see claims-audit CNT-1/2/6). This test forces anyone who adds or removes a
-// tool to CONSCIOUSLY bump the expected count here, which is the reminder to also fix the docs.
+// Tool-count guard. The docs (SKILL.md / AGENTS.md / README) deliberately express the tool count
+// via `tools/list`, never a hard number — it rotted before when they hardcoded it (docs said
+// 38 / 40+ / 48 / 50 while the source kept growing; see claims-audit CNT-1/2/6). This test is the
+// SOLE sanctioned literal: it forces anyone who adds or removes a tool to CONSCIOUSLY bump the
+// expected count here — do NOT re-introduce a hardcoded count into the docs.
 // It is deterministic and offline: it parses mcp/src/server.ts source, no server boot, no network.
 
-const EXPECTED_TOOL_COUNT = 53;
+const EXPECTED_TOOL_COUNT = 55;
 const FAIL_MSG =
-  "tool count changed — update SKILL.md/AGENTS.md/README tool-count references and this test.";
+  "tool count changed — bump EXPECTED_TOOL_COUNT here (the only sanctioned hardcode). Docs express the count via `tools/list`, never a literal — do NOT add a number back to them.";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const serverSrc = readFileSync(resolve(here, "../../mcp/src/server.ts"), "utf8");

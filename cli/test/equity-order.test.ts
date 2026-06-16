@@ -315,17 +315,28 @@ describe("placeEquityOrder — session awareness", () => {
     expect(r.sessionWarning).toBeUndefined();
   });
 
-  it("off-session dollar order: market_hours stays regular_hours BUT a loud queue warning is attached", async () => {
+  it("off-session dollar order is PRE-EMPTED (Robinhood 500s it) — nothing sent, clear reason", async () => {
+    // Field-verified 2026-06-15: a fractional dollar-MARKET order placed after hours returns HTTP 500
+    // (it does NOT queue). The engine pre-empts the doomed send instead of eating a raw 500.
     for (const session of ["pre_market", "after_hours", "closed"] as MarketSession[]) {
       const { deps, calls } = makeDeps({ session });
       const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
-      // Fractional dollar orders are regular-hours-only — the body value never changes…
-      expect(calls.writes[0].body).toMatchObject({ market_hours: "regular_hours", dollar_based_amount: { amount: "250.00", currency_code: "USD" } });
-      // …but the operator is told it will QUEUE, not fill now.
+      expect(r.preflightBlocked).toBe(true);
+      expect(r.live).toBe(false);
+      expect(r.dryRun).toBe(false);
+      expect(calls.writes).toHaveLength(0); // NOTHING was sent
       expect(r.session).toBe(session);
-      expect(r.sessionWarning).toMatch(/QUEUE to the next regular session/);
+      expect(r.sessionWarning).toMatch(/can't be placed during/);
       expect(r.sessionWarning).toContain(session);
     }
+  });
+
+  it("force bypasses the off-session pre-flight guard and sends anyway (for capture/research)", async () => {
+    const { deps, calls } = makeDeps({ session: "after_hours" });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250, force: true }, deps);
+    expect(r.preflightBlocked).toBeFalsy();
+    expect(calls.writes[0].body).toMatchObject({ market_hours: "regular_hours", dollar_based_amount: { amount: "250.00", currency_code: "USD" } });
+    expect(r.sessionWarning).toMatch(/QUEUE to the next regular session/);
   });
 
   it("off-session whole-share MARKET order warns it will queue (suggests a limit for extended hours)", async () => {

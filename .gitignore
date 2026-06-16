@@ -12,3 +12,6 @@ info/
 *.log
 *.tgz
 capture-extension/
+
+# local safety backups (never commit)
+_local-backups-*/

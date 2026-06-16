@@ -237,7 +237,7 @@ describe("listDocuments — prefix type filter, tax-year filter, account filter"
   it("account filter is exact; records expose accountLast4 + downloadUrl; newest first", async () => {
     const r = await listDocuments({ accountNumber: "222222222" }, deps);
     expect(r.count).toBe(1);
-    expect(r.documents[0]).toMatchObject({ id: "d3", accountLast4: "6346", downloadUrl: "u3" });
+    expect(r.documents[0]).toMatchObject({ id: "d3", accountLast4: "2222", downloadUrl: "u3" });
     const all = await listDocuments({}, deps);
     expect(all.documents[0].id).toBe("d1");  // 2026-02-11 sorts first
   });
@@ -292,7 +292,7 @@ describe("getMarginHealth — multi-account scan with silent per-account degrada
   it("a 404 account degrades SILENTLY into skipped — the other accounts still report", async () => {
     const r = await getMarginHealth(undefined, deps);
     expect(r.accounts).toHaveLength(2);
-    expect(r.skipped).toEqual(["…6346"]);
+    expect(r.skipped).toEqual(["…2222"]);
     expect(r.scanned).toHaveLength(3);
     expect(r.warnings).toEqual([]);
   });

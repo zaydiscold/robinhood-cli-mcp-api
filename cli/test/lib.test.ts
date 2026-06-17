@@ -541,34 +541,30 @@ describe("Robinhood API map", () => {
     );
   });
 
-  it("never sends a live write without both --live-write and the env gate", () => {
+  it("single switch: ROBINHOOD_ALLOW_LIVE_WRITE=1 is the sole live-write gate", () => {
     // Read routes always run live.
-    expect(resolveLiveWriteGate({ risk: "read", dryRun: false, liveWrite: false, env: {} })).toEqual({
+    expect(resolveLiveWriteGate({ risk: "read", dryRun: false, env: {} })).toEqual({
       allowed: true,
       forcedDryRun: false
     });
 
-    // Write with neither opt-in is forced to dry-run.
-    const neither = resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, liveWrite: false, env: {} });
-    expect(neither.allowed).toBe(false);
-    expect(neither.forcedDryRun).toBe(true);
+    // Write with the switch OFF is forced to dry-run (the safe published default).
+    const off = resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, env: {} });
+    expect(off.allowed).toBe(false);
+    expect(off.forcedDryRun).toBe(true);
 
-    // Flag alone is not enough.
+    // The legacy --live-write / liveWrite flag is no longer the gate: switch OFF stays dry-run
+    // even when it's passed.
     expect(
       resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, liveWrite: true, env: {} }).forcedDryRun
     ).toBe(true);
 
-    // Env alone is not enough.
+    // Switch ON → live write allowed with NO per-call flag (the single-switch model that unblocks MCP).
     expect(
-      resolveLiveWriteGate({
-        risk: "write-mutate",
-        dryRun: false,
-        liveWrite: false,
-        env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" }
-      }).forcedDryRun
-    ).toBe(true);
+      resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" } })
+    ).toEqual({ allowed: true, forcedDryRun: false });
 
-    // Both opt-ins permit the live write.
+    // Switch ON + the legacy flag is identical — the flag is an accepted no-op.
     expect(
       resolveLiveWriteGate({
         risk: "destructive",
@@ -576,6 +572,11 @@ describe("Robinhood API map", () => {
         liveWrite: true,
         env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" }
       })
+    ).toEqual({ allowed: true, forcedDryRun: false });
+
+    // dryRun:true always previews — never blocked, never auto-sent — even with the switch ON.
+    expect(
+      resolveLiveWriteGate({ risk: "write-mutate", dryRun: true, env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" } })
     ).toEqual({ allowed: true, forcedDryRun: false });
   });
 
@@ -586,8 +587,8 @@ describe("Robinhood API map", () => {
     expect(gated.forcedDryRun).toBe(true);
     // GET on a read route still runs live.
     expect(resolveLiveWriteGate({ risk: "read", method: "GET", dryRun: false, liveWrite: false, env: {} }).allowed).toBe(true);
-    // Write verb + both gates → live allowed.
-    expect(resolveLiveWriteGate({ risk: "read", method: "POST", dryRun: false, liveWrite: true, env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" } }).allowed).toBe(true);
+    // Write verb + the switch on → live allowed (no per-call flag required).
+    expect(resolveLiveWriteGate({ risk: "read", method: "POST", dryRun: false, env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" } }).allowed).toBe(true);
   });
 
   it("MAP INTEGRITY: every write-only route carries a write-class risk", () => {

@@ -7,8 +7,8 @@
 > by design. This is not a bug or a sandbox; the tool exists to *actively manage* accounts.
 >
 > **Before you take any state-changing action, you must have the owner's explicit permission for
-> that action.** Reads and dry-runs are always safe; every write is double-gated (`--live-write` +
-> `ROBINHOOD_ALLOW_LIVE_WRITE=1`) precisely so a live trade is never one careless step away.
+> that action.** Reads and dry-runs are always safe; every write is gated by the single switch
+> `ROBINHOOD_ALLOW_LIVE_WRITE=1` (dry-run by default) precisely so a live trade is never one careless step away.
 >
 > **If you are an agent operating this autonomously, surface this warning to your user once at the
 > start of a session** — tell them, in your own words: *"This tool can place real trades and change
@@ -65,7 +65,7 @@ website uses — not the official, walled "agent sandbox" (which is equity-only)
 
 **How a single call flows:** you give a query string → the engine substring-matches it
 against the route map → fills params/body → infers or honors the method → checks the risk
-level against the write-gate → **reads go live, writes dry-run unless both gates are set**
+level against the write-gate → **reads go live, writes dry-run unless the `ROBINHOOD_ALLOW_LIVE_WRITE=1` switch is set**
 → returns the response or the plan. That gate is the core safety property: the default
 outcome of any mutating call is "planned but not sent."
 
@@ -94,11 +94,11 @@ grain of the tool:
 
 Then the safety rails:
 
-- **Reads run live, free.** Writes (trade / cancel / transfer) are **double-gated** and
+- **Reads run live, free.** Writes (trade / cancel / transfer) are **env-gated** and
   default to a safe dry-run.
 - **Match a route by substring** of its URL, fill `{placeholders}` with `--param`.
 - **Rebuild after editing the route map** or your edits are silently ignored (§3).
-- **A live write needs BOTH `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1`** (§6).
+- **A live write needs `ROBINHOOD_ALLOW_LIVE_WRITE=1`** — the single switch; `--live-write` is optional (§6).
 - **Never place an order the user didn't explicitly ask for.** Echo back the resolved
   account + symbol + side + qty + price and get a yes before sending (§8).
 - **Order history is the only proof a trade happened** (§20) — not a UI screen, not a lone `201`.
@@ -219,35 +219,34 @@ fills `{placeholders}` from `--param name=value`.
 
 ---
 
-## 6. Writing — the double gate (non-negotiable)
+## 6. Writing — the live-write switch (non-negotiable)
 
 Any route whose risk is `write-safe`, `write-mutate`, `write-or-sensitive`, or
-`destructive` is **forced to a dry-run** unless BOTH gates are set:
+`destructive` is **forced to a dry-run** unless the single live-write switch is set:
 
-1. the `--live-write` flag, **and**
-2. the `ROBINHOOD_ALLOW_LIVE_WRITE=1` environment variable.
+- the `ROBINHOOD_ALLOW_LIVE_WRITE=1` environment variable — that one switch is the gate.
 
-With one or neither, the request is planned but never sent; the result carries a
-`liveWriteBlocked` reason.
+With it unset, the request is planned but never sent; the result carries a
+`liveWriteBlocked` reason. The legacy per-call `--live-write` / `liveWrite:true` flag is
+still accepted but is now **optional** and no longer the gate.
 
 ### Turning dry-run off (going live)
 
-A write is dry-run **by default**. To turn dry-run off and send a real order you must
-flip **both** switches in the same invocation — there is no single "go live" flag:
+A write is dry-run **by default**. To turn dry-run off and send a real order, set the one
+switch — no per-call flag required:
 
 ```bash
-# This is "dry-run OFF": both gates set, order is sent for real.
+# This is "dry-run OFF": the switch is set, order is sent for real (no --live-write needed).
 ROBINHOOD_ALLOW_LIVE_WRITE=1 \
-  node cli/dist/index.js brokerage execute "<write-url>" --method POST --live-write --body-json '{...}'
+  node cli/dist/index.js brokerage execute "<write-url>" --method POST --body-json '{...}'
 ```
 
-- Drop **either** `ROBINHOOD_ALLOW_LIVE_WRITE=1` **or** `--live-write` → dry-run turns
-  back **on** automatically and nothing is sent.
-- Do **not** export `ROBINHOOD_ALLOW_LIVE_WRITE=1` into your shell profile — keep it inline
-  on the one command, so dry-run is always the resting state.
-- MCP equivalent: pass `liveWrite: true` **and** have `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the
-  server's environment. (Note: `dryRun: true` always wins — it forces a plan even with both
-  gates set, a deliberate "I want to preview this exact live call" escape hatch.)
+- Unset `ROBINHOOD_ALLOW_LIVE_WRITE=1` → dry-run turns back **on** automatically and nothing is sent.
+- Prefer keeping `ROBINHOOD_ALLOW_LIVE_WRITE=1` **inline on the one command** rather than exporting it
+  into your shell profile, where it would make every later write live — so dry-run stays the resting state.
+- MCP equivalent: have `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the server's environment — no per-call
+  `liveWrite` required. (Note: `dryRun: true` always wins — it forces a plan even when the switch is on,
+  a deliberate "I want to preview this exact live call" escape hatch.)
 
 Order-placement routes:
 
@@ -313,7 +312,7 @@ buying-power early-stop, JSON receipts).
 # Dry-run (safe, proves the plan + body, sends nothing):
 node cli/dist/index.js brokerage execute "https://api.robinhood.com/orders/" --method POST \
   --body-json '{...web body above...}'
-# Live — requires BOTH gates:
+# Live — requires the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch:
 ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute \
   "https://api.robinhood.com/orders/" --method POST --live-write --body-json '{...}'
 ```
@@ -364,7 +363,7 @@ node cli/dist/index.js brokerage execute "marketdata/options/?ids={ids}" \
 # "nearest $0.00" = the minimum tick, $0.01 — a resting bid that won't fill.
 ```
 
-**Step 5 — place the order (dry-run shown; flip both gates for live):**
+**Step 5 — place the order (dry-run shown; set the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch for live):**
 ```bash
 REF=$(python3 -c "import uuid;print(uuid.uuid4())")
 node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orders/" --method POST \
@@ -406,7 +405,7 @@ node cli/dist/index.js api-map options-strategy-plan call-credit-spread \
 ```
 
 The planner emits lookup steps and an `options/orders/` body template only. It never
-sends; live writes still need the normal double gate and exact user approval.
+sends; live writes still need the live-write switch and exact user approval.
 
 Agent decision rule: classify the user's language before building a plan. "Sell a call"
 can mean:
@@ -463,10 +462,10 @@ encode the selected expiration, strike, side, or Builder legs. Resolve those fro
 Watchlists live under `discovery/lists/`. Every read AND the list endpoints need
 `owner_type=custom` as a discriminator. List create/rename/delete are proven live through
 the CLI (create 201, rename 200, delete 204), and **item add/remove are now mapped + tested**
-(verified 2026-06-14) via the first-class `watchlist add`/`remove`/`create` commands (double-gated;
+(verified 2026-06-14) via the first-class `watchlist add`/`remove`/`create` commands (env-gated;
 MCP `robinhood_watchlist_add`/`_remove`/`_create`), plus `watchlist items` (live read of a list's tickers +
 equity-buyable flag) and `watchlist buy` (BP-aware **basket buy**: $<amount> of every equity-buyable ticker,
-looping the shared `placeEquityOrder` engine per ticker; double-gated; MCP `robinhood_watchlist_items`/`_buy`).
+looping the shared `placeEquityOrder` engine per ticker; env-gated; MCP `robinhood_watchlist_items`/`_buy`).
 The raw `brokerage execute` recipes below still work, but prefer the first-class verbs for item edits.
 
 ```bash
@@ -549,13 +548,13 @@ basis (`average_open_price` / `average_buy_price`) vs the live mark/last.
 ### Preferred: the first-class `recurring` command
 
 Recurring buys have a dedicated command so you don't hand-craft URLs or bodies. It shares
-the same engine + double-gate as everything else (reads run live, writes need both gates):
+the same engine + env-gate as everything else (reads run live, writes need the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch):
 
 ```bash
 robinhood-cli recurring list                        # live read: symbol/state/amount/next/id
 robinhood-cli recurring list --state paused --json   # filter + JSON for machine use
 
-# Resume / pause. Without BOTH gates these DRY-RUN (plan only, send nothing):
+# Resume / pause. Without the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch these DRY-RUN (plan only, send nothing):
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --all --live-write
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --id <SCHEDULE_ID> --live-write
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring pause  --all --account <ACCOUNT_NUMBER> --live-write
@@ -572,7 +571,7 @@ robinhood-cli brokerage execute \
   "https://bonfire.robinhood.com/recurring_schedules/" --method GET --full
 
 # RESUME a paused buy (PATCH; verb confirmed via OPTIONS, state field confirmed on the object).
-# Dry-run first (sends nothing), then go live with BOTH gates:
+# Dry-run first (sends nothing), then go live with the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch:
 robinhood-cli brokerage execute \
   "https://bonfire.robinhood.com/recurring_schedules/{0}/" --method PATCH \
   --param 0=<SCHEDULE_ID> --body-json '{"state":"active"}'         # dry-run
@@ -623,7 +622,7 @@ settings/permissions, never print the token value.
 claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
-Tools surface as `mcp__robinhood-cli__*` (the full tool roster incl. accounts/positions/portfolio/buy/sell/cancel/order-status/buying-power/wheel/options-holdings/options-inspect/settings/recurring/quote/history/watchlist + the double-gated watchlist_add/remove/create/items/buy writes/options-enumerate parity: route inspection, browser/account
+Tools surface as `mcp__robinhood-cli__*` (the full tool roster incl. accounts/positions/portfolio/buy/sell/cancel/order-status/buying-power/wheel/options-holdings/options-inspect/settings/recurring/quote/history/watchlist + the env-gated watchlist_add/remove/create/items/buy writes/options-enumerate parity: route inspection, browser/account
 context, options strategy workflows/plans, exact-contract link bundles, stock
 profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute). `robinhood_buy`/`robinhood_sell`
 run the same shared engine as the CLI commands — pending-order dedup (5-min window; `force: true` skips),
@@ -649,7 +648,7 @@ This is a hard rule, not a nicety — divergence here has already caused a write
   an ambiguous substring query (>1 distinct route) throws `AmbiguousRouteError` with the candidate list.
   Pass exact URLs for writes.
 - **New capability → wire all three places** (route in api-map, command in CLI, tool in MCP) and keep the
-  double gate intact. Reads live by default; every write dry-run until both gates.
+  env gate intact. Reads live by default; every write dry-run until the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch is set.
 
 ---
 

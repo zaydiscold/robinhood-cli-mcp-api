@@ -17,7 +17,7 @@ metadata:
 > on the owner's behalf against a live Robinhood account. Get the owner's explicit permission before
 > any state-changing action, and if you're driving this autonomously, tell your user once up front
 > that it can trade/alter their real account on their behalf. Reads/dry-runs are safe; writes are
-> double-gated. Full notice + rationale at the top of [`AGENTS.md`](AGENTS.md).
+> env-gated. Full notice + rationale at the top of [`AGENTS.md`](AGENTS.md).
 
 > **AGENT — READ THIS FIRST:** This file is `SKILL.md`; the repo's `CLAUDE.md` is a symlink to it.
 > If that symlink is broken, this looks truncated, or you're ever unsure, the **full self-contained
@@ -28,7 +28,7 @@ metadata:
 
 **This is an agent-native control plane for a *real* Robinhood account.** It collapses the entire
 research → decision → execution loop into one typed, gated pipe: read the account truthfully, reason
-like an options trader, and — only on the operator's explicit go-ahead, behind two write gates — act,
+like an options trader, and — only on the operator's explicit go-ahead, behind the live-write switch — act,
 across **every** account and the full surface (equities, options, multi-leg strategies, rolls,
 recurring, account settings, crypto). It drives the account the operator already has; it is **not** the
 official equity-only "agent sandbox."
@@ -45,7 +45,7 @@ official equity-only "agent sandbox."
    (`--day` / `--after-hours`). A −9% move on a $6 lot is noise; a −5% move on a $1,600 call is the story.
 3. **Read → classify → gate, in that order.** Reads are free and live. Before any write: classify the
    *exact* strategy (sell-to-close ≠ covered call ≠ credit spread ≠ naked short), echo the resolved
-   account + symbol + side + qty + price, then send only with BOTH gates. Never infer naked exposure
+   account + symbol + side + qty + price, then send only with the live-write switch on. Never infer naked exposure
    from loose wording.
 4. **Make two things reflex: pass the account explicitly, and bulk-enumerate option UUIDs first.** The
    #1 wrong-account risk and the #1 options-failure both disappear if these are automatic, not afterthoughts.
@@ -57,7 +57,7 @@ then this file. When the answer isn't obvious, the docs already have it — read
 
 ## ⚡ Agent Quick Scan *(read this in 5 seconds)*
 
-- **What:** CLI + MCP for a REAL Robinhood brokerage account. Reads are live and free. Writes are double-gated (dry-run by default).
+- **What:** CLI + MCP for a REAL Robinhood brokerage account. Reads are live and free. Writes are env-gated (dry-run by default).
 - **When to load:** User mentions Robinhood, portfolio, positions, tickers, options, trades, watchlists, crypto.
 - **Most common commands:** `positions --account N`, `quote SYM`, `options positions`, `accounts`, `brokerage execute "..."`.
 - **#1 trap:** `brokerage execute` does NOT support query params (e.g. `?nonzero=true`). Use purpose-built commands (`positions`, `quote`, `options`) instead — they handle query params internally. If you need raw API access with query params, use MCP `robinhood_brokerage_execute` or the `brokerageGetJson` engine function.
@@ -130,7 +130,7 @@ loaded into context. Use it in layers:
    hand-waving.
 4. **Keep the user in control.** Reads and dry-runs can proceed. Live trades,
    transfers, account-setting toggles, cancels, unlinks, or margin/account-type
-   changes require exact user approval plus both write gates.
+   changes require exact user approval plus the ROBINHOOD_ALLOW_LIVE_WRITE=1 write switch.
 
 For this use case, the skill teaches the workflow and guardrails; the MCP tools
 provide execution. Do not overload the prompt with all route docs unless a task
@@ -158,7 +158,7 @@ Do NOT load for: general investing advice (that's not what this tool does), pape
 
 Read this first: it is the menu of supported operations so an agent has full context *before*
 scanning the route map. (Far exceeds what one user would manually do.) Reads are live; every write
-is double-gated (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`).
+is gated by the single switch `ROBINHOOD_ALLOW_LIVE_WRITE=1` (dry-run by default; `--live-write` optional).
 
 **Equity**
 - Buy by dollar-notional (fractional, market) or by shares (`brokerage buy`); OTC names auto-limit
@@ -226,13 +226,13 @@ only via ETF proxies (USO/UVXY/BITO — normal equities, placeable via `brokerag
 strike + bid/ask/last + qty + link) across accounts; `options inspect <uuid>` opens one contract's
 full detail (metadata, Greeks, fill history, rare tax-timing note, buy/sell handoff).
 
-**Watchlists** — read custom lists (`watchlist list`) **and write them, double-gated** (verified 2026-06-14):
+**Watchlists** — read custom lists (`watchlist list`) **and write them, env-gated** (verified 2026-06-14):
 `watchlist add <list> <symbols…>` / `watchlist remove <list> <symbols…>` (batch ops to `discovery/lists/items/`;
 resolve the list by case-insensitive `display_name` or id) and `watchlist create <name> [--emoji]` (POST
 `discovery/lists/`). MCP equivalents: `robinhood_watchlist_add`/`_remove`/`_create`. Read a list's live tickers
 with `watchlist items <list>` (symbol/price/equity-buyable flag), and **basket-buy** every equity-buyable name
 with `watchlist buy <list> --account <N> --amount <$>` — BP-aware, looping the shared `placeEquityOrder` engine
-per ticker (same OTC/dedup/`ref_id`/evidence guards; skips what won't fit; double-gated). Item **reorder** is not yet mapped.
+per ticker (same OTC/dedup/`ref_id`/evidence guards; skips what won't fit; env-gated). Item **reorder** is not yet mapped.
 
 ### Strategy & tax knowledge (background — neutral, NOT risk guidance)
 Reference docs that give the agent broad options/tax background to reason about ANY strategy a user
@@ -281,9 +281,12 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
    runs the **read** and returns a LIST — and a careless agent then reports "order placed" when nothing
    was sent. Pass `--method` for every write and confirm the response is a write result (e.g. `201` +
    an order `id`), not a list.
-3. **Never export the live-write gate.** Do NOT put `ROBINHOOD_ALLOW_LIVE_WRITE=1` in your shell
-   profile/`.bashrc`/`.zshrc`. Keep it **inline on the single command**. A persistent env var turns
-   every later `--live-write` into a real send — including "tests." Two gates, per command, every time.
+3. **The live-write switch is the ONE gate — set it deliberately.** `ROBINHOOD_ALLOW_LIVE_WRITE=1` is
+   the single master switch: set it and **every** write executes for real (no per-call `--live-write`
+   needed); unset, every write is dry-run. Turn it on only when you intend live execution, and prefer
+   scoping it to the one command (`ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli …`) over exporting it into
+   your shell profile/`.bashrc`/`.zshrc`, where it would quietly make every later write live — including
+   "tests." Pass `--dry-run` / `dryRun:true` to preview a single call even while the switch is on.
 4. **OTC / non-fractional guard.** Before a dollar order, read `fractional_tradability`. If it's
    `position_closing_only` (OTC, e.g. RNECY) or anything ≠ `tradable`, a "$X of <ticker>" order is
    **impossible** — switch to whole shares + a marketable limit; don't retry the dollar body.
@@ -334,7 +337,7 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
    clicked", app state, or agent logs are **not** proof. (Lived this session: a "nothing executed"
    scare resolved by reading the orders list — and the place→cancel tests were confirmed the same way.)
 
-> Golden rule: reads are free and live; **every write is dry-run until you deliberately pass both gates**.
+> Golden rule: reads are free and live; **every write is dry-run unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set** (the single switch — no per-call flag required; `--dry-run`/`dryRun:true` still previews even when it's on).
 > When unsure about account, side, position_effect, or amount — stop and confirm. A wrong write is real money.
 
 ---
@@ -396,7 +399,7 @@ Interpretation:
 
 ## CLI Usage — The 80/20
 
-All commands run from repo root. Reads run live and free. Writes are double-gated (dry-run by default unless both `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1` are set).
+All commands run from repo root. Reads run live and free. Writes are dry-run by default unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set (the single switch; `--live-write` is an optional no-op).
 
 ```bash
 robinhood-cli api-map summary --json
@@ -417,11 +420,11 @@ robinhood-cli options positions --json
 robinhood-cli options chain MRVL --width 6 --json
 robinhood-cli options expirations MRVL --json
 robinhood-cli watchlist list --json
-robinhood-cli watchlist add "My List" NVDA TSLA              # dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1
+robinhood-cli watchlist add "My List" NVDA TSLA              # dry-run by default; set ROBINHOOD_ALLOW_LIVE_WRITE=1 to send (single switch)
 robinhood-cli watchlist remove "My List" TSLA               # dry-run by default
 robinhood-cli watchlist create "Semis" --emoji 🛰️            # dry-run by default
 robinhood-cli watchlist items "Semis" --json                 # live read: tickers + price + equity-buyable flag
-robinhood-cli watchlist buy "Semis" --account <N> --amount 5 # BASKET BUY $5 of each buyable name — dry-run by default; double-gated
+robinhood-cli watchlist buy "Semis" --account <N> --amount 5 # BASKET BUY $5 of each buyable name — dry-run by default; env-gated
 robinhood-cli crypto routes --json
 robinhood-cli crypto sign --api-key "$ROBINHOOD_API_KEY" --private-key-b64 "$ROBINHOOD_PRIVATE_KEY_B64" --path /api/v1/crypto/trading/accounts/ --method GET
 robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/" --query-param symbol=BTC-USD --dry-run --json
@@ -436,12 +439,12 @@ Keep this split current when editing the skill:
 | API map | ~300 brokerage/account route entries (live count via `brokerage routes --json`) plus official Crypto API routes | Rebuild after edits; runtime reads `cli/dist/api-map/` |
 | Read commands | `quote`, `positions`, `options positions`, `options expirations`, `options chain`, `watchlist list`, `recurring list`, route-map reads, crypto read plans | Live reads are allowed with caller-owned auth, but redact balances/tokens in shareable output |
 | Options research/planning | 20 strategy workflows; `options-strategy-plan` emits `reviewContract` | Planning only until exact user approval and write gates |
-| Equity/options order writes | Route-map executor against `orders/`, `options/orders/`, and cancel routes | Must use `--method`, exact body, `--live-write`, and `ROBINHOOD_ALLOW_LIVE_WRITE=1`; dry-run first |
+| Equity/options order writes | Route-map executor against `orders/`, `options/orders/`, and cancel routes | Must use `--method` and an exact body; live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1` (the single switch; `--live-write` optional); dry-run first |
 | Recurring investments | First-class `recurring list`, `recurring resume`, `recurring pause`; route map also has GET one schedule and POST create | Resume/pause are the verified first-class writes. Create/edit amount/funding-source are route-map research unless a fresh capture verifies body shape |
-| Watchlist read / edit / basket-buy | `watchlist list`/`items` (read); `watchlist add`/`remove`/`create` + `watchlist buy` (basket) (MCP `robinhood_watchlist_add`/`_remove`/`_create`/`_items`/`_buy`) | Double-gated writes (verified 2026-06-14): add/remove batch `discovery/lists/items/`, create POSTs `discovery/lists/`; `watchlist buy` loops the shared order engine per ticker (BP-aware, OTC/dedup/`ref_id` guards, skips what won't fit); item reorder still route-map research |
+| Watchlist read / edit / basket-buy | `watchlist list`/`items` (read); `watchlist add`/`remove`/`create` + `watchlist buy` (basket) (MCP `robinhood_watchlist_add`/`_remove`/`_create`/`_items`/`_buy`) | Env-gated writes (verified 2026-06-14): add/remove batch `discovery/lists/items/`, create POSTs `discovery/lists/`; `watchlist buy` loops the shared order engine per ticker (BP-aware, OTC/dedup/`ref_id` guards, skips what won't fit); item reorder still route-map research |
 | Money movement / funding | ACH relationships/transfers and cashier/deposit-schedule routes are mapped mostly as read or `write-or-sensitive` | Never mutate funding, ACH links, deposits, withdrawals, or transfers without a fresh route/body capture and explicit approval |
-| DRIP/options/account settings | DRIP GET/PATCH is method-split; account-setting routes are mapped or browser-observed | Treat account-setting writes as dry-run first; plan, obtain exact approval, send only with both gates, then verify reload state |
-| Crypto | Official Crypto API signing/planning/execution commands | Different auth from brokerage; crypto writes/cancels use the same double gate |
+| DRIP/options/account settings | DRIP GET/PATCH is method-split; account-setting routes are mapped or browser-observed | Treat account-setting writes as dry-run first; plan, obtain exact approval, send only with the switch on, then verify reload state |
+| Crypto | Official Crypto API signing/planning/execution commands | Different auth from brokerage; crypto writes/cancels use the same `ROBINHOOD_ALLOW_LIVE_WRITE=1` switch |
 
 Do not overclaim first-class support. If a capability is route-map-only, say so and build a dry-run body from the current route map before considering implementation.
 
@@ -460,10 +463,10 @@ Do not overclaim first-class support. If a capability is route-map-only, say so 
 | Orders (create) | `orders/` | Requires `--method POST` |
 | Options chain | `options/chains/{id}/` | Get expirations + tick rules |
 | Options instruments | `options/instruments/?chain_id={id}&expiration_dates={date}&state=active&type=call` | Find specific strikes |
-| Options orders | `options/orders/` | POST, same double-gate |
+| Options orders | `options/orders/` | POST, same env gate |
 | Stock profile page | `stock profile <symbol> --account <n> --json` | Joins quote, description, fundamentals, shorting/borrow, buying-power, and margin reads |
 | Recurring buys | `recurring` subcommand | `robinhood-cli recurring list` — dedicated command |
-| Recurring pause/resume | `recurring pause|resume` | Verified first-class writes; double-gated |
+| Recurring pause/resume | `recurring pause|resume` | Verified first-class writes; env-gated |
 | Recurring create/edit/funding source | `bonfire.robinhood.com/recurring_schedules/` | Route-map research only until fresh body capture verifies amount/source fields |
 | Funding sources | `cashier.robinhood.com/ach/relationships/`, `payment_instruments/v2/` | Read first; writes are high-risk and not first-class |
 | Account settings capability map | `docs/account-settings-capability-map-2026-06-03.md` | Defines what is first-class, route-map-only, browser-observed, or not yet proven |
@@ -757,7 +760,7 @@ Use this exact planning sequence:
 6. For calendar rolls, pass per-leg expirations: `--param close_call_expiration=<old> --param open_call_expiration=<new>` or use `options roll-plan` for a two-order staged plan.
 7. Use `--pricing-mode safe-sell-probe` only as a dry-run control when proving a sell/credit body is far from the market.
 8. If exact ids are already known, `robinhood-cli api-map options-strategy-plan <id> --param key=value --json` can still emit the raw template body.
-9. Only after the dry-run body is exact should any live route be considered, and only with `--live-write` plus `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+9. Only after the dry-run body is exact should any live route be considered, and only with `ROBINHOOD_ALLOW_LIVE_WRITE=1` set (the single switch; `--live-write` optional).
 
 Worked dry-run examples:
 
@@ -887,7 +890,7 @@ deep math lives in *Options Greeks and Strategy Math* above.
 | "Change a setting (DRIP, recurring, etc.)" | gated write | `recurring pause|resume`; route-map writes via `brokerage execute --method ... --live-write` |
 
 **Decision rule:** read first, classify the strategy, compute payoff + net Greeks,
-emit blockers, *then* (only on explicit request + both write gates) send. Never
+emit blockers, *then* (only on explicit request + the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch) send. Never
 infer naked/undefined-risk exposure from loose wording — see *Options Strategy
 Classification*.
 
@@ -1002,7 +1005,7 @@ and good-faith violations still do — selling unsettled funds can flag it.
 
 Verified live, not theorized:
 
-- **Both gates fire and mutate:** `--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+- **The switch fires and mutates:** `ROBINHOOD_ALLOW_LIVE_WRITE=1` (the single switch; `--live-write` optional).
   A recurring `pause`→`resume` round-trip returned `200` both ways and restored
   state; an options order placed (`201`, state `queued`) and cancelled (`200`).
 - **Order lifecycle:** `POST options/orders/` returns the order `id` → confirm it
@@ -1030,7 +1033,7 @@ Verified live, not theorized:
   - `brokerage buy ORCU --account <num> --dollars 5` → fractional dollar-notional (market).
   - `brokerage buy RNECY --account <num> --shares 1` → whole shares; **OTC auto-limits at the
     marketable side — ask on buys, bid on sells** (`sell` is the mirror, same engine).
-  - Dry-run by default; live needs `--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+  - Dry-run by default; live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1` (the single switch; `--live-write` optional).
 - **OTC / fractional guard.** Before a dollar order the tool reads `fractional_tradability` +
   `otc_market_tier`. OTC names (e.g. RNECY) are `position_closing_only` and **reject market
   orders** — trade them (buy AND sell both supported) as **whole shares via an auto marketable
@@ -1269,7 +1272,7 @@ documented. To extend it safely:
 
 ## MCP Server
 
-The full first-class tool roster (live truth: `tools/list`, never a hardcoded count) surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_wheel` (evidence-based Wheel stage + next-leg command), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist` + the double-gated `robinhood_watchlist_add`/`robinhood_watchlist_remove`/`robinhood_watchlist_create` writes, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
+The full first-class tool roster (live truth: `tools/list`, never a hardcoded count) surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_wheel` (evidence-based Wheel stage + next-leg command), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist` + the env-gated `robinhood_watchlist_add`/`robinhood_watchlist_remove`/`robinhood_watchlist_create` writes, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
 > **Count note:** the *source/dist* registers the full roster (live truth: `tools/list`, never a hardcoded count). A *running* MCP process started before the
 > last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
@@ -1318,30 +1321,30 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_positions` | Equity positions for an account (UUIDs resolved to tickers + quotes) |
 | `robinhood_options_holdings` | Every held option contract (UUID + strike + bid/ask/last + qty + link) |
 | `robinhood_options_inspect` | Full detail on one owned contract (metadata, Greeks, fills, buy/sell handoff) |
-| `robinhood_settings` | Read/toggle account settings: DRIP, trade-on-expiration, PDT-protection, lending, sweep (double-gated) |
-| `robinhood_recurring` | List/create/edit/end recurring investment schedules (double-gated writes) |
+| `robinhood_settings` | Read/toggle account settings: DRIP, trade-on-expiration, PDT-protection, lending, sweep (env-gated) |
+| `robinhood_recurring` | List/create/edit/end recurring investment schedules (env-gated writes) |
 | `robinhood_quote` | Live quote(s) for one or more equity/ETF symbols |
 | `robinhood_history` | Unified history (equity + options + crypto orders + transfers), newest first |
 | `robinhood_watchlist` | Read custom watchlists (`owner_type=custom`) |
-| `robinhood_watchlist_add` | Add ticker(s) to a custom watchlist by name/id — batch `discovery/lists/items/` write (double-gated) |
-| `robinhood_watchlist_remove` | Remove ticker(s) from a custom watchlist by name/id (double-gated) |
-| `robinhood_watchlist_create` | Create a new custom watchlist (optional emoji) via `discovery/lists/` (double-gated) |
+| `robinhood_watchlist_add` | Add ticker(s) to a custom watchlist by name/id — batch `discovery/lists/items/` write (env-gated) |
+| `robinhood_watchlist_remove` | Remove ticker(s) from a custom watchlist by name/id (env-gated) |
+| `robinhood_watchlist_create` | Create a new custom watchlist (optional emoji) via `discovery/lists/` (env-gated) |
 | `robinhood_watchlist_items` | Read a custom watchlist's tickers live (symbol, price, equity-buyable flag) — the read half; pair with `robinhood_watchlist_buy` |
-| `robinhood_watchlist_buy` | **Basket buy** — buy $<amount> of EACH equity-buyable ticker in a watchlist (BP-aware; loops the shared order engine per ticker — OTC/dedup/`ref_id`/evidence guards) (double-gated) |
+| `robinhood_watchlist_buy` | **Basket buy** — buy $<amount> of EACH equity-buyable ticker in a watchlist (BP-aware; loops the shared order engine per ticker — OTC/dedup/`ref_id`/evidence guards) (env-gated) |
 | `robinhood_options_enumerate` | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration |
-| `robinhood_buy` | Equity buy (dollar-notional fractional or shares) — shared engine: OTC guard, pending-order dedup (5-min, `force` skips), `ref_id` idempotency, trade log; double-gated |
+| `robinhood_buy` | Equity buy (dollar-notional fractional or shares) — shared engine: OTC guard, pending-order dedup (5-min, `force` skips), `ref_id` idempotency, trade log; env-gated |
 | `robinhood_sell` | Equity sell — same shared engine + gates as `robinhood_buy` |
-| `robinhood_cancel` | Cancel a pending order by ID or URL (double-gated) |
+| `robinhood_cancel` | Cancel a pending order by ID or URL (env-gated) |
 | `robinhood_order_status` | One order's state/fills/price — instrument UUID resolved to the real ticker |
 | `robinhood_buying_power` | Per-account buying power breakdown + margin health |
 | `robinhood_wheel` | Wheel stage from account evidence (shares + short puts/calls) + the literal next-leg dry-run command; flags undercovered short calls; discussion mode when no position |
 
 ### MCP Safety Gates
 
-Same double-gate as CLI:
+Same single switch as the CLI:
 - **Reads run live** — no gate needed.
-- **Writes are dry-run by default.** To go live: `liveWrite: true` + `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the server's environment.
-- `dryRun: true` always forces a plan, even with both gates set — a deliberate "preview this exact live call" escape hatch.
+- **Writes are dry-run by default.** To go live: set `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the server's environment — the one switch; **no per-call `liveWrite` required** (it's accepted but optional, no longer the gate).
+- `dryRun: true` always forces a plan, even when the switch is on — a deliberate "preview this exact live call" escape hatch.
 
 Reload MCP tools in-session with `/reload-mcp`.
 
@@ -1399,13 +1402,13 @@ Always try Syncthing before fighting with SSH.
 7. **`owner_type=custom` is MANDATORY.** Every watchlist read without it returns 400: `"owner_type of request must be specified"`.
 8. **Rename uses `display_name`, not `name`.** Wrong field → 200 with no change.
 9. **The Options Watchlist cannot be deleted.** Robinhood hard-blocks it server-side (not a CLI bug).
-10. **Item add/remove ARE mapped (verified 2026-06-14); only reorder is not.** `watchlist add`/`remove` (MCP `robinhood_watchlist_add`/`_remove`) POST a list-id-keyed batch body to `discovery/lists/items/` — `{"<list_id>":[{"object_id":"<uuid>","object_type":"instrument","operation":"create"|"delete"}]}` — double-gated like every write. Item **reorder** (weight/sort) is still unmapped.
+10. **Item add/remove ARE mapped (verified 2026-06-14); only reorder is not.** `watchlist add`/`remove` (MCP `robinhood_watchlist_add`/`_remove`) POST a list-id-keyed batch body to `discovery/lists/items/` — `{"<list_id>":[{"object_id":"<uuid>","object_type":"instrument","operation":"create"|"delete"}]}` — env-gated like every write. Item **reorder** (weight/sort) is still unmapped.
 
 ### Writes & Safety
 
-11. **Writes need BOTH gates.** `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1`. One alone = dry-run. Never export the env var into your shell profile — keep it inline.
+11. **The live-write switch is the one gate.** `ROBINHOOD_ALLOW_LIVE_WRITE=1` set → writes go live (no per-call `--live-write` needed); unset → dry-run. Prefer scoping it inline (`ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli …`) over exporting it into your shell profile, where every later write would silently go live.
 12. **Method-aware routing fails closed.** A forced `--method POST` (or PATCH/PUT/DELETE) on a URL with no matching write route now returns **no match** (clear error), instead of silently degrading to the GET route — so a forced write can never be mis-resolved into a read at the wrong risk class. (GET/HEAD stay permissive for legacy route entries without method metadata.)
-13. **`dryRun: true` always wins in MCP.** Even with both gates set, it forces a plan. Use it to preview exact live calls.
+13. **`dryRun: true` always wins in MCP.** Even with the switch on, it forces a plan. Use it to preview exact live calls.
 
 ### Cross-Machine
 
@@ -1473,7 +1476,7 @@ node cli/dist/index.js brokerage execute "recurring list" --json
 # Resume all paused (dry-run first)
 node cli/dist/index.js brokerage execute "recurring resume --all" --json
 
-# Live resume — BOTH gates
+# Live resume — switch on
 ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute \
   "recurring resume --all --live-write" --json
 ```
@@ -1521,8 +1524,8 @@ query params) — use the `positions` command, or just `portfolio`.
 - [ ] MCP server starts: `node mcp/dist/server.js` (or `hermes mcp add` registered)
 - [ ] Route map count: `node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"` returns the live count (~300+ and growing — do NOT assert a hardcoded number; the count drifts as routes are captured)
 - [ ] Watchlists work: `node cli/dist/index.js brokerage execute "discovery/lists/?owner_type=custom" --json` returns 200
-- [ ] Dry-run gate works: a POST without `--live-write` returns `liveWriteBlocked`
-- [ ] Live write gate works: a POST with `--live-write` but without `ROBINHOOD_ALLOW_LIVE_WRITE=1` returns `liveWriteBlocked`
+- [ ] Dry-run default works: a POST without `ROBINHOOD_ALLOW_LIVE_WRITE=1` returns `liveWriteBlocked` (the single switch unset → forced dry-run)
+- [ ] Live-write switch works: a POST with `ROBINHOOD_ALLOW_LIVE_WRITE=1` set is allowed to send (no per-call `--live-write` needed); `dryRun`/`--dry-run` still previews even when it's on
 
 ---
 
@@ -1530,7 +1533,7 @@ query params) — use the `positions` command, or just `portfolio`.
 
 - Treat `api-map/robinhood-routes.json` as the unified route map: official Robinhood Crypto OpenAPI + community seed + sanitized CDP capture.
 - Treat `api-map/brokerage-routes.json` as the browser-backed brokerage/account subset used by `brokerage execute`.
-- Reads run live and free. Writes default to dry-run unless BOTH gates are set.
+- Reads run live and free. Writes default to dry-run unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set.
 - Never trade, transfer, cancel, unlink, or mutate unless the user explicitly asked for that exact live operation. Echo back the resolved account + symbol + side + qty + price and get a yes before sending.
 - If you discover a route not in the map, add it, classify risk conservatively, rebuild, and document the discovery in `docs/undocumented-surface.md`.
 - If you hit a 401: the engine self-heals. If it fails, run `pnpm auth:refresh` manually.

@@ -3379,7 +3379,7 @@ export async function listOpenOrders(
           side: o.side ?? null, state: String(o.state ?? "?"), quantity: qty, price,
           notionalUsd: Number.isFinite(price) && Number.isFinite(qty) ? price * qty : Number.NaN,
           timeInForce: o.time_in_force ?? null, createdAt: o.created_at ?? null, ageHours: ageOf(o.created_at),
-          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind equity   # dry-run; add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to send`
+          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind equity   # dry-run; add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to send`
         });
       }
     } catch (e) { warnings.push(`equity open-orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
@@ -3396,7 +3396,7 @@ export async function listOpenOrders(
           side: o.direction ?? null, state: String(o.state ?? "?"), quantity: qty, price,
           notionalUsd: Number.isFinite(price) && Number.isFinite(qty) ? price * qty * 100 : Number.NaN,
           timeInForce: o.time_in_force ?? null, createdAt: o.created_at ?? null, ageHours: ageOf(o.created_at),
-          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind options   # dry-run; add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to send`
+          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind options   # dry-run; add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to send`
         });
       }
     } catch (e) { warnings.push(`options open-orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }

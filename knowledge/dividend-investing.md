@@ -67,7 +67,7 @@ attention. Two operational facts agents must carry:
 
 - **A DRIP reinvest is a purchase** — it can wash a tax-loss harvest on the same name
   (`knowledge/tax-loss-harvesting.md`). Robinhood DRIP toggles **account-wide or per-stock**,
-  and both are first-class double-gated writes here.
+  and both are first-class env-gated writes here.
 - DRIP into a falling payer is automated averaging-down — fine if intended, surface it if not.
 
 ## Weekly-payer covered-call ETFs (QDTE-style) — distribution ≠ dividend
@@ -107,7 +107,7 @@ node cli/dist/index.js dividends --account <N>      # one account               
 node cli/dist/index.js stock profile <SYM> --json   # P/E, market cap, fundamentals for payout-ratio context
 node cli/dist/index.js history --days 90 --account <N> --json   # fill dates → qualified-holding check
 
-# DRIP control (double-gated writes; explicit approval + both gates):
+# DRIP control (env-gated writes; explicit approval + the live-write switch on):
 node cli/dist/index.js settings show --account <N>
 node cli/dist/index.js settings drip --account <N> --enable                    # account-wide
 node cli/dist/index.js settings drip --account <N> --disable --instrument <ID> # per-stock
@@ -120,7 +120,7 @@ declared ex-date) — buy must land **before** the ex-date; (4) "is this yield s
 ratio + FCF + history via `stock profile` and outside research (`knowledge/signals.md`); for a
 QDTE-style payer, pull the fund's 19a-1 before calling its distribution "yield"; (5) "is this
 dividend qualified for me?" → fill timestamps from `history` vs the 121-day window;
-(6) DRIP changes → echo account + scope, both gates, verify with `settings show` re-read.
+(6) DRIP changes → echo account + scope, the live-write switch on, verify with `settings show` re-read.
 
 ## Deep dives
 

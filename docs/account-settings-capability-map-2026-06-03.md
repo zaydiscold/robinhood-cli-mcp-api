@@ -10,7 +10,7 @@ research. No live account-setting mutation is recorded here.
   funding, recurring investments, DRIP, high-yield cash/sweeps, stock lending,
   options, futures, event contracts, account type, and margin.
 - Mixed read/write routes were split by method in `api-map/brokerage-routes.json`
-  so reads stay live and writes stay double-gated.
+  so reads stay live and writes stay env-gated.
 - The MCP server exposes the same route map through
   `robinhood_brokerage_routes`, `robinhood_brokerage_plan`, and
   `robinhood_brokerage_execute`.
@@ -25,15 +25,15 @@ research. No live account-setting mutation is recorded here.
 |---------|-----------------|-------------------|-----------------|
 | Account enumeration | Live read, first-class route-map use | `bonfire.robinhood.com/transfer/accounts/`, `accounts/?default_to_all_accounts=true` | Read-only |
 | Deposit / withdraw / funding sources | Live reads mapped; transfer/link writes are route-map dry-runs only | `ach/relationships/`, `ach/transfers/`, `cashier.robinhood.com/ach/relationships/`, `cashier.robinhood.com/ach/deposit_schedules/`, `payment_instruments/v2/`, `paymenthub/unified_transfers/` | Never mutate without fresh body capture and exact user approval |
-| Recurring investments | First-class list/pause/resume; **create + edit PROVEN** (agentic via CLI, 2026-06-03) | create: `POST bonfire…/recurring_schedules/` body `{account_number,amount{amount,currency_code},frequency,investment_asset{asset_id,asset_symbol,asset_type},source_of_funds:"buying_power",start_date,ref_id}`; **edit: `PATCH bonfire…/recurring_schedules/{id}/` body `{"amount":{...}}` (and frequency/etc.) → 200**; `recurring list/pause/resume` | All double-gated. Create makes a real schedule; edit mutates a live one. Delete body still to capture |
-| Dividend reinvestment | **Read + write PROVEN** (browser-captured 2026-06-03) | account-wide: `corp_actions/drip/account_settings/{account}/` (GET + PATCH); per-stock: `corp_actions/drip/instrument_settings/{account}/` (GET list) and `.../{account}/{instrument_id}/` (PATCH) | `PATCH {"drip_enabled":bool}` double-gated; verify with GET. NOTE: the old `corp_actions/drip/enrollment/{num}/` is GET-only (405 on writes) — wrong endpoint; the two above are the real ones |
+| Recurring investments | First-class list/pause/resume; **create + edit PROVEN** (agentic via CLI, 2026-06-03) | create: `POST bonfire…/recurring_schedules/` body `{account_number,amount{amount,currency_code},frequency,investment_asset{asset_id,asset_symbol,asset_type},source_of_funds:"buying_power",start_date,ref_id}`; **edit: `PATCH bonfire…/recurring_schedules/{id}/` body `{"amount":{...}}` (and frequency/etc.) → 200**; `recurring list/pause/resume` | All env-gated. Create makes a real schedule; edit mutates a live one. Delete body still to capture |
+| Dividend reinvestment | **Read + write PROVEN** (browser-captured 2026-06-03) | account-wide: `corp_actions/drip/account_settings/{account}/` (GET + PATCH); per-stock: `corp_actions/drip/instrument_settings/{account}/` (GET list) and `.../{account}/{instrument_id}/` (PATCH) | `PATCH {"drip_enabled":bool}` env-gated; verify with GET. NOTE: the old `corp_actions/drip/enrollment/{num}/` is GET-only (405 on writes) — wrong endpoint; the two above are the real ones |
 | High-yield cash / sweep | Live reads mapped; enable/disable route not proven | `accounts/sweeps/`, `accounts/sweeps/interest/`, `accounts/sweeps/timeline_summary/`, `gold/sweep_flow_splash/` | Do not claim toggle support until a fresh browser capture provides the mutation route/body |
 | Stock lending | Payment/status reads mapped; enable/disable route not proven | `accounts/stock_loan_payments/`; browser page `/account/stock-lending` has mixed account query behavior | Do not toggle until capture proves the write route/body |
 | Options trading settings | Trading/position/order surfaces mapped; settings toggles are browser-observed only | `options/chains/`, `options/orders/`, `options/positions/`, `options/aggregate_positions/`, browser `/account/settings/investing?account_number=...` | Option orders use the hardened order gate; options-level/remove-options toggles need fresh capture |
 | Futures trading | Eligibility/account/order reads mapped | `ceres/v1/futures_account_eligibility/{num}`, `ceres/v1/accounts`, `ceres/v1/accounts/{id}/orders`, `ceres/v1/user_settings` | Enable/disable route not first-class in this map |
 | Event contracts | Event-related reads mapped | `options/events/`, `instruments/{uuid}/qa/event-info/`, `instruments/{uuid}/qa/events-section/` | Trading enable/disable route not proven |
 | Account type / margin | Margin and eligibility reads mapped; switching cash/margin is not first-class | `margin/{num}/upgrade_restrictions`, `bonfire.robinhood.com/margin/{id}/settings/`, `eligibility`, `investing_info/`, `buying_power_hub_view` | Do not switch account type or margin settings without a fresh mutation capture and explicit approval |
-| Agentic account config | Read and dry-run PATCH route mapped | `robinhood/agentic/` split into `GET` and `PATCH` routes | Double-gated account-setting write |
+| Agentic account config | Read and dry-run PATCH route mapped | `robinhood/agentic/` split into `GET` and `PATCH` routes | Env-gated account-setting write |
 
 ## CLI Recipes
 
@@ -87,7 +87,7 @@ The dry-run examples above send nothing unless both live-write gates are present
 
 Captured live via an in-page fetch/XHR interceptor (`Page.addScriptToEvaluateOnNewDocument`,
 persisted to `sessionStorage`) while toggling settings across the cash, Roth, and 9mo accounts.
-All are writes (double-gated); the account is in the path, so `?account_number=` / `{account}`
+All are writes (env-gated); the account is in the path, so `?account_number=` / `{account}`
 selects which account they hit.
 
 | Setting | Method + route | Body |

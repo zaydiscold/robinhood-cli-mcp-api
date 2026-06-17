@@ -3258,7 +3258,7 @@ program
     const sizing = r.dollarBased ? `$${r.estimatedTotal.toFixed(2)} (dollar-based ≈ ${r.shares.toFixed(6)} sh)` : `${r.shares.toFixed(6)} sh ≈ $${r.estimatedTotal.toFixed(2)}`;
     process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${sizing} @ ~$${r.estimatedPrice.toFixed(2)}  acct=…${String(opts.account).slice(-4)}${r.session ? `  [${r.session}]` : ""}\n`);
     if (r.sessionWarning) process.stdout.write(`⚠️  ${r.sessionWarning}\n`);
-    if (r.dryRun) process.stdout.write("Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
+    if (r.dryRun) process.stdout.write("Add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to execute.\n");
     else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 
@@ -3296,7 +3296,7 @@ program
     const sizing = r.dollarBased ? `$${r.estimatedTotal.toFixed(2)} (dollar-based ≈ ${r.shares.toFixed(6)} sh)` : `${r.shares.toFixed(6)} sh ≈ $${r.estimatedTotal.toFixed(2)}`;
     process.stdout.write(`${mode} ${r.type} sell: ${r.symbol} ${sizing} @ ~$${r.estimatedPrice.toFixed(2)}  acct=…${String(opts.account).slice(-4)}${r.session ? `  [${r.session}]` : ""}\n`);
     if (r.sessionWarning) process.stdout.write(`⚠️  ${r.sessionWarning}\n`);
-    if (r.dryRun) process.stdout.write("Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
+    if (r.dryRun) process.stdout.write("Add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to execute.\n");
     else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 
@@ -3322,7 +3322,7 @@ program
     }
     const mode = r.dryRun ? "DRY RUN" : "LIVE";
     process.stdout.write(`${mode} cancel (${r.kind}): ${r.orderId}  status=${r.httpStatus}\n`);
-    if (r.dryRun) process.stdout.write("Nothing was sent. Add --live + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
+    if (r.dryRun) process.stdout.write("Nothing was sent. Add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to execute.\n");
     if (r.evidence) {
       process.stdout.write(`evidence: confirmed=${r.evidence.confirmed} state=${r.evidence.state ?? "?"}\n`);
       if (r.evidence.warning) process.stdout.write(`⚠️  ${r.evidence.warning}\n`);

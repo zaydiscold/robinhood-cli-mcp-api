@@ -26,7 +26,7 @@ a debugging session.
 | Error | What it means | Fix |
 |-------|----------------|-----|
 | `DEDUP: N pending <side> order(s) … already exist` | A same-side order on this instrument+account is pending and < 5 min old — you (or an agent retry) are about to double-fire | If intentional, pass `--force` (CLI) / `force: true` (MCP). Stale (>5 min) pendings never trigger this. |
-| `liveWriteBlocked` | A write ran without BOTH gates (`--live-write` / `liveWrite: true` **and** `ROBINHOOD_ALLOW_LIVE_WRITE=1`) | Set both — deliberately, inline, never exported in your shell profile |
+| `liveWriteBlocked` | A write ran without the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch (`--live-write` / `liveWrite: true` **and** `ROBINHOOD_ALLOW_LIVE_WRITE=1`) | Set both — deliberately, inline, never exported in your shell profile |
 | `No <METHOD> route for <url> — … fails closed` | A forced write (POST/PATCH/PUT/DELETE) matched no write route — the resolver refuses to degrade it into a read | Check the route map; rebuild (`pnpm build`) after map edits — the runtime reads `cli/dist/api-map/` |
 | `<SYM>: fractional_tradability=… — cannot place a dollar/fractional order` | OTC/non-fractional name; a "$X of SYM" order is impossible | Switch to whole shares + a marketable limit |
 | `Invalid or missing quote for <SYM>` | The quote came back dead (`last_trade_price` 0/absent) — sizing math would divide by zero | Check the symbol/halt status; retry when a live quote exists |

@@ -269,7 +269,7 @@ State this honestly; never overclaim a capability that isn't there, and never
 | Asset class | Status | What's true |
 |---|---|---|
 | **Equity / ETP** | **Placeable** | Dollar-notional (fractional, market) or whole shares; OTC auto-limits at the ask (whole only). Full lifecycle via `brokerage buy` / `orders/`. |
-| **Single-leg + multi-leg options** | **Placeable** | The four primitives + 18+ strategy workflows; lifecycle verified (201→cancel 200). UUIDs are random v4 — **bulk-enumerate every time** (`options enumerate`); never compute/guess/cache a per-contract id. |
+| **Single-leg + multi-leg options** | **Placeable** | The four primitives + 20 strategy workflows; lifecycle verified (201→cancel 200). UUIDs are random v4 — **bulk-enumerate every time** (`options enumerate`); never compute/guess/cache a per-contract id. |
 | **Index options (SPX/SPXW/XSP/NDX/VIX/RUT)** | **Present & chain-readable; opening needs an entitlement tier** | True cash-settled §1256 products — hidden from search & `instruments/?symbol=`, live under `options/chains/?underlying_symbol=`. `can_open_position:true` on reads, but actually opening may need index-options approval. Picking SPX over SPY is a *live* choice that buys §1256 60/40 + European-style box financing. |
 | **Crypto** | **Placeable (separate auth)** | Official signed Crypto Trading API — Ed25519 key signing, NOT the brokerage bearer. Same double-gate. |
 | **Futures (CME /ES, /MGC, /6E, …)** | **Read/enumerate only** | Real contracts quote via `midlands/lists/items/?list_id=…` (embedded bid/ask/last/margin). `brokerage search` *drops* the futures objects — use the lists endpoint. **Not placeable:** `ceres.robinhood.com` refuses TLS to all non-app clients, and this login has no onboarded futures account. |

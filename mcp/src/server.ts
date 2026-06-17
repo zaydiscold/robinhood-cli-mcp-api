@@ -77,7 +77,7 @@ const server = new McpServer(
   {
     // Boot pointer for MCP-only agents (no repo checkout needed) — Zayd Khan // cold // www.zayd.wtf
     instructions:
-      "Control plane for a REAL Robinhood account: reads run live; writes are dry-run unless liveWrite=true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. At session start on any trading topic, pull the operator knowledge library via robinhood_knowledge (action=index, then read the module that matches the task) and check robinhood_roll_ledger (action=list) for pending cash-account kosher rolls whose open leg may be due — they are two-day trades and sessions die between the legs. After any live write append a trading-log.md entry; brokerage order history is the ONLY proof an order happened."
+      "Control plane for a REAL Robinhood account: reads run live; writes are dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 is set in the server env — a single master switch (no per-call liveWrite needed; pass dryRun:true to preview even when it's on). At session start on any trading topic, pull the operator knowledge library via robinhood_knowledge (action=index, then read the module that matches the task) and check robinhood_roll_ledger (action=list) for pending cash-account kosher rolls whose open leg may be due — they are two-day trades and sessions die between the legs. After any live write append a trading-log.md entry; brokerage order history is the ONLY proof an order happened."
   }
 );
 
@@ -94,7 +94,7 @@ function jsonResponse(value: unknown) {
 // call this. Zayd Khan // cold // www.zayd.wtf
 function writeStatus(result: object, opts: { dryRun: boolean; reason?: string }) {
   const executionStatus = opts.dryRun
-    ? `⚠️ DRY RUN — NOT EXECUTED. Nothing was sent to Robinhood; no order was placed, changed, or cancelled.${opts.reason ? ` Reason: ${opts.reason}` : ""} To execute for real: pass liveWrite:true AND set ROBINHOOD_ALLOW_LIVE_WRITE=1 in the server's environment (both gates, every call).`
+    ? `⚠️ DRY RUN — NOT EXECUTED. Nothing was sent to Robinhood; no order was placed, changed, or cancelled.${opts.reason ? ` Reason: ${opts.reason}` : ""} To execute for real: set ROBINHOOD_ALLOW_LIVE_WRITE=1 in the server's environment — the single master switch; no per-call liveWrite needed. (dryRun:true still previews any one call even when the switch is on.)`
     : `✅ LIVE — SENT to Robinhood. A 2xx alone is not proof: confirm the order in order history (evidence.confirmed).`;
   return jsonResponse({ executed: !opts.dryRun, executionStatus, ...result });
 }
@@ -112,8 +112,8 @@ function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
 
 // Live-flag alias resolution (param-consistency pass 2026-06-11): the parity tools historically
 // took `live` while the executor tools took `liveWrite`. Every write tool now accepts BOTH —
-// `liveWrite` is canonical, `live` is the accepted alias — so neither spelling silently no-ops a
-// caller's intent (either way the env gate ROBINHOOD_ALLOW_LIVE_WRITE=1 is still required).
+// `liveWrite` is canonical, `live` is the accepted alias — both are now OPTIONAL no-ops kept for
+// back-compat: the env switch ROBINHOOD_ALLOW_LIVE_WRITE=1 is the SOLE live-write gate.
 // Zayd Khan // cold // www.zayd.wtf
 function resolveLiveFlag(liveWrite?: boolean, live?: boolean): boolean {
   return Boolean(liveWrite ?? live);
@@ -650,7 +650,7 @@ server.registerTool(
   "robinhood_brokerage_execute",
   {
     title: "Robinhood Brokerage Execute",
-    description: "Execute a Robinhood brokerage/account request using caller-owned auth env. Reads run live; writes are dry-run by default and require liveWrite=true (canonical; `live` accepted as alias) plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan. Pass queryParams:[\"key=value\"] to append URL query params AFTER route matching (e.g. queryParams:[\"list_id=<id>\",\"owner_type=custom\"] for discovery/lists/items/) — the route map matches on the path, so this is how you read query-param endpoints without a one-off script. After any live write, append a trading-log.md entry (intent + strategy thread); brokerage order history is the only proof an order happened (order-evidence rule).",
+    description: "Execute a Robinhood brokerage/account request using caller-owned auth env. Reads run live; writes are dry-run by default and require ROBINHOOD_ALLOW_LIVE_WRITE=1 set in the server env (liveWrite optional). Pass dryRun=true to force a non-sending plan. Pass queryParams:[\"key=value\"] to append URL query params AFTER route matching (e.g. queryParams:[\"list_id=<id>\",\"owner_type=custom\"] for discovery/lists/items/) — the route map matches on the path, so this is how you read query-param endpoints without a one-off script. After any live write, append a trading-log.md entry (intent + strategy thread); brokerage order history is the only proof an order happened (order-evidence rule).",
     annotations: toolAnnotations(false, "write-or-sensitive"),
     inputSchema: z.object({
       query: z.string(),
@@ -768,7 +768,7 @@ server.registerTool(
   "robinhood_crypto_execute",
   {
     title: "Robinhood Crypto Execute",
-    description: "Execute an official Robinhood Crypto API request using caller-owned API key env. Reads run live; writes (orders/cancels) are dry-run by default and require liveWrite=true (canonical; `live` accepted as alias) plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Pass dryRun=true to force a non-sending plan.",
+    description: "Execute an official Robinhood Crypto API request using caller-owned API key env. Reads run live; writes (orders/cancels) are dry-run by default and require ROBINHOOD_ALLOW_LIVE_WRITE=1 set in the server env (liveWrite optional). Pass dryRun=true to force a non-sending plan.",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       query: z.string(),
@@ -924,7 +924,7 @@ server.registerTool(
   {
     title: "Robinhood Buy Order",
     description:
-      "Place an equity buy order. Market buys are fractional, limit orders are whole shares. Dry-run by default; set liveWrite=true (canonical; `live` accepted as alias) and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Auto-resolves symbol, fetches live quote, sizes shares from dollar amount, blocks OTC/non-fractional dollar orders, dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, logs live sends to the trading log, and re-reads the order from order history after a live send (`evidence.confirmed`) — same shared engine as the CLI `buy` command.",
+      "Place an equity buy order. Market buys are fractional, limit orders are whole shares. Dry-run by default; set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute (single env switch; liveWrite optional). Auto-resolves symbol, fetches live quote, sizes shares from dollar amount, blocks OTC/non-fractional dollar orders, dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, logs live sends to the trading log, and re-reads the order from order history after a live send (`evidence.confirmed`) — same shared engine as the CLI `buy` command.",
     inputSchema: z.object({
       symbol: z.string(),
       account_number: z.string(),
@@ -957,7 +957,7 @@ server.registerTool(
   "robinhood_sell",
   {
     title: "Robinhood Sell Order",
-    description: "Place an equity sell order. Market sells are fractional. Dry-run by default; set liveWrite=true (canonical; `live` accepted as alias) and ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, logs live sends to the trading log, and re-reads the order from order history after a live send (`evidence.confirmed`) — same shared engine as the CLI `sell` command.",
+    description: "Place an equity sell order. Market sells are fractional. Dry-run by default; set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute (single env switch; liveWrite optional). Dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, logs live sends to the trading log, and re-reads the order from order history after a live send (`evidence.confirmed`) — same shared engine as the CLI `sell` command.",
     inputSchema: z.object({
       symbol: z.string(), account_number: z.string(),
       amount: z.number().positive().optional(), shares: z.number().positive().optional(),
@@ -986,7 +986,7 @@ server.registerTool(
   "robinhood_cancel",
   {
     title: "Robinhood Cancel Order",
-    description: "Cancel a pending order by ID (kind=equity|options). Dry-run by default; liveWrite=true (canonical; `live` accepted as alias) + ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Live cancels re-read the order from order history and return `evidence` (confirmed/state) — order history is the only proof the cancel took.",
+    description: "Cancel a pending order by ID (kind=equity|options). Dry-run by default; ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute (single env switch; liveWrite optional). Live cancels re-read the order from order history and return `evidence` (confirmed/state) — order history is the only proof the cancel took.",
     inputSchema: z.object({
       order_id: z.string(),
       kind: z.enum(["equity", "options"]).default("equity"),
@@ -1020,13 +1020,13 @@ server.registerTool(
   }
 );
 
-// ── robinhood_panic: enumerate + cancel EVERY open order (each cancel double-gated) ──
+// ── robinhood_panic: enumerate + cancel EVERY open order (each cancel env-gated) ──
 // Zayd Khan // cold // www.zayd.wtf
 server.registerTool(
   "robinhood_panic",
   {
     title: "Robinhood Panic Cancel-All",
-    description: "PANIC: enumerate every open/pending equity + options order across ALL owned accounts (or one) and cancel each — every cancel individually double-gated (logContext 'panic cancel-all'). DRY-RUN by default: returns the full would-cancel list and sends NOTHING. A live sweep needs liveWrite=true (canonical; `live` accepted as alias) AND ROBINHOOD_ALLOW_LIVE_WRITE=1, and re-reads each order from order history for evidence. Summary reports found/cancelled/failed.",
+    description: "PANIC: enumerate every open/pending equity + options order across ALL owned accounts (or one) and cancel each — every cancel individually env-gated (logContext 'panic cancel-all'). DRY-RUN by default: returns the full would-cancel list and sends NOTHING. A live sweep needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional), and re-reads each order from order history for evidence. Summary reports found/cancelled/failed.",
     inputSchema: z.object({
       account_number: z.string().optional(),
       liveWrite: z.boolean().optional(),
@@ -1197,7 +1197,7 @@ server.registerTool(
   "robinhood_settings",
   {
     title: "Robinhood Account Settings",
-    description: "Read or toggle account settings (double-gated). action=show reads all; drip/expiration/pdt/lending/sweep toggle the corresponding setting. Writes are dry-run unless liveWrite=true (canonical; `live` accepted as alias) AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Cash-sweep only supports disable (enroll needs the agreement-sign flow). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
+    description: "Read or toggle account settings (env-gated). action=show reads all; drip/expiration/pdt/lending/sweep toggle the corresponding setting. Writes are dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional). Cash-sweep only supports disable (enroll needs the agreement-sign flow). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
     inputSchema: z.object({
       account_number: z.string(),
       action: z.enum(["show", "drip", "expiration", "pdt", "lending", "sweep"]),
@@ -1246,7 +1246,7 @@ server.registerTool(
   "robinhood_recurring",
   {
     title: "Robinhood Recurring Schedules",
-    description: "List or mutate recurring investment schedules (double-gated writes). action=list reads all; create/edit/end mutate. Writes dry-run unless liveWrite=true (canonical; `live` accepted as alias) AND ROBINHOOD_ALLOW_LIVE_WRITE=1. After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
+    description: "List or mutate recurring investment schedules (env-gated writes). action=list reads all; create/edit/end mutate. Writes dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
     inputSchema: z.object({
       action: z.enum(["list", "create", "edit", "end"]),
       id: z.string().optional(),
@@ -1345,7 +1345,7 @@ server.registerTool(
   "robinhood_watchlist_add",
   {
     title: "Robinhood Watchlist — Add",
-    description: "Add tickers to a custom watchlist (resolved by name or id). Watchlists are user-level, not account-scoped. Reads resolve the list + each symbol's instrument UUID; the write is dry-run unless liveWrite=true (canonical; `live` accepted) AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    description: "Add tickers to a custom watchlist (resolved by name or id). Watchlists are user-level, not account-scoped. Reads resolve the list + each symbol's instrument UUID; the write is dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional).",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       list: z.string(),
@@ -1369,7 +1369,7 @@ server.registerTool(
   "robinhood_watchlist_remove",
   {
     title: "Robinhood Watchlist — Remove",
-    description: "Remove tickers from a custom watchlist (resolved by name or id). Dry-run unless liveWrite=true (canonical; `live` accepted) AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    description: "Remove tickers from a custom watchlist (resolved by name or id). Dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional).",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       list: z.string(),
@@ -1393,7 +1393,7 @@ server.registerTool(
   "robinhood_watchlist_create",
   {
     title: "Robinhood Watchlist — Create",
-    description: "Create a new custom watchlist (display_name, optional icon emoji). Dry-run unless liveWrite=true (canonical; `live` accepted) AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    description: "Create a new custom watchlist (display_name, optional icon emoji). Dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional).",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       name: z.string(),
@@ -1431,7 +1431,7 @@ server.registerTool(
   "robinhood_watchlist_buy",
   {
     title: "Robinhood Watchlist — Basket Buy",
-    description: "Buy $<amount> of EACH equity-buyable ticker in a custom watchlist (BP-aware basket; the EXECUTION half of operating on a watchlist). Loops the SAME shared placeEquityOrder engine per ticker — OTC/fractional guard, pending dedup, ref_id idempotency, the after-hours fractional pre-flight guard, trade-log + order-history evidence — and reads the account's buying power so it only attempts what fits ($amount each), skipping the rest with reasons rather than hammering doomed orders. Dry-run unless liveWrite=true (canonical; `live` accepted) AND ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    description: "Buy $<amount> of EACH equity-buyable ticker in a custom watchlist (BP-aware basket; the EXECUTION half of operating on a watchlist). Loops the SAME shared placeEquityOrder engine per ticker — OTC/fractional guard, pending dedup, ref_id idempotency, the after-hours fractional pre-flight guard, trade-log + order-history evidence — and reads the account's buying power so it only attempts what fits ($amount each), skipping the rest with reasons rather than hammering doomed orders. Dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional).",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       list: z.string(),
@@ -1648,13 +1648,13 @@ server.registerTool(
 // Zayd Khan // cold // www.zayd.wtf
 
 // Live-write discoverability (the silent-dry-run trap): writes need ROBINHOOD_ALLOW_LIVE_WRITE=1 in THIS
-// server's environment (the second gate). If it's unset, every write tool dry-runs no matter what the
+// server's environment (the single master switch). If it's unset, every write tool dry-runs no matter what the
 // caller passes — and that used to fail silently (a re-registered MCP without the env looked healthy but
 // could never trade). Announce it loudly at startup so the gap is visible, not discovered mid-trade.
 if (process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1") {
   process.stderr.write(
     "⚠️  robinhood-cli MCP: LIVE WRITES DISABLED — ROBINHOOD_ALLOW_LIVE_WRITE is not \"1\" in this server's " +
-    "environment, so EVERY write tool will dry-run regardless of liveWrite:true (the env is the second gate). " +
+    "environment, so EVERY write tool will dry-run regardless of liveWrite:true (the env switch is the single gate). " +
     "Reads work normally. To enable real orders, re-register with the env gate and reload, e.g.:\n" +
     "    claude mcp add robinhood-cli -s user -e ROBINHOOD_ALLOW_LIVE_WRITE=1 -- node <repo>/mcp/dist/server.js\n" +
     "  then /reload-mcp (or restart the client).\n"

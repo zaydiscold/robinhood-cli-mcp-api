@@ -653,7 +653,7 @@ brokerage
 
 brokerage
   .command("execute")
-  .description("Execute a brokerage/account request. Reads run live; writes are dry-run by default and require --live-write plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Uses ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE.")
+  .description("Execute a brokerage/account request. Reads run live; writes are dry-run by default and require ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional). Uses ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE.")
   .argument("<query>", "exact URL or URL substring")
   .option("--method <method>", "override inferred HTTP method")
   .option("--param <name=value>", "replace a route placeholder; repeatable", (value: string, previous: string[] = []) => [
@@ -666,7 +666,7 @@ brokerage
   ])
   .option("--body-json <json>", "JSON request body")
   .option("--dry-run", "print execution plan without sending")
-  .option("--live-write", "permit a live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--full", "print full response body instead of bounded preview")
   .option("--json", "emit JSON")
   .action(async (query: string, options: { method?: string; param?: string[]; queryParam?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; full?: boolean; json?: boolean }) => {
@@ -713,14 +713,14 @@ brokerage
 const ORDERS_URL = "https://api.robinhood.com/orders/";
 brokerage
   .command("buy <symbol>")
-  .description("Equity buy: --dollars (fractional/market) or --shares (whole; OTC auto-limit). Web order body. Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Equity buy: --dollars (fractional/market) or --shares (whole; OTC auto-limit). Web order body. Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional).")
   .requiredOption("--account <account_number>", "brokerage account number")
   .option("--dollars <amount>", "dollar-notional fractional buy (market, regular hours only)")
   .option("--shares <qty>", "share quantity (whole shares for OTC names)")
   .option("--limit <price>", "explicit limit price; else market with ask collar (OTC forces a limit at the ask)")
   .option("--tif <gfd|gtc>", "time in force", "gfd")
   .option("--dry-run", "print plan/body, send nothing")
-  .option("--live-write", "permit a live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
@@ -878,9 +878,9 @@ function collectId(value: string, previous: string[] = []): string[] {
   return [...previous, value];
 }
 
-// Generic double-gated brokerage write. Pass the EXACT templated URL (with {placeholders}) so the
+// Generic env-gated brokerage write. Pass the EXACT templated URL (with {placeholders}) so the
 // resolver matches one route and the ambiguity guard can't fire. Dry-run by default; a live send
-// needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Returns status + the (dry-run or live) body.
+// needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional). Returns status + the (dry-run or live) body.
 // gatedBrokerageWrite is imported from ./lib.js — shared write executor (CLI + MCP).
 
 async function runRecurringSet(
@@ -961,12 +961,12 @@ recurring
 
 recurring
   .command("resume")
-  .description("Resume paused recurring buys. Live write — needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1 (else dry-run).")
+  .description("Resume paused recurring buys. Live write — needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional) (else dry-run).")
   .option("--id <id>", "schedule id to resume; repeatable", collectId, [])
   .option("--all", "resume ALL currently-paused schedules")
   .option("--account <num>", "limit --all to one account number")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (options: { id?: string[]; all?: boolean; account?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) =>
     runRecurringSet("active", options)
@@ -974,12 +974,12 @@ recurring
 
 recurring
   .command("pause")
-  .description("Pause active recurring buys. Live write — needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1 (else dry-run).")
+  .description("Pause active recurring buys. Live write — needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional) (else dry-run).")
   .option("--id <id>", "schedule id to pause; repeatable", collectId, [])
   .option("--all", "pause ALL currently-active schedules")
   .option("--account <num>", "limit --all to one account number")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (options: { id?: string[]; all?: boolean; account?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) =>
     runRecurringSet("paused", options)
@@ -987,14 +987,14 @@ recurring
 
 recurring
   .command("create")
-  .description("Create a recurring investment schedule (PROVEN write). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Create a recurring investment schedule (PROVEN write). Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional).")
   .requiredOption("--account <account_number>", "account number")
   .requiredOption("--symbol <ticker>", "equity ticker to invest in")
   .requiredOption("--amount <usd>", "dollar amount per cycle")
   .option("--frequency <weekly|biweekly|monthly>", "cadence", "weekly")
   .option("--start-date <YYYY-MM-DD>", "first investment date (default: tomorrow)")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { account: string; symbol: string; amount: string; frequency?: string; startDate?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!(Number(opts.amount) > 0)) throw new Error(`--amount must be a positive number (got "${opts.amount}").`);
@@ -1025,7 +1025,7 @@ recurring
   .option("--amount <usd>", "new dollar amount per cycle")
   .option("--frequency <weekly|biweekly|monthly>", "new cadence")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { id: string; amount?: string; frequency?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!opts.amount && !opts.frequency) throw new Error("Pass --amount and/or --frequency to edit.");
@@ -1042,10 +1042,10 @@ recurring
 
 recurring
   .command("end")
-  .description("End/delete a recurring schedule (PATCH state=deleted). Dry-run by default; live needs both gates.")
+  .description("End/delete a recurring schedule (PATCH state=deleted). Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch).")
   .requiredOption("--id <schedule_id>", "schedule id to end")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { id: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     const r = await gatedBrokerageWrite({ url: RECURRING_ITEM_URL, method: "PATCH", params: { "0": opts.id }, body: { state: "deleted" }, dryRun: opts.dryRun, liveWrite: opts.liveWrite });
@@ -1058,7 +1058,7 @@ recurring
 program.addCommand(recurring);
 
 // --- Account settings: first-class wrappers over the PROVEN settings-write endpoints ---
-// (capability map docs/account-settings-capability-map-2026-06-03.md). Every write double-gated.
+// (capability map docs/account-settings-capability-map-2026-06-03.md). Every write env-gated.
 const DRIP_ACCOUNT_URL = "https://api.robinhood.com/corp_actions/drip/account_settings/{account_number}/";
 const DRIP_INSTRUMENT_URL = "https://api.robinhood.com/corp_actions/drip/instrument_settings/{account_number}/{instrument_id}/";
 const OPTION_SETTINGS_URL = "https://api.robinhood.com/options/option_settings/{account_number}/";
@@ -1066,7 +1066,7 @@ const MARGIN_SETTINGS_URL = "https://api.robinhood.com/settings/margin/{account_
 const SWEEP_STATE_URL = "https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/";
 const STOCK_LENDING_URL = "https://bonfire.robinhood.com/slip/{account_number}/status/";
 
-const settings = new Command("settings").description("Read/write account settings: DRIP, trade-on-expiration, PDT protection, cash sweep, stock lending. Writes double-gated.");
+const settings = new Command("settings").description("Read/write account settings: DRIP, trade-on-expiration, PDT protection, cash sweep, stock lending. Writes env-gated.");
 
 settings
   .command("show")
@@ -1102,13 +1102,13 @@ const writeFlag = (action: () => Promise<{ status: number | string; dryRun: bool
 
 settings
   .command("drip")
-  .description("Toggle dividend reinvestment (DRIP). Account-wide, or per-stock with --instrument. Double-gated.")
+  .description("Toggle dividend reinvestment (DRIP). Account-wide, or per-stock with --instrument. Env-gated.")
   .requiredOption("--account <account_number>", "account number")
   .option("--enable", "turn DRIP on")
   .option("--disable", "turn DRIP off")
   .option("--instrument <instrument_id>", "scope to one stock (per-instrument DRIP)")
   .option("--dry-run", "plan only")
-  .option("--live-write", "permit live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { account: string; enable?: boolean; disable?: boolean; instrument?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
@@ -1121,12 +1121,12 @@ settings
 
 settings
   .command("expiration")
-  .description("Toggle 'trade on expiration' for options. Double-gated.")
+  .description("Toggle 'trade on expiration' for options. Env-gated.")
   .requiredOption("--account <account_number>", "account number")
   .option("--enable", "enable trading on expiration")
   .option("--disable", "disable trading on expiration")
   .option("--dry-run", "plan only")
-  .option("--live-write", "permit live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { account: string; enable?: boolean; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
@@ -1136,12 +1136,12 @@ settings
 
 settings
   .command("pdt")
-  .description("Toggle PDT (pattern-day-trade) protection. Double-gated.")
+  .description("Toggle PDT (pattern-day-trade) protection. Env-gated.")
   .requiredOption("--account <account_number>", "account number")
   .option("--on", "enable PDT protection")
   .option("--off", "disable PDT protection")
   .option("--dry-run", "plan only")
-  .option("--live-write", "permit live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { account: string; on?: boolean; off?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (opts.on === opts.off) throw new Error("Pass exactly one of --on / --off.");
@@ -1151,12 +1151,12 @@ settings
 
 settings
   .command("lending")
-  .description("Toggle stock lending (SLIP). Double-gated.")
+  .description("Toggle stock lending (SLIP). Env-gated.")
   .requiredOption("--account <account_number>", "account number")
   .option("--enable", "enable stock lending")
   .option("--disable", "disable stock lending")
   .option("--dry-run", "plan only")
-  .option("--live-write", "permit live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { account: string; enable?: boolean; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (opts.enable === opts.disable) throw new Error("Pass exactly one of --enable / --disable.");
@@ -1166,11 +1166,11 @@ settings
 
 settings
   .command("sweep")
-  .description("Cash sweep enrollment. --disable unenrolls (proven). Enroll requires a separate agreement-sign flow — not automated. Double-gated.")
+  .description("Cash sweep enrollment. --disable unenrolls (proven). Enroll requires a separate agreement-sign flow — not automated. Env-gated.")
   .requiredOption("--account <account_number>", "account number")
   .option("--disable", "unenroll from cash sweep")
   .option("--dry-run", "plan only")
-  .option("--live-write", "permit live write")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { account: string; disable?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!opts.disable) throw new Error("Only --disable (unenroll) is automated. Enrolling needs the agreement-sign flow (see capability map).");
@@ -1791,7 +1791,7 @@ options
       greeks: { delta: num(mark.delta), gamma: num(mark.gamma), theta: num(mark.theta), vega: num(mark.vega), rho: num(mark.rho) },
       openInterest: num(mark.open_interest), volume: num(mark.volume),
       fills, taxNote, link,
-      handoff: "Sell-to-close: options/orders/ {side:sell, position_effect:close}. Buy-to-open: {side:buy, position_effect:open}. Dry-run via 'options strategy-quote', live needs both write gates."
+      handoff: "Sell-to-close: options/orders/ {side:sell, position_effect:close}. Buy-to-open: {side:buy, position_effect:open}. Dry-run via 'options strategy-quote', live needs the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch."
     };
     if (opts.json) { printJson(out); return; }
     process.stdout.write(`${out.symbol} $${out.strike.toFixed(2)}${String(out.type)[0].toUpperCase()} exp ${out.expiration} (${out.state})\n`);
@@ -3370,13 +3370,13 @@ ordersCmd
 
 program.addCommand(ordersCmd);
 
-// ── panic: enumerate and cancel EVERY open order across all accounts (double-gated per cancel) ──
+// ── panic: enumerate and cancel EVERY open order across all accounts (env-gated per cancel) ──
 // Zayd Khan // cold // www.zayd.wtf
 program
   .command("panic")
-  .description("Cancel-all: list every open/pending equity+options order across ALL accounts and cancel each (each cancel individually double-gated). DRY-RUN by default — shows the would-cancel list and sends NOTHING; live needs --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Cancel-all: list every open/pending equity+options order across ALL accounts and cancel each (each cancel individually env-gated). DRY-RUN by default — shows the would-cancel list and sends NOTHING; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional).")
   .option("-a, --account <number>", "Limit to one account")
-  .option("--live-write", "Send the cancels live (still requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (opts: { account?: string; liveWrite?: boolean; json?: boolean }) => {
     const r = await panicCancelAll({ accountNumber: opts.account, liveWrite: Boolean(opts.liveWrite) });
@@ -3499,7 +3499,7 @@ program
     if (pendingRolls.length) process.stdout.write(`\n⏳ ${pendingRolls.length} pending kosher roll(s) — run roll-ledger list\n`);
   });
 
-const watchlist = new Command("watchlist").description("Inspect (read) and edit (add/remove/create, double-gated) your custom watchlists");
+const watchlist = new Command("watchlist").description("Inspect (read) and edit (add/remove/create, env-gated) your custom watchlists");
 
 watchlist
   .command("list")
@@ -3532,9 +3532,9 @@ watchlist
 
 watchlist
   .command("add <list> <symbols...>")
-  .description("Add tickers to a custom watchlist (by name or id). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Add tickers to a custom watchlist (by name or id). Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional).")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (list: string, symbols: string[], opts: { dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     const out = await watchlistMutateItems({ list, symbols, operation: "create", dryRun: opts.dryRun, liveWrite: opts.liveWrite });
@@ -3546,9 +3546,9 @@ watchlist
 
 watchlist
   .command("remove <list> <symbols...>")
-  .description("Remove tickers from a custom watchlist (by name or id). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Remove tickers from a custom watchlist (by name or id). Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional).")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (list: string, symbols: string[], opts: { dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     const out = await watchlistMutateItems({ list, symbols, operation: "delete", dryRun: opts.dryRun, liveWrite: opts.liveWrite });
@@ -3560,10 +3560,10 @@ watchlist
 
 watchlist
   .command("create <name>")
-  .description("Create a new custom watchlist. Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Create a new custom watchlist. Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional).")
   .option("--emoji <emoji>", "icon emoji for the list")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (name: string, opts: { emoji?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     const out = await createWatchlist({ displayName: name, iconEmoji: opts.emoji, dryRun: opts.dryRun, liveWrite: opts.liveWrite });
@@ -3589,14 +3589,14 @@ watchlist
 
 watchlist
   .command("buy <list>")
-  .description("Buy $<amount> of EACH equity-buyable ticker in a custom watchlist (BP-aware basket). Dry-run by default; live needs --live-write AND ROBINHOOD_ALLOW_LIVE_WRITE=1.")
+  .description("Buy $<amount> of EACH equity-buyable ticker in a custom watchlist (BP-aware basket). Dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional).")
   .requiredOption("--account <number>", "account number to buy into")
   .option("--amount <dollars>", "dollars per ticker (Robinhood minimum $1.00)", "1")
   .option("--limit <n>", "cap the number of tickers attempted")
   .option("--delay <ms>", "pace between live sends (429 burst guard)", "2500")
   .option("--force", "skip per-order dedup + the after-hours fractional pre-flight guard")
   .option("--dry-run", "plan only, send nothing")
-  .option("--live-write", "permit the live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (list: string, opts: { account: string; amount?: string; limit?: string; delay?: string; force?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     const out = await buyWatchlistBasket({
@@ -3729,7 +3729,7 @@ crypto
 
 crypto
   .command("execute")
-  .description("Execute an official Robinhood Crypto API request. Reads run live; writes (orders/cancels) are dry-run by default and require --live-write plus ROBINHOOD_ALLOW_LIVE_WRITE=1. Uses ROBINHOOD_CRYPTO_API_KEY and ROBINHOOD_CRYPTO_PRIVATE_KEY_B64.")
+  .description("Execute an official Robinhood Crypto API request. Reads run live; writes (orders/cancels) are dry-run by default and require ROBINHOOD_ALLOW_LIVE_WRITE=1 (single switch; --live-write optional). Uses ROBINHOOD_CRYPTO_API_KEY and ROBINHOOD_CRYPTO_PRIVATE_KEY_B64.")
   .argument("<query>", "exact official Crypto URL or URL substring")
   .option("--method <method>", "override inferred HTTP method")
   .option("--param <name=value>", "replace a route placeholder; repeatable", (value: string, previous: string[] = []) => [
@@ -3743,7 +3743,7 @@ crypto
   .option("--body <body>", "exact request body string")
   .option("--body-json <json>", "JSON request body")
   .option("--dry-run", "print execution plan without sending")
-  .option("--live-write", "permit a live write (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--full", "print full response body instead of bounded preview")
   .option("--json", "emit JSON")
   .action(

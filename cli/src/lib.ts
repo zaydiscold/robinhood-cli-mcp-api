@@ -1088,7 +1088,7 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       id: "handoff-order-endpoint",
       method: "POST",
       url: "https://api.robinhood.com/options/orders/",
-      purpose: "Dry-run handoff only; live send still requires exact approval and the double write gate.",
+      purpose: "Dry-run handoff only; live send still requires exact approval and the ROBINHOOD_ALLOW_LIVE_WRITE=1 write switch.",
       required: true
     }
   ];
@@ -1163,7 +1163,7 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       "Dry-run planner only. This command opens nothing and sends no Robinhood order.",
       "Only account_number on the web options-chain shell is browser-observed. Expiration, strike, side, and type query keys are candidate probe keys, not proven URL state.",
       "For exact contracts, prefer API resolution: chains -> instruments filtered by expiration/type/strike -> marketdata/options -> strategy quote -> dry-run order body.",
-      "Live options orders remain blocked unless exact user approval, --live-write, and ROBINHOOD_ALLOW_LIVE_WRITE=1 are all present.",
+      "Live options orders remain blocked unless exact user approval and ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional) are present.",
       ...riskWarnings("write-mutate")
     ],
     evidence: [
@@ -1353,7 +1353,7 @@ export function buildOptionsQuantReviewContract(workflow: OptionsStrategyWorkflo
     "net Greeks are summed over signed legs with the 100-share multiplier and unit labels",
     "liquidity is reviewed: bid/ask width, volume/open interest if available, and stale quote flags",
     "expiration risks are reviewed: 0DTE/near-expiration, assignment/exercise, and dividend events",
-    "write gates are dry-run unless exact approval, --live-write, and ROBINHOOD_ALLOW_LIVE_WRITE=1 are present"
+    "writes are dry-run unless exact approval and ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional) are present"
   ];
   if (workflow.requiresUnderlying) {
     requiredChecks.push("coverage is verified in the same account before treating the strategy as covered");
@@ -1457,7 +1457,7 @@ export function buildOptionsQuantReviewContract(workflow: OptionsStrategyWorkflo
       "coverage or collateral claim not verified in the same account",
       "strategy quote stale or missing for a multi-leg order",
       "missing limit_price, quantity, time_in_force, or ref_id",
-      "any live write attempted without --live-write and ROBINHOOD_ALLOW_LIVE_WRITE=1"
+      "any live write attempted without ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)"
     ]
   };
 }
@@ -1767,15 +1767,28 @@ export interface LiveWriteGate {
 }
 
 /**
- * Writes never go live unless the caller both passes --live-write AND sets the
- * ROBINHOOD_ALLOW_LIVE_WRITE=1 environment gate. Reads and explicit --dry-run
- * runs are always allowed. This keeps the CLI from ever placing a real order on
- * its own: a write requires two deliberate, separate opt-ins.
+ * Live-write gate — single master switch.
+ *
+ * Writes go live ONLY when `ROBINHOOD_ALLOW_LIVE_WRITE=1` is present in the
+ * environment. That one switch is the toggle: set it (locally it lives in `.env`
+ * / the MCP server registration) and writes execute by default — no per-call
+ * `--live-write` / `liveWrite:true` flag is required. With the switch unset (the
+ * published / fresh-clone default) every write is forced to dry-run, so the tool
+ * can never place a real order out of the box.
+ *
+ * `--dry-run` / `dryRun:true` always forces a preview, even when the switch is on
+ * — the per-call escape hatch to inspect an exact live call without sending it.
+ *
+ * The legacy `liveWrite` field is still accepted (so existing callers/scripts keep
+ * compiling and reading clearly) but is no longer required and no longer the gate:
+ * the env switch is the single source of truth. Previously this required BOTH the
+ * env var AND a per-call flag; the per-call flag is now optional.
  */
 export function resolveLiveWriteGate(input: {
   risk: RouteRisk;
   dryRun: boolean;
-  liveWrite: boolean;
+  /** Legacy/optional: retained for back-compat. The env switch is the real gate. */
+  liveWrite?: boolean;
   /** HTTP method — when it's a write verb, the gate engages even if `risk` is mis-classified as read. */
   method?: string;
   env?: NodeJS.ProcessEnv;
@@ -1787,31 +1800,21 @@ export function resolveLiveWriteGate(input: {
   const m = input.method?.toUpperCase();
   const methodIsWrite = m !== undefined && m !== "GET" && m !== "HEAD";
   const isWrite = riskIsWrite(input.risk) || methodIsWrite;
+  // Explicit per-call preview, or a plain read: never sends.
   if (input.dryRun || !isWrite) {
     return { allowed: true, forcedDryRun: false };
   }
-  const envAllows = env.ROBINHOOD_ALLOW_LIVE_WRITE === "1";
-  if (input.liveWrite && envAllows) {
+  // Single master switch: ROBINHOOD_ALLOW_LIVE_WRITE=1 turns live writes ON by default,
+  // with no per-call flag required. Pass --dry-run / dryRun:true to preview instead.
+  if (env.ROBINHOOD_ALLOW_LIVE_WRITE === "1") {
     return { allowed: true, forcedDryRun: false };
   }
-  if (!input.liveWrite && !envAllows) {
-    return {
-      allowed: false,
-      forcedDryRun: true,
-      reason: "Live write blocked: pass --live-write and set ROBINHOOD_ALLOW_LIVE_WRITE=1 to send. Forced to dry-run."
-    };
-  }
-  if (!input.liveWrite) {
-    return {
-      allowed: false,
-      forcedDryRun: true,
-      reason: "Live write blocked: ROBINHOOD_ALLOW_LIVE_WRITE=1 is set but --live-write was not passed. Forced to dry-run."
-    };
-  }
+  // Switch off → writes are forced to dry-run (the safe default for the published tool).
   return {
     allowed: false,
     forcedDryRun: true,
-    reason: "Live write blocked: --live-write was passed but ROBINHOOD_ALLOW_LIVE_WRITE=1 is not set. Forced to dry-run."
+    reason:
+      "Live writes are OFF — forced to dry-run. Turn them on by setting ROBINHOOD_ALLOW_LIVE_WRITE=1 in the environment (locally it lives in .env / the MCP registration). Pass --dry-run / dryRun:true to preview a single call even when live writes are on."
   };
 }
 
@@ -1825,13 +1828,13 @@ export function riskWriteWarning(risk: RouteRisk, url: string): string | undefin
 export function riskWarnings(risk: RouteRisk): string[] {
   switch (risk) {
     case "destructive":
-      return ["Destructive route. Dry-run by default; a live write needs --live-write plus ROBINHOOD_ALLOW_LIVE_WRITE=1."];
+      return ["Destructive route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)."];
     case "write-mutate":
-      return ["Write route. Dry-run by default; a live write needs --live-write plus ROBINHOOD_ALLOW_LIVE_WRITE=1."];
+      return ["Write route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)."];
     case "write-safe":
-      return ["Non-account-state write route such as telemetry or acknowledgement. Dry-run by default; a live write needs --live-write plus ROBINHOOD_ALLOW_LIVE_WRITE=1."];
+      return ["Non-account-state write route such as telemetry or acknowledgement. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)."];
     case "write-or-sensitive":
-      return ["Potential write or highly sensitive route. Dry-run by default; a live write needs --live-write plus ROBINHOOD_ALLOW_LIVE_WRITE=1."];
+      return ["Potential write or highly sensitive route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)."];
     case "sensitive-read":
       return ["Sensitive read route. Redact account identifiers, positions, documents, and tax data in shared artifacts."];
     default:
@@ -2425,10 +2428,10 @@ export async function readOptionsOrderFlow(
 }
 
 /**
- * Generic double-gated brokerage write, shared by the CLI and the MCP server. Pass the EXACT templated
+ * Generic env-gated brokerage write, shared by the CLI and the MCP server. Pass the EXACT templated
  * URL (with {placeholders}) so the resolver matches one route and the ambiguity guard can't fire. The
  * gate engages on write verbs even if a route's risk is mis-classified (verb floor). Dry-run by default;
- * a live send needs liveWrite:true AND ROBINHOOD_ALLOW_LIVE_WRITE=1. Hoisted here so the write path
+ * a live send needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; liveWrite:true optional). Hoisted here so the write path
  * (the dangerous one to duplicate) is single-source across both surfaces.
  */
 export async function gatedBrokerageWrite(opts: {
@@ -2497,7 +2500,7 @@ export async function logTrade(entry: Record<string, unknown>) {
 //   delete a list    : DELETE discovery/lists/{id}/    (204)
 // object_id is the instrument UUID (resolved from a ticker via instruments/?symbol=), never the symbol.
 // operation: "create" = add, "delete" = remove. Both ride the same items endpoint. As with every write
-// here, these go through gatedBrokerageWrite — dry-run unless BOTH gates (liveWrite + env) are set.
+// here, these go through gatedBrokerageWrite — dry-run unless the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch is set (liveWrite optional).
 
 export const DISCOVERY_LISTS_URL = "https://api.robinhood.com/discovery/lists/";
 export const DISCOVERY_LISTS_ITEMS_URL = "https://api.robinhood.com/discovery/lists/items/";
@@ -2559,7 +2562,7 @@ export interface WatchlistMutateDeps {
 
 /**
  * Add or remove tickers in a custom watchlist. Resolves the list (by name/id) and each ticker (to an
- * instrument UUID), builds the list-keyed batch body, and sends it through the double-gated write path.
+ * instrument UUID), builds the list-keyed batch body, and sends it through the env-gated write path.
  */
 export async function watchlistMutateItems(input: WatchlistMutateInput, deps: WatchlistMutateDeps = {}) {
   const getJson = deps.getJson ?? brokerageGetJson;
@@ -2590,7 +2593,7 @@ export async function watchlistMutateItems(input: WatchlistMutateInput, deps: Wa
   return { list: wl, operation: input.operation, items: resolved, body, result };
 }
 
-/** Create a new custom watchlist (POST discovery/lists/). Double-gated. */
+/** Create a new custom watchlist (POST discovery/lists/). Env-gated. */
 export async function createWatchlist(
   input: { displayName: string; iconEmoji?: string; dryRun?: boolean; liveWrite?: boolean },
   deps: { write?: typeof gatedBrokerageWrite } = {}
@@ -2609,7 +2612,7 @@ export async function createWatchlist(
   return { displayName: input.displayName, body, result };
 }
 
-/** Delete a custom watchlist by id (DELETE discovery/lists/{id}/). Double-gated; irreversible. */
+/** Delete a custom watchlist by id (DELETE discovery/lists/{id}/). Env-gated; irreversible. */
 export async function deleteWatchlist(
   input: { id: string; dryRun?: boolean; liveWrite?: boolean },
   deps: { write?: typeof gatedBrokerageWrite } = {}
@@ -2896,7 +2899,7 @@ export interface EquityOrderInput {
   shares?: number;
   /** Limit price; omit for a market order. */
   limitPrice?: number;
-  /** Live send — still requires ROBINHOOD_ALLOW_LIVE_WRITE=1 (second gate, enforced downstream). */
+  /** Optional (back-compat) — the gate is ROBINHOOD_ALLOW_LIVE_WRITE=1, enforced downstream. */
   liveWrite?: boolean;
   /** Skip the pending-duplicate check. */
   force?: boolean;
@@ -2951,7 +2954,7 @@ export interface EquityOrderResult {
  *   4. pending-duplicate check (live sends only; 5-min window; force skips)
  *   5. ref_id idempotency (safe to retry the SAME ref_id on 429 — nothing was placed)
  *   6. trading-log append on live sends
- * Dry-run unless liveWrite — and even then the engine's double gate still applies.
+ * Dry-run unless the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch is set — the engine's env gate still applies.
  */
 export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrderDeps = {}): Promise<EquityOrderResult> {
   const getJson = deps.getJson ?? brokerageGetJson;
@@ -3260,8 +3263,8 @@ export interface CancelOrderResult {
 
 /**
  * Shared cancel path for equity AND options orders — single source for the CLI `cancel` command,
- * the MCP `robinhood_cancel` tool, and `panicCancelAll`. Double-gated via gatedBrokerageWrite
- * (dry-run by default; live needs liveWrite + ROBINHOOD_ALLOW_LIVE_WRITE=1). After a live 2xx it
+ * the MCP `robinhood_cancel` tool, and `panicCancelAll`. Env-gated via gatedBrokerageWrite
+ * (dry-run by default; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 — the single switch; liveWrite optional). After a live 2xx it
  * re-reads the order and reports evidence; a cancel whose re-read is not cancelled/pending gets a
  * warning (it may have filled before the cancel landed).
  */
@@ -3444,9 +3447,9 @@ export interface PanicResult {
 
 /**
  * PANIC: enumerate every open/pending order across ALL owned accounts and cancel each one —
- * every cancel individually double-gated through gatedBrokerageWrite (logContext "panic
+ * every cancel individually env-gated through gatedBrokerageWrite (logContext "panic
  * cancel-all"). Dry-run by default: shows the full would-cancel list and sends NOTHING; a live
- * run needs liveWrite + ROBINHOOD_ALLOW_LIVE_WRITE=1 and re-reads each order for evidence.
+ * run needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; liveWrite optional) and re-reads each order for evidence.
  * One failed cancel never stops the sweep.
  */
 export async function panicCancelAll(
@@ -3472,14 +3475,14 @@ export async function panicCancelAll(
       rows.push({ ...o, cancel: { httpStatus: r.httpStatus, dryRun: r.dryRun, state: r.state, evidence: r.evidence, gateReason: r.gateReason } });
     } catch (error) {
       failed++;
-      rows.push({ ...o, cancel: { httpStatus: "error", dryRun: !liveWrite, state: null, error: (error as Error).message } });
+      rows.push({ ...o, cancel: { httpStatus: "error", dryRun: process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1", state: null, error: (error as Error).message } });
     }
   }
-  const dryRun = rows.length > 0 ? rows.every((r) => r.cancel.dryRun) : !(liveWrite && process.env.ROBINHOOD_ALLOW_LIVE_WRITE === "1");
+  const dryRun = rows.length > 0 ? rows.every((r) => r.cancel.dryRun) : process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1";
   const summary = rows.length === 0
     ? `No open/pending orders found across ${open.accountsScanned.length} account(s) — nothing to cancel.`
     : dryRun
-      ? `DRY RUN: ${rows.length} open order(s) WOULD be cancelled — nothing was sent. Re-run with --live-write (liveWrite:true) AND ROBINHOOD_ALLOW_LIVE_WRITE=1 to cancel for real.`
+      ? `DRY RUN: ${rows.length} open order(s) WOULD be cancelled — nothing was sent. Re-run with ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional) to cancel for real.`
       : `${rows.length} open order(s) found: ${cancelled} cancelled, ${failed} failed (evidence re-read per cancel; order history is the source of truth).`;
   return { dryRun, accountsScanned: open.accountsScanned, found: rows.length, cancelled, failed, orders: rows, warnings: open.warnings, summary };
 }
@@ -3694,7 +3697,7 @@ export async function runPretradeChecks(
   checks.push({
     id: "marketability",
     status: "MANUAL",
-    detail: `manual step (POST, gated): options/orders/marketability/ is a POST — pretrade never sends it. To probe marketability yourself, dry-run first: node cli/dist/index.js brokerage execute "https://bonfire.robinhood.com/options/orders/marketability/" --method POST --body-json '<order body>' --dry-run --json   (a live probe needs --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1).`
+    detail: `manual step (POST, gated): options/orders/marketability/ is a POST — pretrade never sends it. To probe marketability yourself, dry-run first: node cli/dist/index.js brokerage execute "https://bonfire.robinhood.com/options/orders/marketability/" --method POST --body-json '<order body>' --dry-run --json   (a live probe needs ROBINHOOD_ALLOW_LIVE_WRITE=1 — the single switch; --live-write optional).`
   });
 
   // (f) OTC / fractional guard for the equity symbol
@@ -3724,7 +3727,7 @@ export async function runPretradeChecks(
     clear,
     summary: clear ? "CLEAR TO BUILD ORDER" : `BLOCKED: ${blocks.map((b) => `${b.id} — ${b.detail}`).join(" | ")}`,
     resolved,
-    note: "READ-ONLY preflight: nothing was sent. CLEAR means no hard blocker was found with the inputs given — it is NOT order approval; build the dry-run body next, then send only with both write gates."
+    note: "READ-ONLY preflight: nothing was sent. CLEAR means no hard blocker was found with the inputs given — it is NOT order approval; build the dry-run body next, then send only with the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch."
   };
 }
 
@@ -3916,7 +3919,7 @@ export interface WheelStateInput {
 export interface WheelNextLeg {
   action: string;
   rationale: string;
-  /** The literal dry-run command to run next (never sends; live needs both write gates). */
+  /** The literal dry-run command to run next (never sends; live needs the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch). */
   command: string | null;
 }
 
@@ -4149,7 +4152,7 @@ export async function computeWheelState(
     states,
     notes,
     reference: WHEEL_DOC,
-    disclaimer: "Descriptive, not prescriptive — evidence + the conventional next leg. Live sends always need both write gates."
+    disclaimer: "Descriptive, not prescriptive — evidence + the conventional next leg. Live sends always need the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch."
   };
 }
 

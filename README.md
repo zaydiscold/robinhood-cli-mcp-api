@@ -27,6 +27,23 @@ this is so much much better. this makes their "agentic" control release whatever
 
 robinhood please hire me this is what love for the game produces. 
 
+(and it's going *so* well that robinhood's already stealing my features — they shipped a **Dividend tracker** (that's [our `dividends` engine](#-bro-robinhood-ripped-our-feature-lmao)) four days after it landed in this repo. lol. receipts below 👇)
+
+---
+
+## 🏆 Bro, Robinhood ripped our feature (lmao)
+
+Our **`dividends`** engine — monthly totals, projected payouts (`$/day → $/yr`), per-symbol cadence detection, and ticker-level detail — landed **June 12, 2026** (commit [`08bb870`](https://github.com/zaydiscold/robinhood-cli/commit/08bb870)). When you ship in the open, the commit history *is* the receipt.
+
+Robinhood announced their own in-app **"Dividend tracker"** — *"monthly totals, projected payouts, early dividends, and ticker-level detail, all in one place"* — on **June 16, 2026.** Four days later. Either great minds, or somebody's reading my commits. 👀
+
+And theirs is dividends-only. This repo has been tracking **income = dividends + options/wheel premium** the whole time — the `dividends` engine covers dividend income, the `wheel` engine covers the CSP→covered-call premium side — so you get your *full* income picture, not half of it.
+
+One indie CLI, four days ahead of the $30B brokerage's product team. We're not catching up to Robinhood — we're trailblazing, and they're a few days back running the playbook. 🚀
+
+---
+
+
 It drives the account you already have, across the browser-backed brokerage API surface, with reads live by default and every write behind a dry-run/live-write gate.
 
 ```bash

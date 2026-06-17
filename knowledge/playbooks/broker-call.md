@@ -108,7 +108,7 @@ qty <n> | limit $<x.xx> <debit|credit> | est. $<dollars> | TIF <gfd|gtc> | ref_i
 Reply "yes" to send exactly this.
 ```
 
-## Step 7 — Gated send (both gates, inline env var)
+## Step 7 — Gated send (the live-write switch on, inline env var)
 
 ```bash
 REF=$(python3 -c "import uuid;print(uuid.uuid4())")

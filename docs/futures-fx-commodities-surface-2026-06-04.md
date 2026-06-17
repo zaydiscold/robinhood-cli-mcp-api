@@ -219,7 +219,7 @@ above (read-only).
 ## What's confirmed placeable vs read-only vs unsupported
 
 - **Placeable now (existing engine):** equity/ETP commodity & volatility proxies
-  (USO, UVXY, VXX, BITO, …) via `brokerage buy` / `orders/`. Double-gated as usual.
+  (USO, UVXY, VXX, BITO, …) via `brokerage buy` / `orders/`. Env-gated as usual.
 - **Read-only (reachable api host):** real futures contracts incl. commodity & FX
   futures — symbols, names, margin requirement, bid/ask/last/prev-close — via
   `GET api.robinhood.com/midlands/lists/items/?list_id=<id>`.

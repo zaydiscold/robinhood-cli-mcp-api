@@ -1,5 +1,5 @@
 {
-  "_note": "Intent → the ONE command to run. Surfaced by `recipes` (CLI) + `robinhood_recipes` (MCP). Each recipe maps a plain-English intent + trigger phrases to the verified first-class CLI command and its MCP-tool equivalent. Keep this in sync when adding commands; it is the agent's intent-routing table. Reads are live/free; writes are double-gated (--live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1).",
+  "_note": "Intent → the ONE command to run. Surfaced by `recipes` (CLI) + `robinhood_recipes` (MCP). Each recipe maps a plain-English intent + trigger phrases to the verified first-class CLI command and its MCP-tool equivalent. Keep this in sync when adding commands; it is the agent's intent-routing table. Reads are live/free; writes are env-gated (set ROBINHOOD_ALLOW_LIVE_WRITE=1; --live-write optional).",
   "_provenance": "Zayd Khan // cold // www.zayd.wtf",
   "recipes": [
     {
@@ -188,7 +188,7 @@
       "command": "watchlist add <list> <SYM...> --live-write",
       "mcpTool": "robinhood_watchlist_add",
       "risk": "write-mutate",
-      "notes": "List resolved by name or id; tickers resolved to instrument UUIDs internally. Double-gated, dry-run by default."
+      "notes": "List resolved by name or id; tickers resolved to instrument UUIDs internally. Env-gated, dry-run by default."
     },
     {
       "id": "watchlist-remove",
@@ -201,7 +201,7 @@
       "command": "watchlist remove <list> <SYM...> --live-write",
       "mcpTool": "robinhood_watchlist_remove",
       "risk": "write-mutate",
-      "notes": "Same endpoint as add (operation=delete). Double-gated."
+      "notes": "Same endpoint as add (operation=delete). Env-gated."
     },
     {
       "id": "watchlist-create",
@@ -214,7 +214,7 @@
       "command": "watchlist create <name> --live-write",
       "mcpTool": "robinhood_watchlist_create",
       "risk": "write-mutate",
-      "notes": "POST discovery/lists/ with display_name (+ optional icon emoji). Double-gated."
+      "notes": "POST discovery/lists/ with display_name (+ optional icon emoji). Env-gated."
     },
     {
       "id": "accounts",
@@ -240,7 +240,7 @@
       "command": "brokerage buy <SYM> --account <N> --dollars <$>   (or --shares <n>) --live-write",
       "mcpTool": "robinhood_brokerage_execute",
       "risk": "write-mutate",
-      "notes": "Double-gated. Ground the ticker with `brokerage search` first; OTC auto-limits at the marketable side (buy=ask, sell=bid; whole shares only, both directions)."
+      "notes": "Env-gated. Ground the ticker with `brokerage search` first; OTC auto-limits at the marketable side (buy=ask, sell=bid; whole shares only, both directions)."
     },
     {
       "id": "options-order-flow",
@@ -269,7 +269,7 @@
       "command": "brokerage execute \"options/orders/\" --method POST --live-write   ·   cancel: \"options/orders/{0}/cancel/\" --param 0=<id>",
       "mcpTool": "robinhood_brokerage_execute",
       "risk": "write-mutate",
-      "notes": "Double-gated. Classify the strategy + bulk-enumerate UUIDs first; keep the {0} placeholder + --param."
+      "notes": "Env-gated. Classify the strategy + bulk-enumerate UUIDs first; keep the {0} placeholder + --param."
     },
     {
       "id": "settings",
@@ -283,7 +283,7 @@
       "command": "settings ... [--live-write]",
       "mcpTool": "robinhood_settings",
       "risk": "write-or-sensitive",
-      "notes": "Reads free; writes double-gated. DRIP write is PATCH corp_actions/drip/account_settings/{account_number}/, NOT drip/enrollment/."
+      "notes": "Reads free; writes env-gated. DRIP write is PATCH corp_actions/drip/account_settings/{account_number}/, NOT drip/enrollment/."
     },
     {
       "id": "recurring",
@@ -356,7 +356,7 @@
       "command": "options strategy-quote cash-secured-short-put --account <N> --symbol <S> --expiration <D> --leg short_put=<K> --pricing-mode safe-sell-probe --json",
       "mcpTool": "robinhood_options_strategy_plan",
       "risk": "sensitive-read",
-      "notes": "Wheel leg 1. Collateral = strike × 100 settled cash per contract. Quote is dry-run; the live send is a separate double-gated step. Pick strikes from `options chain <S>`."
+      "notes": "Wheel leg 1. Collateral = strike × 100 settled cash per contract. Quote is dry-run; the live send is a separate env-gated step. Pick strikes from `options chain <S>`."
     },
     {
       "id": "wheel-covered-call",
@@ -385,7 +385,7 @@
       "command": "buy|sell -s <SYM> -a <N> -m <$> | -q <shares> [-p <limit>] [--live]",
       "mcpTool": "robinhood_buy",
       "risk": "write-mutate",
-      "notes": "Double-gated like every write (--live + ROBINHOOD_ALLOW_LIVE_WRITE=1; dry-run by default). Auto: OTC/fractional guard, pending-order dedup (5-min; --force skips), ref_id idempotency, trade log. Same engine as robinhood_sell. For OTC names needing auto-limit-at-ask use `brokerage buy`."
+      "notes": "Env-gated like every write (set ROBINHOOD_ALLOW_LIVE_WRITE=1; --live optional; dry-run by default). Auto: OTC/fractional guard, pending-order dedup (5-min; --force skips), ref_id idempotency, trade log. Same engine as robinhood_sell. For OTC names needing auto-limit-at-ask use `brokerage buy`."
     },
     {
       "id": "order-status-check",
@@ -426,10 +426,10 @@
         "kill all orders",
         "flatten my orders"
       ],
-      "command": "panic   (dry-run by default — shows the would-cancel list; live needs --live-write + ROBINHOOD_ALLOW_LIVE_WRITE=1)",
+      "command": "panic   (dry-run by default — shows the would-cancel list; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live-write optional))",
       "mcpTool": "robinhood_panic",
       "risk": "destructive",
-      "notes": "Enumerates orders/ + options/orders/ across ALL owned accounts; each cancel is individually double-gated and evidence-re-read from order history. Zayd Khan // cold // www.zayd.wtf"
+      "notes": "Enumerates orders/ + options/orders/ across ALL owned accounts; each cancel is individually env-gated and evidence-re-read from order history. Zayd Khan // cold // www.zayd.wtf"
     },
     {
       "id": "orders-open",
@@ -476,7 +476,7 @@
       "command": "options close <SYMBOL> [--account N --strike K --expiration D --type call|put]   (emits the dry-run body + the gated send command; never sends)",
       "mcpTool": "robinhood_options_close",
       "risk": "sensitive-read",
-      "notes": "Finds the position across accounts, derives side/effect from its direction — position_effect is ALWAYS close, never infers an open. Multiple matches require disambiguation; the live send stays behind both write gates (double-gated brokerage execute)."
+      "notes": "Finds the position across accounts, derives side/effect from its direction — position_effect is ALWAYS close, never infers an open. Multiple matches require disambiguation; the live send stays behind the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch (env-gated brokerage execute)."
     },
     {
       "id": "trade-review",

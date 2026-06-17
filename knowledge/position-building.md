@@ -99,7 +99,7 @@ node cli/dist/index.js wheel <SYM> --account <N>            # stage + the litera
 # 3a. Accumulation path — gap math, then the schedule
 node cli/dist/index.js quote <SYM> --json                   # gap $ = (100 − shares) × last
 node cli/dist/index.js buy -s <SYM> -a <N> -m <USD>         # fractional tranche (dry-run default)
-node cli/dist/index.js recurring create --account <N> --symbol <SYM> --amount <USD> --frequency weekly  # autopilot (double-gated)
+node cli/dist/index.js recurring create --account <N> --symbol <SYM> --amount <USD> --frequency weekly  # autopilot (env-gated)
 
 # 3b. CSP-acquisition path — enumerate, then dry-run quote
 node cli/dist/index.js options expirations <SYM> --json
@@ -121,7 +121,7 @@ wheel/CC question, hand off to `wheel`; (3) if cash ≥ strike×100 → CSP acqu
 quote it at the strike the user would pay; (4) if neither, price the PMCC floor (LEAPS ask ×
 100) against buying power and the account's entitlement; (5) otherwise accumulation — emit the
 gap in dollars, the cycles-to-goal at the proposed cadence, and the `recurring create` dry-run;
-(6) any send: both gates, echo contract, order-history evidence, log the THREAD ("building to
+(6) any send: the live-write switch on, echo contract, order-history evidence, log the THREAD ("building to
 100 sh for CC; leg 0: accumulation") in `trading-log.md` so the next session knows the campaign.
 
 ## Deep dives

@@ -115,7 +115,7 @@ grep -i "<SYM>" trading-log.md                                  # agent-side int
 node cli/dist/index.js recurring list --json                    # live schedule on the symbol? → pause first
 node cli/dist/index.js settings show --account <N>              # DRIP on? → per-instrument disable below
 
-# 4. Neutralize the automatic re-buyers (double-gated writes; get explicit approval)
+# 4. Neutralize the automatic re-buyers (env-gated writes; get explicit approval)
 node cli/dist/index.js recurring pause --id <SCHEDULE_ID> --live-write      # + ROBINHOOD_ALLOW_LIVE_WRITE=1
 node cli/dist/index.js settings drip --account <N> --disable --instrument <INSTRUMENT_ID> --live-write
 
@@ -128,7 +128,7 @@ node cli/dist/index.js buy  -s <CORRELATED_SYM> -a <N> -m <USD>  # replacement e
 candidates by **realized-loss dollars**, not percent — a −40% on a $50 lot is $20 of loss, a −8%
 on a $20,000 lot is $1,600; (3) for each candidate, clear the 30-day lookback AND kill the
 automatic re-buyers; (4) pick the replacement (correlated-not-identical, or sit in cash 31 days);
-(5) dry-run, echo account + symbol + side + qty, send only with both gates, verify in order
+(5) dry-run, echo account + symbol + side + qty, send only with the live-write switch on, verify in order
 history, log to `trading-log.md` with INTENT "tax-loss harvest, $X loss realized, replacement
 <SYM>, re-entry window opens <DATE+31>". Set the re-entry date in the log — future-you needs it.
 

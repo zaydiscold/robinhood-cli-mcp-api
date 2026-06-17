@@ -41,7 +41,7 @@ you *why it's true*; AGENTS.md tells you *everything else*.
   dollar-denominated.
 - **Descriptive, not prescriptive on risk.** Modules surface mechanics, numbers, and flags; the
   operator chooses risk and sizing.
-- **Reads are free; writes are double-gated.** Nothing in this library overrides the dry-run
+- **Reads are free; writes are env-gated.** Nothing in this library overrides the dry-run
   default, the confirmation contract, or the order-evidence rule.
 - **Link, don't duplicate.** When a module and a deep doc disagree, the dated doc + live API are
   the tiebreakers — and the discrepancy should be reported, not papered over.

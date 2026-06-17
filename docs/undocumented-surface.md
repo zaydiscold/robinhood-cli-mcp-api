@@ -111,7 +111,7 @@ entries are unrelated read routes).
 4. **Response shape.** Items POST echoes the request body (200). Create returns the full list object (id, display_name, owner UUID, allowed_object_types, item_count). Lists are **user-level, not account-scoped** — no `account_number` anywhere.
 5. **Rate-limit behavior.** None observed across the capture + verification writes.
 6. **Risk classification.** `discovery/lists/items/` POST = `write-mutate` (reversible add/remove);
-   `discovery/lists/` POST + `discovery/lists/{id}/` PATCH/DELETE = `destructive`. All double-gated; safe
+   `discovery/lists/` POST + `discovery/lists/{id}/` PATCH/DELETE = `destructive`. All env-gated; safe
    for `brokerage execute` only behind both write gates. Wired as first-class `watchlist add/remove/create`.
 
 When a new undocumented route is discovered, record:

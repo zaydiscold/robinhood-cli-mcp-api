@@ -2,20 +2,22 @@
 
 > **When to load this:** before ANY write (order, cancel, settings change, recurring toggle) and
 > whenever an error comes back from a write path. Reads are free and live; **every write is a
-> dry-run until both gates are deliberately passed.** This is the checklist version of SKILL.md's
-> failure modes — when in doubt, stop and confirm.
+> dry-run unless the `ROBINHOOD_ALLOW_LIVE_WRITE=1` switch is set.** This is the checklist version of
+> SKILL.md's failure modes — when in doubt, stop and confirm.
 
-## The two gates (non-negotiable)
+## The live-write switch (non-negotiable)
 
-- A write sends only with **both** `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1`
-  (MCP: `liveWrite: true` + the env var in the server's environment). One alone = dry-run.
-- **Never export the env var** into a shell profile. Inline, on the single command, every time:
+- A write sends only when `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set in the environment — the single master
+  switch (MCP: the env var in the server's environment). No per-call `--live-write`/`liveWrite` is
+  required; the flag is accepted but optional and no longer the gate. Switch unset = every write is dry-run.
+- **Set it deliberately.** Prefer inline on the single command over exporting it into a shell profile,
+  where every later write would silently go live:
 
 ```bash
-ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js <command> ... --live-write
+ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js <command> ...
 ```
 
-- MCP `dryRun: true` always wins, even with both gates — the deliberate "preview this exact live
+- MCP `dryRun: true` always wins, even when the switch is on — the deliberate "preview this exact live
   call" escape hatch.
 
 ## The account-echo contract (before ANY send)
@@ -84,7 +86,7 @@ stop and ask. Never default into naked/undefined-risk exposure.
 
 ## Golden rule
 
-> Reads are free and live; every write is dry-run until you deliberately pass both gates. When
+> Reads are free and live; every write is dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 is set. When
 > unsure about account, side, position_effect, or amount — stop and confirm. A wrong write is
 > real money.
 

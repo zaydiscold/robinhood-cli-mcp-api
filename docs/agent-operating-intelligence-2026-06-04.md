@@ -46,7 +46,7 @@ mid-batch.
    (what + intent + thread; status `executed` only if order history confirms — order-evidence rule).
 
 If all seven pass, you're cleared for reads and dry-runs. Live writes still require
-explicit user approval + both gates, every single command.
+explicit user approval + the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch, every single command.
 
 ---
 
@@ -271,7 +271,7 @@ State this honestly; never overclaim a capability that isn't there, and never
 | **Equity / ETP** | **Placeable** | Dollar-notional (fractional, market) or whole shares; OTC auto-limits at the ask (whole only). Full lifecycle via `brokerage buy` / `orders/`. |
 | **Single-leg + multi-leg options** | **Placeable** | The four primitives + 20 strategy workflows; lifecycle verified (201→cancel 200). UUIDs are random v4 — **bulk-enumerate every time** (`options enumerate`); never compute/guess/cache a per-contract id. |
 | **Index options (SPX/SPXW/XSP/NDX/VIX/RUT)** | **Present & chain-readable; opening needs an entitlement tier** | True cash-settled §1256 products — hidden from search & `instruments/?symbol=`, live under `options/chains/?underlying_symbol=`. `can_open_position:true` on reads, but actually opening may need index-options approval. Picking SPX over SPY is a *live* choice that buys §1256 60/40 + European-style box financing. |
-| **Crypto** | **Placeable (separate auth)** | Official signed Crypto Trading API — Ed25519 key signing, NOT the brokerage bearer. Same double-gate. |
+| **Crypto** | **Placeable (separate auth)** | Official signed Crypto Trading API — Ed25519 key signing, NOT the brokerage bearer. Same env gate. |
 | **Futures (CME /ES, /MGC, /6E, …)** | **Read/enumerate only** | Real contracts quote via `midlands/lists/items/?list_id=…` (embedded bid/ask/last/margin). `brokerage search` *drops* the futures objects — use the lists endpoint. **Not placeable:** `ceres.robinhood.com` refuses TLS to all non-app clients, and this login has no onboarded futures account. |
 | **Spot FX** | **Absent** | No spot-FX product at all (`currency_pairs` always `[]`; `/forex/` 404). Currency exposure = currency *futures* (read-only) or crypto pairs (separate API). DXY not tradable. |
 | **Commodities** | **ETF proxies only (placeable); real futures read-only** | USO/UVXY/VXX/BITO etc. are normal equities, placeable via the equity engine. The underlying commodity futures (/CL, /GC, /SI) quote but route through ceres → not placeable. |
@@ -306,7 +306,7 @@ educational, not tax advice.
 
 ## 7. The safety model in one screen (so you act, not just read)
 
-- **Double gate, per command, every time:** a write sends only with **both**
+- **Single-switch gate, per command, every time:** a write sends only with **both**
   `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1` (MCP: `liveWrite:true` + the env
   var in the server's environment). With one or neither it's a dry-run.
 - **Never export the env var** into your shell profile. Inline, single command, every
@@ -375,7 +375,7 @@ Ranked by leverage (hardening first, then growth). Each is concrete enough to st
 7. **Own-the-market wedge — keep CLI/MCP/api-map aligned and lean into the niche.**
    RH's own "Agentic Trading" (launched 2026-05-27) is equities-only and sandboxed;
    this tool's wedge is **options + crypto + every owned account + an auditable
-   double-gate**. PDT is lifted on RH — the $25k day-trade cap is gone (FINRA eliminated
+   env gate**. PDT is lifted on RH — the $25k day-trade cap is gone (FINRA eliminated
    it 2026-06-04, RH implemented), so margin accounts day-trade freely.
    The durable advantage is breadth + auditability, so the maintenance invariant (no
    duplicated logic, gate intact across all three surfaces) is also the product moat —

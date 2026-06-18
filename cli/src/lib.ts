@@ -6163,11 +6163,16 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
                     }
                     maxLoss = null;
                 }
-                else if (maxLoss !== null) {
-                    const debitPaid = n(p.avgOpenPrice) * p.qty * 100;
-                    if (Number.isFinite(debitPaid))
-                        maxLoss += debitPaid;
-                }
+            }
+            // Max loss for a purely-long position = total debit paid, computed ONCE from the
+            // position-level cost basis. average_open_price is ALREADY per-contract dollars
+            // (premium × 100; see optionReturnPct), so it is multiplied by the contract count
+            // ONLY — never by another 100 — and only after the leg loop, so a multi-leg long
+            // (e.g. a long straddle) is not counted once per leg. Any short leg already set
+            // maxLoss = null (spread defined-risk is intentionally left unmodeled here).
+            if (maxLoss !== null) {
+                const debit = n(p.avgOpenPrice) * p.qty;
+                maxLoss = Number.isFinite(debit) ? debit : null;
             }
             positions.push({ kind: "option", symbol: p.symbol, description: `${p.symbol} ${p.strategy ?? ""}`.trim(), side: p.strategy?.startsWith("short") ? "short" : "long", quantity: p.qty, marketValueUsd: round2(totalPosMktVal), maxLossUsd: maxLoss !== null ? round2(maxLoss) : null, itmExpirationRisk: itmRisk, undercoveredShortLegs: undercovered, account: a.acct });
             symbolValues.set(p.symbol, (symbolValues.get(p.symbol) ?? 0) + (Number.isFinite(totalPosMktVal) ? Math.abs(totalPosMktVal) : 0));

@@ -298,7 +298,7 @@ const riskFix = () => buildFixture({
       },
       {
         symbol: "BBB", strategy: "long put", quantity: "2",
-        average_open_price: "1.50",
+        average_open_price: "150.00", // per-contract dollars (premium $1.50/sh × 100)
         legs: [{
           option_id: "optB1", position_type: "long", option_type: "put",
           strike_price: "30.0000", expiration_date: "2026-08-21",
@@ -336,6 +336,37 @@ describe("computeRisk — portfolio risk scanner", () => {
     const optPut = r.positions.find((p) => p.kind === "option" && p.symbol === "BBB")!;
     expect(optPut.marketValueUsd).toBe(200);
     expect(optPut.side).toBe("long");
+    // Max loss = total debit = $150/contract × 2 = $300. average_open_price is per-contract
+    // dollars, so it is multiplied by the contract count ONLY. Regression guard for the
+    // 100× bug: this must be $300, NOT $30,000 (avgOpen × qty × 100).
+    expect(optPut.maxLossUsd).toBe(300);
+  });
+
+  it("multi-leg long (long straddle) counts the debit ONCE, not per leg", async () => {
+    const fix = buildFixture({
+      accounts: { results: [{ type: "rhs", account_number: "111111111", account_name: "Main" }] },
+      positions: { "111111111": [] },
+      optionAggregates: { "111111111": [
+        {
+          symbol: "CCC", strategy: "long straddle", quantity: "1",
+          average_open_price: "400.00", // net per-contract debit (premium $4.00/sh × 100)
+          legs: [
+            { option_id: "ccc_c", position_type: "long", option_type: "call", strike_price: "100.0000", expiration_date: "2026-09-18", ratio_quantity: "1" },
+            { option_id: "ccc_p", position_type: "long", option_type: "put",  strike_price: "100.0000", expiration_date: "2026-09-18", ratio_quantity: "1" }
+          ]
+        }
+      ]},
+      portfolios: { "111111111": { equity: "5000.00" } },
+      optionMarks: {
+        "ccc_c": { instrument_id: "ccc_c", adjusted_mark_price: "2.50", mark_price: "2.50" },
+        "ccc_p": { instrument_id: "ccc_p", adjusted_mark_price: "1.80", mark_price: "1.80" }
+      }
+    });
+    const r = await computeRisk({}, fix);
+    const pos = r.positions.find((p) => p.kind === "option" && p.symbol === "CCC")!;
+    // Debit = $400/contract × 1 = $400, counted ONCE across BOTH long legs.
+    // Regression guard for the per-leg double-count: must be $400, not $800.
+    expect(pos.maxLossUsd).toBe(400);
   });
 
   it("detects ITM expiration risk for short options", async () => {

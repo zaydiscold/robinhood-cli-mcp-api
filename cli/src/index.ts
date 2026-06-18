@@ -28,6 +28,10 @@ import {
   selectRouteByQueryAndMethod,
   brokerageGetJson,
   brokerageGetAllResults,
+  loadOwnedAccounts,
+  assertAccountOwned as assertOwnedAccount,
+  fetchOptionMarks,
+  fetchQuotes,
   computePortfolioPnl,
   computeDividends,
   computeTradeReview,
@@ -729,90 +733,32 @@ brokerage
   .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
-    if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
-    if (opts.dollars && opts.shares) throw new Error("Pass only one of --dollars or --shares.");
-    if (opts.dollars && !(Number(opts.dollars) > 0)) throw new Error(`--dollars must be a positive number (got "${opts.dollars}").`);
-    if (opts.shares && !(Number(opts.shares) > 0)) throw new Error(`--shares must be a positive number (got "${opts.shares}").`);
-    if (opts.limit && !(Number(opts.limit) > 0)) throw new Error(`--limit must be a positive number (got "${opts.limit}").`);
-    const acctLabel = await assertOwnedAccount(opts.account);
-    const inst = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
-    if (!inst) throw new Error(`No instrument for ${symbol} — check the ticker (use 'brokerage search').`);
-    const q = (await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: inst.id })).results?.[0] ?? {};
-    // OTC signal: otc_market_tier populated OR fractional only closeable.
-    const otc = Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
-
-    const body: Record<string, unknown> = {
-      account: `https://api.robinhood.com/accounts/${opts.account}/`,
-      instrument: `https://api.robinhood.com/instruments/${inst.id}/`,
-      symbol: inst.symbol,
+    // Routes through placeEquityOrder — the SINGLE equity-buy engine shared with the CLI `buy`
+    // and MCP robinhood_buy, so dedup / ref_id idempotency / trade-log append / post-send
+    // evidence apply identically (WSF-01).
+    const r = await placeEquityOrder({
+      symbol,
+      accountNumber: opts.account,
       side: "buy",
-      time_in_force: opts.tif === "gtc" ? "gtc" : "gfd",
-      trigger: "immediate",
-      position_effect: "open",
-      market_hours: "regular_hours",
-      order_form_version: 7,
-      bid_price: q.bid_price,
-      ask_price: q.ask_price,
-      bid_ask_timestamp: q.updated_at ?? new Date().toISOString(),
-      ref_id: randomUUID()
-    };
+      amount: opts.dollars ? Number(opts.dollars) : undefined,
+      shares: opts.shares ? Number(opts.shares) : undefined,
+      limitPrice: opts.limit ? Number(opts.limit) : undefined,
+      liveWrite: Boolean(opts.liveWrite),
+      force: false
+    });
 
-    if (opts.dollars) {
-      if (inst.fractional_tradability !== "tradable") {
-        throw new Error(`${inst.symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional order. Use --shares <whole qty>${otc ? " (OTC: limit at ask)" : ""}.`);
-      }
-      body.type = "market";
-      body.dollar_based_amount = { amount: Number(opts.dollars).toFixed(2), currency_code: "USD" };
-    } else {
-      body.quantity = String(opts.shares);
-      // The auto-collar uses the live ask; guard against a null/empty/zero ask becoming the
-      // order price/collar (halted name, bad quote). An explicit --limit bypasses the ask entirely.
-      if (!opts.limit && !(Number(q.ask_price) > 0)) {
-        throw new Error(`${inst.symbol}: no usable ask price from the quote (ask=${JSON.stringify(q.ask_price)}). Pass an explicit --limit <price> or retry during market hours.`);
-      }
-      if (opts.limit || otc) {
-        body.type = "limit";
-        body.price = opts.limit ?? q.ask_price;
-      } else {
-        body.type = "market";
-        body.price = q.ask_price; // collar
-      }
-    }
-
-    // Collar sanity (shares path, auto-collar only — explicit --limit is the user's call).
-    let collarWarning: string | undefined;
-    if (opts.shares && !opts.limit) {
-      const c = collarSanity(q);
-      if (c.stale) {
-        collarWarning =
-          `${inst.symbol}: ask-collar ${c.ask} is ${c.deviationPct.toFixed(0)}% off reference ${c.ref.toFixed(2)} ` +
-          `(stale/after-hours quote — this collar would not protect the order). ` +
-          `Pass an explicit --limit <price> (regular-hours marketable limit) or retry during market hours.`;
-      }
-    }
-
-    const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: ORDERS_URL });
-    const route = selectRouteByQueryAndMethod(matches, ORDERS_URL, "POST");
-    if (!route) throw new Error("orders/ POST route missing from map — rebuild (AGENTS.md §3).");
-    const gate = resolveLiveWriteGate({ risk: route.risk, method: "POST", dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
-    if (gate.forcedDryRun && gate.reason) process.stderr.write(`${gate.reason}\n`);
-    const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
-    // Block a LIVE send on a stale collar; warn (still inspectable) on a dry-run.
-    if (collarWarning) {
-      if (effectiveDryRun) process.stderr.write(`⚠️  ${collarWarning}\n`);
-      else throw new Error(collarWarning);
-    }
-    const plan = planBrokerageRequest({ route, method: "POST", params: {}, body, dryRun: effectiveDryRun });
-    const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: true });
-
-    const kind = opts.dollars ? `$${Number(opts.dollars).toFixed(2)} fractional/market` : `${opts.shares}sh ${body.type}${otc ? " (OTC)" : ""}`;
-    const acctTag = acctLabel ? `${opts.account} (${acctLabel})` : opts.account;
     if (opts.json) {
-      printJson({ symbol: inst.symbol, account: opts.account, accountLabel: acctLabel, otc, kind, dryRun: effectiveDryRun, status: result.status, body: result.body });
+      printJson({ generatedAt: new Date().toISOString(), symbol: r.symbol, account: r.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, otcAutoLimit: r.otcAutoLimit, session: r.session, sessionWarning: r.sessionWarning, live: r.live, refId: r.refId, result: r.result });
       return;
     }
-    process.stdout.write(`${effectiveDryRun ? "DRY-RUN" : result.status + " " + result.statusText} buy ${inst.symbol} ${kind} acct ${acctTag}\n`);
-    process.stdout.write(result.body ? `${result.body}\n` : "");
+
+    const mode = r.dryRun ? "DRY-RUN" : "LIVE";
+    const sizing = r.dollarBased ? `$${r.estimatedTotal.toFixed(2)} (dollar-based ≈ ${r.shares.toFixed(6)} sh)` : `${r.shares.toFixed(6)} sh ≈ $${r.estimatedTotal.toFixed(2)}`;
+    const acctTag = opts.account.slice(-4);
+    process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${sizing} @ ~$${r.estimatedPrice.toFixed(2)}  acct=…${acctTag}${r.session ? `  [${r.session}]` : ""}\n`);
+    if (r.sessionWarning) process.stdout.write(`⚠️  ${r.sessionWarning}\n`);
+    if (r.dryRun) process.stdout.write("Add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live-write optional) to execute.\n");
+    else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 
 // --- Instrument search: ground ticker resolution in Robinhood's own universe ---
@@ -1214,46 +1160,10 @@ const INSTRUMENT_MARGIN_REQUIREMENTS_URL = "https://bonfire.robinhood.com/instru
 // Returns parsed JSON; throws on a missing route, unfilled placeholder, or non-200.
 // brokerageGetJson + tryBrokerageGetJson are imported from ./lib.js — shared with the MCP server.
 
-// Owned-account validation. The #1 money-loss risk is acting on the WRONG account — a typo'd or
-// hallucinated account number otherwise templates straight into a live order body. We resolve the
-// real account set once (from transfer/accounts/, the COMPLETE graph) and refuse a write to an
-// account the token doesn't own. If the lookup itself fails (offline / mid-refresh) we WARN but do
-// not hard-block, so a transient read failure can't wedge every write.
-let _ownedAccountsCache: { numbers: Set<string>; labels: Map<string, string> } | null = null;
-async function loadOwnedAccounts(): Promise<{ numbers: Set<string>; labels: Map<string, string> } | null> {
-  if (_ownedAccountsCache) return _ownedAccountsCache;
-  try {
-    const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
-    const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
-    const numbers = new Set<string>();
-    const labels = new Map<string, string>();
-    for (const a of rows) {
-      if (a?.type !== "rhs" && a?.type !== "ira_roth") continue; // trading accounts only
-      if (!a.account_number) continue;
-      numbers.add(String(a.account_number));
-      labels.set(String(a.account_number), a.account_name || a.display_title || "");
-    }
-    if (numbers.size === 0) return null;
-    _ownedAccountsCache = { numbers, labels };
-    return _ownedAccountsCache;
-  } catch {
-    return null;
-  }
-}
-async function assertOwnedAccount(accountNumber: string): Promise<string | undefined> {
-  const owned = await loadOwnedAccounts();
-  if (!owned) {
-    process.stderr.write(`⚠️  Could not verify account ${accountNumber} against your owned accounts (lookup failed). Proceeding — double-check the number.\n`);
-    return undefined;
-  }
-  if (!owned.numbers.has(String(accountNumber))) {
-    throw new Error(
-      `Account ${accountNumber} is not one of your trading accounts (${[...owned.numbers].map((n) => "…" + n.slice(-4)).join(", ")}). ` +
-        `Refusing to act on an unowned/typo'd account.`
-    );
-  }
-  return owned.labels.get(String(accountNumber)) || "";
-}
+// Owned-account validation + the account-graph loader now live in lib.ts (shared with the order
+// engine and the MCP surface, so the #1 money-loss guard can't protect one front-end and miss
+// another). `assertOwnedAccount` here is the imported `assertAccountOwned`; `loadOwnedAccounts` is
+// the shared loader. See lib.ts "Shared account-graph + marketdata helpers".
 
 const num = (value: unknown): number => Number(value);
 const usd = (value: number): string => (Number.isFinite(value) ? `$${value.toFixed(2)}` : "—");
@@ -1311,18 +1221,7 @@ async function loadOpenOptionPositions(): Promise<OpenOptionPosition[]> {
   return open;
 }
 
-// Fetch option marketdata for many instrument ids, chunked to keep URLs bounded.
-async function fetchOptionMarks(ids: string[]): Promise<Map<string, any>> {
-  const marks = new Map<string, any>();
-  const chunkSize = 40;
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const data = await brokerageGetJson(MARKETDATA_OPTIONS_URL, { ids: ids.slice(i, i + chunkSize).join(",") });
-    for (const row of data.results ?? []) {
-      if (row?.instrument_id) marks.set(row.instrument_id, row);
-    }
-  }
-  return marks;
-}
+// fetchOptionMarks + fetchQuotes are imported from lib.ts (shared, chunked marketdata fetchers).
 
 function finiteNumber(value: unknown): number {
   const parsed = Number(value);
@@ -2402,18 +2301,6 @@ const POSITIONS_URL = "https://api.robinhood.com/positions/";
 const DISCOVERY_LISTS_URL = "https://api.robinhood.com/discovery/lists/";
 
 // Batch instrument-id -> quote lookup, chunked to keep URLs bounded.
-async function fetchQuotes(instrumentIds: string[]): Promise<Map<string, any>> {
-  const quotes = new Map<string, any>();
-  const chunkSize = 40;
-  for (let i = 0; i < instrumentIds.length; i += chunkSize) {
-    const data = await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: instrumentIds.slice(i, i + chunkSize).join(",") });
-    for (const row of data.results ?? []) {
-      if (row?.instrument_id) quotes.set(row.instrument_id, row);
-    }
-  }
-  return quotes;
-}
-
 const quoteLast = (quote: any): number => num(quote?.last_trade_price ?? quote?.last_extended_hours_trade_price);
 
 program

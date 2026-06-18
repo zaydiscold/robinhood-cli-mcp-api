@@ -1,6 +1,15 @@
 ---
 name: robinhood-cli
-description: This skill should be used when the user asks to "use Robinhood", "check my Robinhood account", "show my positions", "rank my options", "quote an options spread", "build a dry-run Robinhood order", "manage recurring investments", "check account settings", "map Robinhood endpoints", "use the Robinhood CLI", or "use the Robinhood MCP" — and for finance research/due-diligence: market sentiment and signal sourcing (news vs Twitter/X vs Reddit), or consulting the operator's "ball knowledge" investing-notes ledger. It covers brokerage/crypto reads, positions, orders, watchlists, options chains, recurring buys, account-settings route maps, the source-quality due-diligence doctrine, the Ball Knowledge memory layer, and the full reverse-engineered API map with safety gates.
+description: >
+  This skill should be used when the user asks to "use Robinhood", "check my Robinhood account",
+  "show my positions", "rank my options", "quote an options spread", "build a dry-run Robinhood order",
+  "manage recurring investments", "check account settings", "map Robinhood endpoints",
+  "use the Robinhood CLI", or "use the Robinhood MCP" — and for finance research/due-diligence:
+  market sentiment and signal sourcing (news vs Twitter/X vs Reddit), or consulting the operator's
+  "ball knowledge" investing-notes ledger. It covers brokerage/crypto reads, positions, orders,
+  watchlists, options chains, recurring buys, account-settings route maps, the source-quality
+  due-diligence doctrine, the Ball Knowledge memory layer, and the full reverse-engineered API map
+  with safety gates.
 version: 2.0.0
 author: Zayd (@zaydiscold)
 license: MIT
@@ -1281,14 +1290,14 @@ The full first-class tool roster (live truth: `tools/list`, never a hardcoded co
 ### Registration
 
 ```bash
-hermes mcp add robinhood --command "node" \
-  --args "C:/Users/ZaydK/Desktop/robinhood-cli/mcp/dist/server.js"
-```
+# Hermes (reads + writes gated by ROBINHOOD_ALLOW_LIVE_WRITE=1):
+hermes mcp add robinhood-cli --command node \
+  --env ROBINHOOD_ALLOW_LIVE_WRITE=1 \
+  --args /path/to/robinhood-cli/mcp/dist/server.js
 
-Or for Claude Code / other MCP clients:
-
-```bash
-claude mcp add robinhood-cli -s user -- \
+# Or for Claude Code / other MCP clients:
+claude mcp add robinhood-cli -s user \
+  -e ROBINHOOD_ALLOW_LIVE_WRITE=1 -- \
   node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 

@@ -1807,6 +1807,44 @@ export interface LiveWriteGate {
  * the env switch is the single source of truth. Previously this required BOTH the
  * env var AND a per-call flag; the per-call flag is now optional.
  */
+// ── Account lock: restrict live writes to an explicit allow-list (defense-in-depth) ──
+// ROBINHOOD_ALLOWED_ACCOUNT="123,456" → only those accounts can be written live; any other is
+// forced to dry-run even when the master switch is on (mirrors the official RH MCP's dedicated-
+// account isolation). Unset / empty → no restriction (behavior unchanged).
+export function parseAllowedAccounts(env: NodeJS.ProcessEnv = process.env): string[] {
+  return (env.ROBINHOOD_ALLOWED_ACCOUNT ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+export function isAccountAllowed(accountNumber: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const allow = parseAllowedAccounts(env);
+  return allow.length === 0 || allow.includes(String(accountNumber).trim());
+}
+
+// ── Notional caps: optional per-order and per-session dollar ceilings for LIVE sends ──
+// ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS (both default-disabled). A live order
+// whose notional exceeds the per-order cap, or would push cumulative session spend past the session
+// cap, throws NotionalCapError unless overridden. Dry-runs/previews are never blocked.
+let sessionNotionalSpent = 0;
+export function getSessionNotionalSpent(): number { return sessionNotionalSpent; }
+export function resetSessionNotionalSpent(): void { sessionNotionalSpent = 0; }
+export class NotionalCapError extends Error {
+  constructor(message: string) { super(message); this.name = "NotionalCapError"; }
+}
+export function checkNotionalCaps(notionalDollars: number, opts: { override?: boolean; env?: NodeJS.ProcessEnv } = {}): void {
+  if (opts.override) return;
+  const env = opts.env ?? process.env;
+  const perOrder = Number(env.ROBINHOOD_MAX_ORDER_DOLLARS);
+  if (Number.isFinite(perOrder) && perOrder > 0 && notionalDollars > perOrder) {
+    throw new NotionalCapError(`Order notional $${notionalDollars.toFixed(2)} exceeds ROBINHOOD_MAX_ORDER_DOLLARS=$${perOrder.toFixed(2)}. Raise the cap or pass overrideCap to bypass.`);
+  }
+  const perSession = Number(env.ROBINHOOD_MAX_SESSION_DOLLARS);
+  if (Number.isFinite(perSession) && perSession > 0 && sessionNotionalSpent + notionalDollars > perSession) {
+    throw new NotionalCapError(`This order ($${notionalDollars.toFixed(2)}) would push session spend to $${(sessionNotionalSpent + notionalDollars).toFixed(2)}, over ROBINHOOD_MAX_SESSION_DOLLARS=$${perSession.toFixed(2)}. Raise the cap or pass overrideCap to bypass.`);
+  }
+}
+export function recordSessionNotional(notionalDollars: number): void {
+  if (Number.isFinite(notionalDollars) && notionalDollars > 0) sessionNotionalSpent += notionalDollars;
+}
+
 export function resolveLiveWriteGate(input: {
   risk: RouteRisk;
   dryRun: boolean;
@@ -1814,6 +1852,8 @@ export function resolveLiveWriteGate(input: {
   liveWrite?: boolean;
   /** HTTP method — when it's a write verb, the gate engages even if `risk` is mis-classified as read. */
   method?: string;
+  /** Target account — when set and ROBINHOOD_ALLOWED_ACCOUNT excludes it, the live write is forced to dry-run. */
+  accountNumber?: string;
   env?: NodeJS.ProcessEnv;
 }): LiveWriteGate {
   const env = input.env ?? process.env;
@@ -1826,6 +1866,15 @@ export function resolveLiveWriteGate(input: {
   // Explicit per-call preview, or a plain read: never sends.
   if (input.dryRun || !isWrite) {
     return { allowed: true, forcedDryRun: false };
+  }
+  // ACCOUNT LOCK: a live write to an account NOT on ROBINHOOD_ALLOWED_ACCOUNT is forced to dry-run
+  // even with the master switch on — defense-in-depth account isolation. Unset list → no restriction.
+  if (input.accountNumber !== undefined && !isAccountAllowed(input.accountNumber, env)) {
+    return {
+      allowed: false,
+      forcedDryRun: true,
+      reason: `Account ${input.accountNumber} is not in ROBINHOOD_ALLOWED_ACCOUNT (${parseAllowedAccounts(env).join(", ") || "empty"}) — forced to dry-run even with the live switch on. Add it to the allow-list to write live to it.`
+    };
   }
   // Single master switch: ROBINHOOD_ALLOW_LIVE_WRITE=1 turns live writes ON by default,
   // with no per-call flag required. Pass --dry-run / dryRun:true to preview instead.
@@ -1892,8 +1941,14 @@ function cryptoAuthFromEnv(options: ExecuteCryptoOptions) {
 // request can be retried once. Returns undefined if the refresh produced nothing.
 // Runs in the CLI's own (TCC-permitted) context, so no daemon / Full Disk Access
 // grant is needed. See scripts/refresh-auth.sh for the disk-read rationale.
-function resolveBash(): string {
-  if (process.platform === "win32") {
+export function resolveBash(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string {
+  // Explicit, absolute override (validated) — never PATH-resolve on a token-handling path.
+  const override = env.ROBINHOOD_BASH_PATH;
+  if (override) {
+    if (existsSync(override)) return override;
+    throw new Error(`ROBINHOOD_BASH_PATH is set but not found: ${override}`);
+  }
+  if (platform === "win32") {
     // git-bash on Windows: try the standard Git install path first,
     // then fall back to the MSYS2 /bin/bash (resolvable when running inside bash).
     const candidates = [
@@ -1905,7 +1960,13 @@ function resolveBash(): string {
     for (const c of candidates) {
       if (existsSync(c)) return c;
     }
-    return "bash"; // let execFileSync try PATH
+    // SECURITY: never fall back to a bare "bash" (PATH-resolved) on this token-handling path —
+    // an attacker who can prepend a dir to PATH could plant a bash.exe that exfiltrates the
+    // brokerage token being written. Fail loud instead.
+    throw new Error(
+      "Cannot locate a trusted bash (Git for Windows not found at the standard paths). " +
+      "Install Git for Windows, or set ROBINHOOD_BASH_PATH to an absolute bash.exe path."
+    );
   }
   return "/bin/bash";
 }
@@ -2495,6 +2556,8 @@ export async function gatedBrokerageWrite(opts: {
   logContext?: string;
   /** Set by callers that write their OWN richer log entry (placeEquityOrder) to avoid double-logging. */
   skipTradeLog?: boolean;
+  /** Target account for the account-lock check (ROBINHOOD_ALLOWED_ACCOUNT). */
+  accountNumber?: string;
 }): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
   const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
@@ -2503,7 +2566,7 @@ export async function gatedBrokerageWrite(opts: {
     const tail = suggestions.length ? ` Closest mapped routes: ${suggestions.join(" | ")}.` : "";
     throw new Error(`No ${opts.method ?? "matching"} route for ${opts.url} — a forced write with no matching write route fails closed (never degrades to a read).${tail} Check the map / rebuild (AGENTS.md §3).`);
   }
-  const gate = resolveLiveWriteGate({ risk: route.risk, method: opts.method, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
+  const gate = resolveLiveWriteGate({ risk: route.risk, method: opts.method, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite), accountNumber: opts.accountNumber });
   const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
   const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
   const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
@@ -2953,6 +3016,8 @@ export interface EquityOrderInput {
   liveWrite?: boolean;
   /** Skip the pending-duplicate check. */
   force?: boolean;
+  /** Bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order. */
+  overrideCap?: boolean;
 }
 
 export interface EquityOrderDeps {
@@ -3165,14 +3230,22 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
     body = { ...baseBody, quantity: String(shares), price };
   }
 
+  // NOTIONAL CAPS: block an oversized LIVE send. Applies only to a genuine live attempt (intent +
+  // master switch on + account allowed by any lock); dry-runs and previews are never blocked.
+  const notional = shares * (isMarket ? last : Number(effectiveLimit));
+  if (liveWrite && process.env.ROBINHOOD_ALLOW_LIVE_WRITE === "1" && isAccountAllowed(input.accountNumber)) {
+    checkNotionalCaps(notional, { override: input.overrideCap });
+  }
   const result = await write({
     skipTradeLog: true, // placeEquityOrder writes its own richer log entry below — avoid double-logging
     url: "https://api.robinhood.com/orders/",
     method: "POST",
     body,
     dryRun: !liveWrite,
-    liveWrite
+    liveWrite,
+    accountNumber: input.accountNumber
   });
+  if (!result.dryRun) recordSessionNotional(notional);
 
   const rb = (() => {
     try { return typeof result.body === "string" ? JSON.parse(result.body) : result.body; }

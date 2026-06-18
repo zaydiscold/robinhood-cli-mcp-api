@@ -165,7 +165,6 @@ Use this exact sequence:
 8. Stop unless every required field and every `reviewContract` check is satisfied.
 
 Live execution is outside this playbook unless the user gives exact approval and
-the normal CLI gate is satisfied: `--live-write` plus
-`ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+the single-switch gate is satisfied: `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

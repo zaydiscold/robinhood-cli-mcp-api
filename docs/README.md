@@ -23,11 +23,11 @@ folder stays local and is never pushed.
 | `options-greeks-strategy-research-2026-06-02.md` | Greeks deep research + the aggressive-vs-defined-risk scoring heuristic |
 | `tax-aware-options-strategies.md` | Tax angles: CC rolling/deferral, qualified-covered-call taint, §1256 60/40, wash sale, constructive sale |
 | `strategy-deep-dive-the-wheel-2026-06-04.md` / `strategy-deep-dive-rolling-options-2026-06-04.md` | Advanced multi-lens deep dives (mechanics/Greeks/tax/sentiment/failure modes) + dissertation-level Quant appendices |
-| `options-strategy-execution-smoke-2026-06-03.md` | Dry-run strategy quote smoke evidence |
+| `docs/archive/options-strategy-execution-smoke-2026-06-03.md` | Dry-run strategy quote smoke evidence (archived)
 | `live-write-verification-2026-06-03.md` | Live recurring pause/resume round-trip + DRIP write-method correction (405) |
 | `options-contract-navigation-2026-06-03.md` | Exact-contract API resolution and account-pinned chain navigation |
 | `stock-page-profile-2026-06-03.md` | Stock detail page endpoint mapping |
-| `browser-capture-2026-05-26.md` | Older browser capture notes |
+| `docs/archive/browser-capture-2026-05-26.md` | Older browser capture notes (archived)
 | `agent-operating-intelligence-2026-06-04.md` | **Boot-smart KB** — read first: cardinal rule, account/order/signal-sourcing decision frameworks, failure→fix tree, roadmap |
 | `index-options-1256-conclusion-2026-06-04.md` | RH **does** offer cash-settled §1256 index options (SPX/SPXW/XSP/NDX/VIX/RUT) — hidden from search, live under `options/chains/?underlying_symbol=` |
 | `futures-fx-commodities-surface-2026-06-04.md` | Futures read-only (ceres TLS-walled), no spot FX, commodities via ETF proxies only |

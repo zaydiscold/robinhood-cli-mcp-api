@@ -9,13 +9,13 @@ condense the deep research in `docs/` to the operational core and link back for 
 
 | Layer | File(s) | Role |
 |---|---|---|
-| **Router** | `SKILL.md` (repo root; `CLAUDE.md` symlinks to it) | Trigger + boot doc: quick scan, failure modes, 80/20 commands, intent routing. Read first. |
-| **Topic modules** | `knowledge/*.md` (this directory) | Load the ONE module that matches the task. 80–200 lines each; commands + decision rules, no essays. |
-| **Deep research** | `docs/*.md` | Dated, source-backed studies (strategy deep-dives, tax law, live verifications, quant appendices). Load only when a module's link sends you there. |
-| **Full API reference** | `AGENTS.md` (repo root) | The complete self-contained surface: auth, route map, every command, worked raw-API examples. |
+| **0 — Boot KB** | `docs/agent-operating-intelligence-2026-06-04.md` | **READ FIRST.** Operating intelligence: the "verify the API surface not the UI" cardinal rule, boot checklist, account model + wrong-account trap, order lifecycle, failure-mode→fix decision tree, asset-class reality map, and roadmap. Turns a cold agent into a competent operator. |
+| **1 — Router** | `SKILL.md` (repo root; `CLAUDE.md` symlinks to it) | Trigger + boot doc: quick scan, failure modes, 80/20 commands, intent routing. Read second (after the Boot KB). |
+| **2 — Topic modules** | `knowledge/*.md` (this directory) | Load the ONE module that matches the task. 80–200 lines each; commands + decision rules, no essays. |
+| **3 — Deep research** | `docs/*.md` | Dated, source-backed studies (strategy deep-dives, tax law, live verifications, quant appendices). Load only when a module's link sends you there. |
+| **4 — Full API reference** | `AGENTS.md` (repo root) | The complete self-contained surface: auth, route map, every command, worked raw-API examples. |
 
-Rule of thumb: SKILL.md tells you *which* module; the module tells you *what to run*; docs/ tells
-you *why it's true*; AGENTS.md tells you *everything else*.
+Rule of thumb: Boot KB tells you *how to operate*; SKILL.md tells you *which* module; the module tells you *what to run*; docs/ tells you *why it's true*; AGENTS.md tells you *everything else*.
 
 ## Module index
 

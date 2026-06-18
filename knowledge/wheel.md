@@ -113,8 +113,8 @@ node cli/dist/index.js options roll-plan --account <N> --symbol <SYM> --type put
 `--cash-account` stages the open to the next business day (settled cash). Full roll mechanics in
 `knowledge/rolling.md`.
 
-All of the above are dry-run; a live send additionally needs `--live-write` plus inline
-`ROBINHOOD_ALLOW_LIVE_WRITE=1` and the confirmation contract (`knowledge/playbooks/broker-call.md`).
+All of the above are dry-run; a live send additionally needs
+`ROBINHOOD_ALLOW_LIVE_WRITE=1` (the single master switch) and the confirmation contract (`knowledge/playbooks/broker-call.md`).
 
 ## Management levers (community-cited; levers with tradeoffs, NOT mandates)
 

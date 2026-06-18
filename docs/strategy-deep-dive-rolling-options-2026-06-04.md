@@ -94,13 +94,19 @@ controls — **requote at natural/mid before any live order**; the dry-run net i
 ## 5. Tax (US — rolling-specific; general law in `tax-aware-options-strategies.md`)
 
 - **Wash sale on the LOSING leg (the central trap):** a roll that BTCs a leg at a **loss** and re-opens
-  a **substantially identical** option within the 61-day window disallows the loss (IRC §1091). Consensus
-  read: options are substantially identical at **same underlying AND same strike** — **changing strike OR
-  expiration generally breaks it**, and a real roll almost always changes the expiration, so a normal
-  roll-out for a credit is **usually not** a wash sale. Danger zone: rolling a *loser* at the **same
-  strike + near expiration**. No IRS bright line. **Only the losing leg** matters; a winning roll has no
-  issue. The disallowed loss is **deferred** (added to the new leg's basis, old holding period tacks on),
-  not destroyed.
+  a **substantially identical** option within the 61-day window disallows the loss (IRC §1091).
+  "Substantially identical" has **no bright-line** definition — it's a facts-and-circumstances test,
+  broader than "same CUSIP." The practitioner consensus is that options are substantially identical
+  at **same underlying AND same strike** — a roll that changes **both** strike AND expiration
+  significantly reduces wash-sale risk, but this is **not a legal guarantee** (no IRS bright line
+  exists). A normal roll-out for a credit virtually always changes the expiration, so it is **often**
+  not a wash sale, but the only legally safe position is that any losing-leg BTC followed by a
+  re-open in the same underlying within 30 days *could* be challenged. Danger zone: rolling a
+  *loser* at the **same strike + near expiration**. **Only the losing leg** matters; a winning
+  roll has no issue. The disallowed loss is **deferred** (added to the new leg's basis, old
+  holding period tacks on), not destroyed. **See `knowledge/tax-loss-harvesting.md` for the full
+  strict-vs-consensus table and `docs/tax-aware-options-strategies.md` for authoritative tax
+  guidance.**
 - **Holding period:** short-option rolls are **always short-term** (§1233) — you can't age premium into
   LTCG. Long-option rolls = a sale → frequent rolling keeps you perpetually short-term.
 - **QCC taint when rolling CCs up to chase:** rolling a short call **up** as the stock rallies can push

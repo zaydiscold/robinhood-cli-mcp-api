@@ -8,6 +8,12 @@ import {
   buildOptionsContractLinkBundle,
   buildOptionsContractNavigationPlan,
   buildOptionsStrategyOrderPlan,
+  computeAutopilot,
+  computeCalendar,
+  computeExposure,
+  computeIncome,
+  computeRisk,
+  computeWhatIf,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -29,6 +35,7 @@ import {
   brokerageGetJson,
   brokerageGetAllResults,
   computePortfolioPnl,
+  getUnifiedHistory,
   computeDividends,
   computeTradeReview,
   addTradeNote,
@@ -63,7 +70,11 @@ import {
   describeRoute,
   loadRecipes,
   filterRecipes,
-  readOptionsOrderFlow
+  readOptionsOrderFlow,
+  selectNearStrikes,
+  classifyMoneyness,
+  buildOptionsStrategyPricingSummary,
+  percentChange
 } from "@zaydiscold/robinhood-cli/lib";
 
 type RiskLevel = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
@@ -77,7 +88,7 @@ const server = new McpServer(
   {
     // Boot pointer for MCP-only agents (no repo checkout needed) — Zayd Khan // cold // www.zayd.wtf
     instructions:
-      "Control plane for a REAL Robinhood account: reads run live; writes are dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 is set in the server env — a single master switch (no per-call liveWrite needed; pass dryRun:true to preview even when it's on). At session start on any trading topic, pull the operator knowledge library via robinhood_knowledge (action=index, then read the module that matches the task) and check robinhood_roll_ledger (action=list) for pending cash-account kosher rolls whose open leg may be due — they are two-day trades and sessions die between the legs. After any live write append a trading-log.md entry; brokerage order history is the ONLY proof an order happened."
+      "Control plane for a REAL Robinhood account. CARDINAL RULE: reads run live and free; writes are dry-run by default, gated by the single master switch ROBINHOOD_ALLOW_LIVE_WRITE=1 in the server's environment (no per-call liveWrite needed; pass dryRun:true to preview even when it's on). ACCOUNT DISCOVERY: never hardcode account numbers — enumerate at runtime via robinhood_accounts (the transfer/accounts/ full graph); act only on the account the operator designates. CLASSIFY BEFORE WRITE: classify the exact options strategy before building — never infer naked exposure from loose wording. ORDER-EVIDENCE RULE: brokerage order history is the ONLY proof a trade happened — not a 201, not a UI screen. KEY TOOL FAMILIES: portfolio (P&L in dollars by underlying), positions/options (holdings), pretrade (PASS/WARN/BLOCK pre-flight), options-chain/expirations/strategy-quote/roll-plan/close (full options surface), dividends/documents/margin/review/income/risk/whatif/calendar/exposure/autopilot (financial tools), watchlist-add/remove/create/items/buy (watchlist CRUD + basket buy), buy/sell/cancel/order-status (order lifecycle), wheel (evidence-based wheel stage + next-leg command), knowledge/roll-ledger/hotlist (operator memory), settings/recurring (account control), search (natural-language → ticker), recipes (intent → the one command). SIGNAL SOURCING: the due-diligence doctrine ranks signal quality — X/Reddit pulse (fastest) → news/midlands confirmer → institutional outlook (regime layer) → academic math (foundation); none is gospel, all subordinate to live market data + order history. At session start on any trading topic, pull the operator knowledge library via robinhood_knowledge (action=index, then read the module that matches the task) and check robinhood_roll_ledger (action=list) for pending cash-account kosher rolls whose open leg may be due — they are two-day trades and sessions die between the legs. After any live write append a trading-log.md entry; brokerage order history is the ONLY proof an order happened."
   }
 );
 
@@ -100,9 +111,10 @@ function writeStatus(result: object, opts: { dryRun: boolean; reason?: string })
 }
 
 function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
+  const isWrite = risk !== "read" && risk !== "sensitive-read";
   return {
     readOnlyHint: readOnly,
-    destructiveHint: risk === "destructive",
+    destructiveHint: isWrite,  // per MCP spec: ANY modification is destructive, not just catastrophic
     idempotentHint: readOnly || risk === "write-safe",
     openWorldHint: true,
     "mcp:read-only": readOnly,
@@ -134,11 +146,6 @@ const INSTRUMENT_MARGIN_REQUIREMENTS_URL = "https://bonfire.robinhood.com/instru
 function finiteNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-function percentChange(previous: number, current: number): number {
-  if (!Number.isFinite(previous) || previous === 0 || !Number.isFinite(current)) return Number.NaN;
-  return ((current - previous) / previous) * 100;
 }
 
 function quoteLast(quote: any): number {
@@ -1320,13 +1327,8 @@ server.registerTool(
     annotations: toolAnnotations(true, "read")
   },
   async ({ account_number, limit }) => {
-    const eqUrl = "https://api.robinhood.com/orders/";
-    const eq = await tryBrokerageGetJson(eqUrl, {}, account_number ? { account_number } : {});
-    const opt = await tryBrokerageGetJson("https://api.robinhood.com/options/orders/");
-    return jsonResponse({
-      equityOrders: eq.ok ? (eq.data.results ?? []).slice(0, limit) : { error: eq.error },
-      optionOrders: opt.ok ? (opt.data.results ?? []).slice(0, limit) : { error: opt.error }
-    });
+    const events = await getUnifiedHistory({ accountNumber: account_number });
+    return jsonResponse({ events: events.slice(0, limit) });
   }
 );
 
@@ -1581,6 +1583,121 @@ server.registerTool(
   }
 );
 
+// ── robinhood_income: combined income engine (dividends + option premium) ──
+server.registerTool(
+  "robinhood_income",
+  {
+    title: "Robinhood Combined Income",
+    description:
+      "Combined income engine: dividends + option premium net of debits from fill evidence, broken down by month, with TTM total, monthly average, and projected annual run-rate. Math is done in-engine — do not hand-compute. Same shared engine as the CLI `income` command.\n\n⚠️ Edge case: Sell-to-open credits that result in assignment (exercised short options) have no buy-to-close order on record — the premium may represent a cost-basis adjustment on assigned shares rather than standalone income. Cross-check against position history for stock acquired near option expiration dates. This caveat is surfaced in the response's `notes` and `warnings` fields. Live read; no gate.",
+    inputSchema: z.object({
+      account_number: z.string().optional(),
+      year: z.number().int().optional()
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ account_number, year }) => {
+    try { return jsonResponse(await computeIncome({ accountNumber: account_number, year })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_risk: portfolio risk scanner ──
+server.registerTool(
+  "robinhood_risk",
+  {
+    title: "Robinhood Portfolio Risk Scanner",
+    description:
+      "Portfolio risk scanner: max loss per position (debit paid for longs, undefined for naked shorts), ITM assignment exposure by expiration, undercovered short legs, margin-call distance (borrowed/equity %), and concentration warnings (>20% in one symbol). Same shared engine as the CLI `risk` command. Live read; no gate.",
+    inputSchema: z.object({
+      account_number: z.string().optional()
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ account_number }) => {
+    try { return jsonResponse(await computeRisk({ accountNumber: account_number })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_whatif: greeks scenario calculator ──
+server.registerTool(
+  "robinhood_whatif",
+  {
+    title: "Robinhood What-If Scenario Calculator",
+    description:
+      "Greeks scenario calculator: apply spot ±X%, IV ±N%, T - N days, rate ±P% to current portfolio Greeks (from live marketdata/options/) and compute estimated P&L per position and total via Taylor approximation (ΔP ≈ delta·ΔS + ½gamma·ΔS² + theta·Δt + vega·Δσ + rho·Δr). Same shared engine as the CLI `whatif` command. Live read; no gate.",
+    inputSchema: z.object({
+      account_number: z.string().optional(),
+      spot_pct: z.number().default(0),
+      iv_pct: z.number().default(0),
+      days: z.number().int().default(0),
+      rate_change_pct: z.number().default(0)
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number, spot_pct, iv_pct, days, rate_change_pct }) => {
+    try { return jsonResponse(await computeWhatIf({ accountNumber: account_number, spotPct: spot_pct, ivPct: iv_pct, days, rateChangePct: rate_change_pct })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_calendar: event calendar ──
+server.registerTool(
+  "robinhood_calendar",
+  {
+    title: "Robinhood Event Calendar",
+    description:
+      "Event calendar: upcoming option expirations (from open positions), ex-dividend dates (for held stocks from dividends/), and earnings dates (from fundamentals/ when available). Sorted by date with assignment-risk flags for ITM short calls near ex-div dates. Same shared engine as the CLI `calendar` command. Live read; no gate.",
+    inputSchema: z.object({
+      account_number: z.string().optional(),
+      days: z.number().int().min(1).max(365).default(30)
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number, days }) => {
+    try { return jsonResponse(await computeCalendar({ accountNumber: account_number, days })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_exposure: concentration & net greeks ──
+server.registerTool(
+  "robinhood_exposure",
+  {
+    title: "Robinhood Concentration & Net Greeks",
+    description:
+      "Concentration & Net Greeks: concentration by underlying (% of portfolio per symbol, flag >20%), plus portfolio-wide net Greeks (delta/gamma/theta/vega/rho) summed across all equity and option positions. Same shared engine as the CLI `exposure` command. Live read; no gate.",
+    inputSchema: z.object({
+      account_number: z.string().optional()
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number }) => {
+    try { return jsonResponse(await computeExposure({ accountNumber: account_number })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_autopilot: automated roll management ──
+server.registerTool(
+  "robinhood_autopilot",
+  {
+    title: "Robinhood Autopilot (Roll Management)",
+    description:
+      "Autopilot: scan all open short options approaching expiration (within N days, default 7), compute potential roll candidates (same underlying, next weekly/monthly expiration, equal or better strike for credit), and emit dry-run order bodies. Read-only — never places orders. Same shared engine as the CLI `autopilot` command.",
+    inputSchema: z.object({
+      account_number: z.string().optional(),
+      days: z.number().int().min(1).max(30).default(7)
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number, days }) => {
+    try { return jsonResponse(await computeAutopilot({ accountNumber: account_number, days })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
 // ── robinhood_knowledge: the operator knowledge library, served over MCP ──
 // Zayd Khan // cold // www.zayd.wtf
 server.registerTool(
@@ -1642,6 +1759,315 @@ server.registerTool(
       const rolls = listPendingRolls().map(({ block: _b, ...rest }) => rest);
       return jsonResponse({ count: rolls.length, rolls });
     } catch (e: any) { throw e; }
+  }
+);
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// Local helpers (not in lib.ts)
+function optionMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+// ── robinhood_search: instrument/crypto/index search (midlands/search/) ──
+const SEARCH_URL = "https://api.robinhood.com/midlands/search/?query={query}";
+
+server.registerTool(
+  "robinhood_search",
+  {
+    title: "Robinhood Instrument Search",
+    description:
+      "Search Robinhood's instrument universe by name/ticker (the web search bar). Grounds ticker resolution: resolves company names, partial names, and tickers to their canonical symbols, instrument UUIDs, tradability, fractional eligibility, and OTC flags. Returns up to 20 results. Live read; no gate.",
+    inputSchema: z.object({
+      query: z.string(),
+      limit: z.number().int().min(1).max(20).default(12)
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ query, limit }) => {
+    try {
+      const data = await brokerageGetJson(SEARCH_URL, { query });
+      const insts: any[] = Array.isArray(data.instruments) ? data.instruments : [];
+      const rows = insts.slice(0, limit).map((i: any) => ({
+        symbol: i.symbol,
+        name: i.simple_name || i.name,
+        tradable: i.tradability,
+        fractional: i.fractional_tradability,
+        otc: i.otc_market_tier ? "OTC" : "",
+        id: i.id
+      }));
+      return jsonResponse({ query, count: rows.length, results: rows });
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_options_expirations: standalone expiration date lister ──
+const OPTIONS_CHAIN_URL = "https://api.robinhood.com/options/chains/{id}/";
+
+server.registerTool(
+  "robinhood_options_expirations",
+  {
+    title: "Robinhood Options Expirations",
+    description:
+      "List every available option expiration date for a symbol (live read). Returns the chain UUID and ordered expiration dates. Same shared engine as the CLI `options expirations` command.",
+    inputSchema: z.object({
+      symbol: z.string()
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ symbol }) => {
+    try {
+      const sym = symbol.toUpperCase();
+      const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol: sym })).results?.[0];
+      if (!instrument) throw new Error(`No equity instrument found for ${sym}.`);
+      const chainId = instrument.tradable_chain_id;
+      if (!chainId) throw new Error(`${sym} has no tradable options chain.`);
+      const expirations: string[] = (await brokerageGetJson(OPTIONS_CHAIN_URL, { id: chainId })).expiration_dates ?? [];
+      return jsonResponse({ symbol: sym, chainId, count: expirations.length, expirations });
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_options_chain: wraps selectNearStrikes + classifyMoneyness from lib.ts ──
+const OPTIONS_INSTRUMENTS_URL =
+  "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}";
+
+async function fetchOptionMarks(ids: string[]): Promise<Map<string, any>> {
+  const OPTIONS_URL = "https://api.robinhood.com/marketdata/options/?ids={ids}";
+  const marks = new Map<string, any>();
+  if (ids.length === 0) return marks;
+  const results = (await brokerageGetJson(OPTIONS_URL, { ids: ids.join(",") })).results ?? [];
+  for (const row of results) if (row?.instrument_id) marks.set(row.instrument_id, row);
+  return marks;
+}
+
+server.registerTool(
+  "robinhood_options_chain",
+  {
+    title: "Robinhood Options Chain",
+    description:
+      "Print the option chain around the money for a symbol (live read). Fetches the underlying spot, the nearest expiration, and all strikes for the selected type, then narrows to a centered window using selectNearStrikes() and classifies each strike as ITM/ATM/OTM via classifyMoneyness(). Returns the chain with live bid/ask/mark, delta, IV%, volume, OI, and moneyness per strike. Same shared engine as the CLI `options chain` command.",
+    inputSchema: z.object({
+      symbol: z.string(),
+      expiration: z.string().optional(),
+      type: z.enum(["call", "put"]).default("call"),
+      width: z.number().int().min(0).max(50).default(8)
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ symbol, expiration, type, width }) => {
+    try {
+      const sym = symbol.toUpperCase();
+      const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol: sym })).results?.[0];
+      if (!instrument) throw new Error(`No equity instrument found for ${sym}.`);
+      const chainId = instrument.tradable_chain_id;
+      if (!chainId) throw new Error(`${sym} has no tradable options chain.`);
+      const quote = (await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: instrument.id })).results?.[0] ?? {};
+      const spot = finiteNumber(quote.last_trade_price ?? quote.adjusted_previous_close);
+      const expirations: string[] = (await brokerageGetJson(OPTIONS_CHAIN_URL, { id: chainId })).expiration_dates ?? [];
+      if (expirations.length === 0) throw new Error(`${sym} chain has no listed expirations.`);
+      const exp = expiration && expirations.includes(expiration) ? expiration : expirations[0];
+      const instruments: any[] = await brokerageGetAllResults(OPTIONS_INSTRUMENTS_URL, { chain_id: chainId, expiration_dates: exp, type });
+      const ladder = instruments
+        .map((row: any) => ({ strike: finiteNumber(row.strike_price), id: row.id }))
+        .filter((row: any) => Number.isFinite(row.strike) && row.id);
+      const near = selectNearStrikes(ladder, spot, width);
+      const marks = await fetchOptionMarks(near.map((row: any) => row.id));
+      const rows = near.map((row: any) => {
+        const mark = marks.get(row.id) ?? {};
+        return {
+          optionInstrumentId: row.id,
+          optionInstrumentUrl: `https://api.robinhood.com/options/instruments/${row.id}/`,
+          strike: row.strike,
+          bid: finiteNumber(mark.bid_price),
+          ask: finiteNumber(mark.ask_price),
+          mark: finiteNumber(mark.adjusted_mark_price),
+          delta: finiteNumber(mark.delta),
+          ivPct: finiteNumber(mark.implied_volatility) * 100,
+          volume: finiteNumber(mark.volume),
+          openInterest: finiteNumber(mark.open_interest),
+          moneyness: classifyMoneyness(row.strike, spot, type)
+        };
+      });
+      return jsonResponse({ symbol: sym, spot, expiration: exp, type, count: rows.length, strikes: rows, otherExpirations: expirations.length > 1 ? expirations.slice(0, 12) : undefined });
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_options_strategy_quote: wraps buildOptionsStrategyPricingSummary from lib.ts ──
+server.registerTool(
+  "robinhood_options_strategy_quote",
+  {
+    title: "Robinhood Options Strategy Quote",
+    description:
+      "Multi-leg live pricing for an options strategy (verticals, condors, straddles, etc.). Takes leg inputs (id, action: buy|sell, strike, bid/ask/mark/last, greeks, ratioQuantity) and returns per-leg natural/mid pricing, net credit/debit, direction, and limit-price recommendations by mode (natural/mid/safe-sell-probe/safe-buy-probe). Wraps the shared buildOptionsStrategyPricingSummary() engine — same as the CLI `options strategy-quote` command. Live reads happen BEFORE calling this tool (fetch quotes/greeks separately); this tool does pure math. Read-only; no gate.",
+    inputSchema: z.object({
+      legs: z.array(z.object({
+        id: z.string(),
+        action: z.enum(["buy", "sell"]),
+        strike: z.number().optional(),
+        bid: z.number().optional(),
+        ask: z.number().optional(),
+        mark: z.number().optional(),
+        last: z.number().optional(),
+        delta: z.number().optional(),
+        gamma: z.number().optional(),
+        theta: z.number().optional(),
+        vega: z.number().optional(),
+        rho: z.number().optional(),
+        ratioQuantity: z.number().int().positive().default(1)
+      })).min(1),
+      mode: z.enum(["natural", "mid", "safe-sell-probe", "safe-buy-probe"]).default("mid"),
+      preferredDirection: z.enum(["credit", "debit"]).optional(),
+      farLimitOffset: z.number().default(200)
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ legs, mode, preferredDirection, farLimitOffset }) => {
+    try {
+      const summary = buildOptionsStrategyPricingSummary({
+        legs: legs.map((leg) => ({
+          id: leg.id,
+          action: leg.action,
+          strike: leg.strike,
+          bid: leg.bid,
+          ask: leg.ask,
+          mark: leg.mark,
+          last: leg.last,
+          delta: leg.delta,
+          gamma: leg.gamma,
+          theta: leg.theta,
+          vega: leg.vega,
+          rho: leg.rho,
+          ratioQuantity: leg.ratioQuantity
+        })),
+        mode,
+        preferredDirection,
+        farLimitOffset
+      });
+      return jsonResponse(summary);
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_options_roll_plan: dry-run roll plan for a single option leg ──
+server.registerTool(
+  "robinhood_options_roll_plan",
+  {
+    title: "Robinhood Options Roll Plan",
+    description:
+      "Build a dry-run option roll plan: resolve a close leg and a later open leg by symbol/expiration/strike/type, fetch live bid/ask, compute limit prices per the pricing mode, and emit two dry-run order bodies (close + open) with net credit/debit. For cash accounts, the open leg is staged with a notBeforeDate and a kosher-roll ledger tip. NEVER sends orders — this is a read-only planner. Same shared engine as the CLI `options roll-plan` command.",
+    inputSchema: z.object({
+      account_number: z.string(),
+      symbol: z.string(),
+      type: z.enum(["call", "put"]),
+      close_expiration: z.string(),
+      close_strike: z.number(),
+      open_expiration: z.string(),
+      open_strike: z.number(),
+      close_side: z.enum(["buy", "sell"]).default("sell"),
+      open_side: z.enum(["buy", "sell"]).default("buy"),
+      close_pricing_mode: z.enum(["natural", "mid", "safe-sell-probe", "safe-buy-probe"]).default("safe-sell-probe"),
+      open_pricing_mode: z.enum(["natural", "mid", "safe-sell-probe", "safe-buy-probe"]).default("mid"),
+      quantity: z.number().int().positive().default(1),
+      time_in_force: z.enum(["gfd", "gtc"]).default("gfd"),
+      cash_account: z.boolean().default(false)
+    }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number, symbol, type, close_expiration, close_strike, open_expiration, open_strike, close_side, open_side, close_pricing_mode, open_pricing_mode, quantity, time_in_force, cash_account }) => {
+    try {
+      const sym = symbol.toUpperCase();
+      const fn = finiteNumber;
+
+      // Resolve the underlying instrument and chain
+      const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol: sym })).results?.[0];
+      if (!instrument) throw new Error(`No equity instrument for ${sym}.`);
+      const chainId = instrument.tradable_chain_id;
+      if (!chainId) throw new Error(`${sym} has no tradable options chain.`);
+
+      // Resolve close-leg option instrument
+      const closeInstruments = await brokerageGetAllResults(OPTIONS_INSTRUMENTS_URL, {
+        chain_id: chainId, expiration_dates: close_expiration, type
+      });
+      const closeOpt = closeInstruments.find((i: any) => fn(i.strike_price) === close_strike);
+      if (!closeOpt) throw new Error(`No close-leg option found: ${sym} ${close_expiration} ${close_strike} ${type}.`);
+
+      // Resolve open-leg option instrument
+      const openInstruments = await brokerageGetAllResults(OPTIONS_INSTRUMENTS_URL, {
+        chain_id: chainId, expiration_dates: open_expiration, type
+      });
+      const openOpt = openInstruments.find((i: any) => fn(i.strike_price) === open_strike);
+      if (!openOpt) throw new Error(`No open-leg option found: ${sym} ${open_expiration} ${open_strike} ${type}.`);
+
+      // Fetch live marks for both
+      const marks = await fetchOptionMarks([closeOpt.id, openOpt.id]);
+      const closeMark = marks.get(closeOpt.id) ?? {};
+      const openMark = marks.get(openOpt.id) ?? {};
+
+      // Compute limit prices
+      const closeBid = fn(closeMark.bid_price);
+      const closeAsk = fn(closeMark.ask_price);
+      const openBid = fn(openMark.bid_price);
+      const openAsk = fn(openMark.ask_price);
+
+      function legLimit(bid: number, ask: number, side: "buy" | "sell", mode: string): number {
+        if (mode === "natural") return side === "sell" ? bid : ask;
+        const mid = (Number.isFinite(bid) && Number.isFinite(ask)) ? (bid + ask) / 2 : (side === "sell" ? bid : ask);
+        if (mode === "safe-sell-probe") return side === "sell" ? bid + 200 : Math.max(0.01, ask - 200);
+        if (mode === "safe-buy-probe") return side === "buy" ? Math.max(0.01, ask - 200) : bid + 200;
+        return mid;
+      }
+
+      const closeLimit = optionMoney(legLimit(closeBid, closeAsk, close_side, close_pricing_mode));
+      const openLimit = optionMoney(legLimit(openBid, openAsk, open_side, open_pricing_mode));
+
+      if (!Number.isFinite(closeLimit)) throw new Error(`Could not compute close-leg limit from ${close_pricing_mode}.`);
+      if (!Number.isFinite(openLimit)) throw new Error(`Could not compute open-leg limit from ${open_pricing_mode}.`);
+
+      // Build dry-run order bodies
+      const closeOrder = {
+        account_number,
+        legs: [{ option_id: closeOpt.id, side: close_side, position_effect: "close", ratio_quantity: quantity }],
+        type: "limit",
+        quantity: String(quantity),
+        price: closeLimit.toFixed(2),
+        time_in_force,
+        ref_id: crypto.randomUUID(),
+        _dryRun: true
+      };
+
+      const openOrderBody = {
+        account_number,
+        legs: [{ option_id: openOpt.id, side: open_side, position_effect: "open", ratio_quantity: quantity }],
+        type: "limit",
+        quantity: String(quantity),
+        price: openLimit.toFixed(2),
+        time_in_force,
+        ref_id: crypto.randomUUID(),
+        _dryRun: true
+      };
+
+      const closeCredit = close_side === "sell" ? closeLimit : -closeLimit;
+      const openCredit = open_side === "sell" ? openLimit : -openLimit;
+      const net = optionMoney(closeCredit + openCredit);
+
+      return jsonResponse({
+        mode: "dry_run",
+        sent: false,
+        strategy: {
+          id: cash_account ? "kosher-roll" : "manual-two-leg-roll",
+          title: cash_account ? "Cash-account delayed option roll" : "Manual option roll",
+          optionType: type,
+          direction: net >= 0 ? "credit" : "debit"
+        },
+        accountContext: { accountNumber: account_number, symbol: sym, closeExpiration: close_expiration, openExpiration: open_expiration },
+        closeLeg: { side: close_side, positionEffect: "close", strike: close_strike, expiration: close_expiration, pricingMode: close_pricing_mode, limitPrice: closeLimit },
+        openLeg: { side: open_side, positionEffect: "open", strike: open_strike, expiration: open_expiration, pricingMode: open_pricing_mode, limitPrice: openLimit },
+        net: { estimatedLimitNet: net, direction: net >= 0 ? "credit" : "debit", note: "Computed from selected dry-run limit controls, not a fill guarantee." },
+        orders: { closeOrder, openOrder: openOrderBody },
+        warnings: ["Dry-run only; no orders were sent.", "Requote before any live order.", cash_account ? "Cash account: open-leg notional depends on settled cash after the close leg fills (T+1)." : ""].filter(Boolean)
+      });
+    } catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );
 

@@ -1,14 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEDUP_WINDOW_MS,
   etClockSession,
   computeMarketSession,
+  cancelOrder,
   extractOrderId,
   filterRecentPending,
   getOrderStatus,
   placeEquityOrder,
+  __resetOwnedAccountsCache,
   type MarketSession
 } from "../src/lib.js";
+
+// The owned-account guard caches the account graph process-globally; reset it before each case so
+// every test's injected getJson fake is consulted deterministically.
+beforeEach(() => __resetOwnedAccountsCache());
 
 // Golden-behavior tests for the shared equity-order engine — the single code path behind the CLI
 // `buy`/`sell` commands AND the MCP robinhood_buy/robinhood_sell tools (alignment invariant). These
@@ -26,6 +32,8 @@ interface Fix {
   writeResult: { status: number; dryRun: boolean; body: unknown };
   orderListThrows?: boolean;
   session: MarketSession;
+  /** Account graph returned by transfer/accounts/. Default: A1 + A2 owned. "throw" simulates a lookup failure. */
+  ownedAccounts: any[] | "throw";
 }
 
 function makeDeps(overrides: Partial<Fix> = {}) {
@@ -35,13 +43,22 @@ function makeDeps(overrides: Partial<Fix> = {}) {
     pendingOrders: [],
     writeResult: { status: 0, dryRun: true, body: "{}" },
     session: "regular",
+    ownedAccounts: [
+      { type: "rhs", account_number: "A1", account_name: "Individual" },
+      { type: "rhs", account_number: "A2", account_name: "Individual 2" }
+    ],
     ...overrides
   };
-  const calls = { writes: [] as any[], logs: [] as any[], orderListQueries: 0 };
+  const calls = { writes: [] as any[], logs: [] as any[], orderListQueries: 0, accountGraphQueries: 0 };
   const deps = {
     now: () => NOW,
     getMarketSession: async () => ({ session: fix.session, isTradingDay: fix.session !== "closed", authoritative: true }),
     getJson: async (url: string) => {
+      if (url.includes("transfer/accounts")) {
+        calls.accountGraphQueries++;
+        if (fix.ownedAccounts === "throw") throw new Error("account graph unavailable");
+        return { results: fix.ownedAccounts };
+      }
       if (url.includes("instruments/?symbol")) return { results: fix.instrument ? [fix.instrument] : [] };
       if (url.includes("marketdata/quotes")) return { results: fix.quote ? [fix.quote] : [] };
       if (url === "https://api.robinhood.com/orders/") {
@@ -185,6 +202,40 @@ describe("placeEquityOrder — validation & guards", () => {
     const missing = makeDeps({ quote: null });
     await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 }, missing.deps))
       .rejects.toThrow(/Invalid or missing quote/);
+  });
+});
+
+describe("placeEquityOrder — owned-account guard (WSF-02: the #1 money-loss defense)", () => {
+  it("REFUSES a write to an account the token doesn't own — nothing is sent", async () => {
+    const { deps, calls } = makeDeps({ ownedAccounts: [{ type: "rhs", account_number: "REAL-1", account_name: "Indiv" }] });
+    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "TYPO-9", side: "buy", amount: 100 }, deps))
+      .rejects.toThrow(/not one of your trading accounts/i);
+    expect(calls.writes).toHaveLength(0);
+  });
+
+  it("guards the canonical engine for BOTH a live send and a dry-run (the gate is account-ownership, not the write switch)", async () => {
+    const live = { writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "x", state: "queued" }) } };
+    const liveBad = makeDeps({ ...live, ownedAccounts: [{ type: "rhs", account_number: "REAL-1" }] });
+    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "WRONG", side: "buy", amount: 100, liveWrite: true }, liveBad.deps))
+      .rejects.toThrow(/not one of your trading accounts/i);
+    expect(liveBad.calls.writes).toHaveLength(0);
+  });
+
+  it("allows a write to an owned account (incl. a Roth IRA — type ira_roth)", async () => {
+    const { deps, calls } = makeDeps({ ownedAccounts: [{ type: "ira_roth", account_number: "ROTH-7", account_name: "Roth" }] });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "ROTH-7", side: "buy", amount: 100 }, deps);
+    expect(calls.writes).toHaveLength(1);
+    expect(r.account).toBe("ROTH-7");
+  });
+
+  it("a FAILED ownership lookup WARNS but does not wedge the write (a transient read can't block trading)", async () => {
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { deps, calls } = makeDeps({ ownedAccounts: "throw" });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 100 }, deps);
+    expect(calls.writes).toHaveLength(1);
+    expect(r.dryRun).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Could not verify account A1/));
+    warn.mockRestore();
   });
 });
 
@@ -436,6 +487,87 @@ describe("getOrderStatus — ticker resolution", () => {
     const r = await getOrderStatus("ord-9", s.deps);
     expect(r.id).toBe("ord-9");
     expect(r.symbol).toBeUndefined();
+  });
+});
+
+describe("WSF-01: brokerage buy routes through placeEquityOrder — dedup + log active", () => {
+  // Before the WSF-01 fix, `brokerage buy` built its own order body inline and sent
+  // via executeBrokerageRequest, bypassing placeEquityOrder's dedup, ref_id idempotency,
+  // trade-log append, and post-send evidence. This test proves a buy-side call through
+  // the shared engine blocks on a live duplicate — the exact guard that was missing.
+
+  it("dedup: a live buy with a fresh pending same-side order is BLOCKED by placeEquityOrder", async () => {
+    const { deps, calls } = makeDeps({
+      writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-wsf01", state: "queued" }) },
+      pendingOrders: [{ id: "ord-dup-wsf01", side: "buy", state: "queued", created_at: minutesAgo(2) }]
+    });
+    await expect(
+      placeEquityOrder({ symbol: "MSFT", accountNumber: "A1", side: "buy", amount: 50, liveWrite: true }, deps)
+    ).rejects.toThrow(/^DEDUP: 1 pending buy/);
+    expect(calls.writes).toHaveLength(0); // NOTHING was sent
+    expect(calls.logs).toHaveLength(0);
+  });
+
+  it("logging: a live buy without pending orders logs + sends and carries ref_id + broker order id", async () => {
+    const { deps, calls } = makeDeps({
+      writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-wsf01-live", state: "filled" }) },
+      pendingOrders: []
+    });
+    const r = await placeEquityOrder({ symbol: "MSFT", accountNumber: "A1", side: "buy", amount: 50, liveWrite: true }, deps);
+    expect(calls.writes).toHaveLength(1);
+    expect(calls.logs).toHaveLength(1);
+    expect(calls.logs[0]).toMatchObject({ symbol: "MSFT", account: "A1", side: "buy", refId: `MSFT-A1-${NOW}`, orderId: "ord-wsf01-live", httpStatus: 201 });
+    expect(r).toMatchObject({ live: true, dryRun: false, orderId: "ord-wsf01-live", state: "filled" });
+  });
+});
+
+describe("WSF-02: owned-account guard in canonical order paths", () => {
+  // The #1 money-loss risk is a write to the WRONG account — a typo'd or hallucinated
+  // account number. placeEquityOrder and cancelOrder must refuse an unowned account.
+
+  it("placeEquityOrder throws when the account is not in the owned accounts graph", async () => {
+    const { deps, calls } = makeDeps({
+      ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }]
+    });
+    await expect(
+      placeEquityOrder({ symbol: "AAPL", accountNumber: "A9", side: "buy", amount: 10 }, deps)
+    ).rejects.toThrow(/Account A9 is not one of your trading accounts/);
+    expect(calls.writes).toHaveLength(0); // NOTHING was sent
+  });
+
+  it("a failed ownership lookup warns but proceeds (never wedges a write)", async () => {
+    const { deps, calls } = makeDeps({ ownedAccounts: "throw" });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10 }, deps);
+    expect(r.dryRun).toBe(true);
+    expect(r.live).toBe(false);
+  });
+
+  it("cancelOrder throws when the order's account is unowned (live cancel)", async () => {
+    // Simulate: owned accounts has A1, but the order belongs to A9.
+    const { deps, calls } = makeDeps({
+      ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
+      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) }
+    });
+    // The cancelOrder pre-read will return an order with account URL pointing to A9.
+    deps.getJson = async (url: string) => {
+      if (url.includes("transfer/accounts")) {
+        calls.accountGraphQueries++;
+        return { results: [{ type: "rhs", account_number: "A1", account_name: "Individual" }] };
+      }
+      if (url.includes("/orders/") && !url.includes("cancel")) {
+        // Pre-read: order belongs to A9 (unowned)
+        return { id: "ord-9", account: "https://api.robinhood.com/accounts/A9/", state: "queued" };
+      }
+      if (url.includes("cancel")) {
+        calls.writes.push({ url, dryRun: false });
+        return { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) };
+      }
+      throw new Error(`unexpected: ${url}`);
+    };
+    await expect(
+      cancelOrder({ idOrUrl: "ord-9", liveWrite: true }, deps)
+    ).rejects.toThrow(/Account A9 is not one of your trading accounts/);
+    // The write must never have been reached.
   });
 });
 

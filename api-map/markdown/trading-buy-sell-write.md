@@ -1,7 +1,7 @@
 # Robinhood Trading — Buy / Sell (write surface)
 
 Captured 2026-05-28 (CDP). The CLI exposes buy/sell as commands; all writes default to **dry-run** and
-require an explicit `--live-write` flag + `ROBINHOOD_ALLOW_LIVE_WRITE=1` env gate before any real order.
+require the `ROBINHOOD_ALLOW_LIVE_WRITE=1` env gate — the single master switch — before any real order.
 Account-scoped: every order takes `--account <alias|number>` (cash / margin / roth → account id).
 
 ## Review (preview) — no order placed
@@ -62,9 +62,12 @@ Account-scoped: every order takes `--account <alias|number>` (cash / margin / ro
 
 ## CLI command shape (planned)
 ```
-robinhood-cli buy  <symbol> --qty N [--limit P] [--tif gfd|gtc] --account margin [--live-write]
-robinhood-cli sell <symbol> --qty N [--limit P] --account margin [--live-write]
-robinhood-cli options buy  <symbol> --strike S --expiry D --type call|put --qty N [--limit P] [--account ..] [--live-write]
+robinhood-cli buy  <symbol> --qty N [--limit P] [--tif gfd|gtc] --account margin          # dry-run
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli buy  <symbol> --qty N [--limit P] [--tif gfd|gtc] --account margin
+robinhood-cli sell <symbol> --qty N [--limit P] --account margin                        # dry-run
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli sell <symbol> --qty N [--limit P] --account margin
+robinhood-cli options buy  <symbol> --strike S --expiry D --type call|put --qty N [--limit P] [--account ..]   # dry-run
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli options buy  <symbol> --strike S --expiry D --type call|put --qty N [--limit P] [--account ..]
 robinhood-cli options spread/roll ...   # multi-leg legs[]
 robinhood-cli orders review <...>        # presubmit_data preview (always safe)
 ```

@@ -93,8 +93,25 @@ then this file. When the answer isn't obvious, the docs already have it — read
 | "What do I own?" / "Show my positions" | [CLI Usage 80/20](#cli-usage--the-8020) → `positions` / `options positions` |
 | "What am I down today?" / "Biggest losers" | `portfolio --day` (after hours: `portfolio --after-hours`) — one call, dollars, by underlying |
 | "Place a trade" / "Buy X" | [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03) |
+| "Before I place an order — is it safe?" | `pretrade` — one-shot PASS/WARN/BLOCK checklist (BP, collateral, marketability, min-tick, account capability) |
+| "Cancel EVERY open order — NOW" | `panic` — kill switch: enumerate + cancel every open equity + options order across all accounts (env-gated per cancel) |
+| "Show me open orders" | `orders open` — every open/pending equity + options order, symbol-resolved, with state/age/TIF/price + exact cancel commands |
 | "Wheel" / "got assigned — now what?" | `wheel [symbol]` — evidence-based stage + the next-leg dry-run command (background: `docs/strategy-deep-dive-the-wheel-2026-06-04.md`) |
 | "Quote a spread" / "Price an iron condor" | [Options CLI Playbook](#options-cliapi-playbook) |
+| "Review my trades / film study" | `review` — round trips with realized P&L, win rate, best/worst trades (filter by days/symbol/account) |
+| "How much income am I making?" | `income` — combined dividends + option premium by month, in dollars (TTM total, monthly avg, projected annual run-rate) |
+| "What's my risk exposure?" | `risk` — max loss per position, ITM assignment exposure, undercovered short legs, margin-call distance, concentration warnings |
+| "What if spot drops 10% / IV spikes?" | `whatif` — Greeks-based scenario calc: spot ±X%, IV ±N pts, T−n days → P&L per position in dollars |
+| "What's coming up on my holdings?" | `calendar` — upcoming option expirations, ex-div dates, earnings for held names with assignment-risk flags |
+| "How concentrated am I?" | `exposure` — concentration by underlying/sector (% of portfolio, flag >20%) + portfolio-wide net Greeks |
+| "Which short options should I roll?" | `autopilot` — scan open short options near expiration, suggest roll candidates with estimated net credit |
+| "Quote my hotlist tickers" | `hotlist` — `hotlist.md` ticker watchlist quoted live: last price, day Δ in $ and %, thesis per line |
+| "What dividends am I getting?" | `dividends` — all-time/YTD totals in dollars, cadence detection, upcoming payouts, projected income from holdings |
+| "Download my 1099s / statements" | `documents` — list by type/year, download PDFs; tax-year-aware (1099 for prior year) |
+| "Am I borrowing on margin?" | `margin` — amount borrowed, interest rate, next billing date, margin available, buying power with margin |
+| "Search Robinhood for a company" | `search <query>` — natural-language search → ticker, instrument UUID, tradability, OTC flags |
+| "Buy $X of every name in a watchlist" | `watchlist buy <list> --amount $X` — basket buy (BP-aware, OTC/dedup/ref_id guards); env-gated |
+| "Stage a cash-account roll" | `roll-ledger` — pending kosher-roll tracker (close today, open next business day); list/add/done |
 | "What can this account do?" | [Account-Aware Capabilities](#account-aware-capabilities--read-the-account-then-say-whats-allowed) |
 | "Map a new endpoint" | [Research Methodology](#research-methodology--mapping-a-no-official-api-surface) |
 | "MCP setup" / "Register tools" | [MCP Server](#mcp-server) |
@@ -113,15 +130,20 @@ Operate real Robinhood brokerage accounts from the terminal or via MCP tools.
 
 ## Skill Operating Model
 
-This skill is a progressive-disclosure entrypoint, not the whole repository
-loaded into context. Use it in layers:
+This skill uses **progressive disclosure** — an agent cold-starting should read
+in layers, not consume the whole repository into context:
 
-0. **Boot smart.** Read `docs/agent-operating-intelligence-2026-06-04.md` first — the distilled
-   operating intelligence (boot checklist, the "verify the API surface not the UI" cardinal rule,
-   the account model + wrong-account trap, order lifecycle, a failure-mode→fix decision tree, the
-   asset-class reality map, and the roadmap). It's what turns a cold agent into a competent operator.
-1. **Boot from this file.** Read the safety model, auth rules, account discovery
-   commands, and current read/write surface first.
+| Layer | File(s) | When to read | Contents |
+|---|---|---|---|
+| **0 — Boot KB** | `docs/agent-operating-intelligence-2026-06-04.md` | **READ FIRST** | Operating intelligence: cardinal rule, boot checklist, account model, order lifecycle, failure→fix decision tree, asset-class reality map, roadmap |
+| **1 — Router** | This file (`SKILL.md`) | Read second | Trigger conditions, failure modes, 80/20 commands, intent-routing table, safety gates |
+| **2 — Topic modules** | `knowledge/*.md` (index: `knowledge/README.md`) | Load ONE module matching the task | Per-topic commands + decision rules (80-200 lines each; no essays) |
+| **3 — Deep research** | `docs/*.md` | Load only when a module's link directs there | Dated, source-backed studies with live verifications |
+| **4 — Full reference** | `AGENTS.md` (repo root) | Load for complete API surface, raw examples | Self-contained: auth, route map, every command, every worked example |
+
+**Agent behavior rules:**
+
+1. **Boot from the Boot KB first**, then this file — never skip to raw API calls.
 2. **Pull focused references only when needed.** Use `AGENTS.md` for end-to-end
    operation, `docs/README.md` for the docs index, and the specific docs listed
    below for options/account-settings/deep-link work.
@@ -130,7 +152,7 @@ loaded into context. Use it in layers:
    hand-waving.
 4. **Keep the user in control.** Reads and dry-runs can proceed. Live trades,
    transfers, account-setting toggles, cancels, unlinks, or margin/account-type
-   changes require exact user approval plus the ROBINHOOD_ALLOW_LIVE_WRITE=1 write switch.
+   changes require exact user approval plus the `ROBINHOOD_ALLOW_LIVE_WRITE=1` write switch.
 
 For this use case, the skill teaches the workflow and guardrails; the MCP tools
 provide execution. Do not overload the prompt with all route docs unless a task
@@ -345,7 +367,6 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
 ## Quick Start
 
 ```bash
-cd ~/Desktop && git clone https://github.com/zaydiscold/robinhood-cli.git
 cd robinhood-cli
 pnpm install
 pnpm --filter @zaydiscold/robinhood-cli build
@@ -366,7 +387,7 @@ ROBINHOOD_BROKERAGE_TOKEN=<token>
 
 **Token source:** Chrome's on-disk localStorage on a machine where Robinhood is logged in. The engine auto-loads `.env` on import and self-heals on 401 by re-running the refresh script — no browser popup, no manual login. Force a refresh with `pnpm auth:refresh`.
 
-**Cross-machine auth:** Use Syncthing (the `home-sync` folder) or `scp` from the machine where Robinhood is logged in. Do NOT fight with broken SSH for multiple turns — check Syncthing first.
+**Cross-machine auth:** Copy the `.env` file from the machine where Robinhood is logged in (via your preferred file transfer: Syncthing, `scp`, USB drive, or cloud sync). Do NOT fight with broken SSH for multiple turns — use a working transfer method.
 
 Full auth details: `AGENTS.md` §1.
 
@@ -502,7 +523,7 @@ Primary references:
 - `docs/institutional-outlook-2026-06-04.md` — year-ahead + CMA regime synthesis (info, not mandate; refresh each cycle)
 - `docs/options-greeks-strategy-research-2026-06-02.md`
 - `docs/options-quantitative-playbook-2026-06-03.md`
-- `docs/options-strategy-execution-smoke-2026-06-03.md`
+- `docs/archive/options-strategy-execution-smoke-2026-06-03.md`
 - `docs/options-contract-navigation-2026-06-03.md`
 - `docs/index-options-1256-conclusion-2026-06-04.md`, `docs/futures-fx-commodities-surface-2026-06-04.md`
 - `docs/release-notes-2026-06-03.md`, `docs/release-notes-2026-06-04.md`
@@ -766,7 +787,7 @@ Worked dry-run examples:
 
 ```bash
 robinhood-cli options strategy-quote long-call --account <N> --symbol <S> --expiration <D> --leg long_call=<K> --pricing-mode mid --json
-robinhood-cli options strategy-quote naked-short-call --account <N> --symbol <S> --expiration <D> --leg naked_call=<K> --pricing-mode safe-sell-probe --json
+robinhood-cli options strategy-quote naked-short-call --account <N> --symbol <S> --expiration <D> --leg short_call=<K> --pricing-mode safe-sell-probe --json
 robinhood-cli options strategy-quote call-credit-spread --account <N> --symbol <S> --expiration <D> --leg short_call=<K1> --leg long_call=<K2> --pricing-mode safe-sell-probe --json
 robinhood-cli options strategy-quote call-debit-spread --account <N> --symbol <S> --expiration <D> --leg long_call=<K1> --leg short_call=<K2> --pricing-mode mid --json
 robinhood-cli options strategy-quote put-credit-spread --account <N> --symbol <S> --expiration <D> --leg short_put=<K1> --leg long_put=<K2> --pricing-mode safe-sell-probe --json
@@ -847,7 +868,7 @@ research belong in:
 
 - `docs/options-quantitative-playbook-2026-06-03.md`
 - `docs/options-greeks-strategy-research-2026-06-02.md`
-- `docs/options-strategy-execution-smoke-2026-06-03.md`
+- `docs/archive/options-strategy-execution-smoke-2026-06-03.md`
 - `docs/options-contract-navigation-2026-06-03.md`
 - `api-map/options-strategy-workflows-2026-06-02.json`
 - `api-map/options-contract-navigation-workflows-2026-06-03.json`
@@ -886,8 +907,8 @@ deep math lives in *Options Greeks and Strategy Math* above.
 | "Open the exact contract for me" | resolve + navigate | `api-map options-contract-links ...` (emits the API-resolved contract + chain-id deeplink) |
 | "Roll my position" | staged close+open plan | `options roll-plan ...` (cash-account aware; see below) |
 | "Where am I in the wheel / what's the next leg?" | evidence-based stage + next-leg command | `wheel [symbol] [--account <N>]` (read-only; classifies CSP→shares→CC from live positions, flags undercovered short calls, works with no position as discussion mode) |
-| "Place / cancel an order" | gated write | `brokerage execute "options/orders/" --method POST --live-write` ... then `options/orders/{0}/cancel/` |
-| "Change a setting (DRIP, recurring, etc.)" | gated write | `recurring pause|resume`; route-map writes via `brokerage execute --method ... --live-write` |
+| "Place / cancel an order" | gated write | `brokerage execute "options/orders/" --method POST` ... then `options/orders/{0}/cancel/` (live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1`) |
+| "Change a setting (DRIP, recurring, etc.)" | gated write | `recurring pause|resume`; route-map writes via `brokerage execute --method ...` (live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1`) |
 
 **Decision rule:** read first, classify the strategy, compute payoff + net Greeks,
 emit blockers, *then* (only on explicit request + the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch) send. Never
@@ -920,7 +941,7 @@ follow this exact order — it is the intuitive answer they actually want:
    last_trade_price)` from `marketdata/quotes/` (equities/ETFs) and `marketdata/options/` (options).
    - **It is NOT "equities only."** Index/ETF options (SPX, SPXW, SPY, NDX, …) trade ~15 min past the bell
      and in extended sessions — they move after-hours too. Equities + leveraged single-stock ETFs are
-     usually the bulk of the dollars, but **CHECK the actual extended marks; never assert a class can't
+     typically the bulk of the dollars, but **CHECK the actual extended marks; never assert a class can't
      be the cause.**
    - Overnight (between sessions) a name's `last_extended_hours_trade_price` may be null — but the
      account's `extended_hours_equity` still retains the last extended value. Use the account-level number
@@ -960,8 +981,8 @@ node cli/dist/index.js api-map options-strategy-plan iron-condor --json
 #    computes net credit + a safe limit, fills the order body — sends nothing)
 node cli/dist/index.js options strategy-quote iron-condor \
   --account <N> --symbol <SYM> --expiration <D> \
-  --leg short_put=<K1> --leg long_put=<K2> \
-  --leg short_call=<K3> --leg long_call=<K4> \
+  --leg long_put_wing=<K1> --leg short_put_body=<K2> \
+  --leg short_call_body=<K3> --leg long_call_wing=<K4> \
   --pricing-mode safe-sell-probe --json
 ```
 
@@ -1097,7 +1118,7 @@ To pull "all the info" on a contract you hold (the option-detail page surface), 
   The full per-trade detail (the "click each trade" view) is `options/orders/{order_id}/`; a trade-confirmation PDF is linked off the order's documents.
 - **Buy/sell from here:** place via `options/orders/` — **sell-to-close = {side:sell, position_effect:close}** (the others per the order-templates doc). TIF `gfd`|`gtc`; order types `limit`/`stop_limit`/`market`/`stop_market`.
 
-> **Tax timing (rare — usually ignore):** holding period almost never matters and shouldn't be raised. The only times to flag it: a position within ~days/weeks of crossing the **1-year short→long-term capital-gains line**, or near a **tax-year boundary** (defer a close to January). Compute the holding period from the fill `timestamp` above; mention it ONLY in those edge cases. Deeper angles (qualified covered calls, §1256, deferral) in `docs/tax-aware-options-strategies.md`.
+> **Tax timing (rare — ignore unless at a boundary):** holding period almost never matters and shouldn't be raised. The only times to flag it: a position within ~days/weeks of crossing the **1-year short→long-term capital-gains line**, or near a **tax-year boundary** (defer a close to January). Compute the holding period from the fill `timestamp` above; mention it ONLY in those edge cases. Deeper angles (qualified covered calls, §1256, deferral) in `docs/tax-aware-options-strategies.md`.
 
 ### Sentiment data + deep-link pipeline (mapped 2026-06-03)
 
@@ -1282,7 +1303,7 @@ The full first-class tool roster (live truth: `tools/list`, never a hardcoded co
 
 ```bash
 hermes mcp add robinhood --command "node" \
-  --args "C:/Users/ZaydK/Desktop/robinhood-cli/mcp/dist/server.js"
+  --args "/path/to/robinhood-cli/mcp/dist/server.js"
 ```
 
 Or for Claude Code / other MCP clients:
@@ -1319,8 +1340,15 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_crypto_execute` | Execute a Crypto API request |
 | `robinhood_accounts` | List every account (full graph via `transfer/accounts/`) with type/capabilities |
 | `robinhood_positions` | Equity positions for an account (UUIDs resolved to tickers + quotes) |
+| `robinhood_portfolio` | One-call portfolio P&L: per-account day Δ + after-hours Δ, drivers by underlying in **dollars**, all accounts |
 | `robinhood_options_holdings` | Every held option contract (UUID + strike + bid/ask/last + qty + link) |
 | `robinhood_options_inspect` | Full detail on one owned contract (metadata, Greeks, fills, buy/sell handoff) |
+| `robinhood_options_chain` | Live options chain around the money for a symbol (width, expiration, type filters) |
+| `robinhood_options_expirations` | List available expiration dates for an options chain |
+| `robinhood_options_strategy_quote` | Price a named options strategy (spread/condor/CSP/etc.) with bid/ask/Greeks and a dry-run order body |
+| `robinhood_options_roll_plan` | Staged cash-account roll plan: close today, open replacement next business day after settled-cash + quote checks |
+| `robinhood_options_close` | Build a close-order plan for an owned option contract (sell-to-close long, buy-to-close short) |
+| `robinhood_options_enumerate` | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration |
 | `robinhood_settings` | Read/toggle account settings: DRIP, trade-on-expiration, PDT-protection, lending, sweep (env-gated) |
 | `robinhood_recurring` | List/create/edit/end recurring investment schedules (env-gated writes) |
 | `robinhood_quote` | Live quote(s) for one or more equity/ETF symbols |
@@ -1331,13 +1359,30 @@ claude mcp add robinhood-cli -s user -- \
 | `robinhood_watchlist_create` | Create a new custom watchlist (optional emoji) via `discovery/lists/` (env-gated) |
 | `robinhood_watchlist_items` | Read a custom watchlist's tickers live (symbol, price, equity-buyable flag) — the read half; pair with `robinhood_watchlist_buy` |
 | `robinhood_watchlist_buy` | **Basket buy** — buy $<amount> of EACH equity-buyable ticker in a watchlist (BP-aware; loops the shared order engine per ticker — OTC/dedup/`ref_id`/evidence guards) (env-gated) |
-| `robinhood_options_enumerate` | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration |
 | `robinhood_buy` | Equity buy (dollar-notional fractional or shares) — shared engine: OTC guard, pending-order dedup (5-min, `force` skips), `ref_id` idempotency, trade log; env-gated |
 | `robinhood_sell` | Equity sell — same shared engine + gates as `robinhood_buy` |
 | `robinhood_cancel` | Cancel a pending order by ID or URL (env-gated) |
 | `robinhood_order_status` | One order's state/fills/price — instrument UUID resolved to the real ticker |
 | `robinhood_buying_power` | Per-account buying power breakdown + margin health |
 | `robinhood_wheel` | Wheel stage from account evidence (shares + short puts/calls) + the literal next-leg dry-run command; flags undercovered short calls; discussion mode when no position |
+| `robinhood_pretrade` | Pre-trade guard: PASS/WARN/BLOCK on BP + collateral + marketability + min-tick + account capability — one shot before any order |
+| `robinhood_dividends` | Dividend income engine: all-time/YTD totals in dollars, per-symbol cadence, upcoming payouts, projected $/day·week·month·quarter·year from current holdings |
+| `robinhood_documents` | Tax + statement document surface: list by type/year, download PDFs; tax-year-aware (1099 issued Feb 2026 → 2025) |
+| `robinhood_margin` | Margin health: amount borrowed, interest rate, next billing date, margin available, buying power with margin |
+| `robinhood_review` | Film-study mode: filled orders paired into round trips with realized dollar P&L, hold time, win rate, best/worst trades |
+| `robinhood_review_note` | Attach a lesson to a trade by ref — `trade-notes.md` entry joined to the round trip |
+| `robinhood_hotlist` | `hotlist.md` ticker watchlist quoted live: last price, day Δ in dollars and %, thesis per line |
+| `robinhood_knowledge` | Knowledge library: index + read per-topic operating modules (wheel, rolling, multi-leg, Greeks, tax, signals, execution safety, playbooks) |
+| `robinhood_roll_ledger` | Pending cash-account kosher roll tracker: list in-flight rolls, mark done, auto-cleanup |
+| `robinhood_income` | Combined income view: dividends + option premium collected, by month, in dollars |
+| `robinhood_risk` | Portfolio risk scan: max loss across open positions, assignment exposure, undercovered short legs, margin-call distance |
+| `robinhood_whatif` | Greeks-based scenario calculator: spot ±X%, IV ±N pts, T−n days → position P&L in dollars |
+| `robinhood_calendar` | Upcoming events for held names: option expirations, ex-div dates, earnings |
+| `robinhood_exposure` | Concentration by underlying/sector + portfolio-wide net Greeks |
+| `robinhood_autopilot` | Roll candidate scanner: scan open short options approaching expiration, suggest roll candidates with estimated net credit |
+| `robinhood_orders_open` | All open/pending equity + options orders across all owned accounts (or one), symbol-resolved, with state, age, TIF, limit price, and exact cancel command for each. Read half of `panic` |
+| `robinhood_panic` | PANIC: enumerate every open/pending equity + options order across all owned accounts (or one) and cancel each — every cancel individually env-gated. DRY-RUN by default: returns the full would-cancel list and sends NOTHING |
+| `robinhood_search` | Natural-language search → Robinhood instruments (stocks/ETFs), crypto pairs, or market indexes — resolves company names/partial names to ticker + UUID |
 
 ### MCP Safety Gates
 
@@ -1369,17 +1414,17 @@ operator designates.**
 
 ## Cross-Machine Infrastructure
 
-The user operates across multiple machines on a private Tailscale network:
+The user may operate across multiple machines on a private Tailscale network (or similar). When running
+the CLI/MCP on a different machine than the one where Robinhood is logged in:
 
-- **mothership** (Windows 10): always-on GPU server, runs Hermes. Primary Robinhood CLI host.
-- **frostbyte** (macOS): daily-driver laptop, also runs Hermes.
+1. **Copy `.env`** from the logged-in machine to the target machine (via Syncthing, `scp`, USB, cloud
+   sync, or your preferred file transfer). The `.env` file contains the bearer token.
+2. **Keep the token fresh.** If Robinhood was logged in on the source machine, the token in Chrome's
+   localStorage there is the freshest. Copy it to the target machine's `.env` as the standard flow.
+3. **Verify connectivity** between machines before troubleshooting auth — a file-transfer issue is
+   not an auth issue. Don't fight broken SSH; use whatever works.
 
-File transfer options, in priority order:
-1. **Syncthing** — folder `home-sync` at `~/Sync`, shared between machines. Web UI at `:8384`. Primary channel for moving `.env` auth tokens and files.
-2. **scp from frostbyte** — `scp <file> user@mothership-ip:<path>`
-3. **SSH** — frostbyte→mothership works; mothership→frostbyte is broken (key rejected).
-
-Always try Syncthing before fighting with SSH.
+Always try your fastest transfer method before troubleshooting network problems.
 
 ---
 
@@ -1412,8 +1457,8 @@ Always try Syncthing before fighting with SSH.
 
 ### Cross-Machine
 
-14. **Syncthing first, SSH last.** mothership→frostbyte SSH is broken. Use Syncthing (`~/Sync`) or scp from frostbyte.
-15. **Token freshness.** If Robinhood was logged in on frostbyte, the token in Chrome's localStorage there is the freshest. Syncthing it to mothership's `.env` is the standard flow.
+14. **Transfer the token, don't fight broken SSH.** If one machine can't reach another via SSH, use whatever works — Syncthing, `scp`, USB, or cloud sync — instead of spending turns on network issues.
+15. **Token freshness.** If Robinhood is logged in on the source machine, the token in Chrome's localStorage there is the freshest — copy it to the target machine's `.env` as the standard flow.
 
 ### Crypto API
 
@@ -1478,7 +1523,7 @@ node cli/dist/index.js brokerage execute "recurring resume --all" --json
 
 # Live resume — switch on
 ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute \
-  "recurring resume --all --live-write" --json
+  "recurring resume --all" --json
 ```
 
 Full details: `AGENTS.md` §9.
@@ -1504,7 +1549,7 @@ node cli/dist/index.js portfolio --by position --top 10 --json
 It composes accounts → `portfolios/{account_number}/` (day Δ = `equity − adjusted_equity_previous_close`;
 after-hours Δ = `extended_hours_equity − equity`) → positions + quotes + option marks, attributes in
 DOLLARS, rolls up by underlying across accounts, and prints a reconciliation line (drivers vs top-line).
-After-hours is EQUITY-only (options don't print after-hours). Same engine as the MCP tool
+After-hours is PRIMARILY equity-driven, but index/ETF options (SPX, SPXW, SPY, NDX, …) trade ~15 min past the bell and can move after-hours — always check extended marks for those underlyings. Same engine as the MCP tool
 `robinhood_portfolio`. **Don't** rebuild this by hand from `positions`+`quote` (percent math is size-blind
 and gets the metric wrong), and **don't** use `equity_previous_close` (it's "0" per-account — the command
 uses `adjusted_equity_previous_close`).

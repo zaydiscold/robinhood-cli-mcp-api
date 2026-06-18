@@ -12,6 +12,12 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import {
+  computeAutopilot,
+  computeCalendar,
+  computeExposure,
+  computeIncome,
+  computeRisk,
+  computeWhatIf,
   buildAccountContextUrl,
   buildOptionsContractLinkBundle,
   buildOptionsContractNavigationPlan,
@@ -22,6 +28,10 @@ import {
   selectRouteByQueryAndMethod,
   brokerageGetJson,
   brokerageGetAllResults,
+  loadOwnedAccounts,
+  assertAccountOwned as assertOwnedAccount,
+  fetchOptionMarks,
+  fetchQuotes,
   computePortfolioPnl,
   computeDividends,
   computeTradeReview,
@@ -723,90 +733,32 @@ brokerage
   .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
   .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
-    if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
-    if (opts.dollars && opts.shares) throw new Error("Pass only one of --dollars or --shares.");
-    if (opts.dollars && !(Number(opts.dollars) > 0)) throw new Error(`--dollars must be a positive number (got "${opts.dollars}").`);
-    if (opts.shares && !(Number(opts.shares) > 0)) throw new Error(`--shares must be a positive number (got "${opts.shares}").`);
-    if (opts.limit && !(Number(opts.limit) > 0)) throw new Error(`--limit must be a positive number (got "${opts.limit}").`);
-    const acctLabel = await assertOwnedAccount(opts.account);
-    const inst = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
-    if (!inst) throw new Error(`No instrument for ${symbol} — check the ticker (use 'brokerage search').`);
-    const q = (await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: inst.id })).results?.[0] ?? {};
-    // OTC signal: otc_market_tier populated OR fractional only closeable.
-    const otc = Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
-
-    const body: Record<string, unknown> = {
-      account: `https://api.robinhood.com/accounts/${opts.account}/`,
-      instrument: `https://api.robinhood.com/instruments/${inst.id}/`,
-      symbol: inst.symbol,
+    // Routes through placeEquityOrder — the SINGLE equity-buy engine shared with the CLI `buy`
+    // and MCP robinhood_buy, so dedup / ref_id idempotency / trade-log append / post-send
+    // evidence apply identically (WSF-01).
+    const r = await placeEquityOrder({
+      symbol,
+      accountNumber: opts.account,
       side: "buy",
-      time_in_force: opts.tif === "gtc" ? "gtc" : "gfd",
-      trigger: "immediate",
-      position_effect: "open",
-      market_hours: "regular_hours",
-      order_form_version: 7,
-      bid_price: q.bid_price,
-      ask_price: q.ask_price,
-      bid_ask_timestamp: q.updated_at ?? new Date().toISOString(),
-      ref_id: randomUUID()
-    };
+      amount: opts.dollars ? Number(opts.dollars) : undefined,
+      shares: opts.shares ? Number(opts.shares) : undefined,
+      limitPrice: opts.limit ? Number(opts.limit) : undefined,
+      liveWrite: Boolean(opts.liveWrite),
+      force: false
+    });
 
-    if (opts.dollars) {
-      if (inst.fractional_tradability !== "tradable") {
-        throw new Error(`${inst.symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional order. Use --shares <whole qty>${otc ? " (OTC: limit at ask)" : ""}.`);
-      }
-      body.type = "market";
-      body.dollar_based_amount = { amount: Number(opts.dollars).toFixed(2), currency_code: "USD" };
-    } else {
-      body.quantity = String(opts.shares);
-      // The auto-collar uses the live ask; guard against a null/empty/zero ask becoming the
-      // order price/collar (halted name, bad quote). An explicit --limit bypasses the ask entirely.
-      if (!opts.limit && !(Number(q.ask_price) > 0)) {
-        throw new Error(`${inst.symbol}: no usable ask price from the quote (ask=${JSON.stringify(q.ask_price)}). Pass an explicit --limit <price> or retry during market hours.`);
-      }
-      if (opts.limit || otc) {
-        body.type = "limit";
-        body.price = opts.limit ?? q.ask_price;
-      } else {
-        body.type = "market";
-        body.price = q.ask_price; // collar
-      }
-    }
-
-    // Collar sanity (shares path, auto-collar only — explicit --limit is the user's call).
-    let collarWarning: string | undefined;
-    if (opts.shares && !opts.limit) {
-      const c = collarSanity(q);
-      if (c.stale) {
-        collarWarning =
-          `${inst.symbol}: ask-collar ${c.ask} is ${c.deviationPct.toFixed(0)}% off reference ${c.ref.toFixed(2)} ` +
-          `(stale/after-hours quote — this collar would not protect the order). ` +
-          `Pass an explicit --limit <price> (regular-hours marketable limit) or retry during market hours.`;
-      }
-    }
-
-    const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: ORDERS_URL });
-    const route = selectRouteByQueryAndMethod(matches, ORDERS_URL, "POST");
-    if (!route) throw new Error("orders/ POST route missing from map — rebuild (AGENTS.md §3).");
-    const gate = resolveLiveWriteGate({ risk: route.risk, method: "POST", dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
-    if (gate.forcedDryRun && gate.reason) process.stderr.write(`${gate.reason}\n`);
-    const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
-    // Block a LIVE send on a stale collar; warn (still inspectable) on a dry-run.
-    if (collarWarning) {
-      if (effectiveDryRun) process.stderr.write(`⚠️  ${collarWarning}\n`);
-      else throw new Error(collarWarning);
-    }
-    const plan = planBrokerageRequest({ route, method: "POST", params: {}, body, dryRun: effectiveDryRun });
-    const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: true });
-
-    const kind = opts.dollars ? `$${Number(opts.dollars).toFixed(2)} fractional/market` : `${opts.shares}sh ${body.type}${otc ? " (OTC)" : ""}`;
-    const acctTag = acctLabel ? `${opts.account} (${acctLabel})` : opts.account;
     if (opts.json) {
-      printJson({ symbol: inst.symbol, account: opts.account, accountLabel: acctLabel, otc, kind, dryRun: effectiveDryRun, status: result.status, body: result.body });
+      printJson({ generatedAt: new Date().toISOString(), symbol: r.symbol, account: r.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, otcAutoLimit: r.otcAutoLimit, session: r.session, sessionWarning: r.sessionWarning, live: r.live, refId: r.refId, result: r.result });
       return;
     }
-    process.stdout.write(`${effectiveDryRun ? "DRY-RUN" : result.status + " " + result.statusText} buy ${inst.symbol} ${kind} acct ${acctTag}\n`);
-    process.stdout.write(result.body ? `${result.body}\n` : "");
+
+    const mode = r.dryRun ? "DRY-RUN" : "LIVE";
+    const sizing = r.dollarBased ? `$${r.estimatedTotal.toFixed(2)} (dollar-based ≈ ${r.shares.toFixed(6)} sh)` : `${r.shares.toFixed(6)} sh ≈ $${r.estimatedTotal.toFixed(2)}`;
+    const acctTag = opts.account.slice(-4);
+    process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${sizing} @ ~$${r.estimatedPrice.toFixed(2)}  acct=…${acctTag}${r.session ? `  [${r.session}]` : ""}\n`);
+    if (r.sessionWarning) process.stdout.write(`⚠️  ${r.sessionWarning}\n`);
+    if (r.dryRun) process.stdout.write("Add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live-write optional) to execute.\n");
+    else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 
 // --- Instrument search: ground ticker resolution in Robinhood's own universe ---
@@ -1208,46 +1160,10 @@ const INSTRUMENT_MARGIN_REQUIREMENTS_URL = "https://bonfire.robinhood.com/instru
 // Returns parsed JSON; throws on a missing route, unfilled placeholder, or non-200.
 // brokerageGetJson + tryBrokerageGetJson are imported from ./lib.js — shared with the MCP server.
 
-// Owned-account validation. The #1 money-loss risk is acting on the WRONG account — a typo'd or
-// hallucinated account number otherwise templates straight into a live order body. We resolve the
-// real account set once (from transfer/accounts/, the COMPLETE graph) and refuse a write to an
-// account the token doesn't own. If the lookup itself fails (offline / mid-refresh) we WARN but do
-// not hard-block, so a transient read failure can't wedge every write.
-let _ownedAccountsCache: { numbers: Set<string>; labels: Map<string, string> } | null = null;
-async function loadOwnedAccounts(): Promise<{ numbers: Set<string>; labels: Map<string, string> } | null> {
-  if (_ownedAccountsCache) return _ownedAccountsCache;
-  try {
-    const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
-    const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
-    const numbers = new Set<string>();
-    const labels = new Map<string, string>();
-    for (const a of rows) {
-      if (a?.type !== "rhs" && a?.type !== "ira_roth") continue; // trading accounts only
-      if (!a.account_number) continue;
-      numbers.add(String(a.account_number));
-      labels.set(String(a.account_number), a.account_name || a.display_title || "");
-    }
-    if (numbers.size === 0) return null;
-    _ownedAccountsCache = { numbers, labels };
-    return _ownedAccountsCache;
-  } catch {
-    return null;
-  }
-}
-async function assertOwnedAccount(accountNumber: string): Promise<string | undefined> {
-  const owned = await loadOwnedAccounts();
-  if (!owned) {
-    process.stderr.write(`⚠️  Could not verify account ${accountNumber} against your owned accounts (lookup failed). Proceeding — double-check the number.\n`);
-    return undefined;
-  }
-  if (!owned.numbers.has(String(accountNumber))) {
-    throw new Error(
-      `Account ${accountNumber} is not one of your trading accounts (${[...owned.numbers].map((n) => "…" + n.slice(-4)).join(", ")}). ` +
-        `Refusing to act on an unowned/typo'd account.`
-    );
-  }
-  return owned.labels.get(String(accountNumber)) || "";
-}
+// Owned-account validation + the account-graph loader now live in lib.ts (shared with the order
+// engine and the MCP surface, so the #1 money-loss guard can't protect one front-end and miss
+// another). `assertOwnedAccount` here is the imported `assertAccountOwned`; `loadOwnedAccounts` is
+// the shared loader. See lib.ts "Shared account-graph + marketdata helpers".
 
 const num = (value: unknown): number => Number(value);
 const usd = (value: number): string => (Number.isFinite(value) ? `$${value.toFixed(2)}` : "—");
@@ -1305,18 +1221,7 @@ async function loadOpenOptionPositions(): Promise<OpenOptionPosition[]> {
   return open;
 }
 
-// Fetch option marketdata for many instrument ids, chunked to keep URLs bounded.
-async function fetchOptionMarks(ids: string[]): Promise<Map<string, any>> {
-  const marks = new Map<string, any>();
-  const chunkSize = 40;
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const data = await brokerageGetJson(MARKETDATA_OPTIONS_URL, { ids: ids.slice(i, i + chunkSize).join(",") });
-    for (const row of data.results ?? []) {
-      if (row?.instrument_id) marks.set(row.instrument_id, row);
-    }
-  }
-  return marks;
-}
+// fetchOptionMarks + fetchQuotes are imported from lib.ts (shared, chunked marketdata fetchers).
 
 function finiteNumber(value: unknown): number {
   const parsed = Number(value);
@@ -2396,18 +2301,6 @@ const POSITIONS_URL = "https://api.robinhood.com/positions/";
 const DISCOVERY_LISTS_URL = "https://api.robinhood.com/discovery/lists/";
 
 // Batch instrument-id -> quote lookup, chunked to keep URLs bounded.
-async function fetchQuotes(instrumentIds: string[]): Promise<Map<string, any>> {
-  const quotes = new Map<string, any>();
-  const chunkSize = 40;
-  for (let i = 0; i < instrumentIds.length; i += chunkSize) {
-    const data = await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: instrumentIds.slice(i, i + chunkSize).join(",") });
-    for (const row of data.results ?? []) {
-      if (row?.instrument_id) quotes.set(row.instrument_id, row);
-    }
-  }
-  return quotes;
-}
-
 const quoteLast = (quote: any): number => num(quote?.last_trade_price ?? quote?.last_extended_hours_trade_price);
 
 program
@@ -3497,6 +3390,185 @@ program
     // Pending kosher rolls are two-day trades that outlive sessions — surface them wherever rolling context appears.
     const pendingRolls = listPendingRolls();
     if (pendingRolls.length) process.stdout.write(`\n⏳ ${pendingRolls.length} pending kosher roll(s) — run roll-ledger list\n`);
+  });
+
+// ── income: combined income engine (dividends + option premium) ──
+program
+  .command("income")
+  .description("Combined income engine: dividends + option premium net of debits, broken down by month, with TTM total, monthly average, and projected annual run-rate. Math done in-engine — do not hand-compute. Live read.")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--year <yyyy>", "focus on a year (default: current year)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; year?: string; json?: boolean }) => {
+    const r = await computeIncome({ accountNumber: opts.account, year: opts.year ? Number(opts.year) : undefined });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Combined Income — ${r.accountsScanned.length} account(s) — ${r.year}\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    process.stdout.write(`TTM: ${usd(r.ttmTotalUsd)} total (divs ${usd(r.dividendsTtmUsd)} + premium ${usd(r.optionPremiumTtmUsd)})\n`);
+    process.stdout.write(`Monthly avg: ${usd(r.monthlyAverageUsd)} · projected annual: ${usd(r.projectedAnnualRunRateUsd)}\n\n`);
+    if (r.monthlyBreakdown.length) {
+      printTable(
+        r.monthlyBreakdown.map((m) => ({ month: m.month, dividends: usd(m.dividendsUsd), premium: usd(m.optionPremiumUsd), total: usd(m.totalUsd) })),
+        ["month", "dividends", "premium", "total"]
+      );
+    } else {
+      process.stdout.write("No income data for this period.\n");
+    }
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
+    if (r.notes?.length) process.stdout.write(`\n📝 ${r.notes.join("\n")}\n`);
+  });
+
+// ── risk: portfolio risk scanner ──
+program
+  .command("risk")
+  .description("Portfolio risk scanner: max loss per position, ITM assignment exposure, undercovered short legs, margin-call distance, and concentration warnings (>20% in one symbol). Live read.")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; json?: boolean }) => {
+    const r = await computeRisk({ accountNumber: opts.account });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Portfolio Risk — ${r.accountsScanned.length} account(s)\n`);
+    process.stdout.write(`Equity: ${usd(r.totalEquityUsd)} · Borrowed: ${usd(r.totalBorrowedUsd)}`);
+    if (r.marginCallDistancePct !== null) process.stdout.write(` · Margin-call buffer: ${r.marginCallDistancePct.toFixed(1)}%`);
+    process.stdout.write(`\nas of ${new Date().toISOString()}\n\n`);
+    if (r.concentrationWarnings.length) {
+      process.stdout.write("CONCENTRATION WARNINGS:\n");
+      for (const c of r.concentrationWarnings) process.stdout.write(`  ⚠️ ${c.message}\n`);
+      process.stdout.write("\n");
+    }
+    if (r.positions.length) {
+      printTable(
+        r.positions.map((p) => ({
+          kind: p.kind, symbol: p.symbol, desc: p.description.slice(0, 50), side: p.side, qty: p.quantity,
+          mktVal: usd(p.marketValueUsd), maxLoss: p.maxLossUsd !== null ? usd(p.maxLossUsd) : "unlimited",
+          itmRisk: p.itmExpirationRisk ? "⚠️" : "", undercovered: p.undercoveredShortLegs || "",
+          acct: `…${p.account.slice(-4)}`
+        })),
+        ["kind", "symbol", "desc", "side", "qty", "mktVal", "maxLoss", "itmRisk", "undercovered", "acct"]
+      );
+    } else {
+      process.stdout.write("No open positions.\n");
+    }
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
+  });
+
+// ── whatif: greeks scenario calculator ──
+program
+  .command("whatif")
+  .description("Greeks scenario calculator: apply spot ±X%, IV ±N%, T - N days, rate ±P% to portfolio Greeks and compute estimated P&L per position and total. Live read.")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--spot-pct <pct>", "spot change in % (e.g. +5 or -3)", "0")
+  .option("--iv-pct <pct>", "IV change in % points (e.g. +10 or -5)", "0")
+  .option("--days <n>", "days of theta decay", "0")
+  .option("--rate-change-pct <pct>", "rate change in % points (rho sensitivity)", "0")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; spotPct?: string; ivPct?: string; days?: string; rateChangePct?: string; json?: boolean }) => {
+    const r = await computeWhatIf({
+      accountNumber: opts.account, spotPct: Number(opts.spotPct ?? "0"),
+      ivPct: Number(opts.ivPct ?? "0"), days: Number(opts.days ?? "0"),
+      rateChangePct: Number(opts.rateChangePct ?? "0")
+    });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    const s = r.scenario;
+    process.stdout.write(`What-If Scenario — ${r.accountsScanned.length} account(s)\n`);
+    process.stdout.write(`Spot ${s.spotChangePct >= 0 ? "+" : ""}${s.spotChangePct}% · IV ${s.ivChangePct >= 0 ? "+" : ""}${s.ivChangePct}% · T-${s.daysPassed}d · Rate Δ ${s.rateChangePct >= 0 ? "+" : ""}${s.rateChangePct}%\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    process.stdout.write(`Estimated P&L: ${usd(r.totalEstimatedPnlUsd)}\n`);
+    process.stdout.write(`  delta: ${usd(r.greekDecomposition.deltaUsd)} · gamma: ${usd(r.greekDecomposition.gammaUsd)} · theta: ${usd(r.greekDecomposition.thetaUsd)} · vega: ${usd(r.greekDecomposition.vegaUsd)} · rho: ${usd(r.greekDecomposition.rhoUsd)}\n\n`);
+    if (r.perPosition.length) {
+      printTable(
+        r.perPosition.map((p) => ({
+          symbol: p.symbol, desc: p.description.slice(0, 40), estPnl: usd(p.estimatedPnlUsd),
+          mktVal: usd(p.marketValueUsd), delta: p.netDelta.toFixed(0), gamma: p.netGamma.toFixed(1),
+          theta: p.netTheta.toFixed(1), vega: p.netVega.toFixed(1)
+        })),
+        ["symbol", "desc", "estPnl", "mktVal", "delta", "gamma", "theta", "vega"]
+      );
+    } else {
+      process.stdout.write("No option positions to scenario-model.\n");
+    }
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
+  });
+
+// ── calendar: event calendar ──
+program
+  .command("calendar")
+  .description("Event calendar: upcoming option expirations, ex-dividend dates, and earnings dates (if available). Sorted by date with assignment-risk flags. Live read.")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--days <n>", "look-ahead in days (default: 30)", "30")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; days?: string; json?: boolean }) => {
+    const r = await computeCalendar({ accountNumber: opts.account, days: Number(opts.days ?? "30") });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Event Calendar — next ${r.days} day(s) — ${r.accountsScanned.length} account(s)\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    if (r.events.length) {
+      printTable(
+        r.events.map((e) => ({
+          date: e.date, type: e.type, symbol: e.symbol, detail: e.detail.slice(0, 60),
+          risk: e.assignmentRisk ? "⚠️ ASSIGN" : ""
+        })),
+        ["date", "type", "symbol", "detail", "risk"]
+      );
+    } else {
+      process.stdout.write("No upcoming events in this window.\n");
+    }
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
+  });
+
+// ── exposure: concentration & net greeks ──
+program
+  .command("exposure")
+  .description("Concentration & Net Greeks: concentration by underlying (% of portfolio per symbol, flag >20%), plus portfolio-wide net Greeks (delta/gamma/theta/vega/rho). Live read.")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; json?: boolean }) => {
+    const r = await computeExposure({ accountNumber: opts.account });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Exposure — ${r.accountsScanned.length} account(s) · equity ${usd(r.totalEquityUsd)}\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    process.stdout.write("Portfolio Net Greeks:\n");
+    const g = r.netGreeks;
+    process.stdout.write(`  delta: ${g.delta.toFixed(1)} · gamma: ${g.gamma.toFixed(1)} · theta: ${g.theta.toFixed(2)} · vega: ${g.vega.toFixed(2)} · rho: ${g.rho.toFixed(2)}\n\n`);
+    if (r.concentration.length) {
+      process.stdout.write("Concentration by Underlying:\n");
+      printTable(
+        r.concentration.map((c) => ({
+          symbol: c.symbol, mktVal: usd(c.marketValueUsd), weight: `${c.weightPct.toFixed(1)}%`,
+          flag: c.flag ? ">20% ⚠️" : ""
+        })),
+        ["symbol", "mktVal", "weight", "flag"]
+      );
+    } else {
+      process.stdout.write("No positions.\n");
+    }
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
+  });
+
+// ── autopilot: automated roll management ──
+program
+  .command("autopilot")
+  .description("Autopilot: scan all open short options approaching expiration (default: 7 days), compute potential roll candidates, emit dry-run order bodies. Read-only (never places orders).")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--days <n>", "look-ahead window in days (default: 7)", "7")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; days?: string; json?: boolean }) => {
+    const r = await computeAutopilot({ accountNumber: opts.account, days: Number(opts.days ?? "7") });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Autopilot — next ${r.lookaheadDays} day(s) — ${r.accountsScanned.length} account(s)\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    if (r.candidates.length) {
+      for (const c of r.candidates) {
+        process.stdout.write(`${c.symbol} ${c.type} $${c.strike} exp ${c.expiration} (${c.dte}d)${c.itmBy !== null ? ` — ${c.itmBy > 0 ? `ITM by $${c.itmBy.toFixed(2)}` : `OTM by $${Math.abs(c.itmBy).toFixed(2)}`}` : ""}\n`);
+        process.stdout.write(`  ${c.rollCandidate.message}\n`);
+        process.stdout.write(`  close: ${c.dryRunOrder.close.action} [${c.dryRunOrder.close.leg}]\n`);
+        process.stdout.write(`  open:  ${c.dryRunOrder.open.action} [${c.dryRunOrder.open.leg}]\n\n`);
+      }
+      process.stdout.write(`${r.candidates.length} candidate(s). These are dry-run only — nothing was sent. To execute, use the brokerage execute command with ROBINHOOD_ALLOW_LIVE_WRITE=1.\n`);
+    } else {
+      process.stdout.write("No short options approaching expiration in this window.\n");
+    }
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
   });
 
 const watchlist = new Command("watchlist").description("Inspect (read) and edit (add/remove/create, env-gated) your custom watchlists");

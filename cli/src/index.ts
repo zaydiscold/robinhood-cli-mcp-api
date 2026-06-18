@@ -729,84 +729,32 @@ brokerage
     if (opts.shares && !(Number(opts.shares) > 0)) throw new Error(`--shares must be a positive number (got "${opts.shares}").`);
     if (opts.limit && !(Number(opts.limit) > 0)) throw new Error(`--limit must be a positive number (got "${opts.limit}").`);
     const acctLabel = await assertOwnedAccount(opts.account);
-    const inst = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })).results?.[0];
-    if (!inst) throw new Error(`No instrument for ${symbol} — check the ticker (use 'brokerage search').`);
-    const q = (await brokerageGetJson(MARKETDATA_QUOTES_URL, { ids: inst.id })).results?.[0] ?? {};
-    // OTC signal: otc_market_tier populated OR fractional only closeable.
-    const otc = Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
-
-    const body: Record<string, unknown> = {
-      account: `https://api.robinhood.com/accounts/${opts.account}/`,
-      instrument: `https://api.robinhood.com/instruments/${inst.id}/`,
-      symbol: inst.symbol,
+    // §2.2 — route through the SHARED engine so this matches the top-level `buy`/`sell` and the
+    // MCP tools: OTC/fractional guard, dead-quote hard-fail, pending-duplicate dedup (5-min),
+    // ref_id idempotency, 429 retry, account-lock + notional caps, trading-log, and post-send
+    // order-history evidence. (Was an inline body build with no dedup/evidence.)
+    const r = await placeEquityOrder({
+      symbol,
+      accountNumber: opts.account,
       side: "buy",
-      time_in_force: opts.tif === "gtc" ? "gtc" : "gfd",
-      trigger: "immediate",
-      position_effect: "open",
-      market_hours: "regular_hours",
-      order_form_version: 7,
-      bid_price: q.bid_price,
-      ask_price: q.ask_price,
-      bid_ask_timestamp: q.updated_at ?? new Date().toISOString(),
-      ref_id: randomUUID()
-    };
+      amount: opts.dollars ? Number(opts.dollars) : undefined,
+      shares: opts.shares ? Number(opts.shares) : undefined,
+      limitPrice: opts.limit ? Number(opts.limit) : undefined,
+      liveWrite: !opts.dryRun,
+      force: false
+    });
 
-    if (opts.dollars) {
-      if (inst.fractional_tradability !== "tradable") {
-        throw new Error(`${inst.symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional order. Use --shares <whole qty>${otc ? " (OTC: limit at ask)" : ""}.`);
-      }
-      body.type = "market";
-      body.dollar_based_amount = { amount: Number(opts.dollars).toFixed(2), currency_code: "USD" };
-    } else {
-      body.quantity = String(opts.shares);
-      // The auto-collar uses the live ask; guard against a null/empty/zero ask becoming the
-      // order price/collar (halted name, bad quote). An explicit --limit bypasses the ask entirely.
-      if (!opts.limit && !(Number(q.ask_price) > 0)) {
-        throw new Error(`${inst.symbol}: no usable ask price from the quote (ask=${JSON.stringify(q.ask_price)}). Pass an explicit --limit <price> or retry during market hours.`);
-      }
-      if (opts.limit || otc) {
-        body.type = "limit";
-        body.price = opts.limit ?? q.ask_price;
-      } else {
-        body.type = "market";
-        body.price = q.ask_price; // collar
-      }
-    }
-
-    // Collar sanity (shares path, auto-collar only — explicit --limit is the user's call).
-    let collarWarning: string | undefined;
-    if (opts.shares && !opts.limit) {
-      const c = collarSanity(q);
-      if (c.stale) {
-        collarWarning =
-          `${inst.symbol}: ask-collar ${c.ask} is ${c.deviationPct.toFixed(0)}% off reference ${c.ref.toFixed(2)} ` +
-          `(stale/after-hours quote — this collar would not protect the order). ` +
-          `Pass an explicit --limit <price> (regular-hours marketable limit) or retry during market hours.`;
-      }
-    }
-
-    const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: ORDERS_URL });
-    const route = selectRouteByQueryAndMethod(matches, ORDERS_URL, "POST");
-    if (!route) throw new Error("orders/ POST route missing from map — rebuild (AGENTS.md §3).");
-    const gate = resolveLiveWriteGate({ risk: route.risk, method: "POST", dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
-    if (gate.forcedDryRun && gate.reason) process.stderr.write(`${gate.reason}\n`);
-    const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
-    // Block a LIVE send on a stale collar; warn (still inspectable) on a dry-run.
-    if (collarWarning) {
-      if (effectiveDryRun) process.stderr.write(`⚠️  ${collarWarning}\n`);
-      else throw new Error(collarWarning);
-    }
-    const plan = planBrokerageRequest({ route, method: "POST", params: {}, body, dryRun: effectiveDryRun });
-    const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: true });
-
-    const kind = opts.dollars ? `$${Number(opts.dollars).toFixed(2)} fractional/market` : `${opts.shares}sh ${body.type}${otc ? " (OTC)" : ""}`;
     const acctTag = acctLabel ? `${opts.account} (${acctLabel})` : opts.account;
     if (opts.json) {
-      printJson({ symbol: inst.symbol, account: opts.account, accountLabel: acctLabel, otc, kind, dryRun: effectiveDryRun, status: result.status, body: result.body });
+      printJson({ symbol: r.symbol, account: opts.account, accountLabel: acctLabel, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, otcAutoLimit: r.otcAutoLimit, dollarBased: r.dollarBased, session: r.session, sessionWarning: r.sessionWarning, dryRun: r.dryRun, live: r.live, refId: r.refId, orderId: r.orderId, state: r.state, httpStatus: r.httpStatus, evidence: r.evidence });
       return;
     }
-    process.stdout.write(`${effectiveDryRun ? "DRY-RUN" : result.status + " " + result.statusText} buy ${inst.symbol} ${kind} acct ${acctTag}\n`);
-    process.stdout.write(result.body ? `${result.body}\n` : "");
+    const mode = r.dryRun ? "DRY-RUN" : "LIVE";
+    const sizing = r.dollarBased ? `$${r.estimatedTotal.toFixed(2)} (dollar-based ≈ ${r.shares.toFixed(6)} sh)` : `${r.shares.toFixed(6)} sh ≈ $${r.estimatedTotal.toFixed(2)}`;
+    process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${sizing}${r.otcAutoLimit ? " (OTC auto-limit)" : ""} @ ~$${r.estimatedPrice.toFixed(2)}  acct ${acctTag}${r.session ? `  [${r.session}]` : ""}\n`);
+    if (r.sessionWarning) process.stdout.write(`⚠️  ${r.sessionWarning}\n`);
+    if (r.dryRun) process.stdout.write("Add ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
+    else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 
 // --- Instrument search: ground ticker resolution in Robinhood's own universe ---

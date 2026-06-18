@@ -4,15 +4,24 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statS
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Walk up from this compiled module to the repo root, identified by a marker file.
-// Robust across build layouts (cli/dist, mcp/dist, bundled, symlinked): a fixed ../..
-// silently resolves to the WRONG directory if the emit depth ever changes, which would
-// make .env / data-file loading read from nowhere. Both repoRoot() and repoRootFromCli()
-// share this so they can never disagree.
-const REPO_MARKERS = ["pnpm-workspace.yaml", "api-map/brokerage-routes.json", ".git"];
-export function ascendToRepoRoot(markers: string[] = REPO_MARKERS): string | undefined {
-  let current = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 10; i += 1) {
+// Walk up from a start dir to a repo marker. Robust across build layouts (cli/dist,
+// mcp/dist, bundled, symlinked): a fixed ../.. silently resolves to the WRONG directory
+// if the emit depth ever changes.
+//
+// CRITICAL: the default markers must exist ONLY at the true repo root. We deliberately do
+// NOT include api-map/brokerage-routes.json here — `pnpm build` COPIES it into cli/dist, so
+// a compiled module living in cli/dist would match it and (wrongly) treat cli/dist as the
+// repo root, breaking .env / data-file loading for the long-running MCP — the exact failure
+// this resolver exists to prevent. repoRootFromCli() passes that marker EXPLICITLY because it
+// WANTS the dir holding the route data (cli/dist in production), so the two resolvers
+// correctly resolve to different directories.
+const REPO_MARKERS = ["pnpm-workspace.yaml", ".git"];
+export function ascendToRepoRoot(
+  markers: string[] = REPO_MARKERS,
+  startDir: string = dirname(fileURLToPath(import.meta.url))
+): string | undefined {
+  let current = startDir;
+  for (let i = 0; i < 12; i += 1) {
     if (markers.some((m) => existsSync(join(current, m)))) return current;
     const parent = dirname(current);
     if (parent === current) break;
@@ -21,8 +30,9 @@ export function ascendToRepoRoot(markers: string[] = REPO_MARKERS): string | und
   return undefined;
 }
 
-// Resolve the repo root. Lenient: falls back to the legacy fixed depth only if no
-// marker is found, so resolution never gets worse than before.
+// Resolve the repo root (where .env and the operator-memory files live). Lenient: falls
+// back to the legacy fixed depth only if no marker is found (e.g. installed as a dep with
+// no .git / workspace file), so resolution never gets worse than before.
 function repoRoot(): string {
   return ascendToRepoRoot() ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
@@ -466,6 +476,8 @@ export interface ExecuteBrokerageOptions {
   fetchImpl?: typeof fetch;
   /** Set false to disable the on-401 browser-free token refresh + retry (default on). */
   autoRefresh?: boolean;
+  /** Override the .env path the on-401 disk re-read consults (tests inject a temp file). */
+  envPath?: string;
   /** Set false to disable the in-engine 429 rate-limit retry (default on for real fetch). */
   autoRetry?: boolean;
   /** Max 429 retries (default 3). Each sleeps the server-directed cooldown before retrying. */
@@ -2040,7 +2052,7 @@ export async function executeBrokerageRequest(
     !cookie &&
     options.autoRefresh !== false
   ) {
-    const fresh = refreshBrokerageToken(undefined, { scrape: options.fetchImpl === undefined });
+    const fresh = refreshBrokerageToken(undefined, { scrape: options.fetchImpl === undefined, envPath: options.envPath });
     if (fresh) {
       token = fresh;
       process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
@@ -2095,7 +2107,7 @@ export async function executeBrokerageRequest(
     // Re-read the .env file first — an out-of-band refresh / peer sync may have written a
     // fresh token that this long-running process never loaded — then fall back to a local
     // Chrome scrape. The disk re-read runs even with an injected fetch; the scrape does not.
-    const fresh = refreshBrokerageToken(token, { scrape: options.fetchImpl === undefined });
+    const fresh = refreshBrokerageToken(token, { scrape: options.fetchImpl === undefined, envPath: options.envPath });
     if (fresh && fresh !== token) {
       process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
       currentToken = fresh;

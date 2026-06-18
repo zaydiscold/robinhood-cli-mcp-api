@@ -4304,6 +4304,24 @@ export async function listOwnedTradingAccounts(
   return accts;
 }
 
+// §2.3 — account-ownership guard for write surfaces (esp. the MCP, which passes a caller-supplied
+// account_number straight to the engine). Rethrows a genuine ownership failure (block the write),
+// but SOFT-FAILS on a transient lookup error (network/auth) so a write isn't permanently wedged.
+export async function assertAccountOwned(
+  accountNumber: string | undefined,
+  getJson: typeof brokerageGetJson = brokerageGetJson
+): Promise<void> {
+  if (!accountNumber) return; // nothing to validate (account-less call)
+  try {
+    await listOwnedTradingAccounts(getJson, accountNumber); // throws if not one of your accounts
+  } catch (e) {
+    const msg = (e as Error)?.message ?? "";
+    if (/not one of your trading accounts/i.test(msg)) throw e; // hard ownership failure → block the write
+    // transient lookup failure → warn, but proceed (don't wedge writes on a flaky accounts read)
+    process.stderr.write(`[robinhood-cli] account-ownership check skipped (lookup failed): ${msg.slice(0, 120)}\n`);
+  }
+}
+
 const round2 = (value: number): number => (Number.isFinite(value) ? Math.round(value * 100) / 100 : Number.NaN);
 
 // ── Dividends ──────────────────────────────────────────────────────────────────────────────────

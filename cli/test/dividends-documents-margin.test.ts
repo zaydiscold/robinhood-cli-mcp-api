@@ -200,16 +200,16 @@ describe("documentYear — tax forms map to their TAX year (issue year − 1)", 
 
 describe("documentFilename — <year>-<type>-<acct last4>-<date>.<ext>", () => {
   it("builds the canonical name and keeps the real filetype (1099s ship as pdf AND csv)", () => {
-    expect(documentFilename({ type: "1099", date: "2026-02-11", year: "2025", accountLast4: "9919", filetype: "pdf" }))
-      .toBe("2025-1099-9919-2026-02-11.pdf");
-    expect(documentFilename({ type: "1099", date: "2026-03-04", year: "2025", accountLast4: "9919", filetype: "csv" }))
-      .toBe("2025-1099-9919-2026-03-04.csv");
+    expect(documentFilename({ type: "1099", date: "2026-02-11", year: "2025", accountLast4: "4444", filetype: "pdf" }))
+      .toBe("2025-1099-4444-2026-02-11.pdf");
+    expect(documentFilename({ type: "1099", date: "2026-03-04", year: "2025", accountLast4: "4444", filetype: "csv" }))
+      .toBe("2025-1099-4444-2026-03-04.csv");
   });
   it("defaults to pdf and sanitizes path-hostile characters", () => {
-    expect(documentFilename({ type: "trade_confirm", date: "2026-06-10", year: "2026", accountLast4: "0497", filetype: null }))
-      .toBe("2026-trade_confirm-0497-2026-06-10.pdf");
-    expect(documentFilename({ type: "a/b", date: "2026-06-10", year: "2026", accountLast4: "0497", filetype: "p/df" }))
-      .toBe("2026-a_b-0497-2026-06-10.pdf");
+    expect(documentFilename({ type: "trade_confirm", date: "2026-06-10", year: "2026", accountLast4: "5555", filetype: null }))
+      .toBe("2026-trade_confirm-5555-2026-06-10.pdf");
+    expect(documentFilename({ type: "a/b", date: "2026-06-10", year: "2026", accountLast4: "5555", filetype: "p/df" }))
+      .toBe("2026-a_b-5555-2026-06-10.pdf");
   });
 });
 

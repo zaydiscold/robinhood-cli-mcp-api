@@ -892,7 +892,7 @@ server.registerTool(
       accts.push(String(a.account_number));
     }
     if (account_number) {
-      if (!accts.includes(String(account_number))) return jsonResponse({ error: `Account ${account_number} not found.` });
+      if (!accts.includes(String(account_number))) throw new Error(`Account ${account_number} not found.`);
       accts = [String(account_number)];
     }
     const results: any[] = [];
@@ -954,7 +954,7 @@ server.registerTool(
       const { result: _raw, ...summary } = r;
       return writeStatus(summary, { dryRun: summary.dryRun });
     } catch (e: any) {
-      return jsonResponse({ error: e.message });
+      throw e;
     }
   }
 );
@@ -983,7 +983,7 @@ server.registerTool(
       });
       const { result: _raw, ...summary } = r;
       return writeStatus(summary, { dryRun: summary.dryRun });
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 
@@ -1007,7 +1007,7 @@ server.registerTool(
       // Shared engine (cancelOrder in lib.ts) — same path as the CLI `cancel` command and `panic`.
       const r = await cancelOrder({ idOrUrl: order_id, kind, liveWrite: resolveLiveFlag(liveWrite, live) });
       return writeStatus(r, { dryRun: r.dryRun, reason: (r as any).gateReason });
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 
@@ -1023,7 +1023,7 @@ server.registerTool(
   },
   async ({ account_number }) => {
     try { return jsonResponse(await listOpenOrders({ accountNumber: account_number })); }
-    catch (e: any) { return jsonResponse({ error: e.message }); }
+    catch (e: any) { throw e; }
   }
 );
 
@@ -1045,7 +1045,7 @@ server.registerTool(
     try {
       const r = await panicCancelAll({ accountNumber: account_number, liveWrite: resolveLiveFlag(liveWrite, live) });
       return writeStatus(r, { dryRun: r.dryRun });
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 
@@ -1073,7 +1073,7 @@ server.registerTool(
         accountNumber: account_number, symbol, chainId: chain_id,
         strike, expiration, optionType: option_type, limitPrice: limit_price
       }));
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 
@@ -1099,7 +1099,7 @@ server.registerTool(
       return jsonResponse(await buildOptionsClosePlan({
         symbol, accountNumber: account_number, strike, expiration, optionType: option_type, quantity
       }));
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 
@@ -1115,7 +1115,7 @@ server.registerTool(
   async ({ order_id }) => {
     try {
       return jsonResponse(await getOrderStatus(order_id));
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 
@@ -1135,7 +1135,7 @@ server.registerTool(
   async ({ symbol, account_number }) => {
     try {
       return jsonResponse(await computeWheelState({ symbol, accountNumber: account_number }));
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 
@@ -1492,7 +1492,7 @@ server.registerTool(
   },
   async ({ account_number, symbol }) => {
     try { return jsonResponse(await computeDividends({ accountNumber: account_number, symbol })); }
-    catch (e: any) { return jsonResponse({ error: e.message }); }
+    catch (e: any) { throw e; }
   }
 );
 
@@ -1508,7 +1508,7 @@ server.registerTool(
   },
   async ({ type, year, account_number }) => {
     try { return jsonResponse(await listDocuments({ type, year, accountNumber: account_number })); }
-    catch (e: any) { return jsonResponse({ error: e.message }); }
+    catch (e: any) { throw e; }
   }
 );
 
@@ -1524,7 +1524,7 @@ server.registerTool(
   },
   async ({ account_number }) => {
     try { return jsonResponse(await getMarginHealth(account_number)); }
-    catch (e: any) { return jsonResponse({ error: e.message }); }
+    catch (e: any) { throw e; }
   }
 );
 
@@ -1544,7 +1544,7 @@ server.registerTool(
   },
   async ({ days, symbol, account_number }) => {
     try { return jsonResponse(await computeTradeReview({ days, symbol, accountNumber: account_number })); }
-    catch (e: any) { return jsonResponse({ error: e.message }); }
+    catch (e: any) { throw e; }
   }
 );
 
@@ -1563,7 +1563,7 @@ server.registerTool(
   },
   async ({ ref, note }) => {
     try { return jsonResponse(addTradeNote({ ref, note })); }
-    catch (e: any) { return jsonResponse({ error: e.message }); }
+    catch (e: any) { throw e; }
   }
 );
 
@@ -1579,7 +1579,7 @@ server.registerTool(
   },
   async () => {
     try { return jsonResponse(await computeHotlist()); }
-    catch (e: any) { return jsonResponse({ error: e.message }); }
+    catch (e: any) { throw e; }
   }
 );
 
@@ -1720,7 +1720,7 @@ server.registerTool(
       }
       const entries = listKnowledge();
       return jsonResponse({ count: entries.length, entries });
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 
@@ -1758,7 +1758,7 @@ server.registerTool(
       }
       const rolls = listPendingRolls().map(({ block: _b, ...rest }) => rest);
       return jsonResponse({ count: rolls.length, rolls });
-    } catch (e: any) { return jsonResponse({ error: e.message }); }
+    } catch (e: any) { throw e; }
   }
 );
 

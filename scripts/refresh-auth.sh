@@ -143,21 +143,40 @@ tok = str(best["access_token"])
 exp = int(best.get("expires_in", 0) or 0)
 ttype = best.get("token_type", "Bearer")
 
-env = (
+header = (
     "# Robinhood brokerage auth — read from Chrome's on-disk localStorage "
     + datetime.datetime.utcnow().isoformat() + "Z\n"
     + "# token_type=" + str(ttype) + " expires_in=" + str(exp)
     + "s (~%.1fd)\n" % (exp / 86400)
     + "ROBINHOOD_BROKERAGE_TOKEN=" + tok + "\n"
 )
+# Surgical write: refresh ONLY the token (+ its auto-generated header comments) and
+# PRESERVE every other line (ROBINHOOD_WEB_APP_VERSION, crypto keys, etc.). A full
+# overwrite would clobber sibling keys — the same "refresh one field, destroy others"
+# bug class we're stamping out.
+keep = []
+if os.path.exists(env_path):
+    with open(env_path) as fh:
+        for ln in fh.read().split("\n"):
+            s = ln.strip()
+            if s.startswith("ROBINHOOD_BROKERAGE_TOKEN="):
+                continue
+            if s.startswith("# Robinhood brokerage auth") or s.startswith("# token_type="):
+                continue
+            keep.append(ln)
+while keep and keep[0].strip() == "":
+    keep.pop(0)
+while keep and keep[-1].strip() == "":
+    keep.pop()
+content = header + ("\n".join(keep).rstrip("\n") + "\n" if keep else "")
 with open(env_path, "w") as fh:
-    fh.write(env)
+    fh.write(content)
 try:
     os.chmod(env_path, 0o600)
 except OSError:
     pass  # chmod on Windows is no-op; ignore
-print("[refresh-auth] wrote %s (OK len=%d type=%s exp_days=%.1f)"
-      % (env_path, len(tok), ttype, exp / 86400))
+print("[refresh-auth] wrote %s (OK len=%d type=%s exp_days=%.1f, %d other line(s) preserved)"
+      % (env_path, len(tok), ttype, exp / 86400, len(keep)))
 PYEOF
 
 # Zayd Khan // cold // www.zayd.wtf

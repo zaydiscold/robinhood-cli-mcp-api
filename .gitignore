@@ -16,3 +16,8 @@ coverage/
 
 # local safety backups (never commit)
 _local-backups-*/
+
+# private/working notes — never publish (research sweeps, proofs, machine-setup notes)
+research/
+proofs/
+MOTHERSHIP-SETUP.md

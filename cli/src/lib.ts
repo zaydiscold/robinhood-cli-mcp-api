@@ -4,9 +4,37 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statS
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Resolve the repo root from this compiled module: dist/ -> cli/ -> repo root.
+// Walk up from a start dir to a repo marker. Robust across build layouts (cli/dist,
+// mcp/dist, bundled, symlinked): a fixed ../.. silently resolves to the WRONG directory
+// if the emit depth ever changes.
+//
+// CRITICAL: the default markers must exist ONLY at the true repo root. We deliberately do
+// NOT include api-map/brokerage-routes.json here — `pnpm build` COPIES it into cli/dist, so
+// a compiled module living in cli/dist would match it and (wrongly) treat cli/dist as the
+// repo root, breaking .env / data-file loading for the long-running MCP — the exact failure
+// this resolver exists to prevent. repoRootFromCli() passes that marker EXPLICITLY because it
+// WANTS the dir holding the route data (cli/dist in production), so the two resolvers
+// correctly resolve to different directories.
+const REPO_MARKERS = ["pnpm-workspace.yaml", ".git"];
+export function ascendToRepoRoot(
+  markers: string[] = REPO_MARKERS,
+  startDir: string = dirname(fileURLToPath(import.meta.url))
+): string | undefined {
+  let current = startDir;
+  for (let i = 0; i < 12; i += 1) {
+    if (markers.some((m) => existsSync(join(current, m)))) return current;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return undefined;
+}
+
+// Resolve the repo root (where .env and the operator-memory files live). Lenient: falls
+// back to the legacy fixed depth only if no marker is found (e.g. installed as a dep with
+// no .git / workspace file), so resolution never gets worse than before.
 function repoRoot(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  return ascendToRepoRoot() ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
 
 // Auto-load the repo .env so every consumer (CLI, MCP server, scripts) gets auth
@@ -448,6 +476,8 @@ export interface ExecuteBrokerageOptions {
   fetchImpl?: typeof fetch;
   /** Set false to disable the on-401 browser-free token refresh + retry (default on). */
   autoRefresh?: boolean;
+  /** Override the .env path the on-401 disk re-read consults (tests inject a temp file). */
+  envPath?: string;
   /** Set false to disable the in-engine 429 rate-limit retry (default on for real fetch). */
   autoRetry?: boolean;
   /** Max 429 retries (default 3). Each sleeps the server-directed cooldown before retrying. */
@@ -505,16 +535,9 @@ export function fileExists(path: string): boolean {
 }
 
 export function repoRootFromCli(): string {
-  let current = dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 8; i += 1) {
-    if (fileExists(join(current, "api-map/brokerage-routes.json"))) {
-      return current;
-    }
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  throw new Error("Could not locate repo root with api-map/brokerage-routes.json");
+  const root = ascendToRepoRoot(["api-map/brokerage-routes.json"]);
+  if (!root) throw new Error("Could not locate repo root with api-map/brokerage-routes.json");
+  return root;
 }
 
 export function readJson<T>(path: string): T {
@@ -1887,24 +1910,50 @@ function resolveBash(): string {
   return "/bin/bash";
 }
 
-function tryRefreshBrokerageToken(): string | undefined {
+// Read the brokerage token straight from the on-disk .env (NOT process.env). A long-
+// running server (the MCP) loads .env once at import; if the file is refreshed out-of-band
+// — a peer sync, a separate `auth:refresh`, another process — only a disk re-read sees it.
+// Optional path for testability; defaults to the repo .env.
+export function tokenFromEnvFile(envPath: string = join(repoRoot(), ".env")): string | undefined {
   try {
-    const root = repoRoot();
-    const script = join(root, "scripts", "refresh-auth.sh");
-    const envPath = join(root, ".env");
-    if (!existsSync(script)) return undefined;
-    execFileSync(resolveBash(), [script], { stdio: "ignore", timeout: 30000 });
     if (!existsSync(envPath)) return undefined;
     for (const line of readFileSync(envPath, "utf8").split("\n")) {
       const t = line.trim();
       if (!t || t.startsWith("#")) continue;
       if (t.startsWith("ROBINHOOD_BROKERAGE_TOKEN=")) {
-        const val = t.slice("ROBINHOOD_BROKERAGE_TOKEN=".length).trim();
+        const val = t.slice("ROBINHOOD_BROKERAGE_TOKEN=".length).trim().replace(/^["']|["']$/g, "");
         return val || undefined;
       }
     }
   } catch {
-    // refresh unavailable (no Chrome auth, not on this machine, etc.) — caller keeps the 401
+    // unreadable file is non-fatal
+  }
+  return undefined;
+}
+
+// Obtain a brokerage token fresher than `current`, cheapest path first:
+//   1) re-read the .env file — catches an out-of-band refresh on a long-running process
+//      and works on a headless box with no logged-in Chrome (the systematic-staleness fix);
+//   2) mint one from THIS machine's logged-in Chrome via refresh-auth.sh, then re-read.
+// Returns undefined when nothing fresher exists (caller keeps the 401 + surfaces the hint).
+// scrape:false (tests / injected-fetch paths) skips the Chrome subprocess but still re-reads disk.
+export function refreshBrokerageToken(
+  current?: string,
+  opts: { scrape?: boolean; envPath?: string } = {}
+): string | undefined {
+  const envPath = opts.envPath ?? join(repoRoot(), ".env");
+  const onDisk = tokenFromEnvFile(envPath);
+  if (onDisk && onDisk !== current) return onDisk;
+  if (opts.scrape === false) return undefined;
+  try {
+    const script = join(repoRoot(), "scripts", "refresh-auth.sh");
+    if (!existsSync(script)) return undefined;
+    execFileSync(resolveBash(), [script], { stdio: "ignore", timeout: 30000 });
+    const minted = tokenFromEnvFile(envPath);
+    if (minted && minted !== current) return minted;
+  } catch {
+    // refresh unavailable on this machine (no logged-in Chrome, no bash/python) —
+    // caller keeps the 401 and surfaces the honest hint.
   }
   return undefined;
 }
@@ -1962,7 +2011,7 @@ export function classifyRobinhoodError(status: number, bodyText: string, headers
   if (lower.includes("min tick") || lower.includes("does not satisfy")) return { kind: "below_min_tick", status, detail, retryable: false, hint: "Price below the chain cutoff must use below_tick (read options/chains/{id} min_ticks; often $0.05)." };
   if (lower.includes("market order") && (lower.includes("otc") || lower.includes("not eligible"))) return { kind: "otc_market_order", status, detail, retryable: false, hint: "OTC names reject market/fractional orders — use whole shares + a marketable limit." };
   if (lower.includes("app version") || lower.includes("important stock trading updates")) return { kind: "app_version_gate", status, detail, retryable: false, hint: "Equity orders need order_form_version:7 + the web headers (the engine sends these). If Robinhood rotated the web build, set ROBINHOOD_WEB_APP_VERSION to the current x-robinhood-web-app-version header (grab it from any logged-in robinhood.com request) and retry." };
-  if (status === 401 || status === 403) return { kind: "unauthorized", status, detail, retryable: status === 401, hint: status === 401 ? "Token expired — refresh (pnpm auth:refresh) and retry." : "Forbidden (entitlement/permission)." };
+  if (status === 401 || status === 403) return { kind: "unauthorized", status, detail, retryable: status === 401, hint: status === 401 ? "401 — brokerage token rejected. `pnpm auth:refresh` reads a logged-in robinhood.com Chrome session ON THIS machine and rewrites .env; if this box has no Robinhood login, sync a fresh .env onto it. The engine re-reads .env on a 401, so an updated file is picked up without a restart." : "Forbidden (entitlement/permission)." };
   if (status === 404) return { kind: "not_found", status, detail, retryable: false };
   if (status === 400) return { kind: "bad_request", status, detail, retryable: false };
   return { kind: "unknown", status, detail, retryable: false };
@@ -2001,10 +2050,9 @@ export async function executeBrokerageRequest(
     plan.requiresAuth &&
     !token &&
     !cookie &&
-    options.fetchImpl === undefined &&
     options.autoRefresh !== false
   ) {
-    const fresh = tryRefreshBrokerageToken();
+    const fresh = refreshBrokerageToken(undefined, { scrape: options.fetchImpl === undefined, envPath: options.envPath });
     if (fresh) {
       token = fresh;
       process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
@@ -2054,10 +2102,12 @@ export async function executeBrokerageRequest(
   if (
     response.status === 401 &&
     token &&
-    options.fetchImpl === undefined &&
     options.autoRefresh !== false
   ) {
-    const fresh = tryRefreshBrokerageToken();
+    // Re-read the .env file first — an out-of-band refresh / peer sync may have written a
+    // fresh token that this long-running process never loaded — then fall back to a local
+    // Chrome scrape. The disk re-read runs even with an injected fetch; the scrape does not.
+    const fresh = refreshBrokerageToken(token, { scrape: options.fetchImpl === undefined, envPath: options.envPath });
     if (fresh && fresh !== token) {
       process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
       currentToken = fresh;
@@ -5669,18 +5719,20 @@ export function signCryptoRequest(input: {
   path: string;
   method: string;
   body?: string;
-}): { "x-api-key": string; "x-timestamp": string; "x-signature": string; signedMessage: string } {
+}): { "x-api-key": string; "x-timestamp": string; "x-signature": string } {
   const timestamp = String(input.timestamp);
   const method = input.method.toUpperCase();
   const body = input.body ?? "";
   const signedMessage = `${input.apiKey}${timestamp}${input.path}${method}${body}`;
   const privateKey = privateKeyFromBase64Seed(input.privateKeyBase64);
   const signature = sign(null, Buffer.from(signedMessage, "utf8"), privateKey).toString("base64");
+  // NOTE: never return `signedMessage` — it embeds the API key in plaintext and would be
+  // echoed through the MCP/CLI response into logs and model context. Callers need only the
+  // three signed headers below; reconstruct the message internally if ever required.
   return {
     "x-api-key": input.apiKey,
     "x-timestamp": timestamp,
-    "x-signature": signature,
-    signedMessage
+    "x-signature": signature
   };
 }
 

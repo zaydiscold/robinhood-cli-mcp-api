@@ -2176,6 +2176,117 @@ export async function tryBrokerageGetJson(
   }
 }
 
+// ───────────────────── Shared account-graph + marketdata helpers (CLI + MCP) ─────────────────────
+// Hoisted out of the CLI so the order engine AND the MCP surface share ONE implementation (the parity
+// invariant — a helper that lives in only one front-end is exactly how the owned-account guard ended
+// up protecting CLI buys but not the placeEquityOrder both surfaces call). Every fetcher takes an
+// injectable getJson so it's unit-testable without network. Zayd Khan // cold // www.zayd.wtf
+
+export interface OwnedAccounts {
+  numbers: Set<string>;
+  labels: Map<string, string>;
+}
+
+let _ownedAccountsCache: OwnedAccounts | null = null;
+
+/** Test-only: clear the process-global owned-accounts cache between cases. */
+export function __resetOwnedAccountsCache(): void {
+  _ownedAccountsCache = null;
+}
+
+/**
+ * Resolve the COMPLETE set of trading accounts the token owns (transfer/accounts/ — the full graph;
+ * the bare accounts/ under-reports). Cached per-process. Returns null when the lookup itself fails,
+ * so a transient/offline read WARNS rather than wedging every write.
+ */
+export async function loadOwnedAccounts(
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<OwnedAccounts | null> {
+  if (_ownedAccountsCache) return _ownedAccountsCache;
+  const getJson = deps.getJson ?? brokerageGetJson;
+  try {
+    const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
+    const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+    const numbers = new Set<string>();
+    const labels = new Map<string, string>();
+    for (const a of rows) {
+      if (a?.type !== "rhs" && a?.type !== "ira_roth") continue; // trading accounts only
+      if (!a.account_number) continue;
+      numbers.add(String(a.account_number));
+      labels.set(String(a.account_number), a.account_name || a.display_title || "");
+    }
+    if (numbers.size === 0) return null;
+    _ownedAccountsCache = { numbers, labels };
+    return _ownedAccountsCache;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refuse a write to an account the token doesn't own — the #1 money-loss defense (a typo'd or
+ * hallucinated account number otherwise templates straight into a live order body). Throws on a
+ * CONFIRMED-unowned account; WARNS (returns undefined) when the ownership lookup itself failed, so an
+ * offline / mid-refresh read can't block every write. Returns the account label on success.
+ */
+export async function assertAccountOwned(
+  accountNumber: string,
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<string | undefined> {
+  const owned = await loadOwnedAccounts(deps);
+  if (!owned) {
+    process.stderr.write(
+      `⚠️  Could not verify account ${accountNumber} against your owned accounts (lookup failed). Proceeding — double-check the number.\n`
+    );
+    return undefined;
+  }
+  if (!owned.numbers.has(String(accountNumber))) {
+    throw new Error(
+      `Account ${accountNumber} is not one of your trading accounts (${[...owned.numbers].map((nm) => "…" + nm.slice(-4)).join(", ")}). ` +
+        `Refusing to act on an unowned/typo'd account.`
+    );
+  }
+  return owned.labels.get(String(accountNumber)) || "";
+}
+
+/** Fetch equity marketdata quotes for many instrument ids, chunked (≤40/req) to keep URLs bounded. */
+export async function fetchQuotes(
+  instrumentIds: string[],
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<Map<string, any>> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const quotes = new Map<string, any>();
+  const chunkSize = 40;
+  for (let i = 0; i < instrumentIds.length; i += chunkSize) {
+    const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
+      ids: instrumentIds.slice(i, i + chunkSize).join(",")
+    });
+    for (const row of data.results ?? []) {
+      if (row?.instrument_id) quotes.set(row.instrument_id, row);
+    }
+  }
+  return quotes;
+}
+
+/** Fetch option marketdata for many option instrument ids, chunked (≤40/req). */
+export async function fetchOptionMarks(
+  ids: string[],
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<Map<string, any>> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const marks = new Map<string, any>();
+  const chunkSize = 40;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const data = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", {
+      ids: ids.slice(i, i + chunkSize).join(",")
+    });
+    for (const row of data.results ?? []) {
+      if (row?.instrument_id) marks.set(row.instrument_id, row);
+    }
+  }
+  return marks;
+}
+
 export interface PortfolioPnlOptions {
   by?: "underlying" | "account" | "position";
   window?: "day" | "after-hours" | "both";
@@ -2967,6 +3078,13 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   if (!input.amount && !input.shares) throw new Error("Must specify amount (dollars) or shares (quantity)");
   if (input.amount && input.shares) throw new Error("Specify amount OR shares, not both");
 
+  // 0. Owned-account guard — the #1 money-loss risk is a write to the WRONG account (a typo'd or
+  // hallucinated account number templating straight into a live order body). Refuse a CONFIRMED
+  // unowned account; a failed ownership lookup only WARNS (never wedges a write). This is the single
+  // chokepoint behind the CLI buy/sell commands AND the MCP robinhood_buy/robinhood_sell tools, so
+  // the guard can't protect one surface and miss another. Zayd Khan // cold // www.zayd.wtf
+  await assertAccountOwned(input.accountNumber, { getJson });
+
   // 1. Resolve instrument — the response carries the OTC/fractional signals.
   const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })).results?.[0];
   if (!inst) throw new Error(`Symbol ${symbol} not found`);
@@ -3273,15 +3391,42 @@ export async function cancelOrder(
   deps: { write?: typeof gatedBrokerageWrite; getJson?: typeof brokerageGetJson } = {}
 ): Promise<CancelOrderResult> {
   const write = deps.write ?? gatedBrokerageWrite;
+  const getJson = deps.getJson ?? brokerageGetJson;
   const kind: OrderKind = input.kind ?? "equity";
   const id = extractOrderId(input.idOrUrl);
+  const liveWrite = Boolean(input.liveWrite);
+  const isDryRun = input.dryRun ?? !liveWrite;
+
+  // 0. Owned-account guard (live cancels only — dry-runs are safe).
+  // Pre-read the order to get its account URL, then assert ownership.
+  // Degrades gracefully: a failed pre-read warns but proceeds.
+  if (!isDryRun) {
+    try {
+      const preUrl = kind === "options"
+        ? "https://api.robinhood.com/options/orders/{0}/"
+        : "https://api.robinhood.com/orders/{0}/";
+      const order = await getJson(preUrl, { "0": id });
+      const acctUrl = order?.account;
+      if (acctUrl) {
+        const acctNum = typeof acctUrl === "string"
+          ? acctUrl.replace(/\/$/, "").split("/").pop()
+          : String(acctUrl).replace(/\/$/, "").split("/").pop();
+        if (acctNum) await assertAccountOwned(acctNum, { getJson });
+      }
+    } catch (e: any) {
+      // If the assertion throws (unowned account), propagate it.
+      if (String(e?.message ?? "").includes("not one of your trading accounts")) throw e;
+      // Otherwise (pre-read failed, network error, etc.), warn and proceed.
+      process.stderr.write(`⚠️  Could not verify account ownership for ${kind} order ${id} (lookup failed). Proceeding — double-check the order.\\n`);
+    }
+  }
+
   const url = kind === "options"
     ? "https://api.robinhood.com/options/orders/{0}/cancel/"
     : "https://api.robinhood.com/orders/{0}/cancel/";
-  const liveWrite = Boolean(input.liveWrite);
   const result = await write({
     url, method: "POST", params: { "0": id },
-    dryRun: input.dryRun ?? !liveWrite, liveWrite,
+    dryRun: isDryRun, liveWrite,
     logContext: input.logContext ?? `cancel ${kind} order ${id}`
   });
   const rb = (() => {

@@ -3,6 +3,7 @@ import {
   DEDUP_WINDOW_MS,
   etClockSession,
   computeMarketSession,
+  cancelOrder,
   extractOrderId,
   filterRecentPending,
   getOrderStatus,
@@ -517,6 +518,56 @@ describe("WSF-01: brokerage buy routes through placeEquityOrder — dedup + log 
     expect(calls.logs).toHaveLength(1);
     expect(calls.logs[0]).toMatchObject({ symbol: "MSFT", account: "A1", side: "buy", refId: `MSFT-A1-${NOW}`, orderId: "ord-wsf01-live", httpStatus: 201 });
     expect(r).toMatchObject({ live: true, dryRun: false, orderId: "ord-wsf01-live", state: "filled" });
+  });
+});
+
+describe("WSF-02: owned-account guard in canonical order paths", () => {
+  // The #1 money-loss risk is a write to the WRONG account — a typo'd or hallucinated
+  // account number. placeEquityOrder and cancelOrder must refuse an unowned account.
+
+  it("placeEquityOrder throws when the account is not in the owned accounts graph", async () => {
+    const { deps, calls } = makeDeps({
+      ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }]
+    });
+    await expect(
+      placeEquityOrder({ symbol: "AAPL", accountNumber: "A9", side: "buy", amount: 10 }, deps)
+    ).rejects.toThrow(/Account A9 is not one of your trading accounts/);
+    expect(calls.writes).toHaveLength(0); // NOTHING was sent
+  });
+
+  it("a failed ownership lookup warns but proceeds (never wedges a write)", async () => {
+    const { deps, calls } = makeDeps({ ownedAccounts: "throw" });
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10 }, deps);
+    expect(r.dryRun).toBe(true);
+    expect(r.live).toBe(false);
+  });
+
+  it("cancelOrder throws when the order's account is unowned (live cancel)", async () => {
+    // Simulate: owned accounts has A1, but the order belongs to A9.
+    const { deps, calls } = makeDeps({
+      ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
+      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) }
+    });
+    // The cancelOrder pre-read will return an order with account URL pointing to A9.
+    deps.getJson = async (url: string) => {
+      if (url.includes("transfer/accounts")) {
+        calls.accountGraphQueries++;
+        return { results: [{ type: "rhs", account_number: "A1", account_name: "Individual" }] };
+      }
+      if (url.includes("/orders/") && !url.includes("cancel")) {
+        // Pre-read: order belongs to A9 (unowned)
+        return { id: "ord-9", account: "https://api.robinhood.com/accounts/A9/", state: "queued" };
+      }
+      if (url.includes("cancel")) {
+        calls.writes.push({ url, dryRun: false });
+        return { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) };
+      }
+      throw new Error(`unexpected: ${url}`);
+    };
+    await expect(
+      cancelOrder({ idOrUrl: "ord-9", liveWrite: true }, deps)
+    ).rejects.toThrow(/Account A9 is not one of your trading accounts/);
+    // The write must never have been reached.
   });
 });
 

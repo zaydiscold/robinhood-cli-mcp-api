@@ -117,12 +117,10 @@ function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
   const isWrite = risk !== "read" && risk !== "sensitive-read";
   return {
     readOnlyHint: readOnly,
-    destructiveHint: isWrite,  // per MCP spec: ANY modification is destructive, not just catastrophic
+    destructiveHint: isWrite,
     idempotentHint: readOnly || risk === "write-safe",
-    openWorldHint: true,
-    "mcp:read-only": readOnly,
-    "mcp:risk": risk
-  } as any;
+    openWorldHint: true
+  };
 }
 
 // Live-flag alias resolution (param-consistency pass 2026-06-11): the parity tools historically

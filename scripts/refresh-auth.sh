@@ -29,6 +29,8 @@ case "$(uname -s)" in
     Darwin)
         PYTHON_BIN="python3"
         CHROME_BASE="$HOME/Library/Application Support/Google/Chrome"
+        BRAVE_BASE="$HOME/Library/Application Support/BraveSoftware/Brave-Browser"
+        EDGE_BASE="$HOME/Library/Application Support/Microsoft Edge"
         ;;
     MINGW*|MSYS*|CYGWIN*)
         # git-bash / MSYS2 / Cygwin on Windows
@@ -62,6 +64,8 @@ esac
 command -v "$PYTHON_BIN" >/dev/null || { echo "ERROR: $PYTHON_BIN not on PATH" >&2; exit 1; }
 
 export CHROME_BASE
+export BRAVE_BASE
+export EDGE_BASE
 
 # Python does the disk scan, writes .env, chmods it, and prints the status — so the
 # token value never passes through the shell. Heredoc goes straight to python (no
@@ -71,9 +75,12 @@ import re, json, glob, os, sys, datetime
 
 env_path = os.environ["ROBINHOOD_ENV_PATH"]
 base = os.environ.get("CHROME_BASE")
+brave = os.environ.get("BRAVE_BASE")
+edge = os.environ.get("EDGE_BASE")
 
-if not base:
-    # Fallback: try macOS default (for bare invocation without the wrapper)
+# Try Chrome first, then Brave, then Edge
+bases = [b for b in [base, brave, edge] if b]
+if not bases:
     home = os.path.expanduser("~")
     if sys.platform == "darwin":
         base = os.path.join(home, "Library/Application Support/Google/Chrome")
@@ -86,10 +93,12 @@ if not base:
 # On Windows, the base IS "User Data" and profiles are direct children.
 # On macOS/Linux, profiles are direct children of the Chrome base.
 # The glob below handles both: "<base>/*/Local Storage/leveldb"
+# Try all browser bases (Chrome, Brave, Edge) in order
 files = []
-for prof in glob.glob(os.path.join(base, "*", "Local Storage", "leveldb")):
-    files += glob.glob(os.path.join(prof, "*.ldb"))
-    files += glob.glob(os.path.join(prof, "*.log"))
+for b in bases:
+    for prof in glob.glob(os.path.join(b, "*", "Local Storage", "leveldb")):
+        files += glob.glob(os.path.join(prof, "*.ldb"))
+        files += glob.glob(os.path.join(prof, "*.log"))
 files = sorted(set(files), key=lambda p: os.path.getmtime(p), reverse=True)
 
 candidates = []

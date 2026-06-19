@@ -8,9 +8,9 @@ This is a personal `zaydiscold` repo. It is read/write capable.
 - `crypto execute` sends live HTTP requests to Robinhood's official Crypto Trading API when `ROBINHOOD_CRYPTO_API_KEY` and `ROBINHOOD_CRYPTO_PRIVATE_KEY_B64` are present.
 - `--dry-run` is opt-in and returns the execution plan without sending.
 - **Writes are env-gated.** Any route whose risk is `write-safe`, `write-mutate`,
-  `write-or-sensitive`, or `destructive` is forced to a dry-run UNLESS the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch are set:
-  the `--live-write` flag AND the `ROBINHOOD_ALLOW_LIVE_WRITE=1` environment variable.
-  With only one (or neither), `resolveLiveWriteGate` returns `forcedDryRun: true` and the
+  `write-or-sensitive`, or `destructive` is forced to a dry-run UNLESS
+  `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set — the single master switch (no per-call `--live-write` needed).
+  Without it, `resolveLiveWriteGate` returns `forcedDryRun: true` and the
   request is planned but never sent (the result carries a `liveWriteBlocked` reason).
 - Reads (`read`, `sensitive-read`) always run live; no gate applies to them.
 - Write-capable risks emit `[WRITES TO LIVE ROBINHOOD]` to stderr before sending.
@@ -30,13 +30,13 @@ This is a personal `zaydiscold` repo. It is read/write capable.
 # Read (runs live, no gate):
 robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --json
 
-# Write, gate OFF → forced dry-run (safe; prints the plan + liveWriteBlocked reason):
+# Write, switch OFF → forced dry-run (safe; prints the plan + liveWriteBlocked reason):
 robinhood-cli brokerage execute "https://api.robinhood.com/orders/" --method POST \
   --body-json '{"account":"...","instrument":"...","symbol":"F","type":"limit","time_in_force":"gfd","trigger":"immediate","price":"9.00","quantity":"1","side":"buy"}'
 
 # Write, the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch ON → sends live:
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute "https://api.robinhood.com/orders/" \
-  --method POST --live-write --body-json '{...}'
+  --method POST --body-json '{...}'
 
 # Crypto read:
 robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/" --query-param symbol=BTC-USD --json

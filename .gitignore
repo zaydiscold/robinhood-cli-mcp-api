@@ -12,6 +12,7 @@ info/
 *.log
 *.tgz
 capture-extension/
+coverage/
 
 # local safety backups (never commit)
 _local-backups-*/
@@ -20,3 +21,6 @@ _local-backups-*/
 research/
 proofs/
 MOTHERSHIP-SETUP.md
+
+# raw per-account CDP captures hold real account last-4s + types — never commit (keep local copies)
+api-map/cdp-capture-*-per-account.json

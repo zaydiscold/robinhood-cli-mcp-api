@@ -83,7 +83,8 @@ grain of the tool:
 
 - **Prefer the first-class command over raw `brokerage execute`.** `portfolio`, `positions`, `quote`,
   `options chain/positions/enumerate/holdings/inspect`, `accounts`, `history`, `watchlist`, `recurring`,
-  `settings`, `stock profile` do the multi-step join + query params for you. `brokerage execute` is the
+  `settings`, `stock profile`, `pretrade`, `income`, `risk`, `whatif`, `calendar`, `exposure`, `autopilot`,
+  `search` do the multi-step join + query params for you. `brokerage execute` is the
   fallback for an unwrapped route — and it **can't take `?query=` params** (top time-waster).
 - **Money questions → DOLLARS, weighted by size, one command:** `portfolio` (`--day` / `--after-hours`).
   Never a size-blind percent leaderboard.
@@ -314,7 +315,7 @@ node cli/dist/index.js brokerage execute "https://api.robinhood.com/orders/" --m
   --body-json '{...web body above...}'
 # Live — requires the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch:
 ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute \
-  "https://api.robinhood.com/orders/" --method POST --live-write --body-json '{...}'
+  "https://api.robinhood.com/orders/" --method POST --body-json '{...}'
 ```
 
 Equity order body keys: `account`, `instrument`, `symbol`, `type` (`market`|`limit`),
@@ -370,7 +371,7 @@ node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orde
   --body-json "{\"account\":\"https://api.robinhood.com/accounts/<ACCOUNT_NUMBER>/\",\"direction\":\"debit\",\"legs\":[{\"side\":\"buy\",\"option\":\"https://api.robinhood.com/options/instruments/<OPTION_INSTRUMENT_ID>/\",\"position_effect\":\"open\",\"ratio_quantity\":1}],\"type\":\"limit\",\"time_in_force\":\"gtc\",\"trigger\":\"immediate\",\"price\":\"0.01\",\"quantity\":\"1\",\"ref_id\":\"$REF\"}" \
   --json --full
 # -> risk: write-mutate, mode: dry_run, liveWriteBlocked (no order sent).
-# To send: prepend ROBINHOOD_ALLOW_LIVE_WRITE=1 and add --live-write.
+# To send: prepend ROBINHOOD_ALLOW_LIVE_WRITE=1 — the env var is the sole gate.
 ```
 
 Options order body shape: `account`, `direction` (`debit`|`credit`), `legs[]`
@@ -480,18 +481,18 @@ robinhood-cli brokerage execute \
 
 # CREATE a list (POST, risk write-mutate). Field is display_name, NOT name.
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
-  "https://api.robinhood.com/discovery/lists/" --method POST --live-write \
+  "https://api.robinhood.com/discovery/lists/" --method POST \
   --body-json '{"display_name":"My List","object_type":"instrument","owner_type":"custom"}'
 
 # RENAME a list (PATCH). The mutable field is display_name — sending "name" is a
 # silent no-op (200 but nothing changes).
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
-  "https://api.robinhood.com/discovery/lists/{id}/" --method PATCH --live-write \
+  "https://api.robinhood.com/discovery/lists/{id}/" --method PATCH \
   --param id=<LIST_ID> --body-json '{"display_name":"Renamed"}'
 
 # DELETE a list (DELETE, risk destructive -> 204 No Content, irreversible).
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
-  "https://api.robinhood.com/discovery/lists/{id}/" --method DELETE --live-write \
+  "https://api.robinhood.com/discovery/lists/{id}/" --method DELETE \
   --param id=<LIST_ID>
 ```
 
@@ -537,7 +538,7 @@ robinhood-cli options chain NVDA --expiration 2026-07-02 --type put
 robinhood-cli options expirations MRVL            # list expirations before pulling a chain
 robinhood-cli watchlist list                      # custom watchlists + item counts
 robinhood-cli watchlist items "<list>"            # a list's tickers + live price + equity-buyable flag
-robinhood-cli watchlist buy "<list>" --account <N> --amount 1   # BP-aware $1 basket (dry-run; add --live-write to send)
+robinhood-cli watchlist buy "<list>" --account <N> --amount 1   # BP-aware $1 basket (dry-run; prepend ROBINHOOD_ALLOW_LIVE_WRITE=1 to send)
 ```
 
 Each joins the mapped routes it needs (`positions` joins `positions/` → `marketdata/quotes/`;
@@ -555,9 +556,9 @@ robinhood-cli recurring list                        # live read: symbol/state/am
 robinhood-cli recurring list --state paused --json   # filter + JSON for machine use
 
 # Resume / pause. Without the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch these DRY-RUN (plan only, send nothing):
-ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --all --live-write
-ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --id <SCHEDULE_ID> --live-write
-ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring pause  --all --account <ACCOUNT_NUMBER> --live-write
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --all
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --id <SCHEDULE_ID>
+ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring pause  --all --account <ACCOUNT_NUMBER>
 ```
 
 `--all` resolves targets by current state (resume → all paused; pause → all active), so it
@@ -577,7 +578,7 @@ robinhood-cli brokerage execute \
   --param 0=<SCHEDULE_ID> --body-json '{"state":"active"}'         # dry-run
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
   "https://bonfire.robinhood.com/recurring_schedules/{0}/" --method PATCH \
-  --param 0=<SCHEDULE_ID> --body-json '{"state":"active"}' --live-write   # PAUSE: "paused"
+  --param 0=<SCHEDULE_ID> --body-json '{"state":"active"}'   # PAUSE: "paused"
 
 # DRIP — toggle dividend reinvestment per account. The WRITE is PATCH
 # corp_actions/drip/account_settings/{account_number}/ with body {"drip_enabled": true|false}
@@ -589,7 +590,7 @@ robinhood-cli brokerage execute \
 
 # CANCEL an order (POST, no body):
 robinhood-cli brokerage execute \
-  "https://api.robinhood.com/orders/{0}/cancel/" --method POST --param 0=<ORDER_ID> --live-write
+  "https://api.robinhood.com/orders/{0}/cancel/" --method POST --param 0=<ORDER_ID>
 
 # ACH transfer (POST). direction=deposit moves money IN, direction=withdraw moves money OUT:
 robinhood-cli brokerage execute "https://api.robinhood.com/ach/transfers/" --method POST \
@@ -631,8 +632,8 @@ profile reads, brokerage plan/execute, and crypto routes/sign/plan/execute). `ro
 run the same shared engine as the CLI commands — pending-order dedup (5-min window; `force: true` skips),
 `ref_id` idempotency, OTC/fractional guard, and trading-log append all apply identically. A running server advertises
 its old count until reloaded — `/reload-mcp` after pulling (live truth: `tools/list`).
-Same engine → same auth, gate, and method-aware routing as the CLI. The MCP mirrors the CLI gate: `liveWrite: true` plus
-`ROBINHOOD_ALLOW_LIVE_WRITE=1` to send a write; otherwise forced dry-run.
+Same engine → same auth, gate, and method-aware routing as the CLI. The MCP uses the single-switch model: set
+`ROBINHOOD_ALLOW_LIVE_WRITE=1` in the server's environment to send writes; otherwise forced dry-run. No per-call `liveWrite` required — the env variable is the sole gate (`dryRun: true` still previews any call even when the switch is on).
 
 ---
 

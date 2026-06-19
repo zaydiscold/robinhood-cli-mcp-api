@@ -54,6 +54,6 @@ ROBINHOOD_COOKIE=... robinhood-cli brokerage execute "https://api.robinhood.com/
 robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --dry-run --json
 ```
 
-Live execution is personal-side behavior. There is no `*_ALLOW_WRITES` environment gate in this repo; `--dry-run` is the opt-in non-sending mode.
+Live execution is personal-side behavior. Writes are env-gated by `ROBINHOOD_ALLOW_LIVE_WRITE=1` — the single master switch; without it, every write is a dry-run. `--dry-run` is accepted but no longer the gate; the environment variable is the sole live-write control.
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

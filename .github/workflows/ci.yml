@@ -1,9 +1,10 @@
-name: ci
+name: CI
 
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
 
 # Cancel superseded runs on the same ref so stale pushes don't burn CI minutes.
 concurrency:
@@ -26,13 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10.12.1
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level high
       - name: Typecheck (cli + mcp)
         run: pnpm typecheck
       - name: Test (vitest — incl. cross-platform .env, resolveBash, gate/cap guards)

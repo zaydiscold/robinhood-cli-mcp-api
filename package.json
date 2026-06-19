@@ -1,6 +1,7 @@
 {
   "name": "robinhood-cli-workspace",
   "private": true,
+  "engines": { "node": ">=20" },
   "type": "module",
   "author": "Zayd Khan // cold (www.zayd.wtf)",
   "packageManager": "pnpm@10.12.1",
@@ -12,11 +13,26 @@
     "typecheck": "pnpm --filter @zaydiscold/robinhood-cli typecheck && pnpm --filter @zaydiscold/robinhood-cli build && pnpm --filter @zaydiscold/robinhood-cli-mcp typecheck",
     "cli": "pnpm --filter @zaydiscold/robinhood-cli cli",
     "auth:refresh": "bash scripts/refresh-auth.sh",
-    "version:refresh": "node scripts/scrape-web-app-version.mjs"
+    "version:refresh": "node scripts/scrape-web-app-version.mjs",
+    "lint": "eslint 'cli/src/**/*.ts' 'mcp/src/**/*.ts' --max-warnings 0",
+    "lint:fix": "eslint 'cli/src/**/*.ts' 'mcp/src/**/*.ts' --fix",
+    "format": "prettier --write 'cli/src/**/*.ts' 'mcp/src/**/*.ts'"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "8.0.16",
+      "hono": "4.12.25"
+    }
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "@typescript-eslint/eslint-plugin": "^8.61.1",
+    "@typescript-eslint/parser": "^8.61.1",
+    "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^10.5.0",
+    "prettier": "^3.8.4",
     "typescript": "^5.8.0",
-    "vitest": "^4.0.0"
+    "vite": "8.0.16",
+    "vitest": "^4.1.9"
   }
 }

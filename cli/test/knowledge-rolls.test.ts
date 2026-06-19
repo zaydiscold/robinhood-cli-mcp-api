@@ -56,7 +56,7 @@ describe("parsePendingRolls — parser contract", () => {
         "- closed leg: 1x HPE $30 call 2026-06-13, sold-to-close @ $1.25, order-id abc-123",
         "- intended open leg: HPE $32 call 2026-07-18 buy-to-open, fresh quote Monday",
         "- earliest open date: 2026-06-12",
-        "- account: …0497",
+        "- account: …5555",
         "- notes: kosher roll leg 2 of 2",
         ""
       ].join("\n");
@@ -68,7 +68,7 @@ describe("parsePendingRolls — parser contract", () => {
       closedLeg: "1x HPE $30 call 2026-06-13, sold-to-close @ $1.25, order-id abc-123",
       openIntent: "HPE $32 call 2026-07-18 buy-to-open, fresh quote Monday",
       earliestOpenDate: "2026-06-12",
-      account: "…0497",
+      account: "…5555",
       notes: "kosher roll leg 2 of 2"
     });
   });
@@ -88,7 +88,7 @@ describe("roll ledger — add → list → done round trip", () => {
     const r = addPendingRoll(
       {
         symbol: "hpe",
-        account: "123450497",
+        account: "123455555",
         closedLeg: "1x HPE $30c STC @ $1.25, order-id abc-123",
         openIntent: "HPE $32c 2026-07-18 BTO",
         earliestOpenDate: "2026-06-12",
@@ -102,7 +102,7 @@ describe("roll ledger — add → list → done round trip", () => {
     expect(rolls[0]).toMatchObject({
       symbol: "HPE",
       opened: "2026-06-11",
-      account: "…0497", // masked to last-4 on write
+      account: "…5555", // masked to last-4 on write
       earliestOpenDate: "2026-06-12"
     });
   });

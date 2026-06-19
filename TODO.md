@@ -12,7 +12,7 @@
 
   Notes: the command is **BP-aware** — if the basket total ($amount × tradable count) exceeds the
   account's buying power, it places the affordable prefix and reports the rest as skipped (top up or
-  pass `--limit`). One-gate model: `--live-write` alone is the whole gate now — no env var needed.
+  pass `--limit`). Single-switch gate: set `ROBINHOOD_ALLOW_LIVE_WRITE=1` to send — the env var is the sole gate.
   Verify after: `node cli/dist/index.js history --account <account_number> --days 1` (order history
   is the only proof an order happened).
 
@@ -27,7 +27,7 @@
   make it engine behavior so "order placed" claims are impossible without evidence.
 - [ ] **Notional guardrails**: configurable per-order and per-session dollar caps (e.g. `local/guardrails.json`),
   exceeded only with an explicit `--override-cap` flag. The checks-and-balances layer for agentic sends.
-- [x] **`panic` command** (BUILT 2026-06-11: CLI `panic` + MCP `robinhood_panic` + `orders open` view; per-cancel gating + evidence): cancel ALL open orders across ALL accounts (double-gated). Kill switch.
+- [x] **`panic` command** (BUILT 2026-06-11: CLI `panic` + MCP `robinhood_panic` + `orders open` view; per-cancel gating + evidence): cancel ALL open orders across ALL accounts (single-switch gated). Kill switch.
 - [ ] **`order watch`**: place → poll until filled/rejected/cancelled → report; single command lifecycle.
 - [ ] **Payoff in strategy-quote summary**: print max profit / max loss / breakevens on the human output
   (the reviewContract requires them; today the table shows legs + limit but not payoff. Live example:
@@ -48,12 +48,12 @@
   unified-balances host. Don't chase it; the per-account composition already covers balances.
 - [ ] **Options per-position P&L endpoint still unknown** (web UI shows it) — needs a CDP capture pass
   on the options position page.
-- [ ] **Doc contradictions to reconcile (found 2026-06-11, 9 items)**: iron-condor leg names differ
+- [x] **Doc contradictions to reconcile (found 2026-06-11, reconciled 2026-06-18)**: iron-condor leg names differ
   between SKILL.md sections (catalog JSON ids are authoritative); naked-short-call leg id; after-hours
   options self-contradiction in SKILL.md; wash-sale strictness differs between rolling deep-dive and
-  tax doc; SKILL 38 vs TODO 37 tool count; account-mask format inconsistent between two docs; `?account=` vs
-  `?account_number=` in order-templates doc; PDT-lifted vs vestigial PDT toggles; "18 strategy
-  workflows" vs 20 catalog ids.
+  tax doc; SKILL 38 vs TODO 37 tool count (resolved — SKILL.md now reflects live truth: `tools/list`); account-mask format inconsistent between two docs (resolved); `?account=` vs
+  `?account_number=` in order-templates doc (resolved); PDT-lifted vs vestigial PDT toggles (resolved); "18 strategy
+  workflows" vs 20 catalog ids (resolved).
 
 
 ## Feature ideas backlog (2026-06-11 pass — beginner through veteran)
@@ -70,7 +70,7 @@
 
 ## Watchlist writes — add/remove/create — SHIPPED 2026-06-15
 
-The watchlist surface is now read **+ write**, wired across all three places behind the double gate.
+The watchlist surface is now read **+ write**, wired across all three places behind the single-switch gate.
 **Correction to the original assumption:** the write endpoint is **`discovery/lists/items/`**, NOT
 `midlands/lists/items/` — captured + verified live 2026-06-15 (the `midlands/lists/*` entries are
 unrelated read routes). Contract: `POST discovery/lists/items/` with a list-id-keyed batch body
@@ -111,7 +111,7 @@ verified, 40 inferred). That number is *not* a 219-item backlog — read it corr
   discovery/lists/{id}/` (delete/rename). Both `destructive`, category `watchlists`, empty fields.
   Natural companion to the items add/remove in the Watchlist-writes section above — capture them in the
   same session.
-- [ ] **DRIP enrollment** — `corp_actions/drip/enrollment/{account_number}/` (`write-or-sensitive`,
+- [ ] **DRIP enrollment** — `corp_actions/drip/account_settings/{account_number}/` (`write-or-sensitive`,
   empty fields). Distinct from the account-wide `drip/account_settings/` toggle that's already built;
   capture the enroll/unenroll body.
 - [ ] **Sweep enroll (alt host)** — `bonfire .../sms/sweep/agree_and_enroll` (`write-mutate`). Same cash-
@@ -174,7 +174,7 @@ verified, 40 inferred). That number is *not* a 219-item backlog — read it corr
 ## Documentation
 
 - [ ] **API map changelog**: Track route additions/removals over time so the map's freshness is auditable.
-- [x] **MCP tool catalog in SKILL.md**: Done 2026-06-11 — full 37-tool table in SKILL.md §MCP Tools (counts de-hardcoded to "live truth: tools/list").
+- [x] **MCP tool catalog in SKILL.md**: Done 2026-06-11 (full table), updated 2026-06-18 (+23 tools: portfolio, pretrade, options close/chain/expirations/strategy-quote/roll-plan, dividends, documents, margin, review/review-note, hotlist, knowledge, roll-ledger, income, risk, whatif, calendar, exposure, autopilot, search; counts de-hardcoded to "live truth: tools/list").
 - [x] **Error code reference**: Done 2026-06-11 — `docs/error-code-reference-2026-06-11.md`, mirroring the `classifyRobinhoodError()` taxonomy one-for-one.
 
 ---

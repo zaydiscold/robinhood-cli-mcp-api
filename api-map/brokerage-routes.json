@@ -5930,6 +5930,34 @@
     "fieldsSource": "undocumented"
   },
   {
+    "url": "https://bonfire.robinhood.com/paymenthub/unified_transfers/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "summary": "Create an internal transfer between Robinhood accounts. For retirement accounts set receiving_account_type to 'ira_roth' or 'ira'. Cash accounts only use unleveraged/withdrawable balance (not margin BP). Individual accounts use originating/receiving_account_type 'rhs_account'.",
+    "bodyKeys": [
+      "amount",
+      "currency",
+      "direction",
+      "originating_account_id",
+      "originating_account_type",
+      "receiving_account_id",
+      "receiving_account_type",
+      "transfer_type"
+    ],
+    "source": "cdp-2026-06-18-transfer-flow",
+    "seenOn": [
+      "account-transfers"
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
     "url": "https://bonfire.robinhood.com/paymenthub/unified_transfers/{uuid}/contribution/",
     "host": "bonfire.robinhood.com",
     "categories": [

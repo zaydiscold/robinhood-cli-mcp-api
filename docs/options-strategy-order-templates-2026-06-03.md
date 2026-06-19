@@ -3,7 +3,7 @@
 The exact `POST https://api.robinhood.com/options/orders/` body per strategy, so a weak agent can
 copy the leg structure and never botch `side` / `position_effect` / `ratio_quantity` / `direction`.
 Resolve every `option_instrument_id` via `options enumerate <SYM> --expiration <DATE> [--type call|put]`
-FIRST (UUIDs are random v4 — enumerate, never guess). Account goes in `account` (and pass `?account=`
+FIRST (UUIDs are random v4 — enumerate, never guess). Account goes in `account` (and pass `?account_number=`
 on any web/preview call). Preview without placing via `POST bonfire/options/orders/review` (+
 `/marketability/`) using the same `legs` shape.
 

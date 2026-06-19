@@ -146,7 +146,8 @@ describe("cancelOrder — shared equity/options cancel with evidence", () => {
     });
     const r = await cancelOrder({ idOrUrl: "opt-1", kind: "options", liveWrite: true }, d);
     expect(calls.writes[0].url).toBe("https://api.robinhood.com/options/orders/{0}/cancel/");
-    expect(calls.rereads[0]).toBe("https://api.robinhood.com/options/orders/{0}/");
+    expect(calls.rereads.length).toBeGreaterThanOrEqual(1);
+    expect(calls.rereads[calls.rereads.length - 1]).toBe("https://api.robinhood.com/options/orders/{0}/");
     expect(r.evidence).toMatchObject({ confirmed: true, state: "cancelled" });
     expect(r.evidence?.warning).toBeUndefined();
   });
@@ -166,7 +167,7 @@ describe("cancelOrder — shared equity/options cancel with evidence", () => {
     const r = await cancelOrder({ idOrUrl: "ord-1", liveWrite: true }, d);
     expect(r.evidence?.confirmed).toBe(false);
     expect(r.evidence?.warning).toMatch(/403/);
-    expect(calls.rereads).toHaveLength(0);
+    expect(calls.rereads).toHaveLength(1); // ownership guard pre-reads the order before live cancel
   });
 
   it("a failed evidence re-read after a live cancel is loud, not silent", async () => {

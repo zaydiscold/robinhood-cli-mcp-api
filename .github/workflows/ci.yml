@@ -6,18 +6,36 @@ on:
   pull_request:
     branches: [main, master]
 
+# Cancel superseded runs on the same ref so stale pushes don't burn CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (node ${{ matrix.node }} · ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Don't let one OS/node combo failing mask the others — the cross-platform .env parsing
+      # (CRLF / BOM), repo-root resolution, and resolveBash behavior are exactly the surfaces
+      # that need full-matrix signal. The old CI was single-OS (ubuntu) on the unstable Node 24,
+      # so a Windows-only regression in the auth path would have shipped green.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [20, 22] # LTS lines; replaces the non-LTS Node 24 the old CI pinned
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: "pnpm"
+          node-version: ${{ matrix.node }}
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level high
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+      - name: Typecheck (cli + mcp)
+        run: pnpm typecheck
+      - name: Test (vitest — incl. cross-platform .env, resolveBash, gate/cap guards)
+        run: pnpm test
+      - name: Build (cli + mcp — emits dist the runtime reads)
+        run: pnpm build

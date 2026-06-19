@@ -30,6 +30,7 @@ import {
   planBrokerageRequest,
   planCryptoRequest,
   resolveLiveWriteGate,
+  accountFromWriteRequest,
   riskIsWrite,
   selectRouteByQueryAndMethod,
   brokerageGetJson,
@@ -55,6 +56,7 @@ import {
   getWatchlistItems,
   buyWatchlistBasket,
   placeEquityOrder,
+  assertAccountOwned,
   getOrderStatus,
   extractOrderId,
   cancelOrder,
@@ -678,7 +680,7 @@ server.registerTool(
     if (!route) {
       throw new Error(`No brokerage route matched: ${query}`);
     }
-    const gate = resolveLiveWriteGate({ risk: route.risk, method, dryRun, liveWrite });
+    const gate = resolveLiveWriteGate({ risk: route.risk, method, dryRun, liveWrite, accountNumber: accountFromWriteRequest(body, parseParamAssignments(params)) });
     const effectiveDryRun = dryRun || gate.forcedDryRun;
     const plan = planBrokerageRequest({
       route,
@@ -796,7 +798,7 @@ server.registerTool(
     if (!route) {
       throw new Error(`No official Crypto route matched: ${query}`);
     }
-    const gate = resolveLiveWriteGate({ risk: route.risk, method, dryRun, liveWrite });
+    const gate = resolveLiveWriteGate({ risk: route.risk, method, dryRun, liveWrite, accountNumber: accountFromWriteRequest(body, parseParamAssignments(params)) });
     const effectiveDryRun = dryRun || gate.forcedDryRun;
     const plan = planCryptoRequest({
       route,
@@ -946,6 +948,7 @@ server.registerTool(
   },
   async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force }) => {
     try {
+      await assertAccountOwned(account_number);
       const r = await placeEquityOrder({
         symbol, accountNumber: account_number, side: "buy",
         amount, shares, limitPrice,
@@ -976,6 +979,7 @@ server.registerTool(
   },
   async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force }) => {
     try {
+      await assertAccountOwned(account_number);
       const r = await placeEquityOrder({
         symbol, accountNumber: account_number, side: "sell",
         amount, shares, limitPrice,
@@ -1042,6 +1046,7 @@ server.registerTool(
     annotations: toolAnnotations(false, "destructive")
   },
   async ({ account_number, liveWrite, live }) => {
+    await assertAccountOwned(account_number);
     try {
       const r = await panicCancelAll({ accountNumber: account_number, liveWrite: resolveLiveFlag(liveWrite, live) });
       return writeStatus(r, { dryRun: r.dryRun });
@@ -1217,6 +1222,7 @@ server.registerTool(
     annotations: toolAnnotations(false, "write-mutate")
   },
   async ({ account_number, action, enable, instrument_id, dryRun, liveWrite: liveWriteParam, live }) => {
+    await assertAccountOwned(account_number);
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
     if (action === "show") {
       const get = async (url: string) => { try { return await brokerageGetJson(url, { account_number: account_number }); } catch (e) { return { error: (e as Error).message.slice(0, 60) }; } };
@@ -1269,6 +1275,7 @@ server.registerTool(
     annotations: toolAnnotations(false, "write-mutate")
   },
   async ({ action, id, account_number, symbol, amount, frequency, start_date, dryRun, liveWrite: liveWriteParam, live }) => {
+    await assertAccountOwned(account_number);
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const LIST = "https://bonfire.robinhood.com/recurring_schedules/";
     const ITEM = "https://bonfire.robinhood.com/recurring_schedules/{0}/";
@@ -1448,6 +1455,7 @@ server.registerTool(
     })
   },
   async ({ list, account_number, amount, limit, delayMs, force, dryRun, liveWrite: liveWriteParam, live }) => {
+    await assertAccountOwned(account_number);
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const out = await buyWatchlistBasket({ list, amount, accountNumber: account_number, limit, delayMs, force, dryRun, liveWrite });
     return writeStatus(out, { dryRun: out.dryRun });

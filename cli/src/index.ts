@@ -90,6 +90,7 @@ import {
   printJson,
   printTable,
   resolveLiveWriteGate,
+  accountFromWriteRequest,
   selectNearStrikes,
   signCryptoRequest,
   summarizeApiMap
@@ -685,11 +686,14 @@ brokerage
     if (!route) {
       throw new Error(noMatchHint(query));
     }
+    const reqParams = parseParamAssignments(options.param);
+    const reqBody = parseJsonBody(options.bodyJson);
     const gate = resolveLiveWriteGate({
       risk: route.risk,
       method: options.method,
       dryRun: Boolean(options.dryRun),
-      liveWrite: Boolean(options.liveWrite)
+      liveWrite: Boolean(options.liveWrite),
+      accountNumber: accountFromWriteRequest(reqBody, reqParams)
     });
     if (gate.forcedDryRun && gate.reason) {
       process.stderr.write(`${gate.reason}\n`);
@@ -698,9 +702,9 @@ brokerage
     const plan = planBrokerageRequest({
       route,
       method: options.method,
-      params: parseParamAssignments(options.param),
+      params: reqParams,
       query: parseParamAssignments(options.queryParam),
-      body: parseJsonBody(options.bodyJson),
+      body: reqBody,
       dryRun: effectiveDryRun
     });
     const result = await executeBrokerageRequest(plan, {
@@ -730,12 +734,20 @@ brokerage
   .option("--limit <price>", "explicit limit price; else market with ask collar (OTC forces a limit at the ask)")
   .option("--tif <gfd|gtc>", "time in force", "gfd")
   .option("--dry-run", "print plan/body, send nothing")
+  .option("--live", "send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1); without it the order is dry-run — matches the top-level `buy`")
+  .option("--force", "skip the pending-duplicate-order check")
   .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
-  .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
-    // Routes through placeEquityOrder — the SINGLE equity-buy engine shared with the CLI `buy`
-    // and MCP robinhood_buy, so dedup / ref_id idempotency / trade-log append / post-send
-    // evidence apply identically (WSF-01).
+  .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; live?: boolean; force?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
+    if (opts.dollars && opts.shares) throw new Error("Pass only one of --dollars or --shares.");
+    if (opts.dollars && !(Number(opts.dollars) > 0)) throw new Error(`--dollars must be a positive number (got "${opts.dollars}").`);
+    if (opts.shares && !(Number(opts.shares) > 0)) throw new Error(`--shares must be a positive number (got "${opts.shares}").`);
+    if (opts.limit && !(Number(opts.limit) > 0)) throw new Error(`--limit must be a positive number (got "${opts.limit}").`);
+    const acctLabel = await assertOwnedAccount(opts.account);
+    // §2.2 — route through the SHARED engine so this matches the top-level `buy`/`sell` and the
+    // MCP tools: dedup, ref_id idempotency, 429 retry, account-lock + notional caps, trading-log,
+    // and post-send order-history evidence. (Was an inline body build with no dedup/evidence.)
     const r = await placeEquityOrder({
       symbol,
       accountNumber: opts.account,
@@ -743,21 +755,21 @@ brokerage
       amount: opts.dollars ? Number(opts.dollars) : undefined,
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.limit ? Number(opts.limit) : undefined,
-      liveWrite: Boolean(opts.liveWrite),
-      force: false
+      liveWrite: Boolean(opts.live) && !opts.dryRun,
+      force: Boolean(opts.force)
     });
 
     if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), symbol: r.symbol, account: r.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, otcAutoLimit: r.otcAutoLimit, session: r.session, sessionWarning: r.sessionWarning, live: r.live, refId: r.refId, result: r.result });
+      printJson({ symbol: r.symbol, account: opts.account, accountLabel: acctLabel, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, otcAutoLimit: r.otcAutoLimit, dollarBased: r.dollarBased, session: r.session, sessionWarning: r.sessionWarning, dryRun: r.dryRun, live: r.live, refId: r.refId, orderId: r.orderId, state: r.state, httpStatus: r.httpStatus, evidence: r.evidence });
       return;
     }
 
     const mode = r.dryRun ? "DRY-RUN" : "LIVE";
     const sizing = r.dollarBased ? `$${r.estimatedTotal.toFixed(2)} (dollar-based ≈ ${r.shares.toFixed(6)} sh)` : `${r.shares.toFixed(6)} sh ≈ $${r.estimatedTotal.toFixed(2)}`;
-    const acctTag = opts.account.slice(-4);
-    process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${sizing} @ ~$${r.estimatedPrice.toFixed(2)}  acct=…${acctTag}${r.session ? `  [${r.session}]` : ""}\n`);
+    const acctTag = `…${opts.account.slice(-4)}${acctLabel ? ` (${acctLabel})` : ""}`; // privacy: mask to last-4 (PR #15)
+    process.stdout.write(`${mode} ${r.type} buy: ${r.symbol} ${sizing}${r.otcAutoLimit ? " (OTC auto-limit)" : ""} @ ~$${r.estimatedPrice.toFixed(2)}  acct=${acctTag}${r.session ? `  [${r.session}]` : ""}\n`);
     if (r.sessionWarning) process.stdout.write(`⚠️  ${r.sessionWarning}\n`);
-    if (r.dryRun) process.stdout.write("Add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live-write optional) to execute.\n");
+    if (r.dryRun) process.stdout.write("Add ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.\n");
     else process.stdout.write(`Status: ${r.httpStatus}  id=${r.orderId ?? "?"}  state=${r.state ?? "?"}\n`);
   });
 

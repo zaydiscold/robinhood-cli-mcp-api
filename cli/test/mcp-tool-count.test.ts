@@ -10,7 +10,7 @@ import { dirname, resolve } from "node:path";
 // expected count here — do NOT re-introduce a hardcoded count into the docs.
 // It is deterministic and offline: it parses mcp/src/server.ts source, no server boot, no network.
 
-const EXPECTED_TOOL_COUNT = 66;
+const EXPECTED_TOOL_COUNT = 71;
 const FAIL_MSG =
   "tool count changed — bump EXPECTED_TOOL_COUNT here (the only sanctioned hardcode). Docs express the count via `tools/list`, never a literal — do NOT add a number back to them.";
 

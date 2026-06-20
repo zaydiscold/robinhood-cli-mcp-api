@@ -14,6 +14,11 @@ import {
   computeIncome,
   computeRisk,
   computeWhatIf,
+  computeNews,
+  computeRatings,
+  computeEarnings,
+  computeMovers,
+  computeOptionsEvents,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -35,6 +40,8 @@ import {
   selectRouteByQueryAndMethod,
   brokerageGetJson,
   brokerageGetAllResults,
+  loadOwnedAccounts,
+  fetchOptionMarks,
   computePortfolioPnl,
   getUnifiedHistory,
   computeDividends,
@@ -75,6 +82,9 @@ import {
   readOptionsOrderFlow,
   selectNearStrikes,
   classifyMoneyness,
+  finiteNumber,
+  quoteLast,
+  optionMoney,
   buildOptionsStrategyPricingSummary,
   percentChange
 } from "@zaydiscold/robinhood-cli/lib";
@@ -116,12 +126,10 @@ function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
   const isWrite = risk !== "read" && risk !== "sensitive-read";
   return {
     readOnlyHint: readOnly,
-    destructiveHint: isWrite,  // per MCP spec: ANY modification is destructive, not just catastrophic
+    destructiveHint: isWrite,
     idempotentHint: readOnly || risk === "write-safe",
-    openWorldHint: true,
-    "mcp:read-only": readOnly,
-    "mcp:risk": risk
-  } as any;
+    openWorldHint: true
+  };
 }
 
 // Live-flag alias resolution (param-consistency pass 2026-06-11): the parity tools historically
@@ -144,15 +152,7 @@ const INSTRUMENT_BUYING_POWER_URL = "https://bonfire.robinhood.com/accounts/{id}
 const INSTRUMENT_MARGIN_REQUIREMENTS_URL = "https://bonfire.robinhood.com/instruments/{uuid}/margin-requirements/";
 
 // brokerageGetJson + tryBrokerageGetJson are imported from the shared lib (same as the CLI).
-
-function finiteNumber(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-function quoteLast(quote: any): number {
-  return finiteNumber(quote?.last_trade_price ?? quote?.last_extended_hours_trade_price);
-}
+// finiteNumber, quoteLast, optionMoney are also imported from the shared lib.
 
 server.registerTool(
   "robinhood_api_map_summary",
@@ -841,16 +841,37 @@ server.registerTool(
   "robinhood_positions",
   {
     title: "Robinhood Equity Positions",
-    description: "Open equity positions (live read). Returns symbol, quantity, average_buy_price, instrument_id. Pass account_number to scope to one account (else all).",
+    description: "Open equity positions (live read). Returns account, symbol, quantity, average_buy_price, instrument_id. With no account_number, enumerates the FULL owned account graph and reads per-account (the bare positions/ endpoint silently defaults to ONE account — the wrong-account/under-reporting trap). Pass account_number to scope to one.",
     inputSchema: z.object({ account_number: z.string().optional() }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ account_number }) => {
-    const query: Record<string, string> = { nonzero: "true" };
-    if (account_number) query.account_number = account_number;
-    const data = await brokerageGetJson("https://api.robinhood.com/positions/", {}, query);
-    const held = (Array.isArray(data.results) ? data.results : []).filter((p: any) => n(p.quantity) > 0);
-    return jsonResponse({ count: held.length, positions: held.map((p: any) => ({ symbol: p.symbol, quantity: n(p.quantity), average_buy_price: n(p.average_buy_price), instrument_id: p.instrument_id })) });
+    // EH-03: enumerate every owned account, not just the default one. The bare positions/ read
+    // returns only the individual account — contracts/shares in IRAs or secondary accounts vanish.
+    let accounts: string[];
+    if (account_number) {
+      accounts = [account_number];
+    } else {
+      const owned = await loadOwnedAccounts();
+      accounts = owned ? [...owned.numbers] : [];
+    }
+    const held: any[] = [];
+    if (accounts.length === 0) {
+      // Owned-graph lookup failed — fall back to the bare (single/default) read rather than nothing.
+      const data = await brokerageGetJson("https://api.robinhood.com/positions/", {}, { nonzero: "true" });
+      for (const p of (Array.isArray(data.results) ? data.results : [])) if (n(p.quantity) > 0) held.push(p);
+    } else {
+      const perAccount = await Promise.all(accounts.map(async (acct) => {
+        try {
+          const data = await brokerageGetJson("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
+          return (Array.isArray(data.results) ? data.results : [])
+            .filter((p: any) => n(p.quantity) > 0)
+            .map((p: any) => ({ ...p, account_number: p.account_number ?? acct }));
+        } catch { return []; }
+      }));
+      for (const arr of perAccount) held.push(...arr);
+    }
+    return jsonResponse({ count: held.length, positions: held.map((p: any) => ({ account: p.account_number, symbol: p.symbol, quantity: n(p.quantity), average_buy_price: n(p.average_buy_price), instrument_id: p.instrument_id })) });
   }
 );
 
@@ -1669,6 +1690,80 @@ server.registerTool(
   }
 );
 
+// ── Signal & event reads (Phase 3): news / ratings / earnings / movers / options-events ──
+// The midlands + marketdata signal layer the docs reference (SKILL.md signal-sourcing doctrine) but
+// which was previously unreachable cleanly (raw brokerage execute can't take ?query= params). All
+// live reads, no gate; same shared engines as the CLI news/ratings/earnings/movers/options-events.
+server.registerTool(
+  "robinhood_news",
+  {
+    title: "Robinhood Per-Ticker News",
+    description: "Latest news for a ticker (source + headline + clickable link + published date). The 'confirmer' layer in the signal-sourcing doctrine — slow but authoritative for discrete/binary events. Same engine as the CLI `news` command. Live read; no gate.",
+    inputSchema: z.object({ symbol: z.string(), limit: z.number().int().min(1).max(50).default(15) }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ symbol, limit }) => {
+    try { return jsonResponse(await computeNews({ symbol, limit })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+server.registerTool(
+  "robinhood_ratings",
+  {
+    title: "Robinhood Analyst Ratings",
+    description: "Analyst ratings for a ticker: buy/hold/sell counts, a derived consensus, and the rationale texts. Institutional sentiment signal (resolves symbol → instrument → midlands/ratings/). Same engine as the CLI `ratings` command. Live read; no gate.",
+    inputSchema: z.object({ symbol: z.string(), limit: z.number().int().min(1).max(50).default(12) }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ symbol, limit }) => {
+    try { return jsonResponse(await computeRatings({ symbol, limit })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+server.registerTool(
+  "robinhood_earnings",
+  {
+    title: "Robinhood Earnings Calendar",
+    description: "Earnings history/calendar for a ticker: per-quarter EPS estimate vs actual (surprise), report date + timing (am/pm), and the earnings-call replay link. The binary-event-awareness / assignment-risk tier. Same engine as the CLI `earnings` command. Live read; no gate.",
+    inputSchema: z.object({ symbol: z.string(), limit: z.number().int().min(1).max(40).default(8) }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ symbol, limit }) => {
+    try { return jsonResponse(await computeEarnings({ symbol, limit })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+server.registerTool(
+  "robinhood_movers",
+  {
+    title: "Robinhood S&P 500 Movers",
+    description: "S&P 500 top movers: symbol + day move% + price, inline. direction up (gainers) or down (losers). Discovery / crowd-momentum surface. Same engine as the CLI `movers` command. Live read; no gate.",
+    inputSchema: z.object({ direction: z.enum(["up", "down"]).default("up"), limit: z.number().int().min(1).max(50).default(10) }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ direction, limit }) => {
+    try { return jsonResponse(await computeMovers({ direction, limit })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+server.registerTool(
+  "robinhood_options_events",
+  {
+    title: "Robinhood Options Events",
+    description: "Options corporate events across owned accounts (or one): expirations, assignments, exercises — the feed the web UI uses for per-position options P&L + assignment tracking, with best-effort symbol enrichment. Same engine as the CLI `options-events` command. Live read; no gate.",
+    inputSchema: z.object({ account_number: z.string().optional(), limit: z.number().int().min(1).max(100).default(25) }),
+    annotations: toolAnnotations(true, "read")
+  },
+  async ({ account_number, limit }) => {
+    try { return jsonResponse(await computeOptionsEvents({ accountNumber: account_number, limit })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
 // ── robinhood_exposure: concentration & net greeks ──
 server.registerTool(
   "robinhood_exposure",
@@ -1771,10 +1866,7 @@ server.registerTool(
 );
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-// Local helpers (not in lib.ts)
-function optionMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
+// (finiteNumber, quoteLast, optionMoney are imported from the shared lib)
 
 // ── robinhood_search: instrument/crypto/index search (midlands/search/) ──
 const SEARCH_URL = "https://api.robinhood.com/midlands/search/?query={query}";
@@ -1839,14 +1931,8 @@ server.registerTool(
 const OPTIONS_INSTRUMENTS_URL =
   "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}";
 
-async function fetchOptionMarks(ids: string[]): Promise<Map<string, any>> {
-  const OPTIONS_URL = "https://api.robinhood.com/marketdata/options/?ids={ids}";
-  const marks = new Map<string, any>();
-  if (ids.length === 0) return marks;
-  const results = (await brokerageGetJson(OPTIONS_URL, { ids: ids.join(",") })).results ?? [];
-  for (const row of results) if (row?.instrument_id) marks.set(row.instrument_id, row);
-  return marks;
-}
+// fetchOptionMarks is imported from lib.ts (shared, chunked ≤40/req marketdata fetcher) — the local
+// copy was re-introduced by a rebase; this removes the EH-01 duplicate again.
 
 server.registerTool(
   "robinhood_options_chain",

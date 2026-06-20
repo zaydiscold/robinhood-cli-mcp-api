@@ -35,6 +35,8 @@ jobs:
       - run: pnpm audit --audit-level high
       - name: Typecheck (cli + mcp)
         run: pnpm typecheck
+      - name: Lint (eslint flat config)
+        run: pnpm lint
       - name: Test (vitest — incl. cross-platform .env, resolveBash, gate/cap guards)
         run: pnpm test
       - name: Build (cli + mcp — emits dist the runtime reads)

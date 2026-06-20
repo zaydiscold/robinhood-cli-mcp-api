@@ -5950,9 +5950,17 @@ function finitePrice(value: number | string | null | undefined): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : Number.NaN;
 }
 
-function finiteNumber(value: number | string | null | undefined): number {
+export function finiteNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+export function quoteLast(quote: any): number {
+  return finiteNumber(quote?.last_trade_price ?? quote?.last_extended_hours_trade_price);
+}
+
+export function optionMoney(value: number): number {
+  return roundOptionMoney(value);
 }
 
 function firstFinite(...values: number[]): number {
@@ -6722,5 +6730,148 @@ export async function computeAutopilot(opts: any = {}, deps: any = {}) {
     events.sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
     return events;
     }
+
+// ───────────────────── Signal & event reads (Phase 3 — the "financial-freedom" tier) ─────────────────────
+// Mapped, CDP-verified reads that were previously reachable ONLY via raw `brokerage execute` (which
+// can't take ?query= params, AGENTS.md §5) — so in practice unreachable. Each is a first-class engine
+// shared by a CLI command + an MCP tool (the §12 three-place rule). All live reads, no gate. Response
+// shapes captured live 2026-06-19. Zayd Khan // cold // www.zayd.wtf
+
+/** Per-ticker news (midlands/news/?symbol=). Latest articles with source + clickable link. */
+export async function computeNews(
+  opts: { symbol: string; limit?: number },
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<{ symbol: string; count: number; articles: Array<{ title: string; source: string; url: string; summary: string; publishedAt: string }> }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const symbol = opts.symbol.toUpperCase();
+  const data = await getJson("https://api.robinhood.com/midlands/news/?symbol={symbol}", { symbol });
+  const rows: any[] = Array.isArray(data?.results) ? data.results : [];
+  const articles = rows
+    .slice(0, Math.max(1, opts.limit ?? 15))
+    .map((r) => ({
+      title: String(r.title ?? ""),
+      source: String(r.source ?? ""),
+      url: String(r.relay_url ?? r.url ?? ""),
+      summary: String(r.summary ?? ""),
+      publishedAt: String(r.published_at ?? "")
+    }));
+  return { symbol, count: articles.length, articles };
+}
+
+/** Analyst ratings (midlands/ratings/{instrument_id}/): buy/hold/sell counts + a consensus + texts. */
+export async function computeRatings(
+  opts: { symbol: string; limit?: number },
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<{ symbol: string; summary: { buy: number; hold: number; sell: number }; consensus: string; ratings: Array<{ type: string; text: string; publishedAt: string }> }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const symbol = opts.symbol.toUpperCase();
+  const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })).results?.[0];
+  if (!inst?.id) throw new Error(`No instrument found for ${symbol}`);
+  const data = await getJson("https://api.robinhood.com/midlands/ratings/{0}/", { "0": String(inst.id) });
+  const s = data?.summary ?? {};
+  const buy = Number(s.num_buy_ratings ?? 0);
+  const hold = Number(s.num_hold_ratings ?? 0);
+  const sell = Number(s.num_sell_ratings ?? 0);
+  // Consensus = the dominant bucket (buy/hold/sell), or "none" when there are no ratings.
+  const consensus = buy + hold + sell === 0 ? "none" : buy >= hold && buy >= sell ? "buy" : sell >= hold && sell >= buy ? "sell" : "hold";
+  const ratings = (Array.isArray(data?.ratings) ? data.ratings : [])
+    .slice(0, Math.max(1, opts.limit ?? 12))
+    .map((r: any) => ({ type: String(r.type ?? ""), text: String(r.text ?? ""), publishedAt: String(r.published_at ?? "") }));
+  return { symbol, summary: { buy, hold, sell }, consensus, ratings };
+}
+
+/** Earnings calendar + EPS (marketdata/earnings/?symbol=): per-quarter estimate vs actual + call info. */
+export async function computeEarnings(
+  opts: { symbol: string; limit?: number },
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<{ symbol: string; reports: Array<{ year: number; quarter: number; epsEstimate: number; epsActual: number; reported: boolean; surprise: number | null; reportDate: string; timing: string; verified: boolean; callDatetime: string; replayUrl: string }> }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const symbol = opts.symbol.toUpperCase();
+  // The earnings route is the bare path; the symbol rides as a query param (NOT in the URL template).
+  const data = await getJson("https://api.robinhood.com/marketdata/earnings/", {}, { symbol });
+  const rows: any[] = Array.isArray(data?.results) ? data.results : [];
+  // Null-safe EPS parse: a not-yet-reported quarter returns eps.actual = null, and Number(null) === 0
+  // (NOT NaN) — which would fabricate a "$0.00 actual / negative surprise" for a future quarter. Map
+  // null/"" → NaN so unreported quarters read as pending, never a phantom miss.
+  const parseEps = (v: unknown): number => (v == null || v === "" ? Number.NaN : Number(v));
+  const reports = rows
+    .map((r) => {
+      const est = parseEps(r.eps?.estimate);
+      const act = parseEps(r.eps?.actual);
+      const reported = Number.isFinite(act);
+      return {
+        year: Number(r.year),
+        quarter: Number(r.quarter),
+        epsEstimate: est,
+        epsActual: act,
+        reported,
+        surprise: reported && Number.isFinite(est) ? Number((act - est).toFixed(4)) : null,
+        reportDate: String(r.report?.date ?? ""),
+        timing: String(r.report?.timing ?? ""),
+        verified: Boolean(r.report?.verified),
+        callDatetime: String(r.call?.datetime ?? ""),
+        replayUrl: String(r.call?.replay_url ?? "")
+      };
+    })
+    .sort((a, b) => (b.reportDate || "").localeCompare(a.reportDate || ""))
+    .slice(0, Math.max(1, opts.limit ?? 8));
+  return { symbol, reports };
+}
+
+/** S&P 500 top movers (midlands/movers/sp500/): symbol + day move% + price, inline. direction up|down. */
+export async function computeMovers(
+  opts: { direction?: "up" | "down"; limit?: number },
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<{ index: string; direction: string; count: number; movers: Array<{ symbol: string; movementPct: number; price: number; description: string }> }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const direction = opts.direction ?? "up";
+  const data = await getJson("https://api.robinhood.com/midlands/movers/sp500/", {}, { direction });
+  const rows: any[] = Array.isArray(data?.results) ? data.results : [];
+  const movers = rows
+    .slice(0, Math.max(1, opts.limit ?? 10))
+    .map((r) => ({
+      symbol: String(r.symbol ?? ""),
+      movementPct: Number(r.price_movement?.market_hours_last_movement_pct ?? Number.NaN),
+      price: Number(r.price_movement?.market_hours_last_price ?? Number.NaN),
+      description: String(r.description ?? "")
+    }));
+  return { index: "sp500", direction, count: movers.length, movers };
+}
+
+/** Options corporate events (options/events/): expirations, assignments, exercises, splits — the feed
+ *  the web UI uses for per-position options P&L + assignment tracking. Best-effort symbol enrichment. */
+export async function computeOptionsEvents(
+  opts: { accountNumber?: string; limit?: number },
+  deps: { getJson?: typeof brokerageGetJson } = {}
+): Promise<{ count: number; events: Array<{ date: string; type: string; direction: string; quantity: number; cash: number; state: string; account: string; symbol: string; optionId: string }> }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const data = await getJson("https://api.robinhood.com/options/events/");
+  let rows: any[] = Array.isArray(data?.results) ? data.results : [];
+  if (opts.accountNumber) rows = rows.filter((r) => String(r.account_number ?? "") === String(opts.accountNumber));
+  rows = rows.sort((a, b) => String(b.event_date ?? "").localeCompare(String(a.event_date ?? ""))).slice(0, Math.max(1, opts.limit ?? 25));
+  // Best-effort: resolve each UNIQUE option instrument to its chain symbol (bounded — events are few).
+  const symbolByOptionId = new Map<string, string>();
+  for (const id of [...new Set(rows.map((r) => String(r.option_id ?? "")).filter(Boolean))]) {
+    try {
+      const meta = await getJson("https://api.robinhood.com/options/instruments/{0}/", { "0": id });
+      symbolByOptionId.set(id, String(meta?.chain_symbol ?? ""));
+    } catch { /* best-effort */ }
+  }
+  const events = rows.map((r) => {
+    const optionId = String(r.option_id ?? "");
+    return {
+      date: String(r.event_date ?? ""),
+      type: String(r.type ?? ""),
+      direction: String(r.direction ?? ""),
+      quantity: Number(r.quantity ?? Number.NaN),
+      cash: Number(r.total_cash_amount ?? 0),
+      state: String(r.state ?? ""),
+      account: String(r.account_number ?? ""),
+      symbol: symbolByOptionId.get(optionId) ?? "",
+      optionId
+    };
+  });
+  return { count: events.length, events };
+}
 
     // Zayd Khan // cold // www.zayd.wtf

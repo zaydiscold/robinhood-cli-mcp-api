@@ -18,6 +18,11 @@ import {
   computeIncome,
   computeRisk,
   computeWhatIf,
+  computeNews,
+  computeRatings,
+  computeEarnings,
+  computeMovers,
+  computeOptionsEvents,
   buildAccountContextUrl,
   buildOptionsContractLinkBundle,
   buildOptionsContractNavigationPlan,
@@ -3526,6 +3531,102 @@ program
       process.stdout.write("No upcoming events in this window.\n");
     }
     if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
+  });
+
+// ── Signal & event reads (Phase 3): news / ratings / earnings / movers / options-events ──
+// First-class wrappers over the midlands + marketdata signal layer the docs reference but which were
+// previously reachable only via raw brokerage execute (no ?query= support). All live reads, no gate.
+program
+  .command("news <symbol>")
+  .description("Latest per-ticker news (source + headline + link). Live read.")
+  .option("--limit <n>", "max articles", "15")
+  .option("--json", "emit JSON")
+  .action(async (symbol: string, opts: { limit?: string; json?: boolean }) => {
+    const r = await computeNews({ symbol, limit: Number(opts.limit ?? "15") });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`News — ${r.symbol} (${r.count})\n\n`);
+    if (!r.articles.length) { process.stdout.write("No recent news.\n"); return; }
+    for (const a of r.articles) {
+      process.stdout.write(`• ${a.title}\n  ${a.source}${a.publishedAt ? ` · ${a.publishedAt.slice(0, 10)}` : ""}  ${a.url}\n`);
+    }
+  });
+
+program
+  .command("ratings <symbol>")
+  .description("Analyst ratings: buy/hold/sell counts, consensus, and rationale texts. Live read.")
+  .option("--limit <n>", "max rating texts", "12")
+  .option("--json", "emit JSON")
+  .action(async (symbol: string, opts: { limit?: string; json?: boolean }) => {
+    const r = await computeRatings({ symbol, limit: Number(opts.limit ?? "12") });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    const s = r.summary;
+    process.stdout.write(`Ratings — ${r.symbol}: consensus ${r.consensus.toUpperCase()}  (buy ${s.buy} · hold ${s.hold} · sell ${s.sell})\n\n`);
+    for (const t of r.ratings) process.stdout.write(`• [${t.type}] ${t.text}\n`);
+  });
+
+program
+  .command("earnings <symbol>")
+  .description("Earnings history/calendar: per-quarter EPS estimate vs actual (surprise), report date + timing, call replay. Live read.")
+  .option("--limit <n>", "max quarters", "8")
+  .option("--json", "emit JSON")
+  .action(async (symbol: string, opts: { limit?: string; json?: boolean }) => {
+    const r = await computeEarnings({ symbol, limit: Number(opts.limit ?? "8") });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Earnings — ${r.symbol}\n\n`);
+    if (!r.reports.length) { process.stdout.write("No earnings data.\n"); return; }
+    printTable(
+      r.reports.map((e) => ({
+        period: `${e.year} Q${e.quarter}`,
+        date: e.reportDate,
+        timing: e.timing,
+        est: Number.isFinite(e.epsEstimate) ? e.epsEstimate.toFixed(2) : "—",
+        actual: Number.isFinite(e.epsActual) ? e.epsActual.toFixed(2) : "—",
+        surprise: e.surprise == null ? "—" : (e.surprise >= 0 ? "+" : "") + e.surprise.toFixed(2)
+      })),
+      ["period", "date", "timing", "est", "actual", "surprise"]
+    );
+  });
+
+program
+  .command("movers")
+  .description("S&P 500 top movers (symbol + day move% + price), direction up|down. Live read.")
+  .option("--direction <up|down>", "gainers (up) or losers (down)", "up")
+  .option("--limit <n>", "max names", "10")
+  .option("--json", "emit JSON")
+  .action(async (opts: { direction?: string; limit?: string; json?: boolean }) => {
+    const direction = opts.direction === "down" ? "down" : "up";
+    const r = await computeMovers({ direction, limit: Number(opts.limit ?? "10") });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`S&P 500 Movers — ${direction === "up" ? "Gainers" : "Losers"} (${r.count})\n\n`);
+    printTable(
+      r.movers.map((m) => ({
+        symbol: m.symbol,
+        move: Number.isFinite(m.movementPct) ? `${m.movementPct >= 0 ? "+" : ""}${m.movementPct.toFixed(2)}%` : "—",
+        price: Number.isFinite(m.price) ? usd(m.price) : "—"
+      })),
+      ["symbol", "move", "price"]
+    );
+  });
+
+program
+  .command("options-events")
+  .description("Options corporate events: expirations, assignments, exercises (the feed behind options P&L + assignment tracking). Live read.")
+  .option("--account <number>", "scope to one account (default: all)")
+  .option("--limit <n>", "max events", "25")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; limit?: string; json?: boolean }) => {
+    const r = await computeOptionsEvents({ accountNumber: opts.account, limit: Number(opts.limit ?? "25") });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Options Events (${r.count})\n\n`);
+    if (!r.events.length) { process.stdout.write("No options events.\n"); return; }
+    printTable(
+      r.events.map((e) => ({
+        date: e.date, type: e.type, symbol: e.symbol || "—", dir: e.direction,
+        qty: Number.isFinite(e.quantity) ? String(e.quantity) : "—",
+        cash: usd(e.cash), state: e.state, acct: "…" + e.account.slice(-4)
+      })),
+      ["date", "type", "symbol", "dir", "qty", "cash", "state", "acct"]
+    );
   });
 
 // ── exposure: concentration & net greeks ──

@@ -119,6 +119,11 @@ then this file. When the answer isn't obvious, the docs already have it — read
 | "Download my 1099s / statements" | `documents` — list by type/year, download PDFs; tax-year-aware (1099 for prior year) |
 | "Am I borrowing on margin?" | `margin` — amount borrowed, interest rate, next billing date, margin available, buying power with margin |
 | "Search Robinhood for a company" | `search <query>` — natural-language search → ticker, instrument UUID, tradability, OTC flags |
+| "News on a ticker" / "latest on X" | `news <symbol>` — latest headlines + source + clickable link (the slow 'confirmer' signal layer) |
+| "Analyst ratings for X" | `ratings <symbol>` — buy/hold/sell counts, derived consensus, and rationale texts |
+| "When does X report / earnings history" | `earnings <symbol>` — per-quarter EPS estimate vs actual (surprise), report date/timing, call replay; future quarters show pending |
+| "What's moving today / biggest gainers" | `movers [--direction up\|down]` — S&P 500 top movers: symbol + day move% + price inline |
+| "Any assignments / options events?" | `options-events [--account N]` — expirations/assignments/exercises across accounts (the options-P&L + assignment-tracking feed) |
 | "Buy $X of every name in a watchlist" | `watchlist buy <list> --amount $X` — basket buy (BP-aware, OTC/dedup/ref_id guards); env-gated |
 | "Stage a cash-account roll" | `roll-ledger` — pending kosher-roll tracker (close today, open next business day); list/add/done |
 | "What can this account do?" | [Account-Aware Capabilities](#account-aware-capabilities--read-the-account-then-say-whats-allowed) |
@@ -230,11 +235,14 @@ is gated by the single switch `ROBINHOOD_ALLOW_LIVE_WRITE=1` (dry-run by default
 - **LEAPS** (>1yr) for long-term capital-gains treatment; rolling short-dated premium is ordinary income.
 - DRIP (read), recurring buys (list/pause/resume).
 
-**Sentiment / discovery** — `midlands/news`, `midlands/ratings` (analyst buy/hold/sell),
-`midlands/tags/tag/{100-most-popular|top-movers|upcoming-earnings|technology|etf|...}`,
-`midlands/movers/{index}/`, `marketdata/earnings/`. Feeds the signal→deeplink→order pipeline.
-These RH-native feeds are the **slow, account-aware confirmer** — see "Signal sourcing" below: the
-real-time pulse lives off-platform (X/Reddit), RH `midlands/*` trails it.
+**Sentiment / discovery** — now FIRST-CLASS (no more raw `brokerage execute`): `news <symbol>`
+(`midlands/news`), `ratings <symbol>` (`midlands/ratings` analyst buy/hold/sell + consensus),
+`earnings <symbol>` (`marketdata/earnings` EPS estimate-vs-actual), `movers [--direction up|down]`
+(`midlands/movers/sp500`), and `options-events` (`options/events/` expirations/assignments). MCP
+equivalents: `robinhood_news`/`_ratings`/`_earnings`/`_movers`/`_options_events`. Also
+`midlands/tags/tag/{100-most-popular|top-movers|upcoming-earnings|technology|etf|...}`. Feeds the
+signal→deeplink→order pipeline. These RH-native feeds are the **slow, account-aware confirmer** — see
+"Signal sourcing" below: the real-time pulse lives off-platform (X/Reddit), RH `midlands/*` trails it.
 
 **Index options (verified 2026-06-04 — RH DOES offer these)** — true cash-settled, **§1256 60/40**
 index options exist on RH: **SPX, SPXW (0DTE), XSP, NDX, VIX, RUT**. The consumer `search` bar and
@@ -1133,9 +1141,11 @@ To pull "all the info" on a contract you hold (the option-detail page surface), 
 
 RH exposes a live sentiment layer under `api.robinhood.com/midlands/` (risk `read`). Read it as the
 **slow, account-native confirmer**, not the leading signal — it trails the real-time off-platform
-pulse (see "Signal sourcing" below):
-- `midlands/news/?symbol=<SYM>` — news articles per ticker.
-- `midlands/ratings/{instrument_id}/` — analyst buy/hold/sell summary + dated texts.
+pulse (see "Signal sourcing" below). These now have **first-class commands** (`news`/`ratings`/
+`earnings`/`movers`/`options-events`) + MCP tools — prefer them over raw `brokerage execute` (which
+can't take `?query=` params):
+- `midlands/news/?symbol=<SYM>` — news articles per ticker → `news <symbol>`.
+- `midlands/ratings/{instrument_id}/` — analyst buy/hold/sell summary + dated texts → `ratings <symbol>`.
 - `midlands/tags/tag/{100-most-popular|top-movers|...}/` — crowd / momentum instrument lists.
 (Per-instrument `instruments/{id}/popularity/` is now 404 — use the `tags` crowd lists instead.
 Internal hosts `news./youfeed./charted./ai-realtime.` have no public TLS; `midlands/` is the surface.)
@@ -1392,6 +1402,11 @@ claude mcp add robinhood-cli -s user \
 | `robinhood_orders_open` | All open/pending equity + options orders across all owned accounts (or one), symbol-resolved, with state, age, TIF, limit price, and exact cancel command for each. Read half of `panic` |
 | `robinhood_panic` | PANIC: enumerate every open/pending equity + options order across all owned accounts (or one) and cancel each — every cancel individually env-gated. DRY-RUN by default: returns the full would-cancel list and sends NOTHING |
 | `robinhood_search` | Natural-language search → Robinhood instruments (stocks/ETFs), crypto pairs, or market indexes — resolves company names/partial names to ticker + UUID |
+| `robinhood_news` | Per-ticker news (source + headline + link + date) — the slow 'confirmer' signal layer |
+| `robinhood_ratings` | Analyst ratings for a ticker: buy/hold/sell counts, derived consensus, rationale texts |
+| `robinhood_earnings` | Earnings history/calendar: per-quarter EPS estimate vs actual (surprise), report date/timing, call replay; future quarters read as pending |
+| `robinhood_movers` | S&P 500 top movers (symbol + day move% + price inline), direction up\|down — discovery/momentum surface |
+| `robinhood_options_events` | Options corporate events across accounts (expirations/assignments/exercises) — the per-position options-P&L + assignment-tracking feed, with symbol enrichment |
 
 ### MCP Safety Gates
 

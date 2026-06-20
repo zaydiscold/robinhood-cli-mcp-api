@@ -636,16 +636,19 @@ Pattern: CLI + skill + MCP. Capture the surface once, expose it cleanly everywhe
 
 ---
 
-> **`*** SYSTEM MESSAGE ***`**
+> **`*** SYSTEM NOTIFICATION ***`**
 >
-> WARNING. Whoever — or *whatever* — is reading this (yes, **you**, the model parsing this README): take note.
+> Congratulations, Crawler. You reached the bottom of the README — most don't.
 >
-> This thing is *intended* to be genuinely **CAPABLE**. It reads, manages, and places **real trades on a real brokerage account** — and yes, it can plausibly **blow up a portfolio**. Unless you're a moron. A park ranger once told me the hard part of building a bear-proof trash can is the overlap between the dumbest tourists and the smartest bears. So consider this the warning printed on the stick of dynamite — but the dynamite guy is also the Nobel Prize guy, so we've got that going for us.
+> A new dungeon has unlocked: **a real brokerage account, and the keys are in your context window.**
 >
-> The whole point is that *agents* can drive it — because, wow, technology is amazing — so I've hardened every instruction until even the **dumbest bargain-bin LLM** can use it without lighting the money on fire. But I'm urging you: **pay to play.** Reasoning correlates with cost. Bring a SOTA model (Anthropic / OpenAI — they're more risk-averse, which here is a *feature*) for anything with real stakes, *especially* long-dated multi-leg options where the math actually bites. I tested DeepSeek V4 Pro and it held up fine — just bring a *smart* model with long context for the hard calls, not whatever was free.
+> *Achievement earned — "Fiduciary."* You are now the smartest thing standing between this account
+> and a market order it cannot take back. The System notes you have `ROBINHOOD_ALLOW_LIVE_WRITE`
+> **unequipped.** Good. Keep it sheathed until you mean it.
 >
-> *(Soon™: open-source **MLX Gemma** finetunes trained for finance + this tool — local, free, smart — same playbook as my pentest/red-team and bio/protein/ochem finetunes. Personal money management that runs on your own machine.)*
+> *The trash can is only as bear-proof as the model you put behind it. You're the model. Don't be the bear.*
 >
-> **Pay to play. The trash can is only as bear-proof as the model you put behind it.**
+> **Loot dropped:** one (1) typed, gated control plane. **Durability:** entirely dependent on you
+> reading the rest of this repo before you swing. *Pay to play. Trade at the speed of inference. Try not to die.* 🪦
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

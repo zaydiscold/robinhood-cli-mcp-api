@@ -3414,17 +3414,19 @@ program
 // ── income: combined income engine (dividends + option premium) ──
 program
   .command("income")
-  .description("Combined income engine: dividends + option premium net of debits, broken down by month, with TTM total, monthly average, and projected annual run-rate. Math done in-engine — do not hand-compute. Live read.")
+  .description("Combined income engine: dividends + net option premium (premium-SELLING only — short puts/calls, covered calls, credit spreads/condors, closes/rolls; long-option and debit-spread directional trades excluded), over a 12-month window that reconciles to the TTM headline. Reports TTM total, monthly average over months covered, and a forward run-rate at $/day → $/yr. Math done in-engine — do not hand-compute. Live read.")
   .option("--account <number>", "scope to one account (default: all owned)")
   .option("--year <yyyy>", "focus on a year (default: current year)")
   .option("--json", "emit JSON")
   .action(async (opts: { account?: string; year?: string; json?: boolean }) => {
     const r = await computeIncome({ accountNumber: opts.account, year: opts.year ? Number(opts.year) : undefined });
     if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
-    process.stdout.write(`Combined Income — ${r.accountsScanned.length} account(s) — ${r.year}\n`);
+    process.stdout.write(`Combined Income — ${r.accountsScanned.length} account(s) — ${r.window.start}…${r.window.end}\n`);
     process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
     process.stdout.write(`TTM: ${usd(r.ttmTotalUsd)} total (divs ${usd(r.dividendsTtmUsd)} + premium ${usd(r.optionPremiumTtmUsd)})\n`);
-    process.stdout.write(`Monthly avg: ${usd(r.monthlyAverageUsd)} · projected annual: ${usd(r.projectedAnnualRunRateUsd)}\n\n`);
+    process.stdout.write(`Monthly avg: ${usd(r.monthlyAverageUsd)} over ${r.monthsCovered} mo · projected run-rate: ${usd(r.projectedAnnualRunRateUsd)}/yr\n`);
+    const p = r.projection;
+    process.stdout.write(`Run-rate: ${usd(p.dailyUsd)}/day · ${usd(p.weeklyUsd)}/wk · ${usd(p.monthlyUsd)}/mo · ${usd(p.quarterlyUsd)}/qtr · ${usd(p.annualUsd)}/yr (divs fwd ${usd(p.dividendForwardUsd)} + premium ttm ${usd(p.optionPremiumTrailingUsd)})\n\n`);
     if (r.monthlyBreakdown.length) {
       printTable(
         r.monthlyBreakdown.map((m) => ({ month: m.month, dividends: usd(m.dividendsUsd), premium: usd(m.optionPremiumUsd), total: usd(m.totalUsd) })),

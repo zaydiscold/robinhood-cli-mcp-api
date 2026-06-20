@@ -966,16 +966,17 @@ server.registerTool(
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional(),
       force: z.boolean().default(false),
+      overrideCap: z.boolean().optional().describe("bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order"),
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force }) => {
+  async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force, overrideCap }) => {
     try {
       await assertAccountOwned(account_number);
       const r = await placeEquityOrder({
         symbol, accountNumber: account_number, side: "buy",
         amount, shares, limitPrice,
-        liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force)
+        liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force), overrideCap: Boolean(overrideCap)
       });
       const { result: _raw, ...summary } = r;
       return writeStatus(summary, { dryRun: summary.dryRun });
@@ -997,16 +998,17 @@ server.registerTool(
       price: z.number().positive().optional(),
       liveWrite: z.boolean().optional(), live: z.boolean().optional(),
       force: z.boolean().default(false),
+      overrideCap: z.boolean().optional().describe("bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order"),
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force }) => {
+  async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force, overrideCap }) => {
     try {
       await assertAccountOwned(account_number);
       const r = await placeEquityOrder({
         symbol, accountNumber: account_number, side: "sell",
         amount, shares, limitPrice,
-        liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force)
+        liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force), overrideCap: Boolean(overrideCap)
       });
       const { result: _raw, ...summary } = r;
       return writeStatus(summary, { dryRun: summary.dryRun });
@@ -1352,12 +1354,12 @@ server.registerTool(
   "robinhood_history",
   {
     title: "Robinhood Transaction History",
-    description: "Recent equity + options order history (newest first). Order history is the source of truth for whether a trade happened (see the order-evidence rule). Pass account_number to scope equity orders.",
-    inputSchema: z.object({ account_number: z.string().optional(), limit: z.number().default(20) }),
+    description: "Unified transaction history (newest first): equity orders + options orders + crypto (nummus) + ACH transfers over a day window — the SAME shared engine as the CLI `history` command. Order history is the source of truth for whether a trade happened (see the order-evidence rule). Pass `days` to widen the window (default 3) and `account_number` to scope equity orders.",
+    inputSchema: z.object({ account_number: z.string().optional(), days: z.number().int().positive().default(3), limit: z.number().default(20) }),
     annotations: toolAnnotations(true, "read")
   },
-  async ({ account_number, limit }) => {
-    const events = await getUnifiedHistory({ accountNumber: account_number });
+  async ({ account_number, days, limit }) => {
+    const events = await getUnifiedHistory({ accountNumber: account_number, days });
     return jsonResponse({ events: events.slice(0, limit) });
   }
 );
@@ -1472,15 +1474,16 @@ server.registerTool(
       limit: z.number().int().positive().optional(),
       delayMs: z.number().int().nonnegative().optional(),
       force: z.boolean().default(false),
+      overrideCap: z.boolean().optional().describe("bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for every leg"),
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional()
     })
   },
-  async ({ list, account_number, amount, limit, delayMs, force, dryRun, liveWrite: liveWriteParam, live }) => {
+  async ({ list, account_number, amount, limit, delayMs, force, overrideCap, dryRun, liveWrite: liveWriteParam, live }) => {
     await assertAccountOwned(account_number);
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
-    const out = await buyWatchlistBasket({ list, amount, accountNumber: account_number, limit, delayMs, force, dryRun, liveWrite });
+    const out = await buyWatchlistBasket({ list, amount, accountNumber: account_number, limit, delayMs, force, overrideCap: Boolean(overrideCap), dryRun, liveWrite });
     return writeStatus(out, { dryRun: out.dryRun });
   }
 );

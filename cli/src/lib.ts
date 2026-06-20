@@ -2706,6 +2706,10 @@ export async function gatedBrokerageWrite(opts: {
   skipTradeLog?: boolean;
   /** Target account for the account-lock check (ROBINHOOD_ALLOWED_ACCOUNT). */
   accountNumber?: string;
+  /** Bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this
+   * options placement. Defaults off — only an explicit caller opt-in (the `--override-cap` flag /
+   * `overrideCap` param) bypasses, matching what NotionalCapError tells the user to do. */
+  overrideCap?: boolean;
 }): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
   const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
@@ -2719,7 +2723,7 @@ export async function gatedBrokerageWrite(opts: {
   // N4 — notional cap for options order placements (equity is capped in placeEquityOrder). Only a
   // genuine live placement is checked; dry-runs and cancels yield 0. Throws NotionalCapError if over.
   const optNotional = effectiveDryRun ? 0 : optionsOrderNotional(opts.url, opts.method, opts.body);
-  if (optNotional > 0) checkNotionalCaps(optNotional);
+  if (optNotional > 0) checkNotionalCaps(optNotional, { override: opts.overrideCap });
   const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
   const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
   if (optNotional > 0 && Number(result.status) >= 200 && Number(result.status) < 300) recordSessionNotional(optNotional);
@@ -2952,6 +2956,8 @@ export interface WatchlistBasketBuyInput {
   limit?: number;
   /** Pace between LIVE sends to respect Robinhood's fractional burst limit (~9 then 429). Default 2500ms. */
   delayMs?: number;
+  /** Bypass the per-order/per-session notional caps for every leg (the `--override-cap` flag). Default off. */
+  overrideCap?: boolean;
 }
 
 export interface WatchlistBasketLeg {
@@ -3030,7 +3036,7 @@ export async function buyWatchlistBasket(
     const sym = affordable[idx].symbol as string;
     let res: EquityOrderResult;
     try {
-      res = await placeOrder({ symbol: sym, accountNumber: input.accountNumber, side: "buy", amount, liveWrite, force: input.force });
+      res = await placeOrder({ symbol: sym, accountNumber: input.accountNumber, side: "buy", amount, liveWrite, force: input.force, overrideCap: input.overrideCap });
     } catch (e: any) {
       const msg = String(e?.message ?? e);
       const nonBuyable = /fractional|otc/i.test(msg);

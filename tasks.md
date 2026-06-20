@@ -89,5 +89,9 @@ Scoped from the 2026-06-13 ideas.md expansion. Unchecked, additive; existing tas
 ### Platform / reach
 - [ ] Multi-account roll-ups — `--all-accounts` variants of risk/exposure/income/brief with per-account dollar breakdown. Generalizes existing cross-account positions/wheel.
 - [ ] Export/reporting expansion (`export` command) — CSV/JSON for positions, fills, income, realized P&L (tax-ready) + printable monthly statement. Builds on documents engine. (Overlaps carried T9 export task — fold.)
-- [ ] MCP resources for knowledge library (mcp/src/server.ts) — expose knowledge/*.md (+ glossary) as MCP resources alongside the existing robinhood_knowledge tool.
+- [ ] MCP hardening (Tier 1 — see ideas.md 2026-06-19) — brand the ~26 bare `z.string()` inputs (account/symbol/uuid) with regex/`.uuid()` schemas; return input-validation failures as `isError` (SEP-1303); uniform error shape across the ~29 throw sites.
+- [ ] MCP docs — generate `mcp/README.md` from `tools/list` (currently a 17-line stub) + a CI drift check.
+- [ ] MCP package tests — in-memory boot asserting `tools/list` count + every write tool carries `destructiveHint:true`/`readOnlyHint:false` + a dry-run write returns `executed:false`.
+- [ ] `structuredContent` + `outputSchema` on the top read tools (portfolio/positions/buying_power/quote/accounts) — return BOTH `content` + `structuredContent` (Cursor rejects declare-but-omit); roll out tool-by-tool.
+- [ ] MCP resources for knowledge library (mcp/src/server.ts) — expose knowledge/*.md (+ glossary) as MCP resources alongside the existing robinhood_knowledge tool. (Tier 2 — after the hardening items above.)
 - [ ] Trade-card / success-graphic generator — evidence-backed HTML render of a completed round-trip (entry/exit, $ P&L, payoff diagram, thread). Driven off `review` round-trip join.

@@ -90,3 +90,31 @@ Anything that needs a route we haven't captured is flagged "(needs surface mappi
 - Dividend-account designation flow — once account-rename surface is mapped, designate an empty account as the income machine (already in pool; depends on the CDP account-management capture task).
 - MCP resources for the knowledge library — expose knowledge/*.md as MCP resources so resource-rendering clients get the library natively, plus the glossary (already in pool; pair with `glossary`).
 - Trade-card / success-graphic generator — HTML render of a completed play (entry/exit, dollar P&L, payoff diagram, thread context) as a shareable card (already in pool; idea-side: drive it from the review/round-trip join so it's evidence-backed).
+
+## ====== 2026-06-19 — MCP modernization (researched; sequence hardening → modernization) ======
+
+Researched the official MCP spec/SDK + last-30-days community pulse against the live server
+(`mcp/src/server.ts`, 73 tools, SDK `@modelcontextprotocol/sdk` ^1.x). Verdict: worth doing — but per
+the owner's directive, **hardening + docs + small wins FIRST; modernization (Resources/structuredContent/
+elicitation) AFTER**, and only where shipping clients (esp. Claude) actually support it.
+
+Spec baseline: **stay on the 2025-11-25 revision / SDK 1.x** (the officially recommended production line).
+A 2026-07-28 revision exists but rides SDK **2.0-alpha** — do NOT chase it yet (revisit ~Q3 2026).
+Already correct in our code (do not redo): `destructiveHint: isWrite` on all writes; errors `throw` → SDK wraps `isError`.
+
+TIER 1 — hardening + docs + small wins (do first):
+- Brand the ~26 bare `z.string()` inputs (accountNumber/symbol/uuid) with regex/`.uuid()` schemas — fail bad args at the boundary before they hit Robinhood. Highest-leverage hardening for a real-money tool.
+- Return INPUT-validation failures as `isError` Tool Execution Errors (SEP-1303), not thrown protocol errors, so the model self-corrects and retries.
+- Consistent error shape across the ~29 `throw` sites (tool-name prefix + stable code; keep the loud write `executionStatus`).
+- Generate `mcp/README.md` from `tools/list` (currently a 17-line stub) + a CI drift check — matches the "live truth: tools/list, never a hardcoded count" doctrine.
+- First MCP-package tests: in-memory boot asserting tools/list count + every write tool has `destructiveHint:true`/`readOnlyHint:false` + a dry-run write returns `executed:false` (locks the safety invariants).
+- `structuredContent` + `outputSchema` on the top ~5 read tools (portfolio/positions/buying_power/quote/accounts). FOOTGUN: once `outputSchema` is declared the SDK REQUIRES a matching `structuredContent` and Cursor rejects declare-but-omit — always return BOTH `content` + `structuredContent`; roll out tool-by-tool.
+- (Optional) tool-count hygiene — 73 tools is past the ~30-50 "selection accuracy" zone; consider multiplexing the rarely-used `api_map_*`/`*_routes`/`*_workflows` planners. Not urgent (Claude Code's tool-search defers defs).
+
+TIER 2 — modernization (after Tier 1), with honest client-support reality:
+- Resources (expose `ball-knowledge.md`/`trading-log.md`/`hotlist.md`/api-map as read-only context) — worth it, modest; KEEP the existing knowledge/hotlist tools as fallback for clients that ignore resources. (Subsumes the older "MCP resources for the knowledge library" idea above.)
+- Elicitation — SKIP for now: Claude Code closed it "not planned" (#7108); the env-gated dry-run switch already covers confirm-before-write better, and the 2026-07-28 revision restructures it anyway.
+- Prompts + completion — low payoff for a single-user tool (the SKILL already encodes the workflows). Defer.
+- Cursor-based pagination on the big list tools (history/review/routes) — borderline Tier-1.5; add an opaque `cursor` instead of only slicing server-side.
+
+Sources — official: modelcontextprotocol.io 2025-11-25 changelog · TS SDK `docs/server.md` · TS SDK releases (2.0-alpha + 1.x-stable policy) · Claude Code elicitation issue #7108 ("not planned"). Community (recent): The New Stack "15 best practices for MCP servers in production"; digitalapplied 2026 MCP security guide; Scott Spence on Claude Code MCP context usage. Builds on `docs/mcp-best-practices-audit-2026-06-18.md` (do not duplicate). Tier-1 actionables tracked in `tasks.md`.

@@ -114,6 +114,23 @@ entries are unrelated read routes).
    `discovery/lists/` POST + `discovery/lists/{id}/` PATCH/DELETE = `destructive`. All env-gated; safe
    for `brokerage execute` only behind both write gates. Wired as first-class `watchlist add/remove/create`.
 
+## 2026-06-19 — Portfolio performance / equity curve (`bonfire …/portfolio/performance/{id}/`)
+
+Wired the first-class `performance` command + `robinhood_performance` MCP tool over the desktop web
+app's own portfolio-chart route. **Corrects the prior "deferred — phoenix is TLS-walled" conclusion:**
+that was one dead path (`portfolios/historicals/` 404s; `phoenix.robinhood.com` refuses the TLS
+handshake), but the modern app reads the equity curve from a reachable `bonfire` route.
+
+1. **Discovery source.** Cross-referenced the route map + CDP `queryKeys`, then live-verified every span (242 pts day · 252 year · 382 all, back to account inception).
+2. **Request.** `GET https://bonfire.robinhood.com/portfolio/performance/{account_number}/?display_span={day|week|month|3month|ytd|year|all}&include_all_hours=true&chart_type=historical_portfolio`.
+   - **The span param is `display_span`, NOT `span`** (passing `span=` is silently ignored → always `day`).
+   - **The trailing slash is required** — `…/performance/{id}` (no slash) returns 200 with an EMPTY body; `…/performance/{id}/` returns the curve. The route-map entry carries the trailing slash for exactly this reason.
+   - **Per-account only.** No all-accounts variant (`…/performance/` → 500). Sum client-side for a portfolio-wide curve.
+3. **Auth/session.** Standard web-session bearer + web headers. Read-only.
+4. **Response shape.** `lines[identifier="returns"].segments[].points[]`; each point's dollar value is `cursor_data.primary_value.value` (formatted string) and its return fraction is `y` (both populated on 100% of points). `performance_baseline.amount` = start equity. The high-precision `price_chart_data` block is INCONSISTENT (null on year/all) — do NOT depend on it. `x` is a 0..1 layout fraction, not a timestamp; the timestamp is `cursor_data.label.value`.
+5. **Rate-limit behavior.** None observed across the span sweep.
+6. **Risk classification.** `sensitive-read`; safe for `brokerage execute` (read). Wired as `performance` / `robinhood_performance`, engine `computePerformance` (pinned by `cli/test/performance.test.ts`).
+
 When a new undocumented route is discovered, record:
 
 1. Discovery source.

@@ -109,6 +109,7 @@ then this file. When the answer isn't obvious, the docs already have it — read
 | "Quote a spread" / "Price an iron condor" | [Options CLI Playbook](#options-cliapi-playbook) |
 | "Review my trades / film study" | `review` — round trips with realized P&L, win rate, best/worst trades (filter by days/symbol/account) |
 | "How much income am I making?" | `income` — combined dividends + option premium by month, in dollars (TTM total, monthly avg, projected annual run-rate) |
+| "How am I doing over time / my returns / equity curve?" | `performance` (alias `perf`) — account value + return across day/week/month/3month/ytd/year/all; per-account (portfolio-wide summed client-side) |
 | "What's my risk exposure?" | `risk` — max loss per position, ITM assignment exposure, undercovered short legs, margin-call distance, concentration warnings |
 | "What if spot drops 10% / IV spikes?" | `whatif` — Greeks-based scenario calc: spot ±X%, IV ±N pts, T−n days → P&L per position in dollars |
 | "What's coming up on my holdings?" | `calendar` — upcoming option expirations, ex-div dates, earnings for held names with assignment-risk flags |
@@ -1360,6 +1361,7 @@ claude mcp add robinhood-cli -s user \
 | `robinhood_accounts` | List every account (full graph via `transfer/accounts/`) with type/capabilities |
 | `robinhood_positions` | Equity positions for an account (UUIDs resolved to tickers + quotes) |
 | `robinhood_portfolio` | One-call portfolio P&L: per-account day Δ + after-hours Δ, drivers by underlying in **dollars**, all accounts |
+| `robinhood_performance` | Portfolio historical performance (the equity curve over time): value + return across day/week/month/3month/ytd/year/all spans, per account |
 | `robinhood_options_holdings` | Every held option contract (UUID + strike + bid/ask/last + qty + link) |
 | `robinhood_options_inspect` | Full detail on one owned contract (metadata, Greeks, fills, buy/sell handoff) |
 | `robinhood_options_chain` | Live options chain around the money for a symbol (width, expiration, type filters) |

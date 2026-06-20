@@ -13,6 +13,7 @@ import {
   computeCalendar,
   computeExposure,
   computeIncome,
+  computePerformance,
   computeRisk,
   computeWhatIf,
   computeNews,
@@ -1628,6 +1629,26 @@ server.registerTool(
   },
   async ({ account_number, year }) => {
     try { return jsonResponse(await computeIncome({ accountNumber: account_number, year })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_performance: portfolio equity curve over time ──
+server.registerTool(
+  "robinhood_performance",
+  {
+    title: "Robinhood Portfolio Performance",
+    description:
+      "Portfolio historical performance — the equity curve over time: account value + return across day/week/month/3month/ytd/year/all spans, from the desktop app's own chart route. Per-account (RH exposes no all-accounts performance route — sum client-side for a portfolio-wide curve); each point carries timestamp, dollar value, and return %. Same shared engine as the CLI `performance` command. Live read; no gate.",
+    inputSchema: z.object({
+      account_number: z.string().optional(),
+      span: z.enum(["day", "week", "month", "3month", "ytd", "year", "all"]).optional(),
+      include_all_hours: z.boolean().optional()
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ account_number, span, include_all_hours }) => {
+    try { return jsonResponse(await computePerformance({ accountNumber: account_number, span, includeAllHours: include_all_hours })); }
     catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );

@@ -83,7 +83,7 @@ grain of the tool:
 
 - **Prefer the first-class command over raw `brokerage execute`.** `portfolio`, `positions`, `quote`,
   `options chain/positions/enumerate/holdings/inspect`, `accounts`, `history`, `watchlist`, `recurring`,
-  `settings`, `stock profile`, `pretrade`, `income`, `risk`, `whatif`, `calendar`, `exposure`, `autopilot`,
+  `settings`, `stock profile`, `pretrade`, `income`, `performance`, `risk`, `whatif`, `calendar`, `exposure`, `autopilot`,
   `search` do the multi-step join + query params for you. `brokerage execute` is the
   fallback for an unwrapped route — and it **can't take `?query=` params** (top time-waster).
 - **Money questions → DOLLARS, weighted by size, one command:** `portfolio` (`--day` / `--after-hours`).

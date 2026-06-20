@@ -6085,7 +6085,7 @@
     "fieldsShape": "object"
   },
   {
-    "url": "https://bonfire.robinhood.com/portfolio/performance/{id}",
+    "url": "https://bonfire.robinhood.com/portfolio/performance/{id}/",
     "host": "bonfire.robinhood.com",
     "categories": [
       "unknown"

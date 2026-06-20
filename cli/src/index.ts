@@ -16,6 +16,7 @@ import {
   computeCalendar,
   computeExposure,
   computeIncome,
+  computePerformance,
   computeRisk,
   computeSentinel,
   computeWhatIf,
@@ -3434,6 +3435,37 @@ program
     }
     if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
     if (r.notes?.length) process.stdout.write(`\n📝 ${r.notes.join("\n")}\n`);
+  });
+
+// ── performance: portfolio equity curve over time ──
+program
+  .command("performance")
+  .alias("perf")
+  .description("Portfolio historical performance (the equity curve): account value + return across day/week/month/3month/ytd/year/all. Reads the desktop app's own chart route (per-account; portfolio-wide is summed client-side). Live read.")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--span <span>", "day|week|month|3month|ytd|year|all (default: day)", "day")
+  .option("--no-all-hours", "exclude pre/post-market points")
+  .option("--points <n>", "max curve points to print per account (default: 8)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; span?: string; allHours?: boolean; points?: string; json?: boolean }) => {
+    const r = await computePerformance({ accountNumber: opts.account, span: opts.span, includeAllHours: opts.allHours !== false });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Portfolio Performance — ${r.accounts.length} account(s) — span: ${r.span}\n`);
+    process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
+    const maxPts = Math.max(1, Number(opts.points ?? "8"));
+    for (const a of r.accounts) {
+      const s = a.summary;
+      const ret = s.periodReturnUsd !== null ? `${usd(s.periodReturnUsd)} (${s.periodReturnPct?.toFixed(2)}%)` : "—";
+      process.stdout.write(`${a.account}${a.nickname ? " " + a.nickname : ""}: ${s.currentValueUsd !== null ? usd(s.currentValueUsd) : "—"} · ${r.span} return ${ret} · ${s.pointCount} pts\n`);
+      const pts = a.points;
+      if (pts.length) {
+        const step = Math.max(1, Math.floor(pts.length / maxPts));
+        const sample = pts.filter((_: any, i: number) => i % step === 0 || i === pts.length - 1);
+        printTable(sample.map((p: any) => ({ at: p.at ?? "", value: usd(p.valueUsd), return: p.returnPct != null ? `${p.returnPct.toFixed(2)}%` : "", session: p.session ?? "" })), ["at", "value", "return", "session"]);
+      }
+      process.stdout.write("\n");
+    }
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
   });
 
 // ── risk: portfolio risk scanner ──

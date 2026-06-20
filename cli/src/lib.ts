@@ -6184,6 +6184,111 @@ export async function computeIncome(opts: any = {}, deps: any = {}) {
         notes
     };
 }
+// Friendly span aliases → the API's `display_span` values. The endpoint self-documents these in
+// spans.available_spans[]; we accept both the API value and common shorthands.
+const PERFORMANCE_SPANS: Record<string, string> = {
+    day: "day", "1d": "day", today: "day",
+    week: "week", "1w": "week",
+    month: "month", "1m": "month",
+    "3month": "3month", "3m": "3month", quarter: "3month",
+    ytd: "ytd",
+    year: "year", "1y": "year",
+    all: "all", max: "all",
+};
+// RH chart dollar values arrive as formatted strings ("$1,234.56", "-$12.30", "($12.30)").
+function parseMoneyUsd(v: unknown): number {
+    if (typeof v === "number") return v;
+    const s = String(v ?? "").trim();
+    if (!s) return Number.NaN;
+    const negative = s.startsWith("-") || s.startsWith("(");
+    const magnitude = Number(s.replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(magnitude)) return Number.NaN;
+    return negative ? -magnitude : magnitude;
+}
+/**
+ * Portfolio historical performance — the equity curve over time (the data behind a `performance`
+ * command: account value across day/week/month/3month/ytd/year/all). Reads the desktop web app's
+ * own chart route, bonfire.robinhood.com/portfolio/performance/{account}/?display_span=… — which is
+ * reachable on the regular host. (The classic `portfolios/historicals/` route 404s and the `phoenix`
+ * host is TLS-walled; this is the route the modern app actually uses — live-verified 2026-06-19.)
+ *
+ * Per-account only: RH exposes no all-accounts performance route, so a portfolio-wide curve must be
+ * summed client-side. Each account degrades independently (a failed read → a warning, not a throw).
+ *
+ * Reliable fields: the curve lives in lines[identifier="returns"].segments[].points[], where each
+ * point's dollar value is cursor_data.primary_value.value and its return fraction is `y` (both
+ * populated on 100% of points). The high-precision price_chart_data block is inconsistent
+ * (null on year/all spans) — do NOT depend on it. `x` is a 0..1 layout fraction, not a timestamp;
+ * the timestamp is cursor_data.label.value.
+ */
+export async function computePerformance(opts: any = {}, deps: any = {}) {
+    const getJson = deps.getJson ?? brokerageGetJson;
+    const n = (v: unknown) => Number(v);
+    const warnings: string[] = [];
+    const spanInput = String(opts.span ?? "day").toLowerCase();
+    const span = PERFORMANCE_SPANS[spanInput] ?? "day";
+    if (!PERFORMANCE_SPANS[spanInput]) {
+        warnings.push(`Unknown span "${opts.span}" — defaulting to "day". Valid: day/week/month/3month/ytd/year/all.`);
+    }
+    const includeAllHours = opts.includeAllHours !== false; // default true
+    const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+    const accounts = [];
+    for (const { acct, label } of accts) {
+        try {
+            const body = await getJson(
+                "https://bonfire.robinhood.com/portfolio/performance/{id}/",
+                { id: acct },
+                { display_span: span, include_all_hours: String(includeAllHours), chart_type: "historical_portfolio" }
+            );
+            const lines = Array.isArray(body?.lines) ? body.lines : [];
+            const returnsLine = lines.find((l: any) => l?.identifier === "returns") ?? lines[0] ?? {};
+            const points = [];
+            for (const seg of returnsLine.segments ?? []) {
+                for (const p of seg.points ?? []) {
+                    const cd = p?.cursor_data ?? {};
+                    points.push({
+                        at: cd.label?.value ?? null,
+                        valueUsd: round2(parseMoneyUsd(cd.primary_value?.value)),
+                        returnPct: round2(n(p?.y) * 100),
+                        returnLabel: cd.secondary_value?.main?.value ?? null,
+                        session: cd.secondary_value?.description?.value ?? null,
+                    });
+                }
+            }
+            const first = points[0] ?? null;
+            const last = points[points.length - 1] ?? null;
+            const baselineUsd = round2(parseMoneyUsd(body?.performance_baseline?.amount));
+            const currentValueUsd = last ? last.valueUsd : Number.NaN;
+            const periodReturnUsd = Number.isFinite(currentValueUsd) && Number.isFinite(baselineUsd)
+                ? round2(currentValueUsd - baselineUsd) : null;
+            accounts.push({
+                accountNumber: acct,
+                account: "…" + acct.slice(-4),
+                nickname: label,
+                span,
+                summary: {
+                    currentValueUsd: Number.isFinite(currentValueUsd) ? currentValueUsd : null,
+                    baselineUsd: Number.isFinite(baselineUsd) ? baselineUsd : null,
+                    periodReturnUsd,
+                    periodReturnPct: last ? last.returnPct : null,
+                    pointCount: points.length,
+                    first,
+                    last,
+                },
+                points,
+            });
+        }
+        catch (e: any) {
+            warnings.push(`performance read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 80)}`);
+        }
+    }
+    return {
+        span,
+        accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
+        accounts,
+        warnings,
+    };
+}
 /**
  * Portfolio risk scanner: max loss across open positions, assignment exposure (ITM shorts),
  * undercovered short legs, margin-call distance, and concentration warnings (>20% in one symbol).

@@ -6874,4 +6874,50 @@ export async function computeOptionsEvents(
   return { count: events.length, events };
 }
 
-    // Zayd Khan // cold // www.zayd.wtf
+/**
+ * Sentinel — daily risk + event guardian. Composes computeRisk (positions, concentration,
+ * margin, Greeks exposure) + computeOptionsEvents (assignment, exercise, expiration).
+ * Zero CDP. Designed for scheduled daily scans.
+ */
+export async function computeSentinel(
+  opts: { accountNumber?: string; eventLookaheadDays?: number } = {},
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {}
+): Promise<{
+  generatedAt: string;
+  accountsScanned: string[];
+  risk: Awaited<ReturnType<typeof computeRisk>>;
+  events: Awaited<ReturnType<typeof computeOptionsEvents>>;
+  warnings: string[];
+}> {
+  const warnings: string[] = [];
+  const risk = await computeRisk({ accountNumber: opts.accountNumber }, deps as any);
+  const events = await computeOptionsEvents(
+    { accountNumber: opts.accountNumber, limit: 50 },
+    { getJson: deps.getJson }
+  );
+  // Collect risk warnings
+  if (risk.warnings?.length) warnings.push(...risk.warnings);
+  // Flag near-term expirations and assignments
+  const lookaheadDays = opts.eventLookaheadDays ?? 7;
+  const cutoff = new Date(Date.now() + lookaheadDays * 86400000).toISOString().slice(0, 10);
+  const upcoming = events.events.filter((e) => e.date <= cutoff);
+  if (upcoming.length > 0) {
+    const assignmentEvents = upcoming.filter((e) => e.type === "assignment");
+    const expirationEvents = upcoming.filter((e) => e.type === "expiration");
+    if (assignmentEvents.length > 0) {
+      warnings.push(`${assignmentEvents.length} assignment event(s) in the next ${lookaheadDays} days — review short positions.`);
+    }
+    if (expirationEvents.length > 0) {
+      warnings.push(`${expirationEvents.length} expiration(s) in the next ${lookaheadDays} days.`);
+    }
+  }
+  return {
+    generatedAt: new Date().toISOString(),
+    accountsScanned: risk.accountsScanned ?? [],
+    risk,
+    events,
+    warnings
+  };
+}
+
+// Zayd Khan // cold // www.zayd.wtf

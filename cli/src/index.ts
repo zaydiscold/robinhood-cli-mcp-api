@@ -17,6 +17,7 @@ import {
   computeExposure,
   computeIncome,
   computeRisk,
+  computeSentinel,
   computeWhatIf,
   computeNews,
   computeRatings,
@@ -3682,6 +3683,26 @@ program
       process.stdout.write("No short options approaching expiration in this window.\n");
     }
     if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
+  });
+
+program
+  .command("sentinel")
+  .description("Daily risk + event guardian: portfolio risk scan + options event calendar (assignment, exercise, expiration). Zero CDP — safe for scheduled daily runs.")
+  .option("--account <number>", "scope to one account (default: all owned)")
+  .option("--days <n>", "event lookahead in days (default: 7)", "7")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; days?: string; json?: boolean }) => {
+    const r = await computeSentinel({ accountNumber: opts.account, eventLookaheadDays: Number(opts.days ?? "7") });
+    if (opts.json) { printJson(r); return; }
+    process.stdout.write(`Sentinel — ${r.accountsScanned.length} account(s) — as of ${r.generatedAt}\n`);
+    if (r.events.count > 0) {
+      process.stdout.write(`\n${r.events.count} option events on record:\n`);
+      for (const e of r.events.events.slice(0, 10)) {
+        process.stdout.write(`  ${e.date}  ${e.type}  ${e.symbol} ${e.direction} qty=${e.quantity} cash=$${e.cash.toFixed(2)}  ${e.state}\n`);
+      }
+      if (r.events.events.length > 10) process.stdout.write(`  ... and ${r.events.events.length - 10} more\n`);
+    }
+    if (r.warnings.length) process.stdout.write(`\n${r.warnings.map((w: string) => "⚠️  " + w).join("\n")}\n`);
   });
 
 const watchlist = new Command("watchlist").description("Inspect (read) and edit (add/remove/create, env-gated) your custom watchlists");

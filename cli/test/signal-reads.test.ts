@@ -4,7 +4,8 @@ import {
   computeRatings,
   computeEarnings,
   computeMovers,
-  computeOptionsEvents
+  computeOptionsEvents,
+  computeSentinel
 } from "../src/lib.js";
 
 // Phase-3 signal/event read engines — the shared code path behind the CLI news/ratings/earnings/
@@ -122,5 +123,39 @@ describe("computeOptionsEvents", () => {
     const r = await computeOptionsEvents({ accountNumber: "A2" }, { getJson });
     expect(r.count).toBe(1);
     expect(r.events[0]).toMatchObject({ account: "A2", type: "assignment", cash: 500 });
+  });
+});
+
+describe("computeSentinel — composes risk scan + options-event guardian", () => {
+  const ownsA1 = (url: string) =>
+    url.includes("transfer/accounts") ? { results: [{ type: "rhs", account_number: "A1", account_name: "Indiv" }] } : null;
+
+  it("returns the documented shape and degrades gracefully on empty data (no throw)", async () => {
+    // A1 is owned but has no positions/events → computeRisk scans nothing, events empty. Proves the
+    // composition wires up and the top-level contract holds.
+    const getJson = (async (url: string) => ownsA1(url) ?? { results: [] }) as any;
+    const getAll = (async () => []) as any;
+    const r = await computeSentinel({ accountNumber: "A1" }, { getJson, getAll });
+    expect(r).toHaveProperty("generatedAt");
+    expect(Array.isArray(r.accountsScanned)).toBe(true);
+    expect(r).toHaveProperty("risk");
+    expect(r.events).toMatchObject({ count: 0 });
+    expect(Array.isArray(r.warnings)).toBe(true);
+  });
+
+  it("surfaces a near-term assignment as a warning", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const getJson = (async (url: string) => {
+      const acc = ownsA1(url); if (acc) return acc;
+      if (url.includes("options/events")) return {
+        results: [{ event_date: today, type: "assignment", direction: "debit", quantity: "1", total_cash_amount: "0", state: "confirmed", account_number: "A1", option_id: "oid-1" }]
+      };
+      if (url.includes("options/instruments")) return { chain_symbol: "AAPL" };
+      return { results: [] }; // risk reads → empty
+    }) as any;
+    const getAll = (async () => []) as any;
+    const r = await computeSentinel({ accountNumber: "A1", eventLookaheadDays: 7 }, { getJson, getAll });
+    expect(r.events.count).toBe(1);
+    expect(r.warnings.some((w: string) => /assignment event/i.test(w))).toBe(true);
   });
 });

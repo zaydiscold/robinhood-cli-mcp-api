@@ -2680,6 +2680,19 @@ export async function readOptionsOrderFlow(
  * a live send needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; liveWrite:true optional). Hoisted here so the write path
  * (the dangerous one to duplicate) is single-source across both surfaces.
  */
+// N4 — gross premium of an options ORDER PLACEMENT (price × 100 × contracts), or 0 if this isn't a
+// single options placement POST. Used to extend the notional caps to options (equity is capped in
+// placeEquityOrder). Deliberately matches only `…/options/orders/` (placement), never the
+// `…/options/orders/{id}/cancel/` route. Multi-leg net debit/credit isn't modeled — this caps the
+// gross premium, which is the right "don't fire a huge order" backstop.
+export function optionsOrderNotional(url: string, method: string, body: unknown): number {
+  if (method.toUpperCase() !== "POST" || !/\/options\/orders\/$/.test(url.split("?")[0])) return 0;
+  const b = body as any;
+  const p = Number(b?.price);
+  const q = Number(b?.quantity);
+  return Number.isFinite(p) && Number.isFinite(q) && p > 0 && q > 0 ? p * 100 * q : 0;
+}
+
 export async function gatedBrokerageWrite(opts: {
   url: string;
   method: string;
@@ -2703,8 +2716,13 @@ export async function gatedBrokerageWrite(opts: {
   }
   const gate = resolveLiveWriteGate({ risk: route.risk, method: opts.method, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite), accountNumber: opts.accountNumber ?? accountFromWriteRequest(opts.body, opts.params) });
   const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
+  // N4 — notional cap for options order placements (equity is capped in placeEquityOrder). Only a
+  // genuine live placement is checked; dry-runs and cancels yield 0. Throws NotionalCapError if over.
+  const optNotional = effectiveDryRun ? 0 : optionsOrderNotional(opts.url, opts.method, opts.body);
+  if (optNotional > 0) checkNotionalCaps(optNotional);
   const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
   const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
+  if (optNotional > 0 && Number(result.status) >= 200 && Number(result.status) < 300) recordSessionNotional(optNotional);
   // UNIVERSAL WRITE LOG (added 2026-06-11): every LIVE write that leaves this engine — options
   // orders, cancels, settings, recurring, raw `brokerage execute` writes, from BOTH the CLI and the
   // MCP — gets a machine log entry. Equity buy/sell skip here (skipTradeLog) because
@@ -3546,9 +3564,10 @@ export async function cancelOrder(
   const liveWrite = Boolean(input.liveWrite);
   const isDryRun = input.dryRun ?? !liveWrite;
 
-  // 0. Owned-account guard (live cancels only — dry-runs are safe).
-  // Pre-read the order to get its account URL, then assert ownership.
-  // Degrades gracefully: a failed pre-read warns but proceeds.
+  // 0. Owned-account guard (live cancels only — dry-runs are safe). Pre-read the order to get its
+  // account, assert OWNERSHIP, AND capture the account so the ROBINHOOD_ALLOWED_ACCOUNT lock scopes
+  // the cancel too (N1). Degrades gracefully: a failed pre-read warns but proceeds.
+  let cancelAccount: string | undefined;
   if (!isDryRun) {
     try {
       const preUrl = kind === "options"
@@ -3560,7 +3579,7 @@ export async function cancelOrder(
         const acctNum = typeof acctUrl === "string"
           ? acctUrl.replace(/\/$/, "").split("/").pop()
           : String(acctUrl).replace(/\/$/, "").split("/").pop();
-        if (acctNum) await assertAccountOwned(acctNum, { getJson });
+        if (acctNum) { cancelAccount = acctNum; await assertAccountOwned(acctNum, { getJson }); }
       }
     } catch (e: any) {
       // If the assertion throws (unowned account), propagate it.
@@ -3576,6 +3595,7 @@ export async function cancelOrder(
   const result = await write({
     url, method: "POST", params: { "0": id },
     dryRun: isDryRun, liveWrite,
+    accountNumber: cancelAccount, // N1 — scope the allow-list to the order's account
     logContext: input.logContext ?? `cancel ${kind} order ${id}`
   });
   const rb = (() => {

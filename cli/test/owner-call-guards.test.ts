@@ -10,6 +10,7 @@ import {
   getSessionNotionalSpent,
   NotionalCapError,
   accountFromWriteRequest,
+  optionsOrderNotional,
 } from "../src/lib.js";
 
 // Owner-call hardening guards. These prove the defense-in-depth layers actually engage — not slop.
@@ -127,5 +128,27 @@ describe("accountFromWriteRequest (§2.9 — closes the lock-bypass on generic w
     const gate = resolveLiveWriteGate({ risk: "write-mutate", method: "POST", dryRun: false, accountNumber: accountFromWriteRequest(body), env });
     expect(gate.forcedDryRun).toBe(true);
     expect(gate.reason).toMatch(/not in ROBINHOOD_ALLOWED_ACCOUNT/);
+  });
+});
+
+describe("optionsOrderNotional (N4 — extend notional caps to options placements)", () => {
+  it("computes gross premium = price × 100 × contracts for an options placement POST", () => {
+    expect(optionsOrderNotional("https://api.robinhood.com/options/orders/", "POST", { price: "1.50", quantity: "2" })).toBe(300);
+  });
+
+  it("is 0 for a cancel (…/options/orders/{id}/cancel/), never a placement", () => {
+    expect(optionsOrderNotional("https://api.robinhood.com/options/orders/abc-123/cancel/", "POST", { price: "1.50", quantity: "2" })).toBe(0);
+  });
+
+  it("is 0 for equity orders, GETs, and missing price/qty", () => {
+    expect(optionsOrderNotional("https://api.robinhood.com/orders/", "POST", { price: "1", quantity: "1" })).toBe(0);
+    expect(optionsOrderNotional("https://api.robinhood.com/options/orders/", "GET", { price: "1", quantity: "1" })).toBe(0);
+    expect(optionsOrderNotional("https://api.robinhood.com/options/orders/", "POST", { quantity: "2" })).toBe(0);
+  });
+
+  it("feeds the cap: a $30k options order trips ROBINHOOD_MAX_ORDER_DOLLARS=$1k", () => {
+    const n = optionsOrderNotional("https://api.robinhood.com/options/orders/", "POST", { price: "150", quantity: "2" }); // $30,000
+    expect(n).toBe(30000);
+    expect(() => checkNotionalCaps(n, { env: { ROBINHOOD_MAX_ORDER_DOLLARS: "1000" } as any })).toThrow(NotionalCapError);
   });
 });

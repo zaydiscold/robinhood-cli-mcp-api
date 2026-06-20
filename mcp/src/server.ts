@@ -9,6 +9,7 @@ import {
   buildOptionsContractNavigationPlan,
   buildOptionsStrategyOrderPlan,
   computeAutopilot,
+  computeSentinel,
   computeCalendar,
   computeExposure,
   computeIncome,
@@ -1797,6 +1798,25 @@ server.registerTool(
   },
   async ({ account_number, days }) => {
     try { return jsonResponse(await computeAutopilot({ accountNumber: account_number, days })); }
+    catch (e: any) { return jsonResponse({ error: e.message }); }
+  }
+);
+
+// ── robinhood_sentinel: daily risk + event guardian ──
+server.registerTool(
+  "robinhood_sentinel",
+  {
+    title: "Robinhood Sentinel — Daily Risk + Event Guardian",
+    description:
+      "Daily risk + event guardian: composes computeRisk (portfolio risk scan — positions, concentration, margin, Greeks exposure) + computeOptionsEvents (assignment, exercise, expiration history). Zero CDP — safe for scheduled daily scans. Returns a consolidated report with risk scan, upcoming events, and warnings. Live read; no gate.",
+    inputSchema: z.object({
+      account_number: z.string().optional(),
+      event_lookahead_days: z.number().int().min(1).max(30).default(7)
+    }),
+    annotations: toolAnnotations(true, "sensitive-read")
+  },
+  async ({ account_number, event_lookahead_days }) => {
+    try { return jsonResponse(await computeSentinel({ accountNumber: account_number, eventLookaheadDays: event_lookahead_days })); }
     catch (e: any) { return jsonResponse({ error: e.message }); }
   }
 );

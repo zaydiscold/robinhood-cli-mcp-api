@@ -2706,6 +2706,10 @@ export async function gatedBrokerageWrite(opts: {
   skipTradeLog?: boolean;
   /** Target account for the account-lock check (ROBINHOOD_ALLOWED_ACCOUNT). */
   accountNumber?: string;
+  /** Bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this
+   * options placement. Defaults off — only an explicit caller opt-in (the `--override-cap` flag /
+   * `overrideCap` param) bypasses, matching what NotionalCapError tells the user to do. */
+  overrideCap?: boolean;
 }): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
   const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
@@ -2719,7 +2723,7 @@ export async function gatedBrokerageWrite(opts: {
   // N4 — notional cap for options order placements (equity is capped in placeEquityOrder). Only a
   // genuine live placement is checked; dry-runs and cancels yield 0. Throws NotionalCapError if over.
   const optNotional = effectiveDryRun ? 0 : optionsOrderNotional(opts.url, opts.method, opts.body);
-  if (optNotional > 0) checkNotionalCaps(optNotional);
+  if (optNotional > 0) checkNotionalCaps(optNotional, { override: opts.overrideCap });
   const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
   const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
   if (optNotional > 0 && Number(result.status) >= 200 && Number(result.status) < 300) recordSessionNotional(optNotional);
@@ -2952,6 +2956,8 @@ export interface WatchlistBasketBuyInput {
   limit?: number;
   /** Pace between LIVE sends to respect Robinhood's fractional burst limit (~9 then 429). Default 2500ms. */
   delayMs?: number;
+  /** Bypass the per-order/per-session notional caps for every leg (the `--override-cap` flag). Default off. */
+  overrideCap?: boolean;
 }
 
 export interface WatchlistBasketLeg {
@@ -3030,7 +3036,7 @@ export async function buyWatchlistBasket(
     const sym = affordable[idx].symbol as string;
     let res: EquityOrderResult;
     try {
-      res = await placeOrder({ symbol: sym, accountNumber: input.accountNumber, side: "buy", amount, liveWrite, force: input.force });
+      res = await placeOrder({ symbol: sym, accountNumber: input.accountNumber, side: "buy", amount, liveWrite, force: input.force, overrideCap: input.overrideCap });
     } catch (e: any) {
       const msg = String(e?.message ?? e);
       const nonBuyable = /fractional|otc/i.test(msg);
@@ -6092,13 +6098,56 @@ export function printTable(rows: Array<Record<string, unknown>>, columns: string
 // Zayd Khan // cold // www.zayd.wtf
 // ── 6 Financial Tools (recovered from dist/lib.js after accidental git checkout) ──
 
+/**
+ * Net option premium contribution (USD) of ONE filled options order, scoped to
+ * premium-SELLING income — not directional long-option P&L.
+ *
+ * Per leg, signed cash flow = (sell ? +1 : buy ? -1 : 0) × price × quantity × 100.
+ * The order's net is COUNTED only when it is premium-collection or short-management:
+ *   • pure short open       — hasSTO && !hasBTO         (CSP, covered call, short call/put, short strangle)
+ *   • net-credit spread/IC  — hasSTO && hasBTO && net>0 (credit spread / iron condor — long wing netted in)
+ *   • short close / roll      — hasBTC                    (buy-to-close, or close-old + open-new in one order)
+ * Excluded: pure long opens/closes (BTO / STC) and debit spreads (hasSTO && hasBTO && net≤0) — those are
+ * directional trades, not income. The ×100 contract multiplier is assumed (split-adjusted multipliers are
+ * not resolved here). Counting the long wing of a credit spread is what makes this "premium NET of debits"
+ * rather than the gross short credit (which overstates spread income).
+ */
+export function optionOrderNetPremiumUsd(order: any): { netUsd: number; included: boolean; reason: string } {
+    const num = (v: unknown) => Number(v);
+    let net = 0;
+    let hasSTO = false, hasBTC = false, hasBTO = false, hasSTC = false;
+    for (const leg of order?.legs ?? []) {
+        const side = String(leg?.side ?? "");
+        const effect = String(leg?.position_effect ?? "");
+        if (side === "sell" && effect === "open") hasSTO = true;
+        else if (side === "buy" && effect === "close") hasBTC = true;
+        else if (side === "buy" && effect === "open") hasBTO = true;
+        else if (side === "sell" && effect === "close") hasSTC = true;
+        const sign = side === "sell" ? 1 : side === "buy" ? -1 : 0;
+        if (sign === 0) continue;
+        for (const ex of leg?.executions ?? []) {
+            const qty = num(ex?.quantity);
+            const price = num(ex?.price);
+            if (!(qty > 0) || !Number.isFinite(price)) continue;
+            net += sign * price * qty * 100;
+        }
+    }
+    let included = false;
+    let reason = "excluded: directional (long open/close or debit spread)";
+    if (hasSTO && !hasBTO) { included = true; reason = "short-premium open"; }
+    else if (hasSTO && hasBTO && net > 0) { included = true; reason = "net-credit spread/condor open"; }
+    else if (hasBTC) { included = true; reason = "short close / roll"; }
+    return { netUsd: included ? net : 0, included, reason };
+}
+
 export async function computeIncome(opts: any = {}, deps: any = {}) {
     const getJson = deps.getJson ?? brokerageGetJson;
     const getAll = deps.getAll ?? brokerageGetAllResults;
     const nowMs = (deps.now ?? Date.now)();
     const warnings = [];
-    const year = opts.year ?? new Date(nowMs).getUTCFullYear();
-    const yearStr = String(year);
+    const targetYear = opts.year != null && Number.isFinite(Number(opts.year)) ? Number(opts.year) : null;
+    const anchor = new Date(nowMs);
+    const year = targetYear ?? anchor.getUTCFullYear();
     const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
     // 1. Dividends — reuse the existing engine
     let divResult;
@@ -6107,79 +6156,110 @@ export async function computeIncome(opts: any = {}, deps: any = {}) {
     }
     catch (e: any) {
         warnings.push(`dividends engine failed: ${(e as Error).message.slice(0, 60)}`);
-        divResult = { byMonth: [], totals: { last12moUsd: 0 }, warnings: [] };
-        warnings.push(...(divResult.warnings ?? []));
+        divResult = { byMonth: [], totals: { last12moUsd: 0 }, projection: { annualUsd: 0 }, warnings: [] };
     }
-    // 2. Option premium from filled orders
+    warnings.push(...(divResult.warnings ?? []));
+    // 2. Option premium from filled orders, classified per ORDER (see optionOrderNetPremiumUsd):
+    //    net credit from premium-selling structures (CSP/CC, short calls/puts, credit spreads, condors)
+    //    and net cost to close/roll shorts. Long-option speculation and debit spreads are excluded —
+    //    this is INCOME, not directional P&L. The window is the SAME 12 calendar months as the dividend
+    //    breakdown (default: trailing 12 ending this month; with --year: Jan–Dec of that year) so the
+    //    monthly table reconciles to the TTM headline instead of mixing a calendar window with a 365-day one.
     const n = (v: unknown) => Number(v);
-    let totalPremiumTtm = 0;
-    const ttmStart = new Date(nowMs - 365 * 86_400_000).toISOString().slice(0, 10);
-    const premiumByMonth = new Map();
+    const monthKeys: string[] = targetYear != null
+        ? Array.from({ length: 12 }, (_, i) => `${targetYear}-${String(i + 1).padStart(2, "0")}`)
+        : Array.from({ length: 12 }, (_, i) =>
+            new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - (11 - i), 1)).toISOString().slice(0, 7));
+    const inWindow = new Set(monthKeys);
+    const premiumByMonth = new Map<string, number>();
     for (const { acct } of accts) {
         try {
             const orders = await getAll("https://api.robinhood.com/options/orders/", {}, { account_number: acct, state: "filled" });
-            for (const o of orders) {
-                const createdAt = String(o.created_at ?? "").slice(0, 10);
-                if (createdAt < ttmStart)
-                    continue;
-                const monthKey = createdAt.slice(0, 7);
-                for (const leg of o.legs ?? []) {
-                    const side = String(leg.side ?? "");
-                    const effect = String(leg.position_effect ?? "");
-                    // Premium = net credits from sell-to-open minus debits from buy-to-close
-                    const isCredit = side === "sell" && effect === "open";
-                    const isDebit = side === "buy" && effect === "close";
-                    if (!isCredit && !isDebit)
-                        continue;
-                    for (const ex of leg.executions ?? []) {
-                        const qty = n(ex.quantity);
-                        const price = n(ex.price);
-                        if (!(qty > 0) || !Number.isFinite(price))
-                            continue;
-                        const notional = price * qty * 100;
-                        const signed = isCredit ? notional : -notional;
-                        totalPremiumTtm += signed;
-                        premiumByMonth.set(monthKey, (premiumByMonth.get(monthKey) ?? 0) + signed);
-                    }
-                }
+            for (const o of orders ?? []) {
+                const monthKey = String(o.created_at ?? "").slice(0, 7);
+                if (!inWindow.has(monthKey)) continue;
+                const { netUsd } = optionOrderNetPremiumUsd(o);
+                if (netUsd === 0) continue;
+                premiumByMonth.set(monthKey, (premiumByMonth.get(monthKey) ?? 0) + netUsd);
             }
         }
         catch (e: any) {
             warnings.push(`option orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`);
         }
     }
-    // 3. Monthly breakdown — marry dividend byMonth with premium byMonth
-    const divByMonth = new Map();
+
+    // 3. Monthly breakdown over the canonical 12-month window — dividends + premium, zero-filled so dry
+    //    months stay visible AND Σ(rows) == the TTM headline (no window drift between the two halves).
+    const divByMonth = new Map<string, number>();
     for (const m of divResult.byMonth ?? []) {
-        if (m.month?.length === 7)
-            divByMonth.set(String(m.month), n(m.totalUsd));
+        if (typeof m?.month === "string" && m.month.length === 7) divByMonth.set(m.month, n(m.totalUsd));
     }
-    const allMonths = new Set([...divByMonth.keys(), ...premiumByMonth.keys()]);
-    const sortedMonths = [...allMonths].sort();
-    const monthlyBreakdown = sortedMonths.map((month: any) => ({
-        month,
-        dividendsUsd: round2(divByMonth.get(month) ?? 0),
-        optionPremiumUsd: round2(premiumByMonth.get(month) ?? 0),
-        totalUsd: round2((divByMonth.get(month) ?? 0) + (premiumByMonth.get(month) ?? 0))
-    }));
-    const dividendsTtm = round2(divResult.totals?.last12moUsd ?? 0);
-    const premiumTtm = round2(totalPremiumTtm);
+    const monthlyBreakdown = monthKeys.map((month) => {
+        const dividendsUsd = round2(divByMonth.get(month) ?? 0);
+        const optionPremiumUsd = round2(premiumByMonth.get(month) ?? 0);
+        return { month, dividendsUsd, optionPremiumUsd, totalUsd: round2(dividendsUsd + optionPremiumUsd) };
+    });
+
+    // TTM = exact sum of the window's monthly rows, so the headline always equals Σ(table).
+    const dividendsTtm = round2(monthlyBreakdown.reduce((s, m) => s + m.dividendsUsd, 0));
+    const premiumTtm = round2(monthlyBreakdown.reduce((s, m) => s + m.optionPremiumUsd, 0));
     const ttmTotal = round2(dividendsTtm + premiumTtm);
-    const monthlyAverage = round2(ttmTotal / 12);
-    const projectedAnnual = round2(monthlyAverage * 12);
-    // Assignment edge-case warning
+
+    // Monthly average over months actually COVERED (first activity → window end), not a blind /12 —
+    // a 3-month-old account shouldn't divide its income by 12 and read 4× smaller than it earns.
+    const firstActive = monthlyBreakdown.findIndex((m) => m.totalUsd !== 0);
+    const monthsCovered = firstActive < 0 ? monthKeys.length : monthKeys.length - firstActive;
+    const monthlyAverage = round2(ttmTotal / Math.max(1, monthsCovered));
+
+    // Forward run-rate (NOT a re-label of TTM): dividend side from CURRENT holdings × cadence (sold
+    // payers already excluded by the dividends engine) + trailing-12-month net option premium (already
+    // an annual figure). Granularity ($/day → $/yr) is derived from this annual run-rate.
+    const dividendForwardUsd = round2(Number(divResult.projection?.annualUsd ?? 0));
+    const optionPremiumTrailingUsd = premiumTtm;
+    const annualRunRate = round2(dividendForwardUsd + optionPremiumTrailingUsd);
+    const projection = {
+        dailyUsd: round2(annualRunRate / 365),
+        weeklyUsd: round2(annualRunRate / 52),
+        monthlyUsd: round2(annualRunRate / 12),
+        quarterlyUsd: round2(annualRunRate / 4),
+        annualUsd: annualRunRate,
+        dividendForwardUsd,
+        optionPremiumTrailingUsd,
+        method:
+            "annual run-rate = dividend forward projection (current holdings × cadence, sold payers excluded) " +
+            "+ trailing-12-month net option premium; daily=/365, weekly=/52, monthly=/12, quarterly=/4. " +
+            "Forward-looking — distinct from ttmTotalUsd, which is realized trailing income."
+    };
+
+    // --year honesty: dividend history beyond the trailing 12 months isn't available from the dividends
+    // feed, so flag any requested-year months that fall outside it (option premium IS full-history).
+    if (targetYear != null) {
+        const missingDiv = monthKeys.filter((k) => !divByMonth.has(k));
+        if (missingDiv.length) {
+            warnings.push(
+                `--year ${targetYear}: dividend data is only available for the trailing 12 months; ` +
+                `${missingDiv.length} month(s) of ${targetYear} fall outside that window and show $0 dividends ` +
+                `(option premium IS computed from full order history).`
+            );
+        }
+    }
+
     const assignmentNote = "Option premium includes sell-to-open credits that may have resulted in assignment. Assignment events are not directly detectable via the API — premium from assigned positions may represent a cost-basis adjustment rather than standalone income. Cross-check against position history for any stock acquired near option expiration dates.";
+    const scopeNote = "Premium is net cash flow of premium-SELLING activity only (short puts/calls, covered calls, credit spreads/condors, and short closes/rolls). Long-option buys/sells and debit spreads are excluded as directional trades, not income. Cash-basis by fill month: a position opened one month and closed the next splits across both rows; the TTM total still nets correctly.";
     warnings.push(assignmentNote);
-    const notes = [assignmentNote];
+    const notes = [assignmentNote, scopeNote];
     return {
         accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
         year,
+        window: { start: monthKeys[0], end: monthKeys[monthKeys.length - 1] },
         monthlyBreakdown,
         ttmTotalUsd: ttmTotal,
         monthlyAverageUsd: monthlyAverage,
-        projectedAnnualRunRateUsd: projectedAnnual,
+        monthsCovered,
+        projectedAnnualRunRateUsd: annualRunRate,
         dividendsTtmUsd: dividendsTtm,
         optionPremiumTtmUsd: premiumTtm,
+        projection,
         warnings,
         notes
     };

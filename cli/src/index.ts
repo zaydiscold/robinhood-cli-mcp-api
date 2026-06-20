@@ -743,9 +743,10 @@ brokerage
   .option("--dry-run", "print plan/body, send nothing")
   .option("--live", "send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1); without it the order is dry-run — matches the top-level `buy`")
   .option("--force", "skip the pending-duplicate-order check")
+  .option("--override-cap", "bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order")
   .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
-  .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; live?: boolean; force?: boolean; liveWrite?: boolean; json?: boolean }) => {
+  .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; live?: boolean; force?: boolean; overrideCap?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
     if (opts.dollars && opts.shares) throw new Error("Pass only one of --dollars or --shares.");
     if (opts.dollars && !(Number(opts.dollars) > 0)) throw new Error(`--dollars must be a positive number (got "${opts.dollars}").`);
@@ -763,7 +764,8 @@ brokerage
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.limit ? Number(opts.limit) : undefined,
       liveWrite: Boolean(opts.live) && !opts.dryRun,
-      force: Boolean(opts.force)
+      force: Boolean(opts.force),
+      overrideCap: Boolean(opts.overrideCap)
     });
 
     if (opts.json) {
@@ -3146,6 +3148,7 @@ program
   .option("-p, --price <number>", "Limit price (omit for market order)")
   .option("--live", "Send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
   .option("--force", "Skip duplicate order check")
+  .option("--override-cap", "bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order")
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
     // Validation, OTC/fractional guard, quote check, dedup, ref_id, gates, and trade logging
@@ -3158,7 +3161,8 @@ program
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.price ? Number(opts.price) : undefined,
       liveWrite: Boolean(opts.live),
-      force: Boolean(opts.force)
+      force: Boolean(opts.force),
+      overrideCap: Boolean(opts.overrideCap)
     });
 
     if (opts.json) {
@@ -3185,6 +3189,7 @@ program
   .option("-p, --price <number>", "Limit price (omit for market order)")
   .option("--live", "Send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
   .option("--force", "Skip duplicate order check")
+  .option("--override-cap", "bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order")
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
     // Same shared engine as `buy` and the MCP robinhood_sell tool — only the side differs.
@@ -3196,7 +3201,8 @@ program
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.price ? Number(opts.price) : undefined,
       liveWrite: Boolean(opts.live),
-      force: Boolean(opts.force)
+      force: Boolean(opts.force),
+      overrideCap: Boolean(opts.overrideCap)
     });
 
     if (opts.json) {
@@ -3414,17 +3420,19 @@ program
 // ── income: combined income engine (dividends + option premium) ──
 program
   .command("income")
-  .description("Combined income engine: dividends + option premium net of debits, broken down by month, with TTM total, monthly average, and projected annual run-rate. Math done in-engine — do not hand-compute. Live read.")
+  .description("Combined income engine: dividends + net option premium (premium-SELLING only — short puts/calls, covered calls, credit spreads/condors, closes/rolls; long-option and debit-spread directional trades excluded), over a 12-month window that reconciles to the TTM headline. Reports TTM total, monthly average over months covered, and a forward run-rate at $/day → $/yr. Math done in-engine — do not hand-compute. Live read.")
   .option("--account <number>", "scope to one account (default: all owned)")
   .option("--year <yyyy>", "focus on a year (default: current year)")
   .option("--json", "emit JSON")
   .action(async (opts: { account?: string; year?: string; json?: boolean }) => {
     const r = await computeIncome({ accountNumber: opts.account, year: opts.year ? Number(opts.year) : undefined });
     if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
-    process.stdout.write(`Combined Income — ${r.accountsScanned.length} account(s) — ${r.year}\n`);
+    process.stdout.write(`Combined Income — ${r.accountsScanned.length} account(s) — ${r.window.start}…${r.window.end}\n`);
     process.stdout.write(`as of ${new Date().toISOString()}\n\n`);
     process.stdout.write(`TTM: ${usd(r.ttmTotalUsd)} total (divs ${usd(r.dividendsTtmUsd)} + premium ${usd(r.optionPremiumTtmUsd)})\n`);
-    process.stdout.write(`Monthly avg: ${usd(r.monthlyAverageUsd)} · projected annual: ${usd(r.projectedAnnualRunRateUsd)}\n\n`);
+    process.stdout.write(`Monthly avg: ${usd(r.monthlyAverageUsd)} over ${r.monthsCovered} mo · projected run-rate: ${usd(r.projectedAnnualRunRateUsd)}/yr\n`);
+    const p = r.projection;
+    process.stdout.write(`Run-rate: ${usd(p.dailyUsd)}/day · ${usd(p.weeklyUsd)}/wk · ${usd(p.monthlyUsd)}/mo · ${usd(p.quarterlyUsd)}/qtr · ${usd(p.annualUsd)}/yr (divs fwd ${usd(p.dividendForwardUsd)} + premium ttm ${usd(p.optionPremiumTrailingUsd)})\n\n`);
     if (r.monthlyBreakdown.length) {
       printTable(
         r.monthlyBreakdown.map((m) => ({ month: m.month, dividends: usd(m.dividendsUsd), premium: usd(m.optionPremiumUsd), total: usd(m.totalUsd) })),
@@ -3833,10 +3841,11 @@ watchlist
   .option("--limit <n>", "cap the number of tickers attempted")
   .option("--delay <ms>", "pace between live sends (429 burst guard)", "2500")
   .option("--force", "skip per-order dedup + the after-hours fractional pre-flight guard")
+  .option("--override-cap", "bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for every leg")
   .option("--dry-run", "plan only, send nothing")
   .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
-  .action(async (list: string, opts: { account: string; amount?: string; limit?: string; delay?: string; force?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+  .action(async (list: string, opts: { account: string; amount?: string; limit?: string; delay?: string; force?: boolean; overrideCap?: boolean; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
     const out = await buyWatchlistBasket({
       list,
       amount: Number(opts.amount ?? "1"),
@@ -3844,6 +3853,7 @@ watchlist
       limit: opts.limit ? Number(opts.limit) : undefined,
       delayMs: opts.delay ? Number(opts.delay) : undefined,
       force: opts.force,
+      overrideCap: opts.overrideCap,
       dryRun: opts.dryRun,
       liveWrite: opts.liveWrite
     });

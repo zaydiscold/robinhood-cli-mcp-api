@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeIncome,
+  optionOrderNetPremiumUsd,
   computeRisk,
   computeWhatIf,
   computeCalendar,
@@ -271,6 +272,165 @@ describe("computeIncome — dividend + option premium TTM totals", () => {
     });
     const r = await computeIncome({ year: 2025 }, fix);
     expect(r.year).toBe(2025);
+  });
+});
+
+// ── 1b. optionOrderNetPremiumUsd — per-order premium classification ───────────
+
+describe("optionOrderNetPremiumUsd — per-order premium classification", () => {
+  const sto = (q: number, p: number) => ({ side: "sell", position_effect: "open", executions: [{ quantity: String(q), price: String(p) }] });
+  const btc = (q: number, p: number) => ({ side: "buy", position_effect: "close", executions: [{ quantity: String(q), price: String(p) }] });
+  const bto = (q: number, p: number) => ({ side: "buy", position_effect: "open", executions: [{ quantity: String(q), price: String(p) }] });
+  const stc = (q: number, p: number) => ({ side: "sell", position_effect: "close", executions: [{ quantity: String(q), price: String(p) }] });
+
+  it("pure short open (CSP / short call) counts the full credit", () => {
+    const r = optionOrderNetPremiumUsd({ legs: [sto(1, 2.0)] });
+    expect(r.included).toBe(true);
+    expect(r.netUsd).toBe(200);
+  });
+
+  it("buy-to-close counts as a negative debit", () => {
+    const r = optionOrderNetPremiumUsd({ legs: [btc(1, 0.5)] });
+    expect(r.included).toBe(true);
+    expect(r.netUsd).toBe(-50);
+  });
+
+  it("credit spread NETS the long wing — does not overstate with the gross short credit", () => {
+    // STO higher put +$200, BTO lower put −$80 → net credit +$120 (old code reported +$200)
+    const r = optionOrderNetPremiumUsd({ legs: [sto(1, 2.0), bto(1, 0.8)] });
+    expect(r.included).toBe(true);
+    expect(r.netUsd).toBe(120);
+  });
+
+  it("debit spread (net-debit open) is EXCLUDED as directional", () => {
+    // BTO lower call −$300, STO higher call +$100 → net debit −$200 → excluded
+    const r = optionOrderNetPremiumUsd({ legs: [bto(1, 3.0), sto(1, 1.0)] });
+    expect(r.included).toBe(false);
+    expect(r.netUsd).toBe(0);
+  });
+
+  it("long-call open (buy-to-open only) is EXCLUDED", () => {
+    expect(optionOrderNetPremiumUsd({ legs: [bto(1, 4.0)] }).included).toBe(false);
+  });
+
+  it("long-call close (sell-to-close only) is EXCLUDED — not premium income", () => {
+    expect(optionOrderNetPremiumUsd({ legs: [stc(1, 6.0)] }).included).toBe(false);
+  });
+
+  it("roll in one order (BTC old + STO new) counts the full net", () => {
+    // BTC −$25, STO +$125 → net +$100
+    const r = optionOrderNetPremiumUsd({ legs: [btc(1, 0.25), sto(1, 1.25)] });
+    expect(r.included).toBe(true);
+    expect(r.netUsd).toBe(100);
+  });
+
+  it("iron condor open (2 STO + 2 BTO wings) nets to the credit", () => {
+    // STO put +$150, BTO put wing −$50, STO call +$140, BTO call wing −$40 → +$200
+    const r = optionOrderNetPremiumUsd({ legs: [sto(1, 1.5), bto(1, 0.5), sto(1, 1.4), bto(1, 0.4)] });
+    expect(r.netUsd).toBe(200);
+  });
+
+  it("guards bad numerics: zero qty / non-finite price contribute nothing", () => {
+    const r = optionOrderNetPremiumUsd({ legs: [{ side: "sell", position_effect: "open", executions: [{ quantity: "0", price: "2.0" }, { quantity: "1", price: "abc" }] }] });
+    expect(r.netUsd).toBe(0);
+  });
+
+  it("empty / missing / null legs never throw", () => {
+    expect(optionOrderNetPremiumUsd({}).netUsd).toBe(0);
+    expect(optionOrderNetPremiumUsd({ legs: [] }).netUsd).toBe(0);
+    expect(optionOrderNetPremiumUsd(null).netUsd).toBe(0);
+  });
+});
+
+// ── 1c. computeIncome — hardened windows / run-rate / spreads / --year ─────────
+
+describe("computeIncome — hardened math", () => {
+  // NOW = 2026-06-11 → default window is 2025-07 … 2026-06.
+
+  it("credit spread no longer overstates: counts net credit, not the gross short leg", async () => {
+    const fix = buildFixture({
+      accounts: { results: [{ type: "rhs", account_number: "111111111", account_name: "Main" }] },
+      dividends: { "111111111": [] },
+      positions: { "111111111": [] },
+      optionOrders: {
+        "111111111": [{
+          created_at: "2026-04-10T15:30:00Z", state: "filled",
+          legs: [
+            { side: "sell", position_effect: "open", executions: [{ quantity: "1", price: "2.00" }] },
+            { side: "buy", position_effect: "open", executions: [{ quantity: "1", price: "0.80" }] }
+          ]
+        }]
+      }
+    });
+    const r = await computeIncome({}, fix);
+    expect(r.optionPremiumTtmUsd).toBe(120); // +200 − 80, NOT +200
+  });
+
+  it("monthly table reconciles exactly to the TTM headline (no window drift)", async () => {
+    const r = await computeIncome({}, incomeFix());
+    const sumDiv = r.monthlyBreakdown.reduce((s, m) => s + m.dividendsUsd, 0);
+    const sumPrem = r.monthlyBreakdown.reduce((s, m) => s + m.optionPremiumUsd, 0);
+    const sumTot = r.monthlyBreakdown.reduce((s, m) => s + m.totalUsd, 0);
+    expect(sumDiv).toBeCloseTo(r.dividendsTtmUsd, 2);
+    expect(sumPrem).toBeCloseTo(r.optionPremiumTtmUsd, 2);
+    expect(sumTot).toBeCloseTo(r.ttmTotalUsd, 2);
+  });
+
+  it("default window spans exactly 12 calendar months ending this month", async () => {
+    const r = await computeIncome({}, incomeFix());
+    expect(r.window).toEqual({ start: "2025-07", end: "2026-06" });
+    expect(r.monthlyBreakdown.length).toBe(12);
+  });
+
+  it("exposes $/day → $/yr granularity from a forward run-rate (not a re-labeled TTM)", async () => {
+    const r = await computeIncome({}, incomeFix());
+    expect(r.projection).toBeDefined();
+    expect(r.projection.dailyUsd).toBeCloseTo(r.projection.annualUsd / 365, 2);
+    expect(r.projection.weeklyUsd).toBeCloseTo(r.projection.annualUsd / 52, 2);
+    expect(r.projection.monthlyUsd).toBeCloseTo(r.projection.annualUsd / 12, 2);
+    expect(r.projectedAnnualRunRateUsd).toBe(r.projection.annualUsd);
+    expect(r.projectedAnnualRunRateUsd).toBeCloseTo(r.projection.dividendForwardUsd + r.projection.optionPremiumTrailingUsd, 2);
+    // realized TTM (incl. dividends) differs from the forward run-rate → not the old tautology
+    expect(r.projectedAnnualRunRateUsd).not.toBe(r.ttmTotalUsd);
+  });
+
+  it("monthsCovered reflects the active span; monthly average uses it, not a blind /12", async () => {
+    const fix = buildFixture({
+      accounts: { results: [{ type: "rhs", account_number: "111111111", account_name: "Main" }] },
+      dividends: { "111111111": [] },
+      positions: { "111111111": [] },
+      optionOrders: {
+        "111111111": [{
+          created_at: "2026-06-05T10:00:00Z", state: "filled",
+          legs: [{ side: "sell", position_effect: "open", executions: [{ quantity: "1", price: "4.00" }] }]
+        }]
+      }
+    });
+    const r = await computeIncome({}, fix);
+    expect(r.optionPremiumTtmUsd).toBe(400);
+    expect(r.monthsCovered).toBe(1);        // only 2026-06 has activity
+    expect(r.monthlyAverageUsd).toBe(400);  // 400/1, NOT 400/12 ≈ 33.33
+  });
+
+  it("--year scopes premium to that calendar year and warns about out-of-window dividends", async () => {
+    const fix = buildFixture({
+      accounts: { results: [{ type: "rhs", account_number: "111111111", account_name: "Main" }] },
+      dividends: { "111111111": [] },
+      positions: { "111111111": [] },
+      optionOrders: {
+        "111111111": [
+          { created_at: "2025-05-01T10:00:00Z", state: "filled",
+            legs: [{ side: "sell", position_effect: "open", executions: [{ quantity: "5", price: "3.00" }] }] }, // +1500, in 2025
+          { created_at: "2026-04-10T10:00:00Z", state: "filled",
+            legs: [{ side: "sell", position_effect: "open", executions: [{ quantity: "1", price: "1.00" }] }] }  // +100, not 2025
+        ]
+      }
+    });
+    const r = await computeIncome({ year: 2025 }, fix);
+    expect(r.window).toEqual({ start: "2025-01", end: "2025-12" });
+    expect(r.optionPremiumTtmUsd).toBe(1500); // only the 2025 order is in the window
+    expect(r.year).toBe(2025);
+    expect(r.warnings.some((w: string) => w.includes("--year 2025") && w.includes("trailing 12 months"))).toBe(true);
   });
 });
 

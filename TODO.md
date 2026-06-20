@@ -25,8 +25,14 @@
 - [x] **Post-send evidence verification in code** (BUILT 2026-06-11: `verifyOrderEvidence()` in engine; buy/sell/cancel attach evidence{confirmed,state,id}): after any live send, auto re-read `orders/` /
   `options/orders/` and print the order record (id + state). Failure mode #20 is currently a doc rule;
   make it engine behavior so "order placed" claims are impossible without evidence.
-- [ ] **Notional guardrails**: configurable per-order and per-session dollar caps (e.g. `local/guardrails.json`),
-  exceeded only with an explicit `--override-cap` flag. The checks-and-balances layer for agentic sends.
+- [x] **Notional guardrails** (BUILT 2026-06-11, override wired 2026-06-19): configurable per-order and per-session
+  dollar caps via `ROBINHOOD_MAX_ORDER_DOLLARS` / `ROBINHOOD_MAX_SESSION_DOLLARS` (`checkNotionalCaps` in the
+  engine; equity via `placeEquityOrder`, options via `gatedBrokerageWrite`), exceeded only with an explicit
+  `--override-cap` flag (CLI `buy`/`sell`/`watchlist buy`) / `overrideCap` param (MCP `robinhood_buy`/`_sell`/
+  `_watchlist_buy`). Default off → zero behavior change unless a cap is set. Tests: `owner-call-guards.test.ts`
+  (engine) + `equity-order.test.ts` (override threading). NOTE: the cap fires on the engine paths; raw `brokerage
+  execute` (both CLI + MCP) bypasses `gatedBrokerageWrite`, so an options order placed via raw execute is NOT
+  capped — routing all execute writes through the gated engine is the remaining consistency item.
 - [x] **`panic` command** (BUILT 2026-06-11: CLI `panic` + MCP `robinhood_panic` + `orders open` view; per-cancel gating + evidence): cancel ALL open orders across ALL accounts (single-switch gated). Kill switch.
 - [ ] **`order watch`**: place → poll until filled/rejected/cancelled → report; single command lifecycle.
 - [ ] **Payoff in strategy-quote summary**: print max profit / max loss / breakevens on the human output
@@ -59,14 +65,14 @@
 ## Feature ideas backlog (2026-06-11 pass — beginner through veteran)
 
 - [ ] `order watch` — place → poll → report fill/reject; one-command lifecycle.
-- [ ] Notional caps — per-order/per-session dollar ceilings, explicit override flag.
-- [ ] `whatif` — Greeks-based scenario calc: spot ±X%, IV ±N pts, T-n days → position P&L in dollars.
-- [ ] `calendar` — upcoming events for HELD names: option expirations, ex-div dates (assignment risk on covered calls), earnings.
-- [ ] `risk` — portfolio scan: max loss across open positions, assignment exposure, undercovered short legs, margin-call distance.
-- [ ] `income` — combined income view: dividends + option premium collected, by month, in dollars.
+- [x] Notional caps — per-order/per-session dollar ceilings, explicit override flag. (DONE — see "Execution safeties" above; override `--override-cap`/`overrideCap` wired 2026-06-19.)
+- [x] `whatif` — Greeks-based scenario calc: spot ±X%, IV ±N pts, T-n days → position P&L in dollars. (DONE — CLI `whatif` + MCP `robinhood_whatif`.)
+- [x] `calendar` — upcoming events for HELD names: option expirations, ex-div dates (assignment risk on covered calls), earnings. (DONE — CLI `calendar` + MCP `robinhood_calendar`.)
+- [x] `risk` — portfolio scan: max loss across open positions, assignment exposure, undercovered short legs, margin-call distance. (DONE — CLI `risk` + MCP `robinhood_risk`.)
+- [x] `income` — combined income view: dividends + option premium collected, by month, in dollars. (DONE — CLI `income` + MCP `robinhood_income`.)
 - [ ] `coach` mode — beginner tier: explain any held position/order in plain English with the math shown (possible revival of the old `explain` idea).
 - [ ] Auto-journal nudge — after a fill, prompt a `review note` so film-study notes accumulate at the moment of the trade.
-- [ ] `exposure` — concentration by underlying/sector + portfolio-wide net Greeks.
+- [x] `exposure` — concentration by underlying/sector + portfolio-wide net Greeks. (DONE — CLI `exposure` + MCP `robinhood_exposure`.)
 
 ## Watchlist writes — add/remove/create — SHIPPED 2026-06-15
 

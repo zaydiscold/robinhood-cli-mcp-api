@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEDUP_WINDOW_MS,
   etClockSession,
@@ -8,6 +8,7 @@ import {
   filterRecentPending,
   getOrderStatus,
   placeEquityOrder,
+  NotionalCapError,
   __resetOwnedAccountsCache,
   type MarketSession
 } from "../src/lib.js";
@@ -568,6 +569,48 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
       cancelOrder({ idOrUrl: "ord-9", liveWrite: true }, deps)
     ).rejects.toThrow(/Account A9 is not one of your trading accounts/);
     // The write must never have been reached.
+  });
+});
+
+describe("placeEquityOrder — notional-cap override threading (N4 / --override-cap)", () => {
+  // The engine-level cap (checkNotionalCaps) is pinned in owner-call-guards.test.ts. THIS pins the
+  // wiring the 2026-06-19 pass added: placeEquityOrder must thread input.overrideCap → checkNotionalCaps,
+  // so the documented `--override-cap` flag / `overrideCap` param (CLI buy/sell/watchlist + MCP
+  // buy/sell/watchlist_buy) can actually bypass a cap the user set — matching what NotionalCapError
+  // tells them to do. Live, share-based: 10 sh × $100 = $1,000 notional vs a $100 per-order cap.
+  const live = { writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-cap", state: "queued" }) } };
+  const savedEnv: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of ["ROBINHOOD_ALLOW_LIVE_WRITE", "ROBINHOOD_MAX_ORDER_DOLLARS", "ROBINHOOD_MAX_SESSION_DOLLARS", "ROBINHOOD_ALLOWED_ACCOUNT"]) savedEnv[k] = process.env[k];
+    process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1";
+    process.env.ROBINHOOD_MAX_ORDER_DOLLARS = "100";
+    delete process.env.ROBINHOOD_MAX_SESSION_DOLLARS; // isolate the per-order cap from the session accumulator
+    delete process.env.ROBINHOOD_ALLOWED_ACCOUNT; // no account lock → the cap is the only gate under test
+  });
+  afterEach(() => {
+    for (const [k, v] of Object.entries(savedEnv)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  });
+
+  it("a live order over the per-order cap throws NotionalCapError — nothing sent", async () => {
+    const { deps, calls } = makeDeps(live);
+    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10, liveWrite: true }, deps))
+      .rejects.toThrow(NotionalCapError);
+    expect(calls.writes).toHaveLength(0);
+  });
+
+  it("overrideCap:true bypasses the cap — the order is sent", async () => {
+    const { deps, calls } = makeDeps(live);
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10, liveWrite: true, overrideCap: true }, deps);
+    expect(calls.writes).toHaveLength(1);
+    expect(r.live).toBe(true);
+    expect(r.orderId).toBe("ord-cap");
+  });
+
+  it("a dry-run over the cap is never blocked (caps gate live sends only)", async () => {
+    const { deps, calls } = makeDeps();
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10 }, deps);
+    expect(r.dryRun).toBe(true);
+    expect(calls.writes).toHaveLength(1);
   });
 });
 

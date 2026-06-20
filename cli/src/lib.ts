@@ -5930,9 +5930,17 @@ function finitePrice(value: number | string | null | undefined): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : Number.NaN;
 }
 
-function finiteNumber(value: number | string | null | undefined): number {
+export function finiteNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+export function quoteLast(quote: any): number {
+  return finiteNumber(quote?.last_trade_price ?? quote?.last_extended_hours_trade_price);
+}
+
+export function optionMoney(value: number): number {
+  return roundOptionMoney(value);
 }
 
 function firstFinite(...values: number[]): number {

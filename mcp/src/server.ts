@@ -75,6 +75,9 @@ import {
   readOptionsOrderFlow,
   selectNearStrikes,
   classifyMoneyness,
+  finiteNumber,
+  quoteLast,
+  optionMoney,
   buildOptionsStrategyPricingSummary,
   percentChange
 } from "@zaydiscold/robinhood-cli/lib";
@@ -116,12 +119,10 @@ function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
   const isWrite = risk !== "read" && risk !== "sensitive-read";
   return {
     readOnlyHint: readOnly,
-    destructiveHint: isWrite,  // per MCP spec: ANY modification is destructive, not just catastrophic
+    destructiveHint: isWrite,
     idempotentHint: readOnly || risk === "write-safe",
-    openWorldHint: true,
-    "mcp:read-only": readOnly,
-    "mcp:risk": risk
-  } as any;
+    openWorldHint: true
+  };
 }
 
 // Live-flag alias resolution (param-consistency pass 2026-06-11): the parity tools historically
@@ -144,15 +145,7 @@ const INSTRUMENT_BUYING_POWER_URL = "https://bonfire.robinhood.com/accounts/{id}
 const INSTRUMENT_MARGIN_REQUIREMENTS_URL = "https://bonfire.robinhood.com/instruments/{uuid}/margin-requirements/";
 
 // brokerageGetJson + tryBrokerageGetJson are imported from the shared lib (same as the CLI).
-
-function finiteNumber(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-function quoteLast(quote: any): number {
-  return finiteNumber(quote?.last_trade_price ?? quote?.last_extended_hours_trade_price);
-}
+// finiteNumber, quoteLast, optionMoney are also imported from the shared lib.
 
 server.registerTool(
   "robinhood_api_map_summary",
@@ -1771,10 +1764,7 @@ server.registerTool(
 );
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
-// Local helpers (not in lib.ts)
-function optionMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
+// (finiteNumber, quoteLast, optionMoney are imported from the shared lib)
 
 // ── robinhood_search: instrument/crypto/index search (midlands/search/) ──
 const SEARCH_URL = "https://api.robinhood.com/midlands/search/?query={query}";

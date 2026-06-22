@@ -1401,6 +1401,7 @@ claude mcp add robinhood-cli -s user \
 | `robinhood_calendar` | Upcoming events for held names: option expirations, ex-div dates, earnings |
 | `robinhood_exposure` | Concentration by underlying/sector + portfolio-wide net Greeks |
 | `robinhood_autopilot` | Roll candidate scanner: scan open short options approaching expiration, suggest roll candidates with estimated net credit |
+| `robinhood_sentinel` | Daily risk + event guardian: composes the risk scan + upcoming calendar (expirations/ex-div/earnings) into one morning-brief view, flagging assignment exposure and time-sensitive events across accounts. Read |
 | `robinhood_orders_open` | All open/pending equity + options orders across all owned accounts (or one), symbol-resolved, with state, age, TIF, limit price, and exact cancel command for each. Read half of `panic` |
 | `robinhood_panic` | PANIC: enumerate every open/pending equity + options order across all owned accounts (or one) and cancel each — every cancel individually env-gated. DRY-RUN by default: returns the full would-cancel list and sends NOTHING |
 | `robinhood_search` | Natural-language search → Robinhood instruments (stocks/ETFs), crypto pairs, or market indexes — resolves company names/partial names to ticker + UUID |

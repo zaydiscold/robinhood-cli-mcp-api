@@ -112,6 +112,15 @@ function jsonResponse(value: unknown) {
   };
 }
 
+// Structured tool error (MCP convention): return { isError: true, ... } instead of letting a handler
+// throw. A bare throw IS caught by the SDK and surfaced as an error, but returning isError lets us
+// give the agent a clean, actionable message rather than an opaque stack — and replaces the no-op
+// `catch (e) { throw e; }` rethrows that previously added nothing. Zayd Khan // cold // www.zayd.wtf
+function mcpError(e: unknown) {
+  const message = e instanceof Error ? e.message : String(e);
+  return { isError: true as const, content: [{ type: "text" as const, text: `ERROR: ${message}` }] };
+}
+
 // Make the execution state of a WRITE tool UNMISSABLE. The operator runs live by default, so the
 // dangerous failure is a dry-run response that READS like a success — an agent (or human) sees an
 // order id / 201 / plan and assumes it's done. `executed` + a loud `executionStatus` are hoisted to
@@ -981,7 +990,7 @@ server.registerTool(
       const { result: _raw, ...summary } = r;
       return writeStatus(summary, { dryRun: summary.dryRun });
     } catch (e: any) {
-      throw e;
+      return mcpError(e);
     }
   }
 );
@@ -1012,7 +1021,7 @@ server.registerTool(
       });
       const { result: _raw, ...summary } = r;
       return writeStatus(summary, { dryRun: summary.dryRun });
-    } catch (e: any) { throw e; }
+    } catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1035,8 +1044,8 @@ server.registerTool(
     try {
       // Shared engine (cancelOrder in lib.ts) — same path as the CLI `cancel` command and `panic`.
       const r = await cancelOrder({ idOrUrl: order_id, kind, liveWrite: resolveLiveFlag(liveWrite, live) });
-      return writeStatus(r, { dryRun: r.dryRun, reason: (r as any).gateReason });
-    } catch (e: any) { throw e; }
+      return writeStatus(r, { dryRun: r.dryRun, reason: r.gateReason });
+    } catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1052,7 +1061,7 @@ server.registerTool(
   },
   async ({ account_number }) => {
     try { return jsonResponse(await listOpenOrders({ accountNumber: account_number })); }
-    catch (e: any) { throw e; }
+    catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1075,7 +1084,7 @@ server.registerTool(
     try {
       const r = await panicCancelAll({ accountNumber: account_number, liveWrite: resolveLiveFlag(liveWrite, live) });
       return writeStatus(r, { dryRun: r.dryRun });
-    } catch (e: any) { throw e; }
+    } catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1103,7 +1112,7 @@ server.registerTool(
         accountNumber: account_number, symbol, chainId: chain_id,
         strike, expiration, optionType: option_type, limitPrice: limit_price
       }));
-    } catch (e: any) { throw e; }
+    } catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1129,7 +1138,7 @@ server.registerTool(
       return jsonResponse(await buildOptionsClosePlan({
         symbol, accountNumber: account_number, strike, expiration, optionType: option_type, quantity
       }));
-    } catch (e: any) { throw e; }
+    } catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1145,7 +1154,7 @@ server.registerTool(
   async ({ order_id }) => {
     try {
       return jsonResponse(await getOrderStatus(order_id));
-    } catch (e: any) { throw e; }
+    } catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1165,7 +1174,7 @@ server.registerTool(
   async ({ symbol, account_number }) => {
     try {
       return jsonResponse(await computeWheelState({ symbol, accountNumber: account_number }));
-    } catch (e: any) { throw e; }
+    } catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1344,9 +1353,14 @@ server.registerTool(
       const inst = (await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: s.toUpperCase() })).results?.[0];
       if (inst?.id) ids.push(inst.id);
     }
-    if (ids.length === 0) return jsonResponse({ quotes: [] });
+    if (ids.length === 0) return jsonResponse({ quotes: [], bySymbol: {} });
     const q = (await brokerageGetJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: ids.join(",") })).results ?? [];
-    return jsonResponse({ quotes: q.filter(Boolean).map((r: any) => ({ symbol: r.symbol, last: n(r.last_trade_price), bid: n(r.bid_price), ask: n(r.ask_price), previousClose: n(r.previous_close) })) });
+    const quotes = q.filter(Boolean).map((r: any) => ({ symbol: r.symbol, last: n(r.last_trade_price), bid: n(r.bid_price), ask: n(r.ask_price), previousClose: n(r.previous_close) }));
+    // Also key by symbol so an agent can look up a specific ticker without scanning the array (the
+    // array is kept for back-compat + stable ordering). Zayd Khan // cold // www.zayd.wtf
+    const bySymbol: Record<string, (typeof quotes)[number]> = {};
+    for (const row of quotes) if (row.symbol) bySymbol[row.symbol] = row;
+    return jsonResponse({ quotes, bySymbol });
   }
 );
 
@@ -1526,7 +1540,7 @@ server.registerTool(
   },
   async ({ account_number, symbol }) => {
     try { return jsonResponse(await computeDividends({ accountNumber: account_number, symbol })); }
-    catch (e: any) { throw e; }
+    catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1542,7 +1556,7 @@ server.registerTool(
   },
   async ({ type, year, account_number }) => {
     try { return jsonResponse(await listDocuments({ type, year, accountNumber: account_number })); }
-    catch (e: any) { throw e; }
+    catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1558,7 +1572,7 @@ server.registerTool(
   },
   async ({ account_number }) => {
     try { return jsonResponse(await getMarginHealth(account_number)); }
-    catch (e: any) { throw e; }
+    catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1578,7 +1592,7 @@ server.registerTool(
   },
   async ({ days, symbol, account_number }) => {
     try { return jsonResponse(await computeTradeReview({ days, symbol, accountNumber: account_number })); }
-    catch (e: any) { throw e; }
+    catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1597,7 +1611,7 @@ server.registerTool(
   },
   async ({ ref, note }) => {
     try { return jsonResponse(addTradeNote({ ref, note })); }
-    catch (e: any) { throw e; }
+    catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1613,7 +1627,7 @@ server.registerTool(
   },
   async () => {
     try { return jsonResponse(await computeHotlist()); }
-    catch (e: any) { throw e; }
+    catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1867,7 +1881,7 @@ server.registerTool(
       }
       const entries = listKnowledge();
       return jsonResponse({ count: entries.length, entries });
-    } catch (e: any) { throw e; }
+    } catch (e: any) { return mcpError(e); }
   }
 );
 
@@ -1905,7 +1919,7 @@ server.registerTool(
       }
       const rolls = listPendingRolls().map(({ block: _b, ...rest }) => rest);
       return jsonResponse({ count: rolls.length, rolls });
-    } catch (e: any) { throw e; }
+    } catch (e: any) { return mcpError(e); }
   }
 );
 

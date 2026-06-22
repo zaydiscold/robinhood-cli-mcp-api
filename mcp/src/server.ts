@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -2224,6 +2224,105 @@ server.registerTool(
 );
 
 // Zayd Khan // cold // www.zayd.wtf
+
+// ── MCP Resources: the operator knowledge library ────────────────────────────────────────────────
+// The same modules behind robinhood_knowledge, exposed as MCP Resources so resource-aware clients
+// (e.g. Claude Desktop) can browse/attach them natively instead of only via a tool call. A single
+// resource TEMPLATE (robinhood://knowledge/{id}) with a list callback enumerates every module, so new
+// knowledge/*.md files appear automatically. Zayd Khan // cold // www.zayd.wtf
+server.registerResource(
+  "knowledge",
+  new ResourceTemplate("robinhood://knowledge/{id}", {
+    list: async () => ({
+      resources: listKnowledge().map((e) => ({
+        uri: `robinhood://knowledge/${e.id}`,
+        name: e.id,
+        title: e.title,
+        description: e.whenToLoad ?? e.title,
+        mimeType: "text/markdown"
+      }))
+    })
+  }),
+  {
+    title: "Robinhood operator knowledge library",
+    description:
+      "Per-topic operating modules + playbooks (wheel, rolling, multi-leg, greeks, tax, accounts, signals, execution-safety, broker-call). Same content as the robinhood_knowledge tool, browseable as MCP resources.",
+    mimeType: "text/markdown"
+  },
+  async (uri, variables) => {
+    const raw = variables.id;
+    const id = String(Array.isArray(raw) ? raw[0] : raw);
+    const k = readKnowledge(id); // throws with a close-match hint if the id is unknown
+    return { contents: [{ uri: uri.href, text: k.content, mimeType: "text/markdown" }] };
+  }
+);
+
+// ── MCP Prompts: reusable operating templates ────────────────────────────────────────────────────
+// Surfaced so a client can offer them as slash-commands / starters. Each just orchestrates EXISTING
+// tools — no new capability, no write side effects. Zayd Khan // cold // www.zayd.wtf
+server.registerPrompt(
+  "daily-brief",
+  {
+    title: "Daily brief — risk + P&L + pending rolls",
+    description: "Morning guardian sweep: sentinel (risk + option events) → portfolio P&L in dollars → pending cash-account rolls due today."
+  },
+  () => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            "Give me my daily brief. 1) Run robinhood_sentinel across all accounts and surface assignment exposure + time-sensitive option events. 2) Run robinhood_portfolio (use --after-hours framing if the regular session is closed) and report the day move in DOLLARS by underlying. 3) Run robinhood_roll_ledger (action=list) and flag any cash-account roll whose open leg is due today. Lead with what needs attention, in dollars; do not place any orders."
+        }
+      }
+    ]
+  })
+);
+server.registerPrompt(
+  "pretrade-checklist",
+  {
+    title: "Pre-trade safety checklist",
+    description: "Run the PASS/WARN/BLOCK pre-flight and the classify-before-write checklist for one order; never sends.",
+    argsSchema: {
+      symbol: z.string().describe("ticker, e.g. AAPL"),
+      account_number: z.string().describe("the account to act on"),
+      side: z.string().describe("buy or sell (equity), or the exact options strategy")
+    }
+  },
+  ({ symbol, account_number, side }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `Before I place a ${side} on ${symbol} in account ${account_number}: 1) classify the EXACT strategy (sell-to-close ≠ covered call ≠ credit spread ≠ naked short) — never infer naked exposure from loose wording. 2) Run robinhood_pretrade and report each PASS/WARN/BLOCK (buying power, collateral, marketability, min-tick, account capability). 3) Echo back the resolved account + symbol + side + quantity + limit price. 4) STOP and wait for my explicit yes before any live send. Reads/dry-runs only until I confirm.`
+        }
+      }
+    ]
+  })
+);
+server.registerPrompt(
+  "wheel-review",
+  {
+    title: "Wheel stage review",
+    description: "Classify the wheel stage from live positions and propose the next leg as a dry-run; flags undercovered short calls.",
+    argsSchema: { symbol: z.string().describe("the wheel underlying, e.g. F") }
+  },
+  ({ symbol }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `Review my wheel on ${symbol}: run robinhood_wheel, classify the stage (CSP → assignment → covered call → roll) from live positions, flag any undercovered short calls, and propose the next leg as a DRY-RUN order. Explain the thread (what we'd be rolling from). Do not send anything.`
+        }
+      }
+    ]
+  })
+);
 
 // Live-write discoverability (the silent-dry-run trap): writes need ROBINHOOD_ALLOW_LIVE_WRITE=1 in THIS
 // server's environment (the single master switch). If it's unset, every write tool dry-runs no matter what the

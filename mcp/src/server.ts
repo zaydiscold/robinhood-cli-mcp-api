@@ -1044,7 +1044,7 @@ server.registerTool(
     try {
       // Shared engine (cancelOrder in lib.ts) — same path as the CLI `cancel` command and `panic`.
       const r = await cancelOrder({ idOrUrl: order_id, kind, liveWrite: resolveLiveFlag(liveWrite, live) });
-      return writeStatus(r, { dryRun: r.dryRun, reason: (r as any).gateReason });
+      return writeStatus(r, { dryRun: r.dryRun, reason: r.gateReason });
     } catch (e: any) { return mcpError(e); }
   }
 );

@@ -136,7 +136,7 @@ then this file. When the answer isn't obvious, the docs already have it — read
 
 Operate real Robinhood brokerage accounts from the terminal or via MCP tools.
 
-**Repo:** `github.com/zaydiscold/robinhood-cli`
+**Repo:** `github.com/zaydiscold/robinhood-cli-mcp-api`
 **Deep reference:** `AGENTS.md` in repo root — the complete API surface, worked examples, and every command. Hand that file to any agent and it's self-contained. This SKILL.md is the Hermes trigger + boot doc: quick-start, the 80/20 commands, and all the operational pitfalls learned across sessions.
 
 > This is exactly the security-research mindset — a breakthrough is a waypoint, not a finish line.

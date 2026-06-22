@@ -1,4 +1,4 @@
-# Robinhood API + MCP + CLI
+# Robinhood CLI (MCP + API)
 
 > Trading at the speed of inference.
 
@@ -35,7 +35,7 @@ robinhood please hire me this is what love for the game produces.
 It drives the account you already have, across the browser-backed brokerage API surface, with reads live by default and every write behind a dry-run/live-write gate.
 
 ```bash
-git clone https://github.com/zaydiscold/robinhood-cli.git
+git clone https://github.com/zaydiscold/robinhood-cli-mcp-api.git
 cd robinhood-cli
 pnpm install && pnpm build
 node cli/dist/index.js --help
@@ -165,7 +165,7 @@ This CLI selects routes **by URL *and* HTTP method**, so a single endpoint can c
 ### 1. Install & build
 
 ```bash
-git clone https://github.com/zaydiscold/robinhood-cli.git
+git clone https://github.com/zaydiscold/robinhood-cli-mcp-api.git
 cd robinhood-cli
 pnpm install
 pnpm build        # builds the CLI and copies the API map into dist (see "rebuild" note below)
@@ -609,9 +609,9 @@ Pattern: CLI + skill + MCP. Capture the surface once, expose it cleanly everywhe
 ## Star History
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli&type=Date" />
-  <img alt="Star history chart for zaydiscold/robinhood-cli" src="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli&type=Date" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date" />
+  <img alt="Star history chart for zaydiscold/robinhood-cli-mcp-api" src="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date" />
 </picture>
 
 ---

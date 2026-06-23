@@ -718,4 +718,19 @@ context/beliefs; the trading log = execution + intent history.
   the *why* so the agent isn't re-deriving strategy state from raw fills.
 - Public + committed → keep entries generic (account masked). **Full rules + format: SKILL.md "Trading log".**
 
+## 16. Naming convention & lineage
+
+**Convention (shared across the personal CLI repos).** The GitHub slug is `<venue>-cli-mcp-api` and the
+README H1 reads **"<Venue> CLI (MCP + API)"** — e.g. Robinhood CLI (MCP + API), Goodreads CLI (MCP + API),
+plus the AllTrails / GoDaddy / Squarespace siblings. The npm package and bin names stay
+`@zaydiscold/<venue>-cli` / `<venue>-cli`; only the GitHub slug and the README title carry the
+`(MCP + API)` branding, and GitHub auto-redirects the old slugs.
+
+**Lineage — Printing Press is a starting point, not a cage.** The CLI + skill + MCP trio pattern is
+borrowed from [Matt Van Horn's Printing Press](https://github.com/mvanhorn/cli-printing-press), and these
+repos use it as a *seed* — not a spec we only follow. The route map here is hand-extended well past
+anything a generator produced, and we may spin up separate repos to keep building on top of what's here
+rather than conforming back to the generator. The map is the product; Printing Press just gave us a good
+place to start.
+
 <!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -456,6 +456,36 @@ encode the selected expiration, strike, side, or Builder legs. Resolve those fro
 `options/chains`, `options/instruments`, `marketdata/options`, and
 `marketdata/options/strategy/quotes` before building an `options/orders/` dry-run.
 
+## 7.2 Rolling — atomic native roll is the default; kosher is cash-only
+
+`options roll-plan` (CLI) and `robinhood_options_roll_plan` (MCP) are **account-type-aware** and share
+ONE body builder (`buildAtomicRollOrderBody` + `resolveRollModel` in `lib.ts`).
+
+- **mode=auto (default):** detect the account class. **margin / IRA → ATOMIC native roll**; **cash → KOSHER**.
+- **ATOMIC native roll** = the SINGLE 2-leg `options/orders/` order the real "Roll this position" button POSTs:
+  `legs[0]`=`{side:sell,position_effect:close}` on the held contract, `legs[1]`=`{side:buy,position_effect:open}`
+  on the new one, one **net** `direction`, one **net** `price`, `form_source:"strategy_roll"`. The planner emits
+  it as `rollOrder` — that is the ONE body to send; the separate `closeOrder`/`openOrder` are informational.
+- **KOSHER roll** (cash only) = two staged single-leg orders: close today, open **next business day** with
+  settled cash (T+1 good-faith). The open leg carries `notBeforeDate` + a `roll-ledger` tip so it survives a
+  session gap. Force with `--mode kosher` / `--cash-account`; force atomic with `--mode atomic`.
+- **Net pricing:** `rollOrder.price` is the net of both legs using the per-leg pricing modes. The default close
+  `safe-sell-probe` makes the net an intentionally un-fillable probe — pass `--close-pricing-mode mid
+  --open-pricing-mode mid` for a realistic sendable net.
+
+**Native roll surface (so no page-load is needed for any symbol/date/strike), verified 2026-06-23:**
+
+| Step | Method | Endpoint | Purpose |
+|---|---|---|---|
+| 1 | GET | `options/maximum_rollable_quantity/{strategy_code}/?account_number={acct}` | rollable qty; `strategy_code={option_id}_L1` (long held leg), `_S1` (short, presumed) |
+| 2 | GET | `options/instruments/?chain_id=&expiration_dates=&type=&state=active` | enumerate destination strikes |
+| 3 | GET | `marketdata/options/?ids={…}&include_all_sessions=true` | bulk-quote the destination ladder (~40/batch) |
+| 4 | POST | `bonfire.robinhood.com/options/orders/review` | validate the 2-leg roll (soft checks → `check_overrides`) |
+| 5 | GET | `options/orders/collateral/?order={url-encoded order JSON}` | collateral the roll consumes (`{cash:{amount,direction,infinite},equities}`) |
+| 6 | POST | `options/orders/` | final submit (same 2-leg body) |
+
+Full capture, the verbatim `strategy_roll` body, and field-by-field notes: **`docs/native-option-roll-surface-2026-06-23.md`**.
+
 ---
 
 ## 8. Worked example — managing watchlists (create / rename / delete / item add+remove)

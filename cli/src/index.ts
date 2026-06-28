@@ -69,6 +69,9 @@ import {
   runPretradeChecks,
   buildOptionsClosePlan,
   accountCapabilities,
+  detectAccountClass,
+  buildAtomicRollOrderBody,
+  resolveRollModel,
   computeWheelState,
   executeBrokerageRequest,
   executeCryptoRequest,
@@ -100,7 +103,14 @@ import {
   accountFromWriteRequest,
   selectNearStrikes,
   signCryptoRequest,
-  summarizeApiMap
+  summarizeApiMap,
+  RECURRING_LIST_URL,
+  RECURRING_ITEM_URL,
+  recurringSymbol,
+  fetchRecurringSchedules,
+  setRecurringState,
+  finiteNumber,
+  optionMoney
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -811,41 +821,7 @@ brokerage
 
 program.addCommand(brokerage);
 
-// --- Recurring investments: first-class command surface ---
-// Wraps the mapped recurring_schedules routes so any agent can manage recurring
-// buys without hand-crafting a `brokerage execute` URL + body. Same engine, same gate.
-const RECURRING_LIST_URL = "https://bonfire.robinhood.com/recurring_schedules/";
-const RECURRING_ITEM_URL = "https://bonfire.robinhood.com/recurring_schedules/{0}/";
-
-function recurringSymbol(s: any): string {
-  return s?.investment_asset?.asset_symbol ?? s?.investment_target?.instrument_symbol ?? "?";
-}
-
-async function fetchRecurringSchedules(): Promise<any[]> {
-  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: RECURRING_LIST_URL });
-  const route = selectRouteByQueryAndMethod(matches, RECURRING_LIST_URL, "GET");
-  if (!route) throw new Error("recurring_schedules GET route missing from map — rebuild (AGENTS.md §3).");
-  const plan = planBrokerageRequest({ route, method: "GET", params: {}, dryRun: false });
-  const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true });
-  const parsed = JSON.parse(result.body ?? "{}");
-  return Array.isArray(parsed.results) ? parsed.results : [];
-}
-
-async function setRecurringState(
-  id: string,
-  state: "active" | "paused",
-  options: { dryRun?: boolean; liveWrite?: boolean }
-): Promise<{ status: number | string; dryRun: boolean; reason?: string }> {
-  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: RECURRING_ITEM_URL });
-  const route = selectRouteByQueryAndMethod(matches, RECURRING_ITEM_URL, "PATCH");
-  if (!route) throw new Error("recurring_schedules/{0}/ PATCH route missing from map — rebuild (AGENTS.md §3).");
-  const gate = resolveLiveWriteGate({ risk: route.risk, method: "PATCH", dryRun: Boolean(options.dryRun), liveWrite: Boolean(options.liveWrite) });
-  const effectiveDryRun = Boolean(options.dryRun) || gate.forcedDryRun;
-  const body = { state };
-  const plan = planBrokerageRequest({ route, method: "PATCH", params: { "0": id }, body, dryRun: effectiveDryRun });
-  const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: false });
-  return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason };
-}
+// --- Recurring investments: first-class command surface (imported from ./lib.js) ---
 
 function collectId(value: string, previous: string[] = []): string[] {
   return [...previous, value];
@@ -1244,14 +1220,7 @@ async function loadOpenOptionPositions(): Promise<OpenOptionPosition[]> {
 
 // fetchOptionMarks + fetchQuotes are imported from lib.ts (shared, chunked marketdata fetchers).
 
-function finiteNumber(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-function optionMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
+// finiteNumber + optionMoney are imported from lib.ts (shared math helpers).
 
 function optionPriceString(value: number): string {
   return Number.isFinite(value) ? optionMoney(value).toFixed(2) : "0.01";
@@ -1456,6 +1425,9 @@ function buildSingleLegDryRunOrder(input: {
     ref_id: input.refId
   };
 }
+
+// The atomic-roll body builder (buildAtomicRollOrderBody) + roll-model resolver (resolveRollModel)
+// live in lib.ts so the CLI and the MCP server emit the IDENTICAL strategy_roll order. Imported above.
 
 const options = new Command("options").description("Options analytics: position performance, live chains, and dry-run strategy quotes");
 
@@ -2064,7 +2036,8 @@ options
   .option("--open-pricing-mode <mode>", "natural, mid, safe-sell-probe, or safe-buy-probe", "mid")
   .option("--quantity <n>", "strategy contract quantity", "1")
   .option("--time-in-force <tif>", "Robinhood time_in_force", "gfd")
-  .option("--cash-account", "stage the open leg for the next business day after rechecking settled cash")
+  .option("--cash-account", "force the KOSHER roll (stage the open leg next business day after rechecking settled cash). Same as --mode kosher.")
+  .option("--mode <auto|atomic|kosher>", "roll model: 'atomic' = one native 2-leg strategy_roll order (margin/IRA); 'kosher' = two staged orders for cash accounts (close today, open T+1); 'auto' = detect account type and pick", "auto")
   .option("--json", "emit JSON")
   .action(
     async (opts: {
@@ -2082,6 +2055,7 @@ options
       quantity?: string;
       timeInForce?: string;
       cashAccount?: boolean;
+      mode?: "auto" | "atomic" | "kosher";
       json?: boolean;
     }) => {
       const symbol = opts.symbol.toUpperCase();
@@ -2142,12 +2116,67 @@ options
       const closeCredit = closeSide === "sell" ? closeLimit : -closeLimit;
       const openCredit = openSide === "sell" ? openLimit : -openLimit;
       const net = optionMoney(closeCredit + openCredit);
+
+      // ── Account-type-aware roll dispatch ──────────────────────────────────────────────────────
+      // The DEFAULT (mode=auto) is the ATOMIC native roll (one strategy_roll 2-leg order) used by
+      // margin/IRA accounts. The two-order KOSHER staging is ONLY correct for a CASH account (T+1
+      // settlement / good-faith rule). --cash-account forces kosher; --mode overrides detection.
+      const requested = opts.mode ?? "auto";
+      let accountClass: "cash" | "margin" | "ira" | "unverified" = "unverified";
+      let brokerageAccountType = "";
+      let capsNote = "";
+      let detectionNote = "";
+      if (requested === "auto" && !opts.cashAccount) {
+        try {
+          const det = await detectAccountClass(opts.account);
+          accountClass = det.accountClass;
+          brokerageAccountType = det.brokerageAccountType;
+          capsNote = det.caps.note;
+        } catch (e) {
+          detectionNote = `account-type detection failed (${(e as Error).message.slice(0, 60)}); defaulting to atomic — pass --mode kosher if this is a CASH account.`;
+        }
+      }
+      const resolvedMode = resolveRollModel(requested, accountClass, opts.cashAccount === true);
+
+      const atomicRollOrder =
+        resolvedMode === "atomic"
+          ? buildAtomicRollOrderBody({
+              account: opts.account,
+              closeOptionUrl,
+              openOptionUrl,
+              closeSide,
+              openSide,
+              closeLimit,
+              openLimit,
+              quantity,
+              timeInForce,
+              refId: randomUUID(),
+              checkOverrides: [],
+              accountType: brokerageAccountType || undefined,
+              closeQuote: closeBundle?.quote
+                ? { bid: Number(closeBundle.quote.bid), ask: Number(closeBundle.quote.ask), openInterest: Number(closeBundle.quote.openInterest) }
+                : undefined,
+              openQuote: openBundle?.quote
+                ? { bid: Number(openBundle.quote.bid), ask: Number(openBundle.quote.ask), openInterest: Number(openBundle.quote.openInterest) }
+                : undefined
+            })
+          : undefined;
+
       const output = {
         mode: "dry_run",
         sent: false,
+        rollModel: {
+          resolvedMode,
+          requestedMode: requested,
+          accountClass,
+          brokerageAccountType: brokerageAccountType || undefined,
+          accountCapability: capsNote || undefined,
+          detectionNote: detectionNote || undefined,
+          rule: "Atomic native roll (one strategy_roll 2-leg order) is the default for margin/IRA; the two-order kosher staging is used ONLY for cash accounts (T+1 good-faith). See docs/native-option-roll-surface-2026-06-23.md."
+        },
         strategy: {
-          id: opts.cashAccount ? "kosher-roll" : "manual-two-leg-roll",
-          title: opts.cashAccount ? "Cash-account delayed option roll" : "Manual option roll",
+          id: resolvedMode === "kosher" ? "kosher-roll" : "atomic-native-roll",
+          title: resolvedMode === "kosher" ? "Cash-account delayed option roll (two orders, T+1)" : "Atomic native roll (one strategy_roll order)",
           optionType,
           direction: net >= 0 ? "credit" : "debit"
         },
@@ -2180,28 +2209,37 @@ options
           direction: net >= 0 ? "credit" : "debit",
           note: "Computed from selected dry-run limit controls, not a fill guarantee."
         },
+        // ATOMIC mode: the single native strategy_roll order (this is the one to send for margin/IRA).
+        // KOSHER mode: two staged single-leg orders (close today, open T+1) for cash accounts.
+        rollOrder: atomicRollOrder, // present only in atomic mode
         orders: {
           closeOrder,
-          openOrder: opts.cashAccount
-            ? {
-                ...openOrder,
-                notBeforeDate: nextBusinessDay(),
-                requiresFreshChecks: [
-                  "settled cash or option buying power after the close leg",
-                  "fresh bid/ask/mark/Greeks for the open leg",
-                  "same account_number and intended symbol/expiration/strike"
-                ]
-              }
-            : openOrder
+          openOrder:
+            resolvedMode === "kosher"
+              ? {
+                  ...openOrder,
+                  notBeforeDate: nextBusinessDay(),
+                  requiresFreshChecks: [
+                    "settled cash or option buying power after the close leg",
+                    "fresh bid/ask/mark/Greeks for the open leg",
+                    "same account_number and intended symbol/expiration/strike"
+                  ]
+                }
+              : openOrder
         },
         warnings: [
-          "Dry-run only; no close or open order was sent.",
-          "For cash accounts, do not assume sell proceeds are settled for the open leg on the same day.",
+          "Dry-run only; no order was sent.",
+          resolvedMode === "atomic"
+            ? "ATOMIC roll: send the single `rollOrder` body to options/orders/ (one order, two legs). The separate closeOrder/openOrder are informational only — do NOT send them separately for an atomic roll."
+            : "KOSHER roll (cash account): close today, open NEXT business day with settled cash. Do not assume sell proceeds settle same-day (good-faith rule).",
+          ...(resolvedMode === "atomic" && closePricingMode === "safe-sell-probe"
+            ? ["rollOrder.price is the NET of both legs using the per-leg pricing modes; the default close `safe-sell-probe` makes the net an intentionally un-fillable probe. For a realistic sendable net, pass `--close-pricing-mode mid --open-pricing-mode mid`."]
+            : []),
           "Requote before any live order. A far safe-sell-probe limit is intentionally away from the market."
         ],
         // Kosher rolls outlive the session — hand back the literal ledger command so the staged
         // open leg survives into the next one (rolls.md; `roll-ledger list` at session start).
-        recordTip: opts.cashAccount
+        recordTip: resolvedMode === "kosher"
           ? `node cli/dist/index.js roll-ledger add --symbol ${symbol} --account ${opts.account} --closed "${quantity}x ${symbol} $${opts.closeStrike} ${optionType} ${opts.closeExpiration} ${closeSide}-to-close @ $${optionMoney(closeLimit)} (order-id: fill in once the close fills)" --open-intent "${openSide}-to-open ${symbol} $${opts.openStrike} ${optionType} ${opts.openExpiration} — fresh quote on the open day" --earliest ${nextBusinessDay()}`
           : undefined
       };
@@ -2210,6 +2248,8 @@ options
         return;
       }
       process.stdout.write(`${output.strategy.title} (${output.strategy.id}) — dry-run only\n`);
+      process.stdout.write(`roll model: ${resolvedMode.toUpperCase()} (account class: ${accountClass}${requested !== "auto" ? `, mode forced: ${requested}` : ""})\n`);
+      if (detectionNote) process.stderr.write(`warning: ${detectionNote}\n`);
       process.stdout.write(
         `close: ${closeSide} ${symbol} ${opts.closeExpiration} ${opts.closeStrike} ${optionType} @ ${usd(closeLimit)} (${closePricingMode})\n`
       );
@@ -2217,7 +2257,12 @@ options
         `open:  ${openSide} ${symbol} ${opts.openExpiration} ${opts.openStrike} ${optionType} @ ${usd(openLimit)} (${openPricingMode})\n`
       );
       process.stdout.write(`net: ${output.net.direction} ${usd(Math.abs(net))}\n`);
-      if (opts.cashAccount) process.stdout.write(`cash-account open leg not before: ${(output.orders.openOrder as any).notBeforeDate}\n`);
+      if (resolvedMode === "atomic" && atomicRollOrder) {
+        process.stdout.write(`\n▶ ATOMIC roll order (the ONE body to send to options/orders/ — not sent):\n${JSON.stringify(atomicRollOrder, null, 2)}\n`);
+        process.stdout.write(`\n(close/open shown separately below are informational; for an atomic roll you send only the single order above)\n`);
+      } else {
+        process.stdout.write(`cash-account open leg not before: ${(output.orders.openOrder as any).notBeforeDate}\n`);
+      }
       process.stdout.write(`\nclose order (not sent):\n${JSON.stringify(closeOrder, null, 2)}\n`);
       process.stdout.write(`\nopen order (not sent):\n${JSON.stringify(output.orders.openOrder, null, 2)}\n`);
       if (output.recordTip) {

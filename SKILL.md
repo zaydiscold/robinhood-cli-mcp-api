@@ -218,14 +218,23 @@ is gated by the single switch `ROBINHOOD_ALLOW_LIVE_WRITE=1` (dry-run by default
 - **Covered call (CC)** and **cash-secured put (CSP)** (coverage/collateral checked); covered put.
 - Straddles / strangles (long & short), butterflies, iron condors, calendars / diagonals.
 
-**Rolling** (close one leg, open another — the tax/▸cash nuance matters)
-- **Regular roll (margin):** close + open a new expiration/strike, single or staged (`options roll-plan`).
-- **Kosher roll (cash accounts):** close **now** → open **next business day** with *settled* cash (T+1),
-  to avoid good-faith violations (`options roll-plan --cash-account`). Cash can't fund the new leg same-day.
+**Rolling** (close one leg, open another — account TYPE decides the model)
+- **THE DEFAULT IS THE ATOMIC NATIVE ROLL.** When the operator says "roll an option," `options roll-plan`
+  (mode=`auto`) emits the **single 2-leg `strategy_roll` order** the real Robinhood "Roll this position"
+  button POSTs — `legs[0]`=sell/close the held contract, `legs[1]`=buy/open the new one, ONE net direction +
+  net `price`, `form_source:"strategy_roll"`. This is correct for **margin and IRA** accounts (auto-detected).
+  The emitted `rollOrder` is the ONE body to send; the separate close/open orders are informational only.
+- **KOSHER roll is ONLY for CASH accounts.** When the account is cash-type, `auto` falls back to the two-order
+  staging: close **now** → open **next business day** with *settled* cash (T+1, good-faith). Cash can't fund the
+  new leg same-day. Force it anywhere with `--mode kosher` (or `--cash-account`); force atomic with `--mode atomic`.
+  *(Why this matters: the tool used to default every roll to kosher — that was a bug; atomic is the common path.)*
 - **Roll a CSP / CC:** roll out (later expiry), up/down (strike) for a net credit; assignment- and
   ex-dividend-aware. Rolling a tested short is the core income-management move.
 - Roll enumeration: bulk-enumerate **both** the near (close) and far (open) expirations — see
   "Option UUIDs — always bulk-enumerate".
+- Native roll surface (no page-load needed for any symbol/date/strike): `options/maximum_rollable_quantity/{option_id}_L1/`
+  (rollable qty) → `options/orders/collateral/?order={json}` (collateral) → `bonfire:options/orders/review` →
+  `options/orders/`. Full capture + body schema: **`docs/native-option-roll-surface-2026-06-23.md`**.
 
 **Tax-advantaged / account-aware knowledge** (surface this when planning)
 - Account gating: **cash** (no margin/naked, T+1, good-faith) vs **margin** (rolls/spreads/shorts;
@@ -361,8 +370,11 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
    `docs/options-strategy-order-templates-2026-06-03.md` — hard templates so you can't botch the legs.
 16. **Coverage/collateral up front:** covered call needs 100 shares in the SAME account; CSP needs the
    cash. Verify before building, not after a reject.
-17. **Cash-account rolls are T+1:** close today, open next business day with settled cash
-   (`options roll-plan --cash-account`); same-day open = good-faith violation.
+17. **Roll model is account-TYPE-driven — atomic is the default, kosher is cash-only.** `options roll-plan`
+   (mode=auto) emits the ATOMIC native `strategy_roll` order (one 2-leg order) for margin/IRA; for a CASH
+   account it falls back to the KOSHER two-order staging (close today, open next business day with settled
+   cash — same-day open = good-faith violation). Never hand a cash account an atomic roll, and never make a
+   margin/IRA roll a two-day kosher trade. `--mode atomic|kosher` overrides; `--cash-account` forces kosher.
 18. **Crypto API uses separate auth** (API key + ed25519 signing), not the brokerage bearer.
 19. **PDT lifted on Robinhood — no $25k day-trade cap.** FINRA eliminated the PDT designation + $25k
    minimum (Reg Notice 26-10, 2026-06-04) and RH has implemented it; margin accounts day-trade freely
@@ -519,7 +531,7 @@ Do not overclaim first-class support. If a capability is route-map-only, say so 
 | Build web workflow URL | `robinhood-cli api-map account-url <id> --account <n> ...` | Navigation/research only; prefer direct API routes for automation |
 | Options strategy catalog | `robinhood-cli api-map options-strategies` | Lists single legs, covered calls, cash-secured/naked puts, naked calls, debit/credit spreads, straddles, strangles, butterflies, iron condors, calendar rolls |
 | Live strategy dry-run quote | `robinhood-cli options strategy-quote <id> --account <n> --symbol <s> --expiration <d> --leg leg_id=strike --json` | Resolves exact option ids, reads bid/ask/Greeks, computes natural/mid/protective limits, and fills a dry-run body; never sends |
-| Cash-account staged roll | `robinhood-cli options roll-plan --account <n> --symbol <s> --type call|put --close-expiration <d1> --close-strike <k1> --open-expiration <d2> --open-strike <k2> --cash-account --json` | Emits close-now/open-later dry-run orders with next-business-day fresh-check gates |
+| Roll an option (any account) | `robinhood-cli options roll-plan --account <n> --symbol <s> --type call|put --close-expiration <d1> --close-strike <k1> --open-expiration <d2> --open-strike <k2> [--mode auto|atomic|kosher] --json` | Auto-detects account type. ATOMIC native `strategy_roll` (one 2-leg order) for margin/IRA → emits `rollOrder`; KOSHER two-order staging (close-now/open-T+1 + fresh-check gates) for cash. Pass `--close-pricing-mode mid --open-pricing-mode mid` for a realistic net |
 | Strategy dry-run body | `robinhood-cli api-map options-strategy-plan <id> --param key=value` | Emits lookup steps + `options/orders/` body template; never sends |
 | Exact contract navigation plan | `robinhood-cli api-map options-contract-plan --account <n> --symbol <s> --expiration <d> --type call|put --side buy|sell --strike <k> --json` | Emits the tested web account shell, candidate web URL probes, API resolution steps, and dry-run single-leg handoff |
 
@@ -538,6 +550,7 @@ Primary references:
 - `trade-notes.md` (repo root) — film-study notes attached to trades; `review` joins them onto round trips by ref (`review note <ref> "<text>"` appends)
 - `hotlist.md` (repo root) — operator-maintained ticker watchlist + theses; read it on finance tasks alongside ball-knowledge.md (`hotlist` quotes it live)
 - `docs/strategy-deep-dive-the-wheel-2026-06-04.md`, `docs/strategy-deep-dive-rolling-options-2026-06-04.md` — multi-POV strategy deep-dives with dissertation-level Quant appendices
+- **`docs/native-option-roll-surface-2026-06-23.md`** — the captured native "Roll this position" API surface: atomic `strategy_roll` 2-leg body, `maximum_rollable_quantity` + `collateral` reads, and the account-type dispatch rule (atomic default / kosher-only-for-cash)
 - `docs/institutional-outlook-2026-06-04.md` — year-ahead + CMA regime synthesis (info, not mandate; refresh each cycle)
 - `docs/options-greeks-strategy-research-2026-06-02.md`
 - `docs/options-quantitative-playbook-2026-06-03.md`
@@ -923,7 +936,7 @@ deep math lives in *Options Greeks and Strategy Math* above.
 | "Price a spread / iron condor" | dry-run strategy quote | `options strategy-quote <strategy> --account <N> --symbol <S> --expiration <D> --leg ...` |
 | "Plan a named strategy" | catalog plan | `api-map options-strategies`, `api-map options-strategy-plan <id>` |
 | "Open the exact contract for me" | resolve + navigate | `api-map options-contract-links ...` (emits the API-resolved contract + chain-id deeplink) |
-| "Roll my position" | staged close+open plan | `options roll-plan ...` (cash-account aware; see below) |
+| "Roll my position" | atomic native roll (default) or kosher (cash) | `options roll-plan ...` — auto-detects account type: ATOMIC `strategy_roll` for margin/IRA, KOSHER two-order for cash. `--mode atomic\|kosher` overrides. See `docs/native-option-roll-surface-2026-06-23.md` |
 | "Where am I in the wheel / what's the next leg?" | evidence-based stage + next-leg command | `wheel [symbol] [--account <N>]` (read-only; classifies CSP→shares→CC from live positions, flags undercovered short calls, works with no position as discussion mode) |
 | "Place / cancel an order" | gated write | `brokerage execute "options/orders/" --method POST` ... then `options/orders/{0}/cancel/` (live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1`) |
 | "Change a setting (DRIP, recurring, etc.)" | gated write | `recurring pause|resume`; route-map writes via `brokerage execute --method ...` (live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1`) |
@@ -1367,7 +1380,7 @@ claude mcp add robinhood-cli -s user \
 | `robinhood_options_chain` | Live options chain around the money for a symbol (width, expiration, type filters) |
 | `robinhood_options_expirations` | List available expiration dates for an options chain |
 | `robinhood_options_strategy_quote` | Price a named options strategy (spread/condor/CSP/etc.) with bid/ask/Greeks and a dry-run order body |
-| `robinhood_options_roll_plan` | Staged cash-account roll plan: close today, open replacement next business day after settled-cash + quote checks |
+| `robinhood_options_roll_plan` | Account-type-aware roll: ATOMIC native `strategy_roll` (one 2-leg order, emits `rollOrder`) for margin/IRA by default; KOSHER two-order staging (close today / open T+1) only for cash. `mode`=auto\|atomic\|kosher |
 | `robinhood_options_close` | Build a close-order plan for an owned option contract (sell-to-close long, buy-to-close short) |
 | `robinhood_options_enumerate` | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration |
 | `robinhood_settings` | Read/toggle account settings: DRIP, trade-on-expiration, PDT-protection, lending, sweep (env-gated) |

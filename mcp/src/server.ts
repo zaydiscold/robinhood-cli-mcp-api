@@ -88,10 +88,31 @@ import {
   quoteLast,
   optionMoney,
   buildOptionsStrategyPricingSummary,
-  percentChange
+  percentChange,
+  fetchRecurringSchedules,
+  setRecurringState,
+  recurringSymbol,
+  detectAccountClass,
+  buildAtomicRollOrderBody,
+  resolveRollModel
 } from "@zaydiscold/robinhood-cli/lib";
 
 type RiskLevel = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
+
+// Branded input schemas for strict type safety and input boundary validation
+const symbolSchema = z.string().regex(/^[A-Za-z0-9.-]{1,10}$/, "Invalid symbol format");
+const symbolOptionalSchema = symbolSchema.optional();
+
+const accountNumberSchema = z.string().regex(/^\d+$/, "Account number must be numeric");
+const accountNumberOptionalSchema = accountNumberSchema.optional();
+
+const uuidSchema = z.string().uuid("Invalid UUID format");
+const uuidOptionalSchema = uuidSchema.optional();
+
+const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format");
+const dateOptionalSchema = dateSchema.optional();
+
+const strikeSchema = z.string().regex(/^\d+(\.\d+)?$/, "Strike must be a positive decimal number");
 
 const server = new McpServer(
   {
@@ -228,8 +249,8 @@ server.registerTool(
     description: "Pre-trade options context (live reads): options buying power (per account — the real gate on opens), the fee schedule, and collateral requirements. Each read degrades to a warning independently. The options/orders/review preview is a POST and stays behind the gated write path.",
     annotations: toolAnnotations(true, "sensitive-read"),
     inputSchema: z.object({
-      accountNumber: z.string().optional(),
-      chainId: z.string().optional()
+      accountNumber: accountNumberOptionalSchema,
+      chainId: uuidOptionalSchema
     })
   },
   async ({ accountNumber, chainId }) => jsonResponse(await readOptionsOrderFlow({ accountNumber, chainId }))
@@ -383,16 +404,16 @@ server.registerTool(
       "Build account-scoped web navigation candidates plus deterministic API lookup steps for one exact options contract. This does not execute an order.",
     annotations: toolAnnotations(true, "read"),
     inputSchema: z.object({
-      accountNumber: z.string(),
-      symbol: z.string(),
-      expiration: z.string(),
+      accountNumber: accountNumberSchema,
+      symbol: symbolSchema,
+      expiration: dateSchema,
       optionType: z.enum(["call", "put"]),
       side: z.enum(["buy", "sell"]),
-      strike: z.string(),
+      strike: strikeSchema,
       positionEffect: z.enum(["open", "close"]).default("open"),
-      chainId: z.string().optional(),
-      equityInstrumentId: z.string().optional(),
-      optionInstrumentId: z.string().optional(),
+      chainId: uuidOptionalSchema,
+      equityInstrumentId: uuidOptionalSchema,
+      optionInstrumentId: uuidOptionalSchema,
       source: z.string().default("robinhood-cli-contract-plan")
     })
   },
@@ -434,17 +455,17 @@ server.registerTool(
       "Build a dry-run account-pinned options navigation/webhook handoff bundle from known contract fields. This does not execute an order.",
     annotations: toolAnnotations(true, "read"),
     inputSchema: z.object({
-      accountNumber: z.string(),
-      symbol: z.string(),
-      expiration: z.string(),
+      accountNumber: accountNumberSchema,
+      symbol: symbolSchema,
+      expiration: dateSchema,
       optionType: z.enum(["call", "put"]),
       side: z.enum(["buy", "sell"]),
-      strike: z.string(),
+      strike: strikeSchema,
       positionEffect: z.enum(["open", "close"]).default("open"),
-      chainId: z.string().optional(),
-      equityInstrumentId: z.string().optional(),
-      underlyingInstrumentId: z.string().optional(),
-      optionInstrumentId: z.string().optional(),
+      chainId: uuidOptionalSchema,
+      equityInstrumentId: uuidOptionalSchema,
+      underlyingInstrumentId: uuidOptionalSchema,
+      optionInstrumentId: uuidOptionalSchema,
       optionInstrumentUrl: z.string().optional(),
       occSymbol: z.string().optional(),
       source: z.string().default("robinhood-cli-contract-links"),
@@ -538,8 +559,8 @@ server.registerTool(
       "Live-read the Robinhood stock page data for a symbol: quote, description, fundamentals, shorting/borrow, and optional account buying-power/margin context.",
     annotations: toolAnnotations(true, "sensitive-read"),
     inputSchema: z.object({
-      symbol: z.string(),
-      accountNumber: z.string().optional()
+      symbol: symbolSchema,
+      accountNumber: accountNumberOptionalSchema
     })
   },
   async ({ symbol, accountNumber }) => {
@@ -967,8 +988,8 @@ server.registerTool(
     description:
       "Place an equity buy order. Market buys are fractional, limit orders are whole shares. Dry-run by default; set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute (single env switch; liveWrite optional). Auto-resolves symbol, fetches live quote, sizes shares from dollar amount, blocks OTC/non-fractional dollar orders, dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, logs live sends to the trading log, and re-reads the order from order history after a live send (`evidence.confirmed`) — same shared engine as the CLI `buy` command.",
     inputSchema: z.object({
-      symbol: z.string(),
-      account_number: z.string(),
+      symbol: symbolSchema,
+      account_number: accountNumberSchema,
       amount: z.number().positive().optional(),
       shares: z.number().positive().optional(),
       price: z.number().positive().optional(),
@@ -1002,7 +1023,7 @@ server.registerTool(
     title: "Robinhood Sell Order",
     description: "Place an equity sell order. Market sells are fractional. Dry-run by default; set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute (single env switch; liveWrite optional). Dedups against pending same-side orders (5-min window; force=true skips), sends a ref_id for broker-level idempotency, logs live sends to the trading log, and re-reads the order from order history after a live send (`evidence.confirmed`) — same shared engine as the CLI `sell` command.",
     inputSchema: z.object({
-      symbol: z.string(), account_number: z.string(),
+      symbol: symbolSchema, account_number: accountNumberSchema,
       amount: z.number().positive().optional(), shares: z.number().positive().optional(),
       price: z.number().positive().optional(),
       liveWrite: z.boolean().optional(), live: z.boolean().optional(),
@@ -1033,7 +1054,7 @@ server.registerTool(
     title: "Robinhood Cancel Order",
     description: "Cancel a pending order by ID (kind=equity|options). Dry-run by default; ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute (single env switch; liveWrite optional). Live cancels re-read the order from order history and return `evidence` (confirmed/state) — order history is the only proof the cancel took.",
     inputSchema: z.object({
-      order_id: z.string(),
+      order_id: uuidSchema,
       kind: z.enum(["equity", "options"]).default("equity"),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional()
@@ -1056,7 +1077,7 @@ server.registerTool(
   {
     title: "Robinhood Open Orders",
     description: "All open/pending equity + options orders across ALL owned accounts (or one), symbol-resolved, with state, age, TIF, limit price, and the exact cancel command for each. Read-only; per-account read failures degrade to warnings. Same shared engine as the CLI `orders open` and the read half of `panic`.",
-    inputSchema: z.object({ account_number: z.string().optional() }),
+    inputSchema: z.object({ account_number: accountNumberOptionalSchema }),
     annotations: toolAnnotations(true, "sensitive-read")
   },
   async ({ account_number }) => {
@@ -1073,7 +1094,7 @@ server.registerTool(
     title: "Robinhood Panic Cancel-All",
     description: "PANIC: enumerate every open/pending equity + options order across ALL owned accounts (or one) and cancel each — every cancel individually env-gated (logContext 'panic cancel-all'). DRY-RUN by default: returns the full would-cancel list and sends NOTHING. A live sweep needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional), and re-reads each order from order history for evidence. Summary reports found/cancelled/failed.",
     inputSchema: z.object({
-      account_number: z.string().optional(),
+      account_number: accountNumberOptionalSchema,
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional()
     }),
@@ -1096,11 +1117,11 @@ server.registerTool(
     title: "Robinhood Pre-trade Preflight",
     description: "Pre-trade PASS/WARN/BLOCK checklist with the inputs given, each check degrading independently: account ownership + capability class (cash/margin/IRA), buying_power_breakdown (with the overnight-BP-gates-GTC-option-opens note), options buying power/fees/collateral, chain min-tick vs limit_price (the ARKG $0.05 trap), exact-contract existence, OTC/fractional guard. Marketability is a POST and is surfaced as a manual gated command — this tool NEVER sends anything. Summary: 'CLEAR TO BUILD ORDER' or 'BLOCKED: <reasons>'.",
     inputSchema: z.object({
-      account_number: z.string(),
-      symbol: z.string().optional(),
-      chain_id: z.string().optional(),
+      account_number: accountNumberSchema,
+      symbol: symbolOptionalSchema,
+      chain_id: uuidOptionalSchema,
       strike: z.number().optional(),
-      expiration: z.string().optional(),
+      expiration: dateOptionalSchema,
       option_type: z.enum(["call", "put"]).optional(),
       limit_price: z.number().optional()
     }),
@@ -1124,10 +1145,10 @@ server.registerTool(
     title: "Robinhood Options Close Plan",
     description: "Build the DRY-RUN close order for an open option position: finds the position(s) for the symbol across all owned accounts, requires account_number/strike/expiration disambiguation when several match, derives sell-to-close (long) or buy-to-close (short) from the position's direction — position_effect is ALWAYS close, never infers an open — quotes live bid/ask, computes a tick-rounded mid limit, and returns the exact order body + the gated send command. NEVER sends anything; multi-leg positions are flagged for strategy-quote/roll-plan instead.",
     inputSchema: z.object({
-      symbol: z.string(),
-      account_number: z.string().optional(),
+      symbol: symbolSchema,
+      account_number: accountNumberOptionalSchema,
       strike: z.number().optional(),
-      expiration: z.string().optional(),
+      expiration: dateOptionalSchema,
       option_type: z.enum(["call", "put"]).optional(),
       quantity: z.number().positive().optional()
     }),
@@ -1166,8 +1187,8 @@ server.registerTool(
     description:
       "Where am I in the Wheel (CSP → assignment → covered call → called away), and what's the next leg? Reads shares + short puts/calls per account from live evidence, classifies the stage, flags undercovered short calls, and returns the literal next-leg dry-run command. Works with no position (discussion mode: returns the leg-1 entry plan). Read-only; descriptive, not prescriptive. Background doc: docs/strategy-deep-dive-the-wheel-2026-06-04.md.",
     inputSchema: z.object({
-      symbol: z.string().optional(),
-      account_number: z.string().optional()
+      symbol: symbolOptionalSchema,
+      account_number: accountNumberOptionalSchema
     }),
     annotations: toolAnnotations(true, "sensitive-read")
   },
@@ -1183,7 +1204,7 @@ server.registerTool(
   {
     title: "Robinhood Options Holdings",
     description: "Every held option contract across accounts (or one), each with its option_instrument_id (UUID) + contract link, symbol, qty, average_open_price. The owned-contract map.",
-    inputSchema: z.object({ account_number: z.string().optional() }),
+    inputSchema: z.object({ account_number: accountNumberOptionalSchema }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ account_number }) => {
@@ -1213,7 +1234,7 @@ server.registerTool(
   {
     title: "Robinhood Option Inspect",
     description: "Full detail for ONE owned/known option contract by its UUID: metadata, live Greeks/quote, and fill history (side/effect/qty/price/date). Tolerates the web _L1 leg suffix. Read.",
-    inputSchema: z.object({ option_instrument_id: z.string() }),
+    inputSchema: z.object({ option_instrument_id: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(_[Ll]\d+)?$/, "Invalid option instrument ID format") }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ option_instrument_id }) => {
@@ -1245,10 +1266,10 @@ server.registerTool(
     title: "Robinhood Account Settings",
     description: "Read or toggle account settings (env-gated). action=show reads all; drip/expiration/pdt/lending/sweep toggle the corresponding setting. Writes are dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional). Cash-sweep only supports disable (enroll needs the agreement-sign flow). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
     inputSchema: z.object({
-      account_number: z.string(),
+      account_number: accountNumberSchema,
       action: z.enum(["show", "drip", "expiration", "pdt", "lending", "sweep"]),
       enable: z.boolean().optional(),
-      instrument_id: z.string().optional(),
+      instrument_id: uuidOptionalSchema,
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional()
@@ -1293,23 +1314,26 @@ server.registerTool(
   "robinhood_recurring",
   {
     title: "Robinhood Recurring Schedules",
-    description: "List or mutate recurring investment schedules (env-gated writes). action=list reads all; create/edit/end mutate. Writes dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
+    description: "List or mutate recurring investment schedules (env-gated writes). action=list reads all; create/edit/end/pause/resume mutate. Writes dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional). After any live write, append a trading-log.md entry (intent + thread); order history is the only proof a change took effect (order-evidence rule).",
     inputSchema: z.object({
-      action: z.enum(["list", "create", "edit", "end"]),
-      id: z.string().optional(),
-      account_number: z.string().optional(),
-      symbol: z.string().optional(),
+      action: z.enum(["list", "create", "edit", "end", "pause", "resume"]),
+      id: uuidOptionalSchema,
+      all: z.boolean().optional().describe("Pause or resume all matching schedules"),
+      account_number: accountNumberOptionalSchema,
+      symbol: symbolOptionalSchema,
       amount: z.number().optional(),
       frequency: z.enum(["weekly", "biweekly", "monthly"]).optional(),
-      start_date: z.string().optional(),
+      start_date: dateOptionalSchema,
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional()
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ action, id, account_number, symbol, amount, frequency, start_date, dryRun, liveWrite: liveWriteParam, live }) => {
-    await assertAccountOwned(account_number);
+  async ({ action, id, all, account_number, symbol, amount, frequency, start_date, dryRun, liveWrite: liveWriteParam, live }) => {
+    if (account_number) {
+      await assertAccountOwned(account_number);
+    }
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const LIST = "https://bonfire.robinhood.com/recurring_schedules/";
     const ITEM = "https://bonfire.robinhood.com/recurring_schedules/{0}/";
@@ -1324,6 +1348,28 @@ server.registerTool(
       const body = { account_number, amount: { amount: Number(amount).toFixed(2), currency_code: "USD" }, frequency: frequency ?? "weekly", investment_asset: { asset_id: inst.id, asset_symbol: inst.symbol, asset_type: "equity" }, source_of_funds: "buying_power", start_date: start_date ?? new Date(Date.now() + 86400000).toISOString().slice(0, 10), ref_id: randomUUID() };
       const r = await gatedBrokerageWrite({ url: LIST, method: "POST", body, dryRun, liveWrite });
       return writeStatus(r, { dryRun: r.dryRun, reason: r.reason });
+    }
+    if (action === "pause" || action === "resume") {
+      const desired = action === "resume" ? "active" : "paused";
+      if (all) {
+        const schedules = await fetchRecurringSchedules();
+        let pool = schedules.filter((s) => (desired === "active" ? s.state !== "active" : s.state === "active"));
+        if (account_number) pool = pool.filter((s) => s.account_number === account_number);
+        if (pool.length === 0) {
+          return jsonResponse({ message: `Nothing to ${action} (no matching schedules).` });
+        }
+        const results: Array<{ symbol: string; id: string; status: number | string; mode: string; reason?: string }> = [];
+        for (const s of pool) {
+          const r = await setRecurringState(s.id, desired, { dryRun, liveWrite });
+          results.push({ symbol: recurringSymbol(s), id: s.id, status: r.status, mode: r.dryRun ? "dry-run" : "live", reason: r.reason });
+        }
+        const isDryRun = results.some((r) => r.mode === "dry-run");
+        return writeStatus({ results }, { dryRun: isDryRun });
+      } else {
+        if (!id) throw new Error(`${action} needs a schedule id or all: true.`);
+        const r = await setRecurringState(id, desired, { dryRun, liveWrite });
+        return writeStatus(r, { dryRun: r.dryRun, reason: r.reason });
+      }
     }
     if (!id) throw new Error(`${action} needs a schedule id.`);
     let body: unknown;
@@ -1369,7 +1415,7 @@ server.registerTool(
   {
     title: "Robinhood Transaction History",
     description: "Unified transaction history (newest first): equity orders + options orders + crypto (nummus) + ACH transfers over a day window — the SAME shared engine as the CLI `history` command. Order history is the source of truth for whether a trade happened (see the order-evidence rule). Pass `days` to widen the window (default 3) and `account_number` to scope equity orders.",
-    inputSchema: z.object({ account_number: z.string().optional(), days: z.number().int().positive().default(3), limit: z.number().default(20) }),
+    inputSchema: z.object({ account_number: accountNumberOptionalSchema, days: z.number().int().positive().default(3), limit: z.number().default(20) }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ account_number, days, limit }) => {
@@ -1397,7 +1443,7 @@ server.registerTool(
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       list: z.string(),
-      symbols: z.array(z.string()).min(1),
+      symbols: z.array(symbolSchema).min(1),
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional()
@@ -1421,7 +1467,7 @@ server.registerTool(
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       list: z.string(),
-      symbols: z.array(z.string()).min(1),
+      symbols: z.array(symbolSchema).min(1),
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional()
@@ -1483,7 +1529,7 @@ server.registerTool(
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       list: z.string(),
-      account_number: z.string(),
+      account_number: accountNumberSchema,
       amount: z.number().positive().default(1),
       limit: z.number().int().positive().optional(),
       delayMs: z.number().int().nonnegative().optional(),
@@ -1507,7 +1553,7 @@ server.registerTool(
   {
     title: "Robinhood Options Enumerate",
     description: "Bulk-enumerate EVERY option contract (strike + option_instrument_id + desktop link) for a symbol/expiration. Option UUIDs are random v4 — enumeration is the ONLY way to resolve them; this is the canonical UUID resolver before quoting/ordering or inspecting.",
-    inputSchema: z.object({ symbol: z.string(), expiration: z.string().optional(), type: z.enum(["call", "put", "both"]).default("both") }),
+    inputSchema: z.object({ symbol: symbolSchema, expiration: dateOptionalSchema, type: z.enum(["call", "put", "both"]).default("both") }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ symbol, expiration, type }) => {
@@ -1535,7 +1581,7 @@ server.registerTool(
     title: "Robinhood Dividends",
     description:
       "Dividend income engine across ALL owned accounts (or one): all-time/YTD/last-12-months totals in DOLLARS, per-symbol cadence detection (weekly/monthly/quarterly/semiannual/annual via median payable-date gap), upcoming payouts, last 12 months by month, and PROJECTED income at every granularity ($/day · $/wk · $/mo · $/qtr · $/yr) from CURRENTLY HELD symbols only (cross-checked against nonzero positions so sold payers don't project). Math is done in-engine — do not hand-compute cadence or annualization. Same shared engine as the CLI `dividends` command. Live read; no gate.",
-    inputSchema: z.object({ account_number: z.string().optional(), symbol: z.string().optional() }),
+    inputSchema: z.object({ account_number: accountNumberOptionalSchema, symbol: symbolOptionalSchema }),
     annotations: toolAnnotations(true, "sensitive-read")
   },
   async ({ account_number, symbol }) => {
@@ -1551,7 +1597,7 @@ server.registerTool(
     title: "Robinhood Documents",
     description:
       "List account documents (account statements, trade confirms, 1099/1099_crypto/1099r_roth/5498_roth tax forms) across all accounts with their download_urls. LIST ONLY — this tool never writes files; hand the download_url to the operator or use the CLI `documents download` for local PDFs. type is PREFIX-matched ('1099' catches every 1099 variant — the tax-season one-shot is type=1099 + year=2025). year is the TAX year for tax forms (a 1099 dated Feb 2026 is tax year 2025) and the calendar year otherwise. Live read; no gate.",
-    inputSchema: z.object({ type: z.string().optional(), year: z.string().optional(), account_number: z.string().optional() }),
+    inputSchema: z.object({ type: z.string().optional(), year: z.string().optional(), account_number: accountNumberOptionalSchema }),
     annotations: toolAnnotations(true, "sensitive-read")
   },
   async ({ type, year, account_number }) => {
@@ -1567,7 +1613,7 @@ server.registerTool(
     title: "Robinhood Margin Health",
     description:
       "Margin health per account: am I borrowing, how much, at what rate, billed when — amount borrowed, margin interest rate %, next billing date, margin available, buying power with margin, projected intraday BP. Scans every owned account when account_number is omitted; accounts without margin data degrade silently into `skipped`. Same shared engine as the CLI `margin` command. Live read; no gate.",
-    inputSchema: z.object({ account_number: z.string().optional() }),
+    inputSchema: z.object({ account_number: accountNumberOptionalSchema }),
     annotations: toolAnnotations(true, "sensitive-read")
   },
   async ({ account_number }) => {
@@ -1585,8 +1631,8 @@ server.registerTool(
       "Film-study mode: pull FILLED equity + options orders across owned accounts in the window, FIFO-pair entries→exits per contract/symbol, and return per-round-trip DOLLAR outcomes (entryUsd, exitUsd, realizedPnlUsd, holdDays, win/loss) plus a summary (winners/losers, winRatePct, totalRealizedUsd, best/worst trade, avgHoldDays). Unmatchable legs (still open / opened pre-window / partial) come back flagged openLeg:true, never silently dropped. Operator notes from trade-notes.md attach to matching trades by ref (order id or symbol). Math is done in-engine — do not hand-compute P&L or win rates. Same shared engine as the CLI `review` command. Live read; no gate.",
     inputSchema: z.object({
       days: z.number().int().min(1).max(3650).default(90),
-      symbol: z.string().optional(),
-      account_number: z.string().optional()
+      symbol: symbolOptionalSchema,
+      account_number: accountNumberOptionalSchema
     }),
     annotations: toolAnnotations(true, "sensitive-read")
   },
@@ -1639,7 +1685,7 @@ server.registerTool(
     description:
       "Combined income engine: dividends + option premium net of debits from fill evidence, broken down by month, with TTM total, monthly average, and projected annual run-rate. Math is done in-engine — do not hand-compute. Same shared engine as the CLI `income` command.\n\n⚠️ Edge case: Sell-to-open credits that result in assignment (exercised short options) have no buy-to-close order on record — the premium may represent a cost-basis adjustment on assigned shares rather than standalone income. Cross-check against position history for stock acquired near option expiration dates. This caveat is surfaced in the response's `notes` and `warnings` fields. Live read; no gate.",
     inputSchema: z.object({
-      account_number: z.string().optional(),
+      account_number: accountNumberOptionalSchema,
       year: z.number().int().optional()
     }),
     annotations: toolAnnotations(true, "sensitive-read")
@@ -1658,7 +1704,7 @@ server.registerTool(
     description:
       "Portfolio historical performance — the equity curve over time: account value + return across day/week/month/3month/ytd/year/all spans, from the desktop app's own chart route. Per-account (RH exposes no all-accounts performance route — sum client-side for a portfolio-wide curve); each point carries timestamp, dollar value, and return %. Same shared engine as the CLI `performance` command. Live read; no gate.",
     inputSchema: z.object({
-      account_number: z.string().optional(),
+      account_number: accountNumberOptionalSchema,
       span: z.enum(["day", "week", "month", "3month", "ytd", "year", "all"]).optional(),
       include_all_hours: z.boolean().optional()
     }),
@@ -1678,7 +1724,7 @@ server.registerTool(
     description:
       "Portfolio risk scanner: max loss per position (debit paid for longs, undefined for naked shorts), ITM assignment exposure by expiration, undercovered short legs, margin-call distance (borrowed/equity %), and concentration warnings (>20% in one symbol). Same shared engine as the CLI `risk` command. Live read; no gate.",
     inputSchema: z.object({
-      account_number: z.string().optional()
+      account_number: accountNumberOptionalSchema
     }),
     annotations: toolAnnotations(true, "sensitive-read")
   },
@@ -1696,7 +1742,7 @@ server.registerTool(
     description:
       "Greeks scenario calculator: apply spot ±X%, IV ±N%, T - N days, rate ±P% to current portfolio Greeks (from live marketdata/options/) and compute estimated P&L per position and total via Taylor approximation (ΔP ≈ delta·ΔS + ½gamma·ΔS² + theta·Δt + vega·Δσ + rho·Δr). Same shared engine as the CLI `whatif` command. Live read; no gate.",
     inputSchema: z.object({
-      account_number: z.string().optional(),
+      account_number: accountNumberOptionalSchema,
       spot_pct: z.number().default(0),
       iv_pct: z.number().default(0),
       days: z.number().int().default(0),
@@ -1718,7 +1764,7 @@ server.registerTool(
     description:
       "Event calendar: upcoming option expirations (from open positions), ex-dividend dates (for held stocks from dividends/), and earnings dates (from fundamentals/ when available). Sorted by date with assignment-risk flags for ITM short calls near ex-div dates. Same shared engine as the CLI `calendar` command. Live read; no gate.",
     inputSchema: z.object({
-      account_number: z.string().optional(),
+      account_number: accountNumberOptionalSchema,
       days: z.number().int().min(1).max(365).default(30)
     }),
     annotations: toolAnnotations(true, "read")
@@ -1738,7 +1784,7 @@ server.registerTool(
   {
     title: "Robinhood Per-Ticker News",
     description: "Latest news for a ticker (source + headline + clickable link + published date). The 'confirmer' layer in the signal-sourcing doctrine — slow but authoritative for discrete/binary events. Same engine as the CLI `news` command. Live read; no gate.",
-    inputSchema: z.object({ symbol: z.string(), limit: z.number().int().min(1).max(50).default(15) }),
+    inputSchema: z.object({ symbol: symbolSchema, limit: z.number().int().min(1).max(50).default(15) }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ symbol, limit }) => {
@@ -1752,7 +1798,7 @@ server.registerTool(
   {
     title: "Robinhood Analyst Ratings",
     description: "Analyst ratings for a ticker: buy/hold/sell counts, a derived consensus, and the rationale texts. Institutional sentiment signal (resolves symbol → instrument → midlands/ratings/). Same engine as the CLI `ratings` command. Live read; no gate.",
-    inputSchema: z.object({ symbol: z.string(), limit: z.number().int().min(1).max(50).default(12) }),
+    inputSchema: z.object({ symbol: symbolSchema, limit: z.number().int().min(1).max(50).default(12) }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ symbol, limit }) => {
@@ -1766,7 +1812,7 @@ server.registerTool(
   {
     title: "Robinhood Earnings Calendar",
     description: "Earnings history/calendar for a ticker: per-quarter EPS estimate vs actual (surprise), report date + timing (am/pm), and the earnings-call replay link. The binary-event-awareness / assignment-risk tier. Same engine as the CLI `earnings` command. Live read; no gate.",
-    inputSchema: z.object({ symbol: z.string(), limit: z.number().int().min(1).max(40).default(8) }),
+    inputSchema: z.object({ symbol: symbolSchema, limit: z.number().int().min(1).max(40).default(8) }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ symbol, limit }) => {
@@ -1794,7 +1840,7 @@ server.registerTool(
   {
     title: "Robinhood Options Events",
     description: "Options corporate events across owned accounts (or one): expirations, assignments, exercises — the feed the web UI uses for per-position options P&L + assignment tracking, with best-effort symbol enrichment. Same engine as the CLI `options-events` command. Live read; no gate.",
-    inputSchema: z.object({ account_number: z.string().optional(), limit: z.number().int().min(1).max(100).default(25) }),
+    inputSchema: z.object({ account_number: accountNumberOptionalSchema, limit: z.number().int().min(1).max(100).default(25) }),
     annotations: toolAnnotations(true, "read")
   },
   async ({ account_number, limit }) => {
@@ -1811,7 +1857,7 @@ server.registerTool(
     description:
       "Concentration & Net Greeks: concentration by underlying (% of portfolio per symbol, flag >20%), plus portfolio-wide net Greeks (delta/gamma/theta/vega/rho) summed across all equity and option positions. Same shared engine as the CLI `exposure` command. Live read; no gate.",
     inputSchema: z.object({
-      account_number: z.string().optional()
+      account_number: accountNumberOptionalSchema
     }),
     annotations: toolAnnotations(true, "read")
   },
@@ -1829,7 +1875,7 @@ server.registerTool(
     description:
       "Autopilot: scan all open short options approaching expiration (within N days, default 7), compute potential roll candidates (same underlying, next weekly/monthly expiration, equal or better strike for credit), and emit dry-run order bodies. Read-only — never places orders. Same shared engine as the CLI `autopilot` command.",
     inputSchema: z.object({
-      account_number: z.string().optional(),
+      account_number: accountNumberOptionalSchema,
       days: z.number().int().min(1).max(30).default(7)
     }),
     annotations: toolAnnotations(true, "read")
@@ -1848,7 +1894,7 @@ server.registerTool(
     description:
       "Daily risk + event guardian: composes computeRisk (portfolio risk scan — positions, concentration, margin, Greeks exposure) + computeOptionsEvents (assignment, exercise, expiration history). Zero CDP — safe for scheduled daily scans. Returns a consolidated report with risk scan, upcoming events, and warnings. Live read; no gate.",
     inputSchema: z.object({
-      account_number: z.string().optional(),
+      account_number: accountNumberOptionalSchema,
       event_lookahead_days: z.number().int().min(1).max(30).default(7)
     }),
     annotations: toolAnnotations(true, "sensitive-read")
@@ -1999,8 +2045,8 @@ server.registerTool(
     description:
       "Print the option chain around the money for a symbol (live read). Fetches the underlying spot, the nearest expiration, and all strikes for the selected type, then narrows to a centered window using selectNearStrikes() and classifies each strike as ITM/ATM/OTM via classifyMoneyness(). Returns the chain with live bid/ask/mark, delta, IV%, volume, OI, and moneyness per strike. Same shared engine as the CLI `options chain` command.",
     inputSchema: z.object({
-      symbol: z.string(),
-      expiration: z.string().optional(),
+      symbol: symbolSchema,
+      expiration: dateOptionalSchema,
       type: z.enum(["call", "put"]).default("call"),
       width: z.number().int().min(0).max(50).default(8)
     }),
@@ -2107,7 +2153,7 @@ server.registerTool(
   {
     title: "Robinhood Options Roll Plan",
     description:
-      "Build a dry-run option roll plan: resolve a close leg and a later open leg by symbol/expiration/strike/type, fetch live bid/ask, compute limit prices per the pricing mode, and emit two dry-run order bodies (close + open) with net credit/debit. For cash accounts, the open leg is staged with a notBeforeDate and a kosher-roll ledger tip. NEVER sends orders — this is a read-only planner. Same shared engine as the CLI `options roll-plan` command.",
+      "Build a dry-run option roll plan. DEFAULT (mode=auto) emits the ATOMIC native roll — the SINGLE 2-leg `strategy_roll` order the real Robinhood 'Roll this position' button POSTs (verified) — for margin/IRA accounts. For CASH accounts it falls back to the KOSHER two-order staging (close today, open next business day with a notBeforeDate + ledger tip; T+1 good-faith). mode=atomic|kosher forces the model; cash_account=true forces kosher. Resolves both legs, fetches live bid/ask, computes limit prices per pricing mode, returns the order body/bodies + net credit/debit. NEVER sends orders. Same shared builder as the CLI `options roll-plan`.",
     inputSchema: z.object({
       account_number: z.string(),
       symbol: z.string(),
@@ -2122,11 +2168,12 @@ server.registerTool(
       open_pricing_mode: z.enum(["natural", "mid", "safe-sell-probe", "safe-buy-probe"]).default("mid"),
       quantity: z.number().int().positive().default(1),
       time_in_force: z.enum(["gfd", "gtc"]).default("gfd"),
-      cash_account: z.boolean().default(false)
+      cash_account: z.boolean().default(false),
+      mode: z.enum(["auto", "atomic", "kosher"]).default("auto")
     }),
     annotations: toolAnnotations(true, "read")
   },
-  async ({ account_number, symbol, type, close_expiration, close_strike, open_expiration, open_strike, close_side, open_side, close_pricing_mode, open_pricing_mode, quantity, time_in_force, cash_account }) => {
+  async ({ account_number, symbol, type, close_expiration, close_strike, open_expiration, open_strike, close_side, open_side, close_pricing_mode, open_pricing_mode, quantity, time_in_force, cash_account, mode }) => {
     try {
       const sym = symbol.toUpperCase();
       const fn = finiteNumber;
@@ -2176,7 +2223,7 @@ server.registerTool(
       if (!Number.isFinite(closeLimit)) throw new Error(`Could not compute close-leg limit from ${close_pricing_mode}.`);
       if (!Number.isFinite(openLimit)) throw new Error(`Could not compute open-leg limit from ${open_pricing_mode}.`);
 
-      // Build dry-run order bodies
+      // Build the staged single-leg dry-run order bodies (used by the kosher path; informational in atomic).
       const closeOrder = {
         account_number,
         legs: [{ option_id: closeOpt.id, side: close_side, position_effect: "close", ratio_quantity: quantity }],
@@ -2203,12 +2250,61 @@ server.registerTool(
       const openCredit = open_side === "sell" ? openLimit : -openLimit;
       const net = optionMoney(closeCredit + openCredit);
 
+      // ── Account-type-aware roll dispatch (parity with the CLI) ─────────────────────────────────
+      // DEFAULT atomic native roll for margin/IRA; kosher two-order staging ONLY for cash.
+      let accountClass: "cash" | "margin" | "ira" | "unverified" = "unverified";
+      let brokerageAccountType = "";
+      let capsNote = "";
+      let detectionNote = "";
+      if (mode === "auto" && !cash_account) {
+        try {
+          const det = await detectAccountClass(account_number);
+          accountClass = det.accountClass;
+          brokerageAccountType = det.brokerageAccountType;
+          capsNote = det.caps.note;
+        } catch (e: any) {
+          detectionNote = `account-type detection failed (${String(e?.message ?? e).slice(0, 60)}); defaulting to atomic — pass mode='kosher' if this is a CASH account.`;
+        }
+      }
+      const resolvedMode = resolveRollModel(mode, accountClass, cash_account === true);
+
+      const closeUrl = `https://api.robinhood.com/options/instruments/${closeOpt.id}/`;
+      const openUrl = `https://api.robinhood.com/options/instruments/${openOpt.id}/`;
+      const rollOrder =
+        resolvedMode === "atomic"
+          ? buildAtomicRollOrderBody({
+              account: account_number,
+              closeOptionUrl: closeUrl,
+              openOptionUrl: openUrl,
+              closeSide: close_side,
+              openSide: open_side,
+              closeLimit,
+              openLimit,
+              quantity: String(quantity),
+              timeInForce: time_in_force,
+              refId: randomUUID(),
+              checkOverrides: [],
+              accountType: brokerageAccountType || undefined,
+              closeQuote: { bid: closeBid, ask: closeAsk, openInterest: finiteNumber(closeMark.open_interest) },
+              openQuote: { bid: openBid, ask: openAsk, openInterest: finiteNumber(openMark.open_interest) }
+            })
+          : undefined;
+
       return jsonResponse({
         mode: "dry_run",
         sent: false,
+        rollModel: {
+          resolvedMode,
+          requestedMode: mode,
+          accountClass,
+          brokerageAccountType: brokerageAccountType || undefined,
+          accountCapability: capsNote || undefined,
+          detectionNote: detectionNote || undefined,
+          rule: "Atomic native roll (one strategy_roll 2-leg order) is the default for margin/IRA; the two-order kosher staging is used ONLY for cash accounts (T+1 good-faith). See docs/native-option-roll-surface-2026-06-23.md."
+        },
         strategy: {
-          id: cash_account ? "kosher-roll" : "manual-two-leg-roll",
-          title: cash_account ? "Cash-account delayed option roll" : "Manual option roll",
+          id: resolvedMode === "kosher" ? "kosher-roll" : "atomic-native-roll",
+          title: resolvedMode === "kosher" ? "Cash-account delayed option roll (two orders, T+1)" : "Atomic native roll (one strategy_roll order)",
           optionType: type,
           direction: net >= 0 ? "credit" : "debit"
         },
@@ -2216,8 +2312,18 @@ server.registerTool(
         closeLeg: { side: close_side, positionEffect: "close", strike: close_strike, expiration: close_expiration, pricingMode: close_pricing_mode, limitPrice: closeLimit },
         openLeg: { side: open_side, positionEffect: "open", strike: open_strike, expiration: open_expiration, pricingMode: open_pricing_mode, limitPrice: openLimit },
         net: { estimatedLimitNet: net, direction: net >= 0 ? "credit" : "debit", note: "Computed from selected dry-run limit controls, not a fill guarantee." },
+        rollOrder, // present only in atomic mode — the ONE body to send to options/orders/
         orders: { closeOrder, openOrder: openOrderBody },
-        warnings: ["Dry-run only; no orders were sent.", "Requote before any live order.", cash_account ? "Cash account: open-leg notional depends on settled cash after the close leg fills (T+1)." : ""].filter(Boolean)
+        warnings: [
+          "Dry-run only; no orders were sent.",
+          resolvedMode === "atomic"
+            ? "ATOMIC roll: send the single `rollOrder` body to options/orders/ (one order, two legs). closeOrder/openOrder are informational only — do NOT send them separately for an atomic roll."
+            : "KOSHER roll (cash account): open-leg notional depends on settled cash after the close leg fills (T+1); stage the open leg next business day.",
+          ...(resolvedMode === "atomic" && close_pricing_mode === "safe-sell-probe"
+            ? ["rollOrder.price is the NET of both legs; the default close `safe-sell-probe` makes it an un-fillable probe. For a realistic sendable net, pass close_pricing_mode='mid' and open_pricing_mode='mid'."]
+            : []),
+          "Requote before any live order."
+        ]
       });
     } catch (e: any) { return jsonResponse({ error: e.message }); }
   }

@@ -25,36 +25,46 @@ sell-to-close. Then mirror-open the new leg (`position_effect: open`).
 **Net credit** = paid to extend (never adds capital at risk to stay open). **Net debit** = paying
 to delay — a flag, not a forbidden move (see "when rolling is the wrong move").
 
-## Regular roll vs the KOSHER ROLL
+## ATOMIC native roll (the DEFAULT) vs the KOSHER ROLL (cash only)
 
-**Margin account:** roll same-day, either as one atomic combo ticket (one `options/orders/` POST
-with mixed `position_effect` legs) or as two orders (close, then open).
+`roll-plan` is **account-type-aware** (`--mode auto`, the default). It detects the account class and
+picks the model — **do not** default everything to kosher (that was a bug, fixed 2026-06-23).
 
-**Cash account — the kosher roll (mandatory):** options proceeds settle **T+1**. Funding a
-same-day open on unsettled cash = **good-faith violation** (3/yr → 90-day settled-only
-restriction). The model is: **close today → settle overnight → open next business day**, with the
-open re-quoted and re-gated as a fresh task.
+**Margin / IRA → ATOMIC native roll (default).** One `options/orders/` order with TWO legs — exactly
+what the real "Roll this position" button POSTs: `legs[0]`=`{side:sell,position_effect:close}` on the
+held contract, `legs[1]`=`{side:buy,position_effect:open}` on the new one, ONE **net** `direction`,
+ONE **net** `price`, `form_source:"strategy_roll"`. `roll-plan` emits this as **`rollOrder`** — the ONE
+body to send; the `closeOrder`/`openOrder` it also prints are informational only.
 
 ```bash
 node cli/dist/index.js options roll-plan --account <N> --symbol <SYM> --type call \
   --close-expiration <OLD_D> --close-strike <OLD_K> \
   --open-expiration <NEW_D> --open-strike <NEW_K> \
-  --cash-account --json
+  --close-pricing-mode mid --open-pricing-mode mid --json   # → rollOrder (strategy_roll)
 ```
 
-What `roll-plan` does: resolves both contracts, quotes them live, computes the net, and emits
-**two dry-run single-leg orders** (`closeOrder` + `openOrder`) — never a combo — so cash staging
-is expressible and each leg prices independently. Defaults: close `safe-sell-probe`, open `mid`
-(dry-run controls — **requote at natural/mid before any live order**; the dry-run net is not a
-fill estimate). With `--cash-account` the open carries `notBeforeDate = next business day` plus
-`requiresFreshChecks` (settled cash/BP after the close, fresh bid/ask/Greeks, same
-account/symbol/expiration/strike).
+**Cash account → KOSHER roll (mandatory, auto-selected).** Options proceeds settle **T+1**. Funding a
+same-day open on unsettled cash = **good-faith violation** (3/yr → 90-day settled-only restriction). The
+model is: **close today → settle overnight → open next business day**, the open re-quoted and re-gated as
+a fresh task. `auto` selects this when the account is cash; force it anywhere with `--mode kosher`
+(or `--cash-account`). The open carries `notBeforeDate = next business day` + `requiresFreshChecks`
+(settled cash/BP after the close, fresh bid/ask/Greeks, same account/symbol/expiration/strike), and a
+`roll-ledger` tip so the staged open survives a session gap.
 
-**Known gap:** `nextBusinessDay()` skips weekends but **not market holidays** — sanity-check the
-staged `notBeforeDate` against the exchange calendar.
+**Net pricing (both modes):** the net uses the per-leg pricing modes. Default close `safe-sell-probe`
+makes the net an intentionally un-fillable probe — pass `--close-pricing-mode mid --open-pricing-mode
+mid` for a realistic sendable net. The dry-run net is not a fill estimate; requote before any live order.
 
-**Two-order rolls are not atomic.** Confirm the close **filled** in order history
-(`options/orders/` — the only proof, failure mode #20) before relying on the open.
+**Known gap:** `nextBusinessDay()` skips weekends but **not market holidays** — sanity-check the staged
+`notBeforeDate` against the exchange calendar.
+
+**Evidence rule:** for a KOSHER roll, confirm the close **filled** in order history (`options/orders/` —
+the only proof, failure mode #20) before relying on the open. An ATOMIC roll is one order: it fills or it
+doesn't, atomically.
+
+**Native roll surface (no page-load needed):** `options/maximum_rollable_quantity/{option_id}_L1/` →
+`options/orders/collateral/?order={json}` → `bonfire:options/orders/review` → `options/orders/`. Full
+captured body + field notes: `docs/native-option-roll-surface-2026-06-23.md`.
 
 ## Rolling CSPs and CCs for credit
 

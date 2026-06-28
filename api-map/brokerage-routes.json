@@ -8386,16 +8386,78 @@
     "categories": [
       "options",
       "trading",
-      "preview"
+      "preview",
+      "roll"
     ],
     "risk": "write-safe",
     "methods": [
       "POST"
     ],
-    "source": "settings-capture-2026-06-03",
-    "summary": "Server-side options order REVIEW/validation, no placement. Multi-leg body {account,direction,legs[{option,position_effect,ratio_quantity,side}],client_ask/bid_at_submission,form_source}.",
+    "source": "settings-capture-2026-06-03; cdp-2026-06-23-googl-native-roll (atomic 2-leg roll body verified; blocked at $0 BP, nothing placed)",
+    "summary": "Server-side options order REVIEW/validation, no placement. This is the gate the NATIVE 'Roll this position' button POSTs to. A roll is ONE atomic 2-leg order: leg[0]={side:sell,position_effect:close} on the held contract, leg[1]={side:buy,position_effect:open} on the new contract, a single NET direction + NET price, and form_source:'strategy_roll'. After review it is collateral-checked (options/orders/collateral/) then submitted to api.robinhood.com/options/orders/.",
+    "bodyKeys": [
+      "account",
+      "direction",
+      "price",
+      "quantity",
+      "type",
+      "trigger",
+      "time_in_force",
+      "ref_id",
+      "form_source",
+      "check_overrides",
+      "client_bid_at_submission",
+      "client_ask_at_submission",
+      "market_hours",
+      "override_day_trade_checks",
+      "legs",
+      "metadata",
+      "order_path_experiments"
+    ],
+    "legKeys": [
+      "side",
+      "position_effect",
+      "ratio_quantity",
+      "option",
+      "option_id",
+      "leg_metadata.option_quote{bid_price,ask_price,bid_size,ask_size,open_interest}"
+    ],
+    "rollNotes": "form_source MUST be 'strategy_roll' for a roll. direction is the NET of both legs (metadata.is_direction_explicit:false lets RH infer). price is the NET strategy limit. check_overrides acknowledges soft warnings, e.g. 'override_wide_bid_ask_spread'. leg_metadata + client_*_at_submission + metadata + order_path_experiments are client telemetry/soft-check context, NOT core (the collateral pre-check re-serializes with only account,check_overrides,direction,form_source,legs[{option,position_effect,ratio_quantity,side}],market_hours,override_day_trade_checks,price,quantity,ref_id,time_in_force,trigger,type). Full capture: docs/native-option-roll-surface-2026-06-23.md.",
     "fields": [],
     "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/options/maximum_rollable_quantity/{strategy_code}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "roll"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-23-googl-native-roll (observed + live-verified response)",
+    "seenOn": [
+      "option-roll-builder"
+    ],
+    "summary": "How many contracts of a held option leg can be rolled. strategy_code = {option_instrument_id}_L1 for a LONG held leg, {option_instrument_id}_S1 for a SHORT held leg (presumed from contract long_strategy_code/short_strategy_code; _S1 not yet live-verified). The native roll builder calls this on load. available_quantity is the rollable cap.",
+    "queryKeys": [
+      "account_number"
+    ],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [
+      "account_number",
+      "total_quantity",
+      "pending_closing_quantity",
+      "available_quantity",
+      "strategy_type",
+      "strategy_code"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "object"
   },
   {
     "url": "https://bonfire.robinhood.com/options/orders/marketability/",
@@ -8537,9 +8599,10 @@
     "methods": [
       "GET"
     ],
-    "source": "cdp-2026-06-04-dram-option-order-flow (observed; collateral pre-check, order passed url-encoded in ?order={json})",
+    "source": "cdp-2026-06-04-dram-option-order-flow; cdp-2026-06-23-googl-native-roll (response live-verified; collateral pre-check, full order passed url-encoded in ?order={json})",
     "seenOn": [
-      "option-order-ticket"
+      "option-order-ticket",
+      "option-roll-builder"
     ],
     "queryKeys": [
       "order"
@@ -8547,30 +8610,16 @@
     "requestTypes": [
       "XHR"
     ],
+    "summary": "Collateral (cash/equity) a multi-leg options order — including a roll — will consume. Takes the FULL order JSON url-encoded as ?order=. For a debit roll in an IRA with coverage this can be $0. Response: {account_number, cash:{amount,direction,infinite}, equities:[]}.",
     "fields": [
       "account_number",
-      "chain_id",
-      "chain_symbol",
-      "closing_strategy",
-      "created_at",
-      "direction",
-      "id",
-      "legs",
-      "net_amount",
-      "opening_strategy",
-      "premium",
-      "price",
-      "processed_premium",
-      "processed_quantity",
-      "quantity",
-      "ref_id",
-      "state",
-      "time_in_force",
-      "trigger",
-      "type",
-      "updated_at"
+      "cash",
+      "cash.amount",
+      "cash.direction",
+      "cash.infinite",
+      "equities"
     ],
-    "fieldsSource": "inferred",
+    "fieldsSource": "verified",
     "fieldsShape": "object"
   },
   {

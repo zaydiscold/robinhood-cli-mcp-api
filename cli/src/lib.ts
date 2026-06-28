@@ -3844,6 +3844,155 @@ export function accountCapabilities(account: Record<string, any>): {
   };
 }
 
+/**
+ * Resolve an account's class — "cash" | "margin" | "ira" | "unverified" — for roll dispatch.
+ * IRA is detected from the transfer/accounts graph `type`; cash vs margin needs the per-account
+ * detail read (`accounts/{account_number}/` `.type`). Mirrors the (a) account check in
+ * runPretradeChecks. Used to decide: atomic native roll (margin/IRA) vs kosher T+1 roll (cash).
+ */
+export async function detectAccountClass(
+  accountNumber: string,
+  getJson: typeof brokerageGetJson = brokerageGetJson
+): Promise<{ accountClass: "cash" | "margin" | "ira" | "unverified"; brokerageAccountType: string; caps: ReturnType<typeof accountCapabilities> }> {
+  const acct = String(accountNumber);
+  let isIra = false;
+  try {
+    const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
+    const rows: any[] = Array.isArray(graph?.results) ? graph.results : [];
+    const graphRow = rows.find((r) => String(r?.account_number) === acct);
+    isIra = String(graphRow?.type ?? "").toLowerCase().includes("ira") || String(graphRow?.type ?? "").toLowerCase().includes("roth");
+  } catch { /* degrade below */ }
+  let detail: Record<string, any> = {};
+  try { detail = await getJson("https://api.robinhood.com/accounts/{account_number}/", { account_number: acct }); } catch { /* degrade */ }
+  const detailType = String(detail?.type ?? "").toLowerCase();
+  const acctRecord = { ...detail, ...(isIra ? { brokerage_account_type: "ira_roth" } : {}) };
+  const caps = accountCapabilities(acctRecord);
+  let accountClass: "cash" | "margin" | "ira" | "unverified";
+  let brokerageAccountType: string;
+  if (isIra) { accountClass = "ira"; brokerageAccountType = "ira_roth"; }
+  else if (detailType === "cash") { accountClass = "cash"; brokerageAccountType = "cash"; }
+  else if (detailType === "margin") { accountClass = "margin"; brokerageAccountType = "margin"; }
+  else { accountClass = "unverified"; brokerageAccountType = detailType || "unverified"; }
+  return { accountClass, brokerageAccountType, caps };
+}
+
+// ── Roll order model (shared by CLI + MCP) ──────────────────────────────────────────────────────
+
+/** Format an options price string (2dp, tick-rounded via optionMoney); falls back to "0.01". */
+export function optionPriceString(value: number): string {
+  return Number.isFinite(value) ? optionMoney(value).toFixed(2) : "0.01";
+}
+
+export interface RollLegQuote {
+  bid?: number | null;
+  ask?: number | null;
+  bidSize?: number | null;
+  askSize?: number | null;
+  openInterest?: number | null;
+}
+
+/** Per-leg client quote snapshot for a roll's leg_metadata (anti-stale-fill telemetry; non-core). */
+export function rollLegQuoteMetadata(q?: RollLegQuote | null): { option_quote: Record<string, unknown> } | undefined {
+  if (!q) return undefined;
+  const out: Record<string, unknown> = {};
+  if (q.bid != null) out.bid_price = optionPriceString(Number(q.bid));
+  if (q.ask != null) out.ask_price = optionPriceString(Number(q.ask));
+  if (q.bidSize != null) out.bid_size = Number(q.bidSize);
+  if (q.askSize != null) out.ask_size = Number(q.askSize);
+  if (q.openInterest != null) out.open_interest = Number(q.openInterest);
+  return Object.keys(out).length ? { option_quote: out } : undefined;
+}
+
+const OPTION_URL_ID_RE = /options\/instruments\/([0-9a-f-]{36})/i;
+
+/**
+ * Build the ATOMIC native-roll order body — the single 2-leg order the real Robinhood "Roll this
+ * position" button POSTs (verified 2026-06-23; docs/native-option-roll-surface-2026-06-23.md).
+ * Close leg first (sell/close the held contract), open leg second (buy/open the new contract);
+ * ONE net direction + net price; form_source "strategy_roll". leg_metadata + client_*_at_submission
+ * are non-core telemetry included when quotes are supplied. DRY-RUN body builder — never sends.
+ * Shared by the CLI `options roll-plan` and the MCP `robinhood_options_roll_plan`.
+ */
+export function buildAtomicRollOrderBody(input: {
+  account: string;
+  closeOptionUrl: string;
+  openOptionUrl: string;
+  closeSide: "buy" | "sell";
+  openSide: "buy" | "sell";
+  closeLimit: number;
+  openLimit: number;
+  quantity: string;
+  timeInForce: string;
+  refId: string;
+  marketHours?: string;
+  checkOverrides?: string[];
+  accountType?: string;
+  closeQuote?: RollLegQuote | null;
+  openQuote?: RollLegQuote | null;
+}): Record<string, unknown> {
+  const closeCredit = input.closeSide === "sell" ? input.closeLimit : -input.closeLimit;
+  const openCredit = input.openSide === "sell" ? input.openLimit : -input.openLimit;
+  const netCredit = closeCredit + openCredit; // >0 ⇒ net credit, <0 ⇒ net debit
+  const direction = netCredit >= 0 ? "credit" : "debit";
+  const idOf = (url: string) => { const m = url.match(OPTION_URL_ID_RE); return m ? m[1] : undefined; };
+  const closeId = idOf(input.closeOptionUrl);
+  const openId = idOf(input.openOptionUrl);
+  const closeMeta = rollLegQuoteMetadata(input.closeQuote);
+  const openMeta = rollLegQuoteMetadata(input.openQuote);
+  const oq = input.openQuote;
+  return {
+    account: `https://api.robinhood.com/accounts/${input.account}/`,
+    direction,
+    form_source: "strategy_roll",
+    ...(input.checkOverrides && input.checkOverrides.length ? { check_overrides: input.checkOverrides } : {}),
+    ...(oq?.bid != null ? { client_bid_at_submission: optionPriceString(Number(oq.bid)) } : {}),
+    ...(oq?.ask != null ? { client_ask_at_submission: optionPriceString(Number(oq.ask)) } : {}),
+    legs: [
+      {
+        side: input.closeSide,
+        position_effect: "close",
+        ratio_quantity: 1,
+        option: input.closeOptionUrl,
+        ...(closeId ? { option_id: closeId } : {}),
+        ...(closeMeta ? { leg_metadata: closeMeta } : {})
+      },
+      {
+        side: input.openSide,
+        position_effect: "open",
+        ratio_quantity: 1,
+        option: input.openOptionUrl,
+        ...(openId ? { option_id: openId } : {}),
+        ...(openMeta ? { leg_metadata: openMeta } : {})
+      }
+    ],
+    market_hours: input.marketHours ?? "regular_hours",
+    override_day_trade_checks: false,
+    price: optionPriceString(Math.abs(netCredit)),
+    quantity: input.quantity,
+    ref_id: input.refId,
+    time_in_force: input.timeInForce,
+    trigger: "immediate",
+    type: "limit",
+    metadata: {
+      ...(input.accountType ? { brokerage_account_type: input.accountType } : {}),
+      is_direction_explicit: false
+    },
+    order_path_experiments: [] as unknown[],
+    _net: { direction, netPrice: optionMoney(netCredit), note: "NET of both legs from dry-run limits; not a fill guarantee." }
+  };
+}
+
+/** Resolve the roll model from requested mode + account class. cash → kosher; else → atomic. */
+export function resolveRollModel(
+  requested: "auto" | "atomic" | "kosher",
+  accountClass: "cash" | "margin" | "ira" | "unverified",
+  forceKosher = false
+): "atomic" | "kosher" {
+  if (requested === "kosher" || forceKosher) return "kosher";
+  if (requested === "atomic") return "atomic";
+  return accountClass === "cash" ? "kosher" : "atomic";
+}
+
 // ── Pre-trade checklist engine ─────────────────────────────────────────────────────────────────
 
 export type PretradeStatus = "PASS" | "WARN" | "BLOCK" | "MANUAL" | "SKIP";
@@ -7103,6 +7252,41 @@ export async function computeSentinel(
     events,
     warnings
   };
+}
+
+// ───────────────────────── Recurring schedules (shared CLI + MCP) ─────────────────────────
+
+export const RECURRING_LIST_URL = "https://bonfire.robinhood.com/recurring_schedules/";
+export const RECURRING_ITEM_URL = "https://bonfire.robinhood.com/recurring_schedules/{0}/";
+
+export function recurringSymbol(s: any): string {
+  return s?.investment_asset?.asset_symbol ?? s?.investment_target?.instrument_symbol ?? "?";
+}
+
+export async function fetchRecurringSchedules(): Promise<any[]> {
+  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: RECURRING_LIST_URL });
+  const route = selectRouteByQueryAndMethod(matches, RECURRING_LIST_URL, "GET");
+  if (!route) throw new Error("recurring_schedules GET route missing from map — rebuild (AGENTS.md §3).");
+  const plan = planBrokerageRequest({ route, method: "GET", params: {}, dryRun: false });
+  const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true });
+  const parsed = JSON.parse(result.body ?? "{}");
+  return Array.isArray(parsed.results) ? parsed.results : [];
+}
+
+export async function setRecurringState(
+  id: string,
+  state: "active" | "paused",
+  options: { dryRun?: boolean; liveWrite?: boolean }
+): Promise<{ status: number | string; dryRun: boolean; reason?: string }> {
+  const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: RECURRING_ITEM_URL });
+  const route = selectRouteByQueryAndMethod(matches, RECURRING_ITEM_URL, "PATCH");
+  if (!route) throw new Error("recurring_schedules/{0}/ PATCH route missing from map — rebuild (AGENTS.md §3).");
+  const gate = resolveLiveWriteGate({ risk: route.risk, method: "PATCH", dryRun: Boolean(options.dryRun), liveWrite: Boolean(options.liveWrite) });
+  const effectiveDryRun = Boolean(options.dryRun) || gate.forcedDryRun;
+  const body = { state };
+  const plan = planBrokerageRequest({ route, method: "PATCH", params: { "0": id }, body, dryRun: effectiveDryRun });
+  const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: false });
+  return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason };
 }
 
 // Zayd Khan // cold // www.zayd.wtf

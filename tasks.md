@@ -40,7 +40,7 @@ Consolidated 2026-06-11. ONE list to grind line by line. Supersedes local/tasks.
 - [ ] Kosher-roll ledger v2: auto-record pending roll when the close leg goes LIVE through the engine (today: prefilled `roll-ledger add` command from roll-plan)
 - [ ] API map changelog (auditable freshness)
 - [ ] Export command (T9) / IPO surface (T11) / CLI-MCP parity audit (T12) / global CLAUDE.md Twitter line (T14) — carried from local
-- [ ] local/ restructure decision: keep local/ strictly personal (thesis, private captures); project work lives here
+- [x] local/ restructure: track the personal cross-machine workspace with git-crypt; keep project work in committed public files
 - [ ] GitHub SEO remainder (topics, social preview)
 
 ## Backlog additions (2026-06-13 pass)

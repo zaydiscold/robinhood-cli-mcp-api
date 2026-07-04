@@ -21,8 +21,8 @@ RULES:    Full logging rules live in SKILL.md "Trading log". Append only; never 
   *why*, and links legs into a thread (e.g. a Wheel: CSP → assignment → CC → roll), so the agent can
   reconstruct **what it's rolling *from*** without re-deriving it.
 - **This file is public + committed.** Keep entries **generic / non-sensitive** (account masked to
-  last-4). Real, sensitive personal trade logs should stay generic here or in a gitignored private
-  overlay — committed entries push to GitHub.
+  last-4). Real, sensitive personal trade logs should stay generic here or in the git-crypt-encrypted
+  `local/` overlay.
 
 ## Entry format
 

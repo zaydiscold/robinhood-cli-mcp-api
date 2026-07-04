@@ -6,13 +6,14 @@ dist/
 !.env.example
 fixtures/private/
 info/
-# All local/private working files live in local/ — that dir self-ignores via local/.gitignore
-# (tracks only its own .gitignore as a placeholder). Drop CAPTURE-METHOD.local.md, ARCHITECTURE.local.md,
-# PLAN.local.md, accounts.local.json, etc. in there.
 *.log
 *.tgz
 capture-extension/
 coverage/
+
+# git-crypt keys must stay outside Git history.
+git-crypt-key
+*.git-crypt-key
 
 # local safety backups (never commit)
 _local-backups-*/

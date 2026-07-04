@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { createPrivateKey, randomUUID, sign } from "node:crypto";
+import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2465,7 +2465,7 @@ export async function computePortfolioPnl(
       throw new Error(`Account ${opts.accountNumber} is not one of your trading accounts (${accts.map((x) => "…" + x.slice(-4)).join(", ")}).`);
     accts = [String(opts.accountNumber)];
   }
-  // Optional gitignored nickname overlay (local/accounts.local.json).
+  // Optional git-crypt-encrypted nickname overlay (local/accounts.local.json).
   const localLabels = new Map<string, string>();
   for (const rel of ["local/accounts.local.json", "accounts.local.json"]) {
     try {
@@ -4875,11 +4875,12 @@ export function documentYear(type: string, date: string): string {
   return TAX_FORM_PREFIXES.some((p) => String(type).startsWith(p)) ? String(docYear - 1) : String(docYear);
 }
 
-/** Deterministic local filename: <year>-<type>-<acct last4>-<date>.<filetype> (path-safe). */
-export function documentFilename(doc: { type: string; date: string; year: string; accountLast4: string; filetype?: string | null }): string {
+/** Deterministic local filename with an opaque document-id hash; account tails stay out of public paths. */
+export function documentFilename(doc: { id: string; type: string; date: string; year: string; accountLast4?: string; filetype?: string | null }): string {
   const ext = String(doc.filetype || "pdf").toLowerCase().replace(/[^a-z0-9]/g, "") || "pdf";
   const clean = (s: unknown) => String(s).replace(/[^A-Za-z0-9._-]/g, "_");
-  return `${clean(doc.year)}-${clean(doc.type)}-${clean(doc.accountLast4)}-${clean(doc.date)}.${ext}`;
+  const opaqueId = createHash("sha256").update(String(doc.id)).digest("hex").slice(0, 12);
+  return `${clean(doc.year)}-${clean(doc.type)}-${opaqueId}-${clean(doc.date)}.${ext}`;
 }
 
 /**
@@ -4924,7 +4925,7 @@ export async function listDocuments(
 }
 
 /**
- * Download matching documents to local/documents/ (gitignored). The tax-season one-shot:
+ * Download matching documents to local/documents/ (git-crypt encrypted). The tax-season one-shot:
  * downloadDocuments({ type: "1099", year: "2025" }) pulls every 1099 — brokerage, crypto, Roth —
  * for tax year 2025 in one call. Raw fetch with the same bearer auth the engine uses;
  * download_url 302s to storage and fetch follows (auth is dropped cross-origin by undici).

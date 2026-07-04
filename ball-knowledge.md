@@ -34,8 +34,8 @@ a rumor. It does not need to be polished, verified, or immediately actionable.
   delete older entries unless the owner explicitly asks.
 
 > Public + committed by design — keep entries **generic** here. Sensitive personal alpha, specific
-> trusted handles, or anything you don't want public is the owner's discretion (or a future private
-> overlay), not the committed seed.
+> trusted handles, or anything you don't want public belongs in the git-crypt-encrypted `local/`
+> overlay, not the committed seed.
 
 ---
 
@@ -77,4 +77,3 @@ sector/context note, never a trade instruction. Replace this with your own real 
 
 ---
 <!-- Real Ball Knowledge entries go below this line, newest at the bottom. -->
-

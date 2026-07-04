@@ -82,7 +82,7 @@ The layers an agent reads to do that: **`SKILL.md`** (the lean, portable skill e
 - **Money movement** — transfers, deposits, withdrawals, linked accounts.
 - **Dividends income engine** — `dividends`: all-time/YTD/last-12-months totals in dollars, per-symbol cadence detection (weekly through annual, from the median payable-date gap), upcoming payouts, and projected $/day · $/week · $/month · $/quarter · $/year computed from **current holdings only** — a sold payer never inflates the forecast. The math lives in the engine, not in agent arithmetic.
 - **Combined income engine** — `income`: dividends **+** net options/wheel premium in one view — a 12-month breakdown that reconciles to the TTM headline, average over months actually covered (not a blind /12), and a forward run-rate at $/day → $/yr. Premium counts *selling* income only (short puts/calls, covered calls, credit spreads/condors, closes/rolls) and nets the long wings — directional long-option and debit-spread trades are excluded. Robinhood's new in-app tracker is dividends-only; this counts both halves.
-- **Documents + the tax one-shot** — `documents list` / `documents download`: account statements, trade confirms, and every tax form across all accounts. `documents download --type 1099 --year 2025` pulls every 1099 — brokerage, crypto, and Roth — for tax year 2025 into `local/documents/` in one command (type is prefix-matched; tax-form years are real tax years, so a 1099 issued Feb 2026 files under 2025).
+- **Documents + the tax one-shot** — `documents list` / `documents download`: account statements, trade confirms, and every tax form across all accounts. `documents download --type 1099 --year 2025` pulls every 1099 — brokerage, crypto, and Roth — for tax year 2025 into the git-crypt-encrypted `local/documents/` tree in one command (type is prefix-matched; tax-form years are real tax years, so a 1099 issued Feb 2026 files under 2025).
 - **Orders** — equity and options order history, status (single-order lookup with the instrument UUID resolved to a real ticker), placement, and cancellation — with pending-duplicate dedup and `ref_id` idempotency on every send.
 - **Portfolio P&L** — `portfolio` (aliases `pnl`/`snapshot`): one call → per-account day Δ + after-hours Δ + per-account buying power, drivers rolled up by underlying in **dollars** across all accounts, with a reconciliation line.
 - **Recipes** — `recipes "<intent>"`: free-text intent → the one CLI command (and MCP tool) that answers it.
@@ -104,7 +104,7 @@ The agent's cross-session brain is plain Markdown at the repo root. Fill these i
 - **`trading-log.md`** — execution + intent history: what was done and *why*, with the strategy thread (auto JSONL mirror in `local/`).
 - **`trade-notes.md`** — film-study notes attached to trades — `review` joins them onto round trips by ref (**new**).
 - **`hotlist.md`** — ticker watchlist + theses — `hotlist` quotes every line live (**new**).
-- **`local/*.local.md` + `local/tasks.md`** — private, gitignored notes/tasks that never leave the machine.
+- **`local/`** — personal cross-machine workspace tracked as git-crypt ciphertext. Unlock it with the shared key before reading or editing; filenames and sizes remain public. See [`docs/local-encryption.md`](docs/local-encryption.md).
 
 ## Agent Examples
 

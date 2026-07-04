@@ -1,0 +1,3 @@
+# Personal cross-machine workspace. Contents are encrypted before entering Git.
+# Filenames and file sizes remain visible in the public repository.
+local/** filter=git-crypt diff=git-crypt -text

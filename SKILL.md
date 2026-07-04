@@ -1263,7 +1263,7 @@ binding for this skill; the ledger file itself stays deliberately messy and unla
 - **When Ball Knowledge shapes an answer, say so plainly** ("your Ball Knowledge already flags
   semiconductors, so I'd start the universe at NVDA/TSMC/…"; "that reads as a source lead, not a
   verified thesis yet"). **Public file — keep committed entries generic;** sensitive/personal source
-  lists are the operator's discretion (or a future private overlay), not the committed seed.
+  lists belong in the git-crypt-encrypted `local/` overlay, not the committed seed.
 
 > **Two memory layers:** *Ball Knowledge* (`ball-knowledge.md`) = market context/beliefs;
 > *Trading log* (`trading-log.md`, below) = execution + intent history. Read both on finance tasks.
@@ -1294,7 +1294,7 @@ log adds the *why* and links legs into a thread, so the agent can reconstruct **
   === END
   ```
 - **Public + committed — keep entries generic** (account masked to last-4). Real, sensitive personal
-  logs stay generic here or in a gitignored private overlay (committed entries push to GitHub). Same
+  logs stay generic here or in the git-crypt-encrypted `local/` overlay. Same
   neutral stance as Ball Knowledge: record faithfully, don't impose caution.
 
 ## Research Methodology — mapping a no-official-API surface

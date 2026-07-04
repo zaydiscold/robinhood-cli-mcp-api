@@ -2928,7 +2928,7 @@ documents
 
 documents
   .command("download")
-  .description("Download matching documents to local/documents/ (gitignored). The tax-season one-shot: `documents download --type 1099 --year 2025` = every 1099 (brokerage + crypto + Roth) for tax year 2025, named <year>-<type>-<acct last4>-<date>.<ext>.")
+  .description("Download matching documents to git-crypt-encrypted local/documents/. The tax-season one-shot: `documents download --type 1099 --year 2025` = every 1099 (brokerage + crypto + Roth) for tax year 2025, named with an opaque document-id hash instead of an account tail.")
   .option("--type <type>", "document type, prefix-matched (1099 catches all 1099 variants)")
   .option("--year <yyyy>", "tax year for tax forms; calendar year otherwise")
   .option("--account <number>", "scope to one account")

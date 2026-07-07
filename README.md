@@ -73,6 +73,8 @@ boot (read the operating-intelligence KB → memory → doctrine)
 
 The layers an agent reads to do that: **`SKILL.md`** (the lean, portable skill entry point — trigger + 80/20 + the operating loop + intent routing) → **`knowledge/`** (per-topic reasoning modules) → **`docs/agent-operating-intelligence-2026-06-04.md`** (the boot-smart KB: cardinal rule, account/order/signal decision frameworks, failure→fix tree) → the **memory** files → the **research** docs (`docs/strategy-deep-dive-*`, `institutional-outlook-*`, `tax-aware-options-strategies`, `options-strategies-knowledge-base`). The in-repo **`AGENTS.md`** (developer/maintainer runbook) covers build/test, the shared-engine invariant, and route-map editing; **`CLAUDE.md` symlinks to `SKILL.md`** (the skill entry point). Everything is engine-backed (`cli/src/lib.ts`) and env-gated.
 
+For maintainers and agents that need the system map, [`docs/cli-mcp-architecture.md`](./docs/cli-mcp-architecture.md) explains the request flow, why CLI and MCP share one engine, where route-map edits take effect, and the current improvement backlog.
+
 ## Coverage
 
 - **Accounts** — multiple accounts including retirement / Roth, balances, identity, settings.
@@ -267,11 +269,12 @@ One line per question. All reads are live and free; the order/settings commands 
 
 ```bash
 # Dry-run (default): builds the request, prints the plan, sends nothing
-robinhood-cli brokerage execute "https://api.robinhood.com/orders/" --body-json '{...}'
+robinhood-cli brokerage execute "https://api.robinhood.com/orders/" \
+  --method POST --body-json '{...}'
 
 # Live: set the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch (the single gate; --live-write is optional)
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
-  "https://api.robinhood.com/orders/" --body-json '{...}'
+  "https://api.robinhood.com/orders/" --method POST --body-json '{...}'
 
 # First-class commands carry the same gate, e.g. recurring investments:
 ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli recurring resume --all
@@ -287,7 +290,7 @@ ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli buy -s AAPL -a <ACCOUNT_NUMBER> -m 25
 - **Unofficial surface.** The brokerage routes are mapped from the web app, not a published API — Robinhood can rotate or rename any of them without notice. The route map is dated and test-enforced for a reason; trust live reads over memory.
 - **Auth is a browser-session token.** It comes from your logged-in web session, lives in a gitignored `.env`, and expires like any session. The engine self-heals once on a `401`; after that it's `pnpm auth:refresh` (and being logged into Robinhood in your browser).
 - **OTC and fractional limits.** OTC/ADR names reject market and dollar-notional orders — buy AND sell are both supported, but only as whole shares with a marketable limit (the engine auto-limits: buy at the ask, sell at the bid). "$5 of \<OTC ticker\>" is impossible in either direction, and the engine will say so rather than malform the order.
-- **Options don't quote pre-market.** Equity/ETF options trade 9:30–4:00 ET (index options run ~15 minutes past the bell); a missing pre-market option mark is the market, not a bug. After-hours P&L attribution is equity-only.
+- **Options don't quote like equities outside regular hours.** Equity/ETF options trade 9:30–4:00 ET, while some index/ETF options can run past the bell. A missing pre-market option mark is the market, not a bug; for after-hours P&L, trust the `portfolio` command's account-level top line and whatever extended marks are actually present.
 - **The order-evidence rule.** An order happened only if order history says so (or a position/cash change shows it). A `201`, a UI screen, or an agent log is not proof — `order-status` and `history` are.
 
 ### 5. Use it from an AI agent (MCP server)

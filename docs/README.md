@@ -12,6 +12,7 @@ folder stays local and is never pushed.
 
 | File | Use it for |
 |------|------------|
+| `cli-mcp-architecture.md` | How CLI and MCP share one engine, request flow, route-map rules, maintenance invariants, and improvement backlog |
 | `auth.md` | Browser-session bearer auth, token refresh, and local `.env` behavior |
 | `write-operations.md` | The dry-run/live-write gate and mutation rules |
 | `account-settings-capability-map-2026-06-03.md` | Account-page surfaces: funding, recurring, DRIP, cash sweep, stock lending, margin, futures, event contracts |

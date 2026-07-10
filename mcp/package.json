@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "pretest": "pnpm --filter @zaydiscold/robinhood-cli build",
+    "pretest": "corepack pnpm --filter @zaydiscold/robinhood-cli build",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

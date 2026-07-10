@@ -8,7 +8,7 @@ export interface DoctorCheck { id: string; status: DoctorStatus; message: string
 const sha = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
 
 /** Offline health report: never calls Robinhood and never prints credential values. */
-export function runDoctor(root: string, env: NodeJS.ProcessEnv = process.env) {
+export function runDoctor(root: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform) {
   const checks: DoctorCheck[] = [];
   const add = (id: string, status: DoctorStatus, message: string) => checks.push({ id, status, message });
   const major = Number(process.versions.node.split(".")[0]);
@@ -23,8 +23,9 @@ export function runDoctor(root: string, env: NodeJS.ProcessEnv = process.env) {
     const ageHours = (Date.now() - envStat.mtimeMs) / 3_600_000;
     add("auth", "pass", "credential file exists (values not inspected)");
     add("auth-freshness", ageHours <= 24 * 7 ? "pass" : "warn", `.env last updated ${Math.floor(ageHours)}h ago; refresh auth if reads return 401`);
-    add("env-permissions", (mode & 0o077) === 0 ? "pass" : "fail", `.env mode is ${mode.toString(8)}; expected 600 or stricter`);
-    add("web-version", /^ROBINHOOD_WEB_APP_VERSION=.+$/m.test(envText) ? "pass" : "warn", /^ROBINHOOD_WEB_APP_VERSION=.+$/m.test(envText) ? "web-app version override is present" : "using the baked web-app version; run pnpm version:refresh if the version gate rejects an order");
+    if (platform === "win32") add("env-permissions", "warn", ".env permissions use Windows ACLs; POSIX mode bits are not meaningful (review with icacls)");
+    else add("env-permissions", (mode & 0o077) === 0 ? "pass" : "fail", `.env mode is ${mode.toString(8)}; expected 600 or stricter`);
+    add("web-version", /^ROBINHOOD_WEB_APP_VERSION=.+$/m.test(envText) ? "pass" : "warn", /^ROBINHOOD_WEB_APP_VERSION=.+$/m.test(envText) ? "web-app version override is present" : "using the baked web-app version; run corepack pnpm version:refresh if the version gate rejects an order");
     add("api-version", /^ROBINHOOD_API_VERSION=.+$/m.test(envText) ? "pass" : "warn", /^ROBINHOOD_API_VERSION=.+$/m.test(envText) ? "API version override is present" : "using the baked API version");
   }
 
@@ -53,7 +54,8 @@ export function runDoctor(root: string, env: NodeJS.ProcessEnv = process.env) {
   const localDir = join(root, "local");
   if (existsSync(localDir)) {
     const localMode = statSync(localDir).mode & 0o777;
-    add("local-permissions", (localMode & 0o077) === 0 ? "pass" : "warn", `local/ mode is ${localMode.toString(8)}; prefer 700 for private snapshots and ledgers`);
+    if (platform === "win32") add("local-permissions", "warn", "local/ permissions use Windows ACLs; review private report access with icacls");
+    else add("local-permissions", (localMode & 0o077) === 0 ? "pass" : "warn", `local/ mode is ${localMode.toString(8)}; prefer 700 for private snapshots and ledgers`);
   }
   add("live-write-gate", env.ROBINHOOD_ALLOW_LIVE_WRITE === "1" ? "warn" : "pass", env.ROBINHOOD_ALLOW_LIVE_WRITE === "1" ? "LIVE WRITES ARE ARMED in this process" : "live writes are safely disarmed");
   add("share-safe", env.ROBINHOOD_SHARE_SAFE === "1" ? "pass" : "warn", env.ROBINHOOD_SHARE_SAFE === "1" ? "share-safe output is enabled" : "share-safe output is off");

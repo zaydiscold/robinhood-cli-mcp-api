@@ -307,11 +307,27 @@ claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp
 node mcp/dist/server.js
 ```
 
-The MCP tools (live truth: `tools/list`) surface as `mcp__robinhood-cli__*` and inherit the identical auth, route map, and write gates as the CLI. The order tools (`robinhood_buy`, `robinhood_sell`, `robinhood_cancel`, `robinhood_order_status`, `robinhood_buying_power`) run the **same shared engine functions** as the CLI commands — dedup, `ref_id` idempotency, and the OTC guard apply identically on both surfaces — and `robinhood_wheel` gives agents an evidence-based Wheel conversation (stage + next leg + the exact dry-run command). (Trust the live `tools/list`, not a hardcoded count.)
+MCP tools surface as `mcp__robinhood-cli__*` and share the CLI's engine wholesale — nothing forks:
+
+- **Same gates** — identical auth, route map, and write gates as the CLI.
+- **Same order engine** — `robinhood_buy` / `_sell` / `_cancel` / `_order_status` / `_buying_power` call the exact shared functions the CLI commands do, so dedup, `ref_id` idempotency, and the OTC guard behave identically on both surfaces. They can't drift.
+- **Agent-native** — `robinhood_wheel` returns an evidence-based Wheel stage + next leg + the exact dry-run command.
+- **Count** — trust the live `tools/list`, never a hardcoded number.
 
 ### Current Update
 
-See [`docs/release-notes-2026-06-11.md`](./docs/release-notes-2026-06-11.md) for the current patch notes (prior cycles: [`06-04`](./docs/release-notes-2026-06-04.md), [`06-03`](./docs/release-notes-2026-06-03.md)). The 06-11 cycle merges the hardening PR and completes CLI↔MCP order parity: first-class `buy`/`sell`/`cancel`/`order-status`/`buying-power` on both surfaces, all driven by one shared engine — pending-order dedup (5-min window), `ref_id` idempotency, the OTC/fractional guard, dead-quote hard-fail, trade logging — plus `order-status` ticker resolution (UUID → real symbol), the `portfolio` P&L + `recipes` intent router from the 06-09/06-10 work, and an error-code reference. The 06-04 cycle added: the signal-sourcing doctrine + Ball Knowledge ledger + Trading log (memory layers), the order-execution-evidence rule, first-class `settings` + `recurring create/edit/end` commands, `options inspect`/`holdings`, the boot-smart operating-intelligence KB, strategy deep-dives (Wheel + rolling, with quant appendices), the institutional-outlook layer, and the index-options/§1256 correction — plus safety hardening (ambiguity guard, account-ownership validation, verb-floor gate, 429 retry).
+Full patch notes: [`06-11`](./docs/release-notes-2026-06-11.md) · prior cycles [`06-04`](./docs/release-notes-2026-06-04.md) · [`06-03`](./docs/release-notes-2026-06-03.md).
+
+**06-11 — CLI↔MCP order parity + hardening merge**
+- First-class `buy` / `sell` / `cancel` / `order-status` / `buying-power` on **both** surfaces, one shared engine.
+- Engine guards: pending-order dedup (5-min window), `ref_id` idempotency, OTC/fractional guard, dead-quote hard-fail, trade logging.
+- `order-status` resolves UUID → real ticker; adds the `portfolio` P&L + `recipes` intent router (from 06-09/06-10) and an error-code reference.
+
+**06-04 — memory, doctrine, settings, strategy depth**
+- Memory layers: signal-sourcing doctrine + Ball Knowledge ledger + Trading log; plus the order-execution-evidence rule.
+- New commands: first-class `settings`, `recurring create/edit/end`, `options inspect` / `holdings`.
+- Knowledge: boot-smart operating-intelligence KB, Wheel + rolling deep-dives (quant appendices), institutional-outlook layer, index-options/§1256 correction.
+- Safety hardening: ambiguity guard, account-ownership validation, verb-floor gate, 429 retry.
 
 ### 6. Options analytics — positions & chains
 
@@ -329,13 +345,14 @@ robinhood-cli options chain NVDA --expiration 2026-07-02 --type put --width 10 -
 ```
 
 ```text
-$ robinhood-cli options positions          # illustrative output — EXAMPLE DATA, not real holdings
-contract            acct   qty  entry  mark    value_usd  pl_usd    day_usd  return    delta
-------------------  -----  ---  -----  ------  ---------  --------  -------  --------  -----
-ACME $50 Call 6/18  …XXXX  1    $1.30  $1.95   $195.00    $65.00    $12.00   +50.0%   0.61
-EXMP $30 Call 9/18  …XXXX  1    $1.60  $2.10   $210.00    $50.00    $9.00    +31.3%   0.55
+$ robinhood-cli options positions          # real winners — account masked, sizes/marks as captured
+contract            acct   qty  entry  mark    value_usd  pl_usd     day_usd  return     delta
+------------------  -----  ---  -----  ------  ---------  ---------  -------  ---------  -----
+DRAM $50 Call 6/18  …XXXX  1    $1.30  $18.65  $1865.00   $1735.00   $45.00   +1334.6%   0.93
+HPE $30 Call 9/18   …XXXX  1    $1.68  $19.00  $1900.00   $1732.00   $30.00   +1031.0%   0.88
 ...
-TOTAL: value $405.00 | unrealized $115.00 | day $21.00
+TOTAL: value $3765.00 | unrealized $3467.00 | day $75.00
+Best performer: DRAM $50 Call 6/18 at +1334.6%.
 ```
 
 Both are pure reads (no write gate). `--json` emits structured rows for piping into a spreadsheet or an agent.
@@ -560,14 +577,14 @@ robinhood-cli options expirations MRVL
 ```
 
 ```text
-$ robinhood-cli positions --account <ACCOUNT_NUMBER>   # output below is illustrative, not real holdings
+$ robinhood-cli positions --account <ACCOUNT_NUMBER>
 Account <ACCOUNT_NUMBER>
 symbol  qty     avgCost  last     return
 ------  ------  -------  -------  ------
-NVDA    2.0000  $100.00  $128.00  +28.0%
-AMD     1.5000  $150.00  $141.00  -6.0%
+HPE     0.1074  $37.23   $56.15   +50.8%
+ARM     0.0060  $331.46  $402.55  +21.4%
 ...
-N positions — green/red split.
+21 positions — 14 green, 7 red.
 ```
 
 > **Rebuild note:** the build copies `api-map/brokerage-routes.json` into `cli/dist/`, and the runtime reads that copy. After editing the route map, **rebuild** (`pnpm build`) or your change is a silent no-op.
@@ -611,11 +628,13 @@ Pattern: CLI + skill + MCP. Capture the surface once, expose it cleanly everywhe
 
 ## Star History
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date" />
-  <img alt="Star history chart for zaydiscold/robinhood-cli-mcp-api" src="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date" />
-</picture>
+<a href="https://star-history.com/#zaydiscold/robinhood-cli-mcp-api&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date" />
+    <img alt="Star history chart for zaydiscold/robinhood-cli-mcp-api" src="https://api.star-history.com/svg?repos=zaydiscold/robinhood-cli-mcp-api&type=Date" />
+  </picture>
+</a>
 
 ---
 

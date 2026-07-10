@@ -727,6 +727,26 @@ describe("Options analytics helpers", () => {
     expect(result.status).toBe(200);
   });
 
+  it("does not apply the per-request timeout to a server-directed 429 cooldown wait", async () => {
+    const route = loadBrokerageRoutes().find((candidate) => candidate.url === "https://api.robinhood.com/accounts/");
+    const plan = planBrokerageRequest({ route: route! });
+    let calls = 0;
+    const slept: number[] = [];
+    const result = await executeBrokerageRequest(plan, {
+      token: "t",
+      timeoutMs: 30_000,
+      sleepImpl: async (ms) => { slept.push(ms); },
+      fetchImpl: async () => {
+        calls++;
+        if (calls === 1) return new Response(JSON.stringify({ detail: "Too many requests. Try again in 48 seconds." }), { status: 429 });
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    });
+    expect(calls).toBe(2);
+    expect(slept).toEqual([50000]); // 48 + 2s grace; longer than the default 30s request timeout.
+    expect(result.status).toBe(200);
+  });
+
   it("FAILS LOUD on an ambiguous substring match spanning multiple distinct routes", () => {
     // "orders/" substring matches several distinct routes across hosts/risk classes.
     const pool = [

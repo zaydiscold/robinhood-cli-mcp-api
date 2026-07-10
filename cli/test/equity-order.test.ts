@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEDUP_WINDOW_MS,
   etClockSession,
@@ -13,9 +13,18 @@ import {
   type MarketSession
 } from "../src/lib.js";
 
-// The owned-account guard caches the account graph process-globally; reset it before each case so
-// every test's injected getJson fake is consulted deterministically.
-beforeEach(() => __resetOwnedAccountsCache());
+// Keep the suite independent from the developer's .env. Tests that exercise a live path explicitly
+// enable the master switch; the legacy liveWrite flag alone must never alter execution mode.
+const originalLiveWriteEnv = process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+beforeEach(() => {
+  __resetOwnedAccountsCache();
+  delete process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+});
+afterAll(() => {
+  if (originalLiveWriteEnv === undefined) delete process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+  else process.env.ROBINHOOD_ALLOW_LIVE_WRITE = originalLiveWriteEnv;
+});
+const enableLiveWrites = () => { process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1"; };
 
 // Golden-behavior tests for the shared equity-order engine — the single code path behind the CLI
 // `buy`/`sell` commands AND the MCP robinhood_buy/robinhood_sell tools (alignment invariant). These
@@ -324,8 +333,36 @@ describe("placeEquityOrder — order body & dry-run semantics", () => {
   });
 });
 
+describe("placeEquityOrder — time-in-force (--tif / timeInForce)", () => {
+  it("an explicit limit order defaults to gtc when no tif is given", async () => {
+    const { deps, calls } = makeDeps();
+    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 1, limitPrice: 100 }, deps);
+    expect(calls.writes[0].body.time_in_force).toBe("gtc");
+  });
+
+  it("honors an explicit timeInForce=gfd on a limit order (day-limit — the new capability)", async () => {
+    const { deps, calls } = makeDeps();
+    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 1, limitPrice: 100, timeInForce: "gfd" }, deps);
+    expect(calls.writes[0].body.time_in_force).toBe("gfd");
+  });
+
+  it("a dollar market order is gfd and stays valid", async () => {
+    const { deps, calls } = makeDeps();
+    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 50 }, deps);
+    expect(calls.writes[0].body.time_in_force).toBe("gfd");
+  });
+
+  it("REJECTS timeInForce=gtc on a market order (RH market orders are day/gfd) — nothing sent", async () => {
+    const { deps, calls } = makeDeps();
+    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 50, timeInForce: "gtc" }, deps))
+      .rejects.toThrow(/gtc is invalid for a market order/);
+    expect(calls.writes).toHaveLength(0);
+  });
+});
+
 describe("placeEquityOrder — live-send dedup & logging", () => {
   const live = { writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-1", state: "queued" }) } };
+  beforeEach(enableLiveWrites);
 
   it("blocks a live send when a fresh same-side pending order exists — nothing is sent", async () => {
     const { deps, calls } = makeDeps({ ...live, pendingOrders: [{ id: "ord-dup-1", side: "buy", state: "queued", created_at: minutesAgo(2) }] });
@@ -344,9 +381,16 @@ describe("placeEquityOrder — live-send dedup & logging", () => {
     expect(otherSide.calls.writes).toHaveLength(1);
   });
 
-  it("a broken dedup read degrades (the trade proceeds); a positive hit always blocks", async () => {
+  it("a broken dedup read BLOCKS a live send (fail closed) — nothing is sent", async () => {
     const { deps, calls } = makeDeps({ ...live, orderListThrows: true });
-    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, deps);
+    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, deps))
+      .rejects.toThrow(/^DEDUP-PREFLIGHT-FAILED/);
+    expect(calls.writes).toHaveLength(0);
+  });
+
+  it("force bypasses a broken dedup read and sends anyway", async () => {
+    const { deps, calls } = makeDeps({ ...live, orderListThrows: true });
+    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true, force: true }, deps);
     expect(calls.writes).toHaveLength(1);
   });
 
@@ -496,6 +540,7 @@ describe("WSF-01: brokerage buy routes through placeEquityOrder — dedup + log 
   // via executeBrokerageRequest, bypassing placeEquityOrder's dedup, ref_id idempotency,
   // trade-log append, and post-send evidence. This test proves a buy-side call through
   // the shared engine blocks on a live duplicate — the exact guard that was missing.
+  beforeEach(enableLiveWrites);
 
   it("dedup: a live buy with a fresh pending same-side order is BLOCKED by placeEquityOrder", async () => {
     const { deps, calls } = makeDeps({
@@ -536,7 +581,7 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
     expect(calls.writes).toHaveLength(0); // NOTHING was sent
   });
 
-  it("a failed ownership lookup warns but proceeds (never wedges a write)", async () => {
+  it("a DRY-RUN with a failed ownership lookup warns but still previews (dry never wedges)", async () => {
     const { deps, calls } = makeDeps({ ownedAccounts: "throw" });
     const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10 }, deps);
     expect(r.dryRun).toBe(true);
@@ -544,6 +589,7 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
   });
 
   it("cancelOrder throws when the order's account is unowned (live cancel)", async () => {
+    enableLiveWrites();
     // Simulate: owned accounts has A1, but the order belongs to A9.
     const { deps, calls } = makeDeps({
       ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
@@ -569,6 +615,50 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
       cancelOrder({ idOrUrl: "ord-9", liveWrite: true }, deps)
     ).rejects.toThrow(/Account A9 is not one of your trading accounts/);
     // The write must never have been reached.
+  });
+
+  it("a LIVE order BLOCKS when the ownership lookup fails (fail closed) — nothing sent", async () => {
+    enableLiveWrites();
+    const { deps, calls } = makeDeps({ ownedAccounts: "throw" });
+    await expect(
+      placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, deps)
+    ).rejects.toThrow(/could not verify it against your owned accounts/);
+    expect(calls.writes).toHaveLength(0);
+  });
+
+  it("a LIVE cancel BLOCKS when the order account pre-read fails (fail closed)", async () => {
+    enableLiveWrites();
+    const { deps, calls } = makeDeps({
+      ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
+      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) }
+    });
+    deps.getJson = async (url: string) => {
+      if (url.includes("transfer/accounts")) return { results: [{ type: "rhs", account_number: "A1", account_name: "Individual" }] };
+      if (url.includes("/orders/")) throw new Error("order pre-read 503"); // pre-read cannot determine the account
+      throw new Error(`unexpected: ${url}`);
+    };
+    await expect(
+      cancelOrder({ idOrUrl: "ord-x", liveWrite: true }, deps)
+    ).rejects.toThrow(/could not verify the order's account/);
+    expect(calls.writes).toHaveLength(0); // cancel never sent
+  });
+
+  it("force lets a LIVE cancel through when the account pre-read fails", async () => {
+    enableLiveWrites();
+    const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { deps, calls } = makeDeps({
+      ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
+      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) }
+    });
+    deps.getJson = async (url: string) => {
+      if (url.includes("transfer/accounts")) return { results: [{ type: "rhs", account_number: "A1", account_name: "Individual" }] };
+      if (url.includes("/orders/")) throw new Error("order pre-read 503"); // pre-read + evidence re-read both fail
+      throw new Error(`unexpected: ${url}`);
+    };
+    const r = await cancelOrder({ idOrUrl: "ord-x", liveWrite: true, force: true }, deps);
+    expect(calls.writes).toHaveLength(1); // force bypassed the fail-closed and sent the cancel
+    expect(r.dryRun).toBe(false);
+    warn.mockRestore();
   });
 });
 
@@ -608,7 +698,7 @@ describe("placeEquityOrder — notional-cap override threading (N4 / --override-
 
   it("a dry-run over the cap is never blocked (caps gate live sends only)", async () => {
     const { deps, calls } = makeDeps();
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10 }, deps);
+    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10, dryRun: true }, deps);
     expect(r.dryRun).toBe(true);
     expect(calls.writes).toHaveLength(1);
   });

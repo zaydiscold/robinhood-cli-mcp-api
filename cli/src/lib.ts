@@ -484,6 +484,10 @@ export interface ExecuteBrokerageOptions {
   maxRateLimitRetries?: number;
   /** Injected sleep (ms) — tests pass a no-op so retries don't actually wait. */
   sleepImpl?: (ms: number) => Promise<void>;
+  /** Abort an in-flight request or rate-limit wait (MCP handlers pass the request signal). */
+  signal?: AbortSignal;
+  /** Per-attempt HTTP request timeout in milliseconds. Defaults to ROBINHOOD_REQUEST_TIMEOUT_MS or 30s. Set 0 to disable. */
+  timeoutMs?: number;
 }
 
 export interface ExecuteCryptoOptions {
@@ -524,6 +528,41 @@ export interface ExecuteCryptoResult {
   contentType: string | null;
   body: string;
   truncated: boolean;
+}
+
+/** Exact destinations that may receive the private web-session bearer/cookie. */
+export const BROKERAGE_AUTH_HOSTS = Object.freeze([
+  "api.robinhood.com",
+  "bonfire.robinhood.com",
+  "cashier.robinhood.com",
+  "dora.robinhood.com",
+  "identi.robinhood.com",
+  "minerva.robinhood.com",
+  "nummus.robinhood.com",
+  "phoenix.robinhood.com"
+] as const);
+
+export class UnsafeBrokerageHostError extends Error {
+  constructor(url: string, reason: string) {
+    super(`Refusing brokerage request to ${url}: ${reason}. Authentication was not attached.`);
+    this.name = "UnsafeBrokerageHostError";
+  }
+}
+
+export function assertBrokerageAuthDestination(url: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new UnsafeBrokerageHostError(url, "invalid URL");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new UnsafeBrokerageHostError(url, `protocol ${parsed.protocol || "(missing)"} is not HTTPS`);
+  }
+  if (!(BROKERAGE_AUTH_HOSTS as readonly string[]).includes(parsed.hostname)) {
+    throw new UnsafeBrokerageHostError(url, `host ${parsed.hostname} is not in the Robinhood brokerage allow-list`);
+  }
+  return parsed;
 }
 
 export function fileExists(path: string): boolean {
@@ -1789,6 +1828,12 @@ export interface LiveWriteGate {
   reason?: string;
 }
 
+export interface WriteExecutionPolicy extends LiveWriteGate {
+  /** Effective execution mode after the environment gate, explicit preview, and account lock. */
+  dryRun: boolean;
+  live: boolean;
+}
+
 /**
  * Live-write gate — single master switch.
  *
@@ -1910,6 +1955,31 @@ export function resolveLiveWriteGate(input: {
     reason:
       "Live writes are OFF — forced to dry-run. Turn them on by setting ROBINHOOD_ALLOW_LIVE_WRITE=1 in the environment (locally it lives in .env / the MCP registration). Pass --dry-run / dryRun:true to preview a single call even when live writes are on."
   };
+}
+
+/**
+ * Canonical write-policy resolver for first-class commands and generic route execution.
+ * Callers must use this result for dedup, limits, ownership pre-reads, pacing, and the
+ * final transport call so those behaviors cannot drift from the actual write gate.
+ */
+export function resolveWriteExecution(input: {
+  risk?: RouteRisk;
+  dryRun?: boolean;
+  liveWrite?: boolean;
+  method?: string;
+  accountNumber?: string;
+  env?: NodeJS.ProcessEnv;
+}): WriteExecutionPolicy {
+  const gate = resolveLiveWriteGate({
+    risk: input.risk ?? "write-mutate",
+    method: input.method ?? "POST",
+    dryRun: Boolean(input.dryRun),
+    liveWrite: input.liveWrite,
+    accountNumber: input.accountNumber,
+    env: input.env
+  });
+  const dryRun = Boolean(input.dryRun) || gate.forcedDryRun;
+  return { ...gate, dryRun, live: !dryRun };
 }
 
 export function riskWriteWarning(risk: RouteRisk, url: string): string | undefined {
@@ -2101,10 +2171,28 @@ export function classifyRobinhoodError(status: number, bodyText: string, headers
   return { kind: "unknown", status, detail, retryable: false };
 }
 
+async function waitWithAbort(wait: Promise<void>, signal?: AbortSignal): Promise<void> {
+  if (!signal) return wait;
+  if (signal.aborted) throw signal.reason;
+  await new Promise<void>((resolve, reject) => {
+    const aborted = () => reject(signal.reason);
+    signal.addEventListener("abort", aborted, { once: true });
+    wait.then(
+      () => { signal.removeEventListener("abort", aborted); resolve(); },
+      (error) => { signal.removeEventListener("abort", aborted); reject(error); }
+    );
+  });
+}
+
 export async function executeBrokerageRequest(
   plan: PlannedBrokerageRequest,
   options: ExecuteBrokerageOptions = {}
 ): Promise<ExecuteBrokerageResult> {
+  // Defense in depth: route-map compromise or a malformed injected plan must never turn the
+  // private bearer/cookie into an arbitrary-host credential. Validate before even a dry-run so
+  // unsafe generated plans fail during review rather than only when switched live.
+  assertBrokerageAuthDestination(plan.url);
+
   if (options.dryRun || plan.mode === "dry_run") {
     return {
       ok: true,
@@ -2149,6 +2237,14 @@ export async function executeBrokerageRequest(
   const body = options.body ?? plan.body;
   const serializedBody = stringifyBody(body);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const envTimeout = Number(process.env.ROBINHOOD_REQUEST_TIMEOUT_MS);
+  const requestedTimeout = options.timeoutMs ?? (Number.isFinite(envTimeout) && envTimeout >= 0 ? envTimeout : 30_000);
+  const requestSignal = (): AbortSignal | undefined => {
+    const timeoutSignal = requestedTimeout > 0 ? AbortSignal.timeout(requestedTimeout) : undefined;
+    return options.signal && timeoutSignal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : options.signal ?? timeoutSignal;
+  };
 
   const send = (authToken?: string) => {
     // Present as the Robinhood WEB app. The legacy mobile identity ("robinhood-cli/0.1")
@@ -2173,7 +2269,8 @@ export async function executeBrokerageRequest(
     return fetchImpl(plan.url, {
       method: plan.method,
       headers,
-      body: plan.method === "GET" ? undefined : serializedBody
+      body: plan.method === "GET" ? undefined : serializedBody,
+      signal: requestSignal()
     });
   };
 
@@ -2212,7 +2309,11 @@ export async function executeBrokerageRequest(
     while (response.status === 429 && attempts < maxRetries) {
       attempts++;
       const cls = classifyRobinhoodError(429, text, response.headers);
-      await sleep(cls.retryAfterMs ?? 32000);
+      // Timeout is per HTTP attempt, not a total operation budget. Robinhood can direct a legitimate
+      // ~48-50s cooldown after fractional-order bursts; aborting that sleep with the default 30s
+      // request timeout guarantees every valid retry fails. User/MCP cancellation still interrupts
+      // the wait through options.signal.
+      await waitWithAbort(sleep(cls.retryAfterMs ?? 32000), options.signal);
       response = await send(currentToken);
       text = await response.text();
     }
@@ -2359,17 +2460,26 @@ export async function loadOwnedAccounts(
 
 /**
  * Refuse a write to an account the token doesn't own — the #1 money-loss defense (a typo'd or
- * hallucinated account number otherwise templates straight into a live order body). Throws on a
- * CONFIRMED-unowned account; WARNS (returns undefined) when the ownership lookup itself failed, so an
- * offline / mid-refresh read can't block every write. Returns the account label on success.
+ * hallucinated account number otherwise templates straight into a live order body). Always throws on
+ * a CONFIRMED-unowned account. When the ownership lookup ITSELF fails, behavior is set by
+ * `onLookupFailure`: "warn" (default — returns undefined) keeps reads/dry-runs previewable while
+ * offline; "block" (used for LIVE sends) throws so a live write can't proceed with ownership
+ * unverified. Returns the account label on success.
  */
 export async function assertAccountOwned(
   accountNumber: string | undefined,
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson; onLookupFailure?: "warn" | "block" } = {}
 ): Promise<string | undefined> {
   if (!accountNumber) return undefined; // account-less call (e.g. panic across all accounts) — nothing to validate
   const owned = await loadOwnedAccounts(deps);
   if (!owned) {
+    if (deps.onLookupFailure === "block") {
+      throw new Error(
+        `Refusing a LIVE write to account ${accountNumber}: could not verify it against your owned accounts ` +
+          `(ownership lookup failed). The wrong-account defense fails CLOSED on live sends — retry when the ` +
+          `account read works, or preview with a dry-run.`
+      );
+    }
     process.stderr.write(
       `⚠️  Could not verify account ${accountNumber} against your owned accounts (lookup failed). Proceeding — double-check the number.\n`
     );
@@ -2718,8 +2828,14 @@ export async function gatedBrokerageWrite(opts: {
     const tail = suggestions.length ? ` Closest mapped routes: ${suggestions.join(" | ")}.` : "";
     throw new Error(`No ${opts.method ?? "matching"} route for ${opts.url} — a forced write with no matching write route fails closed (never degrades to a read).${tail} Check the map / rebuild (AGENTS.md §3).`);
   }
-  const gate = resolveLiveWriteGate({ risk: route.risk, method: opts.method, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite), accountNumber: opts.accountNumber ?? accountFromWriteRequest(opts.body, opts.params) });
-  const effectiveDryRun = Boolean(opts.dryRun) || gate.forcedDryRun;
+  const execution = resolveWriteExecution({
+    risk: route.risk,
+    method: opts.method,
+    dryRun: opts.dryRun,
+    liveWrite: opts.liveWrite,
+    accountNumber: opts.accountNumber ?? accountFromWriteRequest(opts.body, opts.params)
+  });
+  const effectiveDryRun = execution.dryRun;
   // N4 — notional cap for options order placements (equity is capped in placeEquityOrder). Only a
   // genuine live placement is checked; dry-runs and cancels yield 0. Throws NotionalCapError if over.
   const optNotional = effectiveDryRun ? 0 : optionsOrderNotional(opts.url, opts.method, opts.body);
@@ -2746,7 +2862,7 @@ export async function gatedBrokerageWrite(opts: {
       responseHead: bodyStr ? bodyStr.slice(0, 500) : null
     });
   }
-  return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason, body: result.body };
+  return { status: result.status, dryRun: effectiveDryRun, reason: execution.reason, body: result.body };
 }
 
 /** Append a trade to the local trading log (JSONL, one line per order). Best-effort. */
@@ -2985,7 +3101,7 @@ export interface WatchlistBasketBuyResult {
  * Buy $amount of EACH tradable item in a custom watchlist — the "operate on a watchlist" execution half.
  * Thin loop over the shared `placeEquityOrder` engine, so every per-ticker order inherits the OTC/
  * fractional guard, dedup, ref_id idempotency, the after-hours pre-flight guard, trade-log + evidence,
- * AND the double write-gate (dry-run unless liveWrite + ROBINHOOD_ALLOW_LIVE_WRITE=1). BP-aware: reads
+ * AND the canonical write policy (dry-run unless ROBINHOOD_ALLOW_LIVE_WRITE=1; dryRun always previews). BP-aware: reads
  * the account's buying power and only attempts what fits ($amount each), so an underfunded basket places
  * the affordable prefix and reports the rest as skipped rather than hammering doomed orders.
  */
@@ -2999,7 +3115,11 @@ export async function buyWatchlistBasket(
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount must be a positive dollar value (Robinhood minimum is $1.00).");
   const delayMs = input.delayMs ?? 2500;
-  const liveWrite = !input.dryRun && !!input.liveWrite;
+  const execution = resolveWriteExecution({
+    dryRun: input.dryRun,
+    liveWrite: input.liveWrite,
+    accountNumber: input.accountNumber
+  });
 
   const { list, items } = await getWatchlistItems(input.list, { getJson });
   const tradable = items.filter((i) => i.tradable && i.symbol);
@@ -3036,7 +3156,16 @@ export async function buyWatchlistBasket(
     const sym = affordable[idx].symbol as string;
     let res: EquityOrderResult;
     try {
-      res = await placeOrder({ symbol: sym, accountNumber: input.accountNumber, side: "buy", amount, liveWrite, force: input.force, overrideCap: input.overrideCap });
+      res = await placeOrder({
+        symbol: sym,
+        accountNumber: input.accountNumber,
+        side: "buy",
+        amount,
+        dryRun: execution.dryRun,
+        liveWrite: input.liveWrite,
+        force: input.force,
+        overrideCap: input.overrideCap
+      });
     } catch (e: any) {
       const msg = String(e?.message ?? e);
       const nonBuyable = /fractional|otc/i.test(msg);
@@ -3053,11 +3182,11 @@ export async function buyWatchlistBasket(
     } else {
       legs.push({ symbol: sym, status: "failed", reason: res.evidence?.warning ?? res.sessionWarning ?? `live send returned ${res.httpStatus} — unconfirmed`, orderId: res.orderId, evidenceConfirmed: res.evidence?.confirmed ?? null, sessionWarning: res.sessionWarning });
     }
-    if (liveWrite && delayMs > 0 && idx < affordable.length - 1) await sleep(delayMs);
+    if (execution.live && delayMs > 0 && idx < affordable.length - 1) await sleep(delayMs);
   }
 
   return {
-    list, account: input.accountNumber, amountPerTicker: amount, buyingPower, dryRun: !liveWrite,
+    list, account: input.accountNumber, amountPerTicker: amount, buyingPower, dryRun: execution.dryRun,
     counts: {
       items: items.length, tradable: tradable.length, attempted: affordable.length, placed,
       skipped: legs.filter((l) => l.status === "skipped").length,
@@ -3171,8 +3300,13 @@ export interface EquityOrderInput {
   shares?: number;
   /** Limit price; omit for a market order. */
   limitPrice?: number;
+  /** Explicit time-in-force override. Omit to let the engine pick (gfd for market/OTC, gtc for limit).
+   *  gtc is rejected on a fractional dollar-market order (Robinhood requires gfd there). */
+  timeInForce?: "gfd" | "gtc";
   /** Optional (back-compat) — the gate is ROBINHOOD_ALLOW_LIVE_WRITE=1, enforced downstream. */
   liveWrite?: boolean;
+  /** Force a non-sending preview even when ROBINHOOD_ALLOW_LIVE_WRITE=1 is set. */
+  dryRun?: boolean;
   /** Skip the pending-duplicate check. */
   force?: boolean;
   /** Bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order. */
@@ -3241,12 +3375,23 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   if (!input.amount && !input.shares) throw new Error("Must specify amount (dollars) or shares (quantity)");
   if (input.amount && input.shares) throw new Error("Specify amount OR shares, not both");
 
-  // 0. Owned-account guard — the #1 money-loss risk is a write to the WRONG account (a typo'd or
-  // hallucinated account number templating straight into a live order body). Refuse a CONFIRMED
-  // unowned account; a failed ownership lookup only WARNS (never wedges a write). This is the single
-  // chokepoint behind the CLI buy/sell commands AND the MCP robinhood_buy/robinhood_sell tools, so
-  // the guard can't protect one surface and miss another. Zayd Khan // cold // www.zayd.wtf
-  await assertAccountOwned(input.accountNumber, { getJson });
+  // 0. Resolve the write policy up front so the ownership & dedup defenses can key on whether this
+  // is a real LIVE send (a live send must fail CLOSED; a dry-run stays previewable).
+  const execution = resolveWriteExecution({
+    dryRun: input.dryRun,
+    liveWrite: input.liveWrite,
+    accountNumber: input.accountNumber
+  });
+
+  // Owned-account guard — the #1 money-loss risk is a write to the WRONG account (a typo'd or
+  // hallucinated account number templating straight into a live order body). Always refuse a
+  // CONFIRMED unowned account. On a LIVE send a FAILED ownership lookup ALSO blocks (fail closed);
+  // a dry-run only warns so it stays previewable. Single chokepoint behind the CLI buy/sell commands
+  // AND the MCP robinhood_buy/robinhood_sell tools. Zayd Khan // cold // www.zayd.wtf
+  await assertAccountOwned(input.accountNumber, {
+    getJson,
+    onLookupFailure: execution.live ? "block" : "warn"
+  });
 
   // 1. Resolve instrument — the response carries the OTC/fractional signals.
   const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })).results?.[0];
@@ -3289,15 +3434,20 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   }
 
   const isMarket = effectiveLimit == null;
-  // An OTC auto-limit is market-intent (fill today), so it keeps gfd; explicit limits stay gtc.
-  const tif = isMarket || otcAutoLimit ? "gfd" : "gtc";
+  // TIF: default gfd for market / OTC-auto-limit (fill-today intent), gtc for an explicit limit. An
+  // explicit input.timeInForce overrides — but gtc is invalid on a market order (RH market orders are
+  // day/gfd), so reject that combo loudly rather than silently mangle a real order.
+  if (input.timeInForce === "gtc" && isMarket) {
+    throw new Error(`${symbol}: time_in_force=gtc is invalid for a market order (Robinhood market orders are day/gfd). Pass an explicit --limit for a gtc order, or omit --tif.`);
+  }
+  const tif = input.timeInForce ?? (isMarket || otcAutoLimit ? "gfd" : "gtc");
   const price = isMarket ? last.toFixed(2) : Number(effectiveLimit).toFixed(2);
-  const liveWrite = Boolean(input.liveWrite);
 
-  // 4. Dedup: pending same-side orders on this instrument+account inside the window block the
-  // send (live only — dry-runs can't duplicate anything). Best-effort: a failed check never
-  // blocks, only a positive hit does.
-  if (liveWrite && !input.force) {
+  // 4. Dedup: pending same-side orders on this instrument+account inside the window block the send
+  // (live only — dry-runs can't duplicate anything). Fail CLOSED: a positive hit blocks, AND a
+  // FAILED dedup read also blocks (unless --force) so a transient read error can't wave through a
+  // possible duplicate order.
+  if (execution.live && !input.force) {
     try {
       const recent = await getJson("https://api.robinhood.com/orders/", {}, {
         instrument: `https://api.robinhood.com/instruments/${iid}/`,
@@ -3312,9 +3462,17 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
           `Pass --force (CLI) / force:true (MCP) to skip this check.`
         );
       }
-    } catch (e: any) {
-      if (String(e?.message ?? "").startsWith("DEDUP:")) throw e;
-      // Dedup check failed non-fatally — continue.
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("DEDUP:")) throw e;
+      // The dedup read itself failed. On a LIVE send fail CLOSED rather than risk a double order —
+      // block unless the operator explicitly passed --force / force:true (which bypasses ONLY
+      // duplicate detection, never the ownership guard above, which already ran).
+      throw new Error(
+        `DEDUP-PREFLIGHT-FAILED: could not verify there are no pending ${side} order(s) for ${symbol} ` +
+        `(the duplicate-order read failed: ${msg}). Blocking this live send to avoid a double order. ` +
+        `Pass --force (CLI) / force:true (MCP) to skip the duplicate check and send anyway.`
+      );
     }
   }
 
@@ -3399,7 +3557,7 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   // NOTIONAL CAPS: block an oversized LIVE send. Applies only to a genuine live attempt (intent +
   // master switch on + account allowed by any lock); dry-runs and previews are never blocked.
   const notional = shares * (isMarket ? last : Number(effectiveLimit));
-  if (liveWrite && process.env.ROBINHOOD_ALLOW_LIVE_WRITE === "1" && isAccountAllowed(input.accountNumber)) {
+  if (execution.live) {
     checkNotionalCaps(notional, { override: input.overrideCap });
   }
   const result = await write({
@@ -3407,8 +3565,8 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
     url: "https://api.robinhood.com/orders/",
     method: "POST",
     body,
-    dryRun: !liveWrite,
-    liveWrite,
+    dryRun: execution.dryRun,
+    liveWrite: input.liveWrite,
     accountNumber: input.accountNumber
   });
   // Record session spend ONLY on a confirmed live send (2xx) — a rejected order must not consume
@@ -3560,38 +3718,61 @@ export interface CancelOrderResult {
  * warning (it may have filled before the cancel landed).
  */
 export async function cancelOrder(
-  input: { idOrUrl: string; kind?: OrderKind; liveWrite?: boolean; dryRun?: boolean; logContext?: string },
+  input: { idOrUrl: string; kind?: OrderKind; liveWrite?: boolean; dryRun?: boolean; logContext?: string; accountNumber?: string; force?: boolean },
   deps: { write?: typeof gatedBrokerageWrite; getJson?: typeof brokerageGetJson } = {}
 ): Promise<CancelOrderResult> {
   const write = deps.write ?? gatedBrokerageWrite;
   const getJson = deps.getJson ?? brokerageGetJson;
   const kind: OrderKind = input.kind ?? "equity";
   const id = extractOrderId(input.idOrUrl);
-  const liveWrite = Boolean(input.liveWrite);
-  const isDryRun = input.dryRun ?? !liveWrite;
+  const execution = resolveWriteExecution({
+    risk: "destructive",
+    dryRun: input.dryRun,
+    liveWrite: input.liveWrite
+  });
 
-  // 0. Owned-account guard (live cancels only — dry-runs are safe). Pre-read the order to get its
-  // account, assert OWNERSHIP, AND capture the account so the ROBINHOOD_ALLOWED_ACCOUNT lock scopes
-  // the cancel too (N1). Degrades gracefully: a failed pre-read warns but proceeds.
-  let cancelAccount: string | undefined;
-  if (!isDryRun) {
-    try {
-      const preUrl = kind === "options"
-        ? "https://api.robinhood.com/options/orders/{0}/"
-        : "https://api.robinhood.com/orders/{0}/";
-      const order = await getJson(preUrl, { "0": id });
-      const acctUrl = order?.account;
-      if (acctUrl) {
-        const acctNum = typeof acctUrl === "string"
-          ? acctUrl.replace(/\/$/, "").split("/").pop()
-          : String(acctUrl).replace(/\/$/, "").split("/").pop();
-        if (acctNum) { cancelAccount = acctNum; await assertAccountOwned(acctNum, { getJson }); }
+  // 0. Owned-account guard (live cancels only — dry-runs are safe). Fail CLOSED: a live cancel must
+  // not proceed with the order's account unverified. If the caller already knows the order's owned
+  // account (panic passes it), validate that directly and skip the fragile per-order pre-read;
+  // otherwise pre-read the order to discover + own-check its account. A CONFIRMED-unowned account
+  // ALWAYS blocks. An unverifiable account (pre-read failed, or the order carried no account) blocks
+  // the live cancel unless the operator passes --force / force:true — the explicit emergency escape
+  // hatch that bypasses ONLY account verification. The captured account also scopes the
+  // ROBINHOOD_ALLOWED_ACCOUNT lock (N1).
+  let cancelAccount: string | undefined = input.accountNumber;
+  if (execution.live) {
+    if (input.accountNumber) {
+      await assertAccountOwned(input.accountNumber, { getJson, onLookupFailure: input.force ? "warn" : "block" });
+    } else {
+      let unverifiable: string | undefined;
+      try {
+        const preUrl = kind === "options"
+          ? "https://api.robinhood.com/options/orders/{0}/"
+          : "https://api.robinhood.com/orders/{0}/";
+        const order = await getJson(preUrl, { "0": id });
+        const acctUrl = order?.account;
+        const acctNum = acctUrl ? String(acctUrl).replace(/\/$/, "").split("/").pop() : undefined;
+        if (acctNum) {
+          cancelAccount = acctNum;
+          await assertAccountOwned(acctNum, { getJson, onLookupFailure: input.force ? "warn" : "block" });
+        } else {
+          unverifiable = "the order pre-read did not return an account";
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // A CONFIRMED-unowned account is never bypassable — always block.
+        if (msg.includes("not one of your trading accounts")) throw e;
+        unverifiable = msg;
       }
-    } catch (e: any) {
-      // If the assertion throws (unowned account), propagate it.
-      if (String(e?.message ?? "").includes("not one of your trading accounts")) throw e;
-      // Otherwise (pre-read failed, network error, etc.), warn and proceed.
-      process.stderr.write(`⚠️  Could not verify account ownership for ${kind} order ${id} (lookup failed). Proceeding — double-check the order.\\n`);
+      if (unverifiable) {
+        if (!input.force) {
+          throw new Error(
+            `Refusing a LIVE cancel of ${kind} order ${id}: could not verify the order's account (${unverifiable}). ` +
+            `The cancel account defense fails CLOSED — pass --force (CLI) / force:true (MCP) to cancel anyway.`
+          );
+        }
+        process.stderr.write(`⚠️  --force: cancelling ${kind} order ${id} without verifying its account (${unverifiable}).\n`);
+      }
     }
   }
 
@@ -3600,7 +3781,7 @@ export async function cancelOrder(
     : "https://api.robinhood.com/orders/{0}/cancel/";
   const result = await write({
     url, method: "POST", params: { "0": id },
-    dryRun: isDryRun, liveWrite,
+    dryRun: execution.dryRun, liveWrite: Boolean(input.liveWrite),
     accountNumber: cancelAccount, // N1 — scope the allow-list to the order's account
     logContext: input.logContext ?? `cancel ${kind} order ${id}`
   });
@@ -3777,15 +3958,23 @@ export async function panicCancelAll(
   deps: { getJson?: typeof brokerageGetJson; write?: typeof gatedBrokerageWrite; now?: () => number } = {}
 ): Promise<PanicResult> {
   const open = await listOpenOrders({ accountNumber: opts.accountNumber }, deps);
-  const liveWrite = Boolean(opts.liveWrite);
+  const execution = resolveWriteExecution({
+    risk: "destructive",
+    dryRun: opts.dryRun,
+    liveWrite: opts.liveWrite,
+    accountNumber: opts.accountNumber
+  });
   const rows: Array<OpenOrderRow & { cancel: PanicCancelRecord }> = [];
   let cancelled = 0;
   let failed = 0;
   for (const o of open.orders) {
     try {
       const r = await cancelOrder({
-        idOrUrl: o.id, kind: o.kind, liveWrite,
-        dryRun: opts.dryRun ?? !liveWrite,
+        idOrUrl: o.id, kind: o.kind, liveWrite: opts.liveWrite,
+        dryRun: execution.dryRun,
+        // panic enumerated these orders from listOpenOrders over OWNED accounts, so the account is
+        // already verified — pass it so the live-cancel fail-closed pre-read can't wedge the sweep.
+        accountNumber: o.accountNumber,
         logContext: `panic cancel-all: ${o.kind} ${o.symbol} ${o.description} (acct …${o.accountNumber.slice(-4)})`
       }, deps);
       if (!r.dryRun) {
@@ -3795,10 +3984,10 @@ export async function panicCancelAll(
       rows.push({ ...o, cancel: { httpStatus: r.httpStatus, dryRun: r.dryRun, state: r.state, evidence: r.evidence, gateReason: r.gateReason } });
     } catch (error) {
       failed++;
-      rows.push({ ...o, cancel: { httpStatus: "error", dryRun: process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1", state: null, error: (error as Error).message } });
+      rows.push({ ...o, cancel: { httpStatus: "error", dryRun: execution.dryRun, state: null, error: (error as Error).message } });
     }
   }
-  const dryRun = rows.length > 0 ? rows.every((r) => r.cancel.dryRun) : process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1";
+  const dryRun = rows.length > 0 ? rows.every((r) => r.cancel.dryRun) : execution.dryRun;
   const summary = rows.length === 0
     ? `No open/pending orders found across ${open.accountsScanned.length} account(s) — nothing to cancel.`
     : dryRun
@@ -4927,8 +5116,10 @@ export async function listDocuments(
 /**
  * Download matching documents to local/documents/ (git-crypt encrypted). The tax-season one-shot:
  * downloadDocuments({ type: "1099", year: "2025" }) pulls every 1099 — brokerage, crypto, Roth —
- * for tax year 2025 in one call. Raw fetch with the same bearer auth the engine uses;
- * download_url 302s to storage and fetch follows (auth is dropped cross-origin by undici).
+ * for tax year 2025 in one call. The bearer is attached ONLY when download_url is an allow-listed
+ * Robinhood host (assertBrokerageAuthDestination) — a malformed/compromised record pointing elsewhere
+ * is failed per-file, never handed the token. The allow-listed URL 302s to storage; undici drops the
+ * bearer on that cross-origin redirect.
  * Per-file failures are collected, never thrown.
  */
 export async function downloadDocuments(
@@ -4959,13 +5150,18 @@ export async function downloadDocuments(
     const file = documentFilename(d);
     try {
       if (!d.downloadUrl) throw new Error("no download_url on record");
+      // Only attach the private bearer to an allow-listed Robinhood host — a malformed or compromised
+      // record whose download_url points elsewhere must NOT receive brokerage auth. Throws (caught
+      // below as a per-file failure) on a non-allow-listed host or an unparseable URL. The allow-listed
+      // URL 302s to storage; undici drops the bearer on that cross-origin hop.
+      assertBrokerageAuthDestination(d.downloadUrl);
       const res = await fetchImpl(d.downloadUrl, { headers, redirect: "follow" });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const buf = Buffer.from(await res.arrayBuffer());
       writeFileSync(join(directory, file), buf);
       downloaded.push({ file, type: d.type, date: d.date, bytes: buf.length });
-    } catch (e: any) {
-      failures.push({ file, error: (e as Error).message.slice(0, 120) });
+    } catch (e) {
+      failures.push({ file, error: (e instanceof Error ? e.message : String(e)).slice(0, 120) });
     }
   }
   return { directory, downloaded, failures, skipped: listing.documents.length - docs.length };
@@ -6521,7 +6717,7 @@ export async function computePerformance(opts: any = {}, deps: any = {}) {
 }
 /**
  * Portfolio risk scanner: max loss across open positions, assignment exposure (ITM shorts),
- * undercovered short legs, margin-call distance, and concentration warnings (>20% in one symbol).
+ * undercovered short legs, margin utilization (borrowed/equity), and concentration warnings (>20% in one symbol).
  */
 export async function computeRisk(opts: any = {}, deps: any = {}) {
     const getJson = deps.getJson ?? brokerageGetJson;
@@ -6603,6 +6799,7 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
         }
         for (const p of a.optionPositions) {
             let totalPosMktVal = 0, maxLoss: number | null = 0, itmRisk = false, undercovered = 0;
+            let shortCallRatio = 0, longCallRatio = 0, shortPutRatio = 0, longPutRatio = 0;
             for (const leg of p.legs) {
                 const mark = optMarks.get(leg.optionId) ?? {};
                 const markPrice = n(mark.adjusted_mark_price ?? mark.mark_price);
@@ -6610,6 +6807,9 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
                 const isShort = leg.side === "short";
                 const sign = isShort ? -1 : 1;
                 totalPosMktVal += (Number.isFinite(legVal) ? legVal : 0) * sign;
+                const rq = Number.isFinite(Number(leg.ratioQuantity)) ? Number(leg.ratioQuantity) : 1;
+                if (leg.type === "call") { if (isShort) shortCallRatio += rq; else longCallRatio += rq; }
+                else if (leg.type === "put") { if (isShort) shortPutRatio += rq; else longPutRatio += rq; }
                 if (isShort) {
                     const spotRef = a.equityPositions.find((ep: any) => ep.symbol === p.symbol);
                     const spot = spotRef ? n((eqQuotes.get(spotRef.iid) ?? {})?.last_trade_price) : Number.NaN;
@@ -6636,7 +6836,24 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
                 const debit = n(p.avgOpenPrice) * p.qty;
                 maxLoss = Number.isFinite(debit) ? debit : null;
             }
-            positions.push({ kind: "option", symbol: p.symbol, description: `${p.symbol} ${p.strategy ?? ""}`.trim(), side: p.strategy?.startsWith("short") ? "short" : "long", quantity: p.qty, marketValueUsd: round2(totalPosMktVal), maxLossUsd: maxLoss !== null ? round2(maxLoss) : null, itmExpirationRisk: itmRisk, undercoveredShortLegs: undercovered, account: a.acct });
+            // Honest loss-shape classification for labeling — we do NOT model spread/naked payoff here.
+            // Uses net leg RATIOS (not mere presence) so a ratio spread (e.g. short 2 / long 1 call) is
+            // recognized as net-naked, never mislabeled bounded:
+            //  • number maxLoss                             → "defined" (long-only debit, modeled)
+            //  • long ratio ≥ short ratio for BOTH types    → "defined-spread" (bounded, not modeled)
+            //  • net-excess short CALLS, not share-covered  → "unlimited" (truly unbounded upside)
+            //  • else (naked short put = bounded-but-large, covered call, unclassifiable) → "not-modeled"
+            const hasShort = shortCallRatio > 0 || shortPutRatio > 0;
+            const fullyWinged = longCallRatio >= shortCallRatio && longPutRatio >= shortPutRatio;
+            const netShortCalls = shortCallRatio - longCallRatio;
+            const nakedUnlimitedCall = netShortCalls > 0 && undercovered > 0;
+            const riskClass: "defined" | "defined-spread" | "unlimited" | "not-modeled" =
+                maxLoss !== null ? "defined"
+                : !hasShort ? "not-modeled"
+                : fullyWinged ? "defined-spread"
+                : nakedUnlimitedCall ? "unlimited"
+                : "not-modeled";
+            positions.push({ kind: "option", symbol: p.symbol, description: `${p.symbol} ${p.strategy ?? ""}`.trim(), side: p.strategy?.startsWith("short") ? "short" : "long", quantity: p.qty, marketValueUsd: round2(totalPosMktVal), maxLossUsd: maxLoss !== null ? round2(maxLoss) : null, riskClass, itmExpirationRisk: itmRisk, undercoveredShortLegs: undercovered, account: a.acct });
             symbolValues.set(p.symbol, (symbolValues.get(p.symbol) ?? 0) + (Number.isFinite(totalPosMktVal) ? Math.abs(totalPosMktVal) : 0));
         }
     }
@@ -6648,8 +6865,10 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
         if (pct > 20)
             concentrationWarnings.push({ symbol, weightPct: round2(pct), message: `${symbol} is ${pct.toFixed(1)}% of portfolio (>20% concentration).` });
     }
-    const marginCallDistance = totalEquity > 0 ? round2((totalBorrowed / totalEquity) * 100) : null;
-    return { accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)), totalEquityUsd: round2(totalEquity), totalBorrowedUsd: round2(totalBorrowed), marginCallDistancePct: marginCallDistance, positions, concentrationWarnings, warnings };
+    // borrowed/equity is MARGIN UTILIZATION, not a margin-call distance (a true call buffer needs the
+    // broker maintenance requirement + per-asset haircuts, which this endpoint set does not expose).
+    const marginUtilization = totalEquity > 0 ? round2((totalBorrowed / totalEquity) * 100) : null;
+    return { accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)), totalEquityUsd: round2(totalEquity), totalBorrowedUsd: round2(totalBorrowed), marginUtilizationPct: marginUtilization, marginCallDistancePct: marginUtilization, positions, concentrationWarnings, warnings };
 }
 /**
  * Greeks scenario calculator: takes current portfolio Greeks, applies spot ±X%, IV ±N%,

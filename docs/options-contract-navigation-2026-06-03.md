@@ -75,8 +75,8 @@ authority before building any order body.
   browser/device pass across multiple symbols and expirations.
 - The planner must not use a visible chain row as proof. It must resolve the
   exact option instrument id from API data.
-- Live orders remain blocked unless exact user approval, `--live-write`, and
-  `ROBINHOOD_ALLOW_LIVE_WRITE=1` are all present.
+- Live orders remain blocked unless exact user approval is present and
+  `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set. `--dry-run` still previews without sending.
 
 ## Supplementary R&D
 

@@ -33,8 +33,9 @@ mid-batch.
    `node cli/dist/index.js accounts --json` (first-class, capability-annotated) or
    `brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full`.
    **Never** trust bare `accounts/` and **never** hardcode account numbers.
-6. **Confirm the gate is off by default.** A POST without `--live-write` must return
-   `liveWriteBlocked`. If it doesn't, stop — something is misconfigured (e.g. the env
+6. **Confirm the gate is off by default.** A POST without
+   `ROBINHOOD_ALLOW_LIVE_WRITE=1` must return `liveWriteBlocked`. If it doesn't,
+   stop — something is misconfigured (e.g. the env
    var got exported into your shell, which is itself a bug — see §1 rule 3).
 
 7. **On any finance / research / due-diligence task, read the two memory layers** (repo root):
@@ -306,12 +307,12 @@ educational, not tax advice.
 
 ## 7. The safety model in one screen (so you act, not just read)
 
-- **Single-switch gate, per command, every time:** a write sends only with **both**
-  `--live-write` AND `ROBINHOOD_ALLOW_LIVE_WRITE=1` (MCP: `liveWrite:true` + the env
-  var in the server's environment). With one or neither it's a dry-run.
+- **Single-switch gate, per command, every time:** a write sends only with
+  `ROBINHOOD_ALLOW_LIVE_WRITE=1` set for that command or MCP server process.
+  `--live-write` / `liveWrite:true` are accepted for backward compatibility but
+  no longer gate execution. Without the env switch, writes are dry-run.
 - **Never export the env var** into your shell profile. Inline, single command, every
-  time. A persistent gate turns every later `--live-write` — including "tests" — into
-  a real send.
+  time. A persistent gate can turn later "tests" into real sends.
 - **The resolver fails closed and fails loud:** forced writes with no matching write
   route return nothing; ambiguous substrings throw `AmbiguousRouteError`. Don't engineer
   around these — they're the safety net that caught the cancel-route mis-pick.

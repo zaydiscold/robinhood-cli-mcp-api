@@ -58,12 +58,12 @@ node cli/dist/index.js brokerage execute \
   "corp_actions/drip/account_settings/{account}/" --method GET --param account=<ACCOUNT_NUMBER> --json --full
 node cli/dist/index.js brokerage execute \
   "corp_actions/drip/account_settings/{account}/" --method PATCH --param account=<ACCOUNT_NUMBER> \
-  --body-json '{"drip_enabled":true}' --live-write --json --full
+  --body-json '{"drip_enabled":true}' --json --full
 # Per-stock toggle:
 node cli/dist/index.js brokerage execute \
   "corp_actions/drip/instrument_settings/{account}/{instrument_id}/" --method PATCH \
   --param account=<ACCOUNT_NUMBER> --param instrument_id=<INSTRUMENT_ID> \
-  --body-json '{"drip_enabled":true}' --live-write --json --full
+  --body-json '{"drip_enabled":true}' --json --full
 
 # Margin/account type read surface.
 node cli/dist/index.js brokerage routes --query "margin" --json
@@ -72,8 +72,9 @@ node cli/dist/index.js brokerage execute \
   --param id=<ACCOUNT_NUMBER> --json --full
 ```
 
-The dry-run examples above send nothing unless both live-write gates are present:
-`--live-write` and `ROBINHOOD_ALLOW_LIVE_WRITE=1`.
+The examples above are dry-run by default. To send the write live, set the single
+switch inline for that command: `ROBINHOOD_ALLOW_LIVE_WRITE=1`. `--dry-run`
+still forces a preview even when the switch is present.
 
 ## MCP Recipes
 
@@ -81,7 +82,8 @@ The dry-run examples above send nothing unless both live-write gates are present
   `query: "corp_actions/drip/enrollment"` lists the route entries.
 - `robinhood_brokerage_plan` builds a dry-run request shape without sending.
 - `robinhood_brokerage_execute` runs reads live; writes are forced dry-run unless
-  `liveWrite: true` and `ROBINHOOD_ALLOW_LIVE_WRITE=1` are both set.
+  `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set in the server environment. `dryRun: true`
+  still forces a preview.
 
 ## Browser-captured write endpoints (PROVEN 2026-06-03)
 

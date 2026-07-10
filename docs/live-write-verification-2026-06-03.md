@@ -1,7 +1,9 @@
 # Live-write verification — 2026-06-03
 
-Evidence that the double-gated write path (`--live-write` + `ROBINHOOD_ALLOW_LIVE_WRITE=1`)
-actually mutates a real Robinhood account and that reverts work. All account
+Evidence that the live-write path mutates a real Robinhood account and that
+reverts work. This historical run included the legacy `--live-write` flag plus
+`ROBINHOOD_ALLOW_LIVE_WRITE=1`; the current gate is the single environment
+switch, with `--live-write` accepted for backward compatibility. All account
 numbers and schedule ids are redacted here; the raw run is local-only.
 
 ## Recurring schedule pause → resume (round-trip, verified)

@@ -4,9 +4,8 @@ This is a personal `zaydiscold` repo. It is read/write capable.
 
 ## Behavior
 
-- `brokerage execute` sends live HTTP requests when `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE` is present.
-- `crypto execute` sends live HTTP requests to Robinhood's official Crypto Trading API when `ROBINHOOD_CRYPTO_API_KEY` and `ROBINHOOD_CRYPTO_PRIVATE_KEY_B64` are present.
-- `--dry-run` is opt-in and returns the execution plan without sending.
+- Read routes send live HTTP requests when the relevant caller-owned auth is present.
+- `--dry-run` returns the execution plan without sending and always wins, even when the live-write switch is set.
 - **Writes are env-gated.** Any route whose risk is `write-safe`, `write-mutate`,
   `write-or-sensitive`, or `destructive` is forced to a dry-run UNLESS
   `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set — the single master switch (no per-call `--live-write` needed).
@@ -42,6 +41,6 @@ ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute "https://api.robinh
 robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/marketdata/best_bid_ask/" --query-param symbol=BTC-USD --json
 ```
 
-Use exact-action consent for mutations: trade, transfer, cancel, unlink, or destructive calls should only be run when the user asked for that specific live operation.
+Use exact-action consent for mutations: trade, transfer, cancel, unlink, or destructive calls should only be run live when the user asked for that specific live operation.
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

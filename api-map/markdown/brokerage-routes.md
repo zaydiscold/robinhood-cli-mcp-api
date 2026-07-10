@@ -4,8 +4,8 @@ Source: reverse-engineered routes plus sanitized authenticated Chrome/CDP captur
 
 Personal repo semantics: mapped routes can be executed live with caller-owned `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE`. Pass `--dry-run` when you want a non-sending test plan.
 
-Current count: 311 route templates.
-Risk counts: destructive=9, read=86, sensitive-read=192, write-mutate=11, write-or-sensitive=7, write-safe=6.
+Current count: 313 route templates.
+Risk counts: destructive=9, read=87, sensitive-read=192, write-mutate=12, write-or-sensitive=7, write-safe=6.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -219,11 +219,12 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/payment_instruments/v2/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/payment_instruments/v2/debitcard/{uuid}/` |
 | sensitive-read | GET | money-movement, unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/paymenthub/unified_transfers/` |
+| write-mutate | POST | money-movement | bonfire.robinhood.com | cdp-2026-06-18-transfer-flow | `https://bonfire.robinhood.com/paymenthub/unified_transfers/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/paymenthub/unified_transfers/{uuid}/contribution/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/portfolio/{id}/positions_v2` |
 | sensitive-read | GET | money-movement | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/portfolio/acats/bonus-promo-info/` |
 | sensitive-read | GET | account | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/portfolio/account/{id}/live` |
-| sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/portfolio/performance/{id}` |
+| sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/portfolio/performance/{id}/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/portfolio/performance/{id}/settings_v2/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/psp/eligible_programs` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/psp/gifts/history/` |
@@ -306,7 +307,8 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | read | GET | account, settings, cash | api.robinhood.com | settings-capture-2026-06-03 | `https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/` |
 | write-mutate | POST | account, settings, cash | bonfire.robinhood.com | settings-capture-2026-06-03 | `https://bonfire.robinhood.com/sms/sweep/agree_and_enroll` |
 | write-or-sensitive | POST | account, agreements | identi.robinhood.com | settings-capture-2026-06-03 | `https://identi.robinhood.com/user_info/agreements/v2/sign/` |
-| write-safe | POST | options, trading, preview | bonfire.robinhood.com | settings-capture-2026-06-03 | `https://bonfire.robinhood.com/options/orders/review` |
+| write-safe | POST | options, trading, preview, roll | bonfire.robinhood.com | settings-capture-2026-06-03; cdp-2026-06-23-googl-native-roll (atomic 2-leg roll body verified; blocked at $0 BP, nothing placed) | `https://bonfire.robinhood.com/options/orders/review` |
+| read | GET | options, roll | api.robinhood.com | cdp-2026-06-23-googl-native-roll (observed + live-verified response) | `https://api.robinhood.com/options/maximum_rollable_quantity/{strategy_code}/` |
 | write-safe | POST | options, trading, preview | bonfire.robinhood.com | settings-capture-2026-06-03 | `https://bonfire.robinhood.com/options/orders/marketability/` |
 | read | GET | account, settings, stock-lending | bonfire.robinhood.com | settings-capture-2026-06-03 | `https://bonfire.robinhood.com/slip/{account_number}/status/` |
 | write-mutate | PATCH | account, settings, dividends | api.robinhood.com | settings-capture-2026-06-03 | `https://api.robinhood.com/corp_actions/drip/account_settings/{account_number}/` |
@@ -314,7 +316,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | write-mutate | PUT | account, settings, stock-lending | bonfire.robinhood.com | settings-capture-2026-06-03 | `https://bonfire.robinhood.com/slip/{account_number}/status/` |
 | write-mutate | POST | account, settings, cash | api.robinhood.com | settings-capture-2026-06-03 | `https://api.robinhood.com/accounts/{account_number}/sweep_enrollment_state/` |
 | sensitive-read | GET | account, options | bonfire.robinhood.com | cdp-2026-06-04-dram-option-order-flow (observed; the real options-BP gate the web reads before an option open) | `https://bonfire.robinhood.com/accounts/{account_number}/options_buying_power` |
-| read | GET | options, trading | api.robinhood.com | cdp-2026-06-04-dram-option-order-flow (observed; collateral pre-check, order passed url-encoded in ?order={json}) | `https://api.robinhood.com/options/orders/collateral/` |
+| read | GET | options, trading | api.robinhood.com | cdp-2026-06-04-dram-option-order-flow; cdp-2026-06-23-googl-native-roll (response live-verified; collateral pre-check, full order passed url-encoded in ?order={json}) | `https://api.robinhood.com/options/orders/collateral/` |
 | read | GET | options, trading | api.robinhood.com | cdp-2026-06-04-dram-option-order-flow (observed; per-order fee schedule) | `https://api.robinhood.com/options/fees/` |
 | read | GET | equity, ipo-access | bonfire.robinhood.com | cdp (observed; RH IPO Access summary viewmodel — Idea A seed; full prospectus/IOI family TBD via interactive capture) | `https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/` |
 | read | GET | equity, trading | bonfire.robinhood.com | cdp (observed; web order-ticket SELL-side selector viewmodel) | `https://bonfire.robinhood.com/equity_trading/order_type_selector/sell/` |

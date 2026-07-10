@@ -47,8 +47,8 @@ official equity-only "agent sandbox."
 1. **Reach for the first-class command, not raw `brokerage execute`.** `portfolio`, `positions`,
    `quote`, `options chain/positions/enumerate/holdings/inspect`, `accounts`, `history`, `watchlist`,
    `recurring`, `settings`, `stock profile` each do the multi-step join + query params for you. Drop to
-   `brokerage execute` only for a route that has no command yet. (`brokerage execute` can't take
-   `?query=` params — assuming it can is the single biggest time-waster here.)
+   `brokerage execute` only for a route that has no command yet. It accepts repeatable
+   `--query-param key=value` flags, applied after the mapped route is selected.
 2. **Answer money questions in DOLLARS, weighted by position size — never a percent leaderboard.**
    "How am I down today / after hours, and which names?" is exactly one command: `portfolio`
    (`--day` / `--after-hours`). A −9% move on a $6 lot is noise; a −5% move on a $1,600 call is the story.
@@ -1156,8 +1156,8 @@ To pull "all the info" on a contract you hold (the option-detail page surface), 
 RH exposes a live sentiment layer under `api.robinhood.com/midlands/` (risk `read`). Read it as the
 **slow, account-native confirmer**, not the leading signal — it trails the real-time off-platform
 pulse (see "Signal sourcing" below). These now have **first-class commands** (`news`/`ratings`/
-`earnings`/`movers`/`options-events`) + MCP tools — prefer them over raw `brokerage execute` (which
-can't take `?query=` params):
+`earnings`/`movers`/`options-events`) + MCP tools — prefer them over raw `brokerage execute`; raw
+queries can use repeatable `--query-param key=value` flags when needed:
 - `midlands/news/?symbol=<SYM>` — news articles per ticker → `news <symbol>`.
 - `midlands/ratings/{instrument_id}/` — analyst buy/hold/sell summary + dated texts → `ratings <symbol>`.
 - `midlands/tags/tag/{100-most-popular|top-movers|...}/` — crowd / momentum instrument lists.

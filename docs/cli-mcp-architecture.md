@@ -49,6 +49,11 @@ Route resolution is method-aware. If `orders/` has both GET and POST entries, a
 POST must be requested with `--method POST`; otherwise the read route is selected.
 For forced write methods with no matching write route, the resolver fails closed.
 
+Mutation provenance is method-aware too. A live send requires `verificationStatus` or
+`verificationStatusByMethod[method]` to be `captured` or `live_verified`; `inferred` and
+`deprecated` routes remain preview-only. Generic raw execution flows through
+`gatedBrokerageWrite`, including ownership verification, notional/session caps, and audit logging.
+
 ## First-Class Workflows vs Raw Execute
 
 Prefer first-class commands and MCP tools for common work:

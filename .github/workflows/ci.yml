@@ -44,3 +44,8 @@ jobs:
         run: pnpm test
       - name: Build (cli + mcp — emits dist the runtime reads)
         run: pnpm build
+      - name: Generated API map is committed and current
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 20
+        run: |
+          pnpm generate:api-map
+          git diff --exit-code -- api-map

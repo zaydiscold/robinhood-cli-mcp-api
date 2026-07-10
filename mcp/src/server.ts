@@ -38,6 +38,7 @@ import {
   parseParamAssignments,
   planBrokerageRequest,
   planCryptoRequest,
+  inferBrokerageMethod,
   resolveLiveWriteGate,
   accountFromWriteRequest,
   riskIsWrite,
@@ -717,35 +718,51 @@ server.registerTool(
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional(),
+      overrideCap: z.boolean().default(false).describe("bypass configured order/session notional caps for this raw order"),
       fullBody: z.boolean().default(false)
     })
   },
-  async ({ query, method, params, queryParams, body, dryRun, liveWrite: liveWriteParam, live, fullBody }, extra) => {
+  async ({ query, method, params, queryParams, body, dryRun, liveWrite: liveWriteParam, live, overrideCap, fullBody }, extra) => {
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, method);
     if (!route) {
       throw new Error(`No brokerage route matched: ${query}`);
     }
-    const gate = resolveLiveWriteGate({ risk: route.risk, method, dryRun, liveWrite, accountNumber: accountFromWriteRequest(body, parseParamAssignments(params)) });
-    const effectiveDryRun = dryRun || gate.forcedDryRun;
+    const parsedParams = parseParamAssignments(params);
+    const parsedQuery = parseParamAssignments(queryParams);
+    const requestMethod = (method ?? inferBrokerageMethod(route)).toUpperCase();
+    const isWrite = riskIsWrite(route.risk) || (requestMethod !== "GET" && requestMethod !== "HEAD");
+    if (isWrite) {
+      const result = await gatedBrokerageWrite({
+        url: route.url,
+        method: requestMethod,
+        params: parsedParams,
+        query: parsedQuery,
+        body,
+        dryRun,
+        liveWrite,
+        overrideCap,
+        fullBody,
+        signal: extra.signal,
+        logContext: `raw MCP brokerage execute: ${requestMethod} ${route.url}`
+      });
+      return writeStatus(result, { dryRun: result.dryRun, reason: result.reason });
+    }
     const plan = planBrokerageRequest({
       route,
-      method,
-      params: parseParamAssignments(params),
-      query: parseParamAssignments(queryParams),
+      method: requestMethod,
+      params: parsedParams,
+      query: parsedQuery,
       body,
-      dryRun: effectiveDryRun
+      dryRun
     });
     const result = await executeBrokerageRequest(plan, {
       body,
-      dryRun: effectiveDryRun,
+      dryRun,
       fullBody,
       signal: extra.signal
     });
-    const m = method?.toUpperCase();
-    const isWrite = riskIsWrite(route.risk) || (m !== undefined && m !== "GET" && m !== "HEAD");
-    if (isWrite) return writeStatus(result as object, { dryRun: effectiveDryRun, reason: gate.forcedDryRun ? gate.reason : undefined });
     return jsonResponse(result);
   }
 );

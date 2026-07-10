@@ -100,7 +100,8 @@ import {
   printJson,
   printTable,
   resolveLiveWriteGate,
-  accountFromWriteRequest,
+  inferBrokerageMethod,
+  riskIsWrite,
   selectNearStrikes,
   signCryptoRequest,
   summarizeApiMap,
@@ -695,38 +696,53 @@ brokerage
   .option("--body-json <json>", "JSON request body")
   .option("--dry-run", "print execution plan without sending")
   .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
+  .option("--override-cap", "bypass configured order/session notional caps for this raw order")
   .option("--full", "print full response body instead of bounded preview")
   .option("--json", "emit JSON")
-  .action(async (query: string, options: { method?: string; param?: string[]; queryParam?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; full?: boolean; json?: boolean }) => {
+  .action(async (query: string, options: { method?: string; param?: string[]; queryParam?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; overrideCap?: boolean; full?: boolean; json?: boolean }) => {
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, options.method);
     if (!route) {
       throw new Error(noMatchHint(query));
     }
     const reqParams = parseParamAssignments(options.param);
+    const reqQuery = parseParamAssignments(options.queryParam);
     const reqBody = parseJsonBody(options.bodyJson);
-    const gate = resolveLiveWriteGate({
-      risk: route.risk,
-      method: options.method,
-      dryRun: Boolean(options.dryRun),
-      liveWrite: Boolean(options.liveWrite),
-      accountNumber: accountFromWriteRequest(reqBody, reqParams)
-    });
-    if (gate.forcedDryRun && gate.reason) {
-      process.stderr.write(`${gate.reason}\n`);
+    const requestMethod = (options.method ?? inferBrokerageMethod(route)).toUpperCase();
+    const isWrite = riskIsWrite(route.risk) || (requestMethod !== "GET" && requestMethod !== "HEAD");
+    if (isWrite) {
+      const result = await gatedBrokerageWrite({
+        url: route.url,
+        method: requestMethod,
+        params: reqParams,
+        query: reqQuery,
+        body: reqBody,
+        dryRun: Boolean(options.dryRun),
+        liveWrite: Boolean(options.liveWrite),
+        overrideCap: Boolean(options.overrideCap),
+        fullBody: Boolean(options.full),
+        logContext: `raw brokerage execute: ${requestMethod} ${route.url}`
+      });
+      if (result.reason) process.stderr.write(`${result.reason}\n`);
+      if (options.json) {
+        printJson(result);
+        return;
+      }
+      process.stdout.write(`${result.status} ${result.statusText} ${result.method} ${result.url}\n`);
+      process.stdout.write(result.body ? `${result.body}\n` : "");
+      return;
     }
-    const effectiveDryRun = Boolean(options.dryRun) || gate.forcedDryRun;
     const plan = planBrokerageRequest({
       route,
-      method: options.method,
+      method: requestMethod,
       params: reqParams,
-      query: parseParamAssignments(options.queryParam),
+      query: reqQuery,
       body: reqBody,
-      dryRun: effectiveDryRun
+      dryRun: Boolean(options.dryRun)
     });
     const result = await executeBrokerageRequest(plan, {
-      dryRun: effectiveDryRun,
-      body: parseJsonBody(options.bodyJson),
+      dryRun: Boolean(options.dryRun),
+      body: reqBody,
       fullBody: Boolean(options.full)
     });
     if (options.json) {

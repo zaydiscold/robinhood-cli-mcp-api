@@ -75,4 +75,29 @@ describe("MCP protocol conformance", () => {
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toMatch(/invalid|account|symbol/i);
   });
+
+  it("forces an inferred raw mutation to dry-run even when the MCP process is armed", async () => {
+    const previous = process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+    process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1";
+    try {
+      const result = await client.callTool({
+        name: "robinhood_brokerage_execute",
+        arguments: {
+          query: "https://api.robinhood.com/ach/relationships/",
+          method: "POST",
+          body: { bank_routing_number: "000000000" },
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual(expect.objectContaining({
+        executed: false,
+        executionStatus: expect.stringMatching(/DRY RUN/),
+        verificationStatus: "inferred",
+      }));
+    } finally {
+      if (previous === undefined) delete process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+      else process.env.ROBINHOOD_ALLOW_LIVE_WRITE = previous;
+    }
+  });
 });

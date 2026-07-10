@@ -85,7 +85,8 @@ grain of the tool:
   `options chain/positions/enumerate/holdings/inspect`, `accounts`, `history`, `watchlist`, `recurring`,
   `settings`, `stock profile`, `pretrade`, `income`, `performance`, `risk`, `whatif`, `calendar`, `exposure`, `autopilot`,
   `search` do the multi-step join + query params for you. `brokerage execute` is the
-  fallback for an unwrapped route — and it **can't take `?query=` params** (top time-waster).
+  fallback for an unwrapped route. Append query values with repeatable
+  `--query-param key=value` flags; route matching still happens against the mapped URL first.
 - **Money questions → DOLLARS, weighted by size, one command:** `portfolio` (`--day` / `--after-hours`).
   Never a size-blind percent leaderboard.
 - **Read → classify → gate.** Classify the exact options strategy before building; never infer naked
@@ -214,9 +215,9 @@ fills `{placeholders}` from `--param name=value`.
   you **must** pass `--method POST`, otherwise you get the GET (read) route. (This also
   closes a safety hole: without it, a forced `--method POST` could resolve to the GET
   route, which is `sensitive-read`, and slip past the write-gate.)
-- **There is no `--query-param`.** Arbitrary query strings can't be appended; the query
-  must be a substring of a mapped route URL. To filter, use the templated routes whose
-  URL already carries the `?key={key}` shape (see §7).
+- **Query parameters are appended after route matching.** Keep the mapped URL/path as the
+  `<query>`, then pass repeatable `--query-param key=value` flags. This avoids inventing a
+  one-off route while preserving allow-list and method-aware resolution.
 
 ---
 

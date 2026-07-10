@@ -29,7 +29,7 @@ describe("MCP protocol conformance", () => {
     ]);
 
     expect(new Set(tools.tools.map((tool) => tool.name)).size).toBe(tools.tools.length);
-    expect(tools.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(CAPABILITIES.map((entry) => entry.mcp)));
+    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(CAPABILITIES.map((entry) => entry.mcp!).sort());
     // Dynamic, not a literal: resources are exactly listKnowledge() mapped (server.ts), so tie the
     // count to the file-backed source. Catches an accidental resource DROP without breaking every time
     // a knowledge/doc Markdown file is added.

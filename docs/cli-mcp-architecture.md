@@ -104,20 +104,17 @@ Write tools must keep three properties:
 These are high-leverage refinements that would make the project easier to
 maintain and safer for agents:
 
-1. **Typed capability registry.** Define each first-class operation once, then
-   generate CLI commands, MCP schemas, recipes, README tables, and parity tests
-   from that registry.
-2. **Compact MCP profile.** Keep the full expert tool surface, but add a smaller
-   default profile with discovery tools plus 10-15 common workflows for agents
-   that do worse with large tool menus.
-3. **Structured output schemas.** Add explicit MCP output schemas for high-volume
-   tools such as portfolio, orders, risk, options quotes, and documents.
-4. **Doctor command.** Add `doctor` / `robinhood_doctor` to check Node version,
-   build freshness, dist route-map freshness, auth presence, web-app header
-   freshness, MCP reload state, and dry-run gate behavior.
-5. **Route verification metadata.** Split route-map write bodies into
-   `captured`, `inferred`, `live_verified`, and `deprecated` states and block
-   live sends for unverified write bodies unless explicitly overridden.
+1. **Typed capability registry — foundation shipped.** `cli/src/capabilities.ts` inventories the
+   complete MCP surface, access class, profiles, and output-schema class. Protocol tests require
+   exact registry/server parity; existing CLI handler bodies will migrate incrementally.
+2. **Compact MCP profiles — shipped, opt-in.** Set `ROBINHOOD_MCP_PROFILE` to `core`, `trading`,
+   `research`, or `admin`; `full` remains the compatibility default.
+3. **Structured output schemas — shipped.** Every tool declares an object contract; new workflows
+   use field-specific schemas while legacy contracts are narrowed incrementally.
+4. **Doctor command — shipped.** `doctor` / `robinhood_doctor` perform offline environment, build,
+   provenance, knowledge, gate, permission, and profile checks.
+5. **Route verification metadata — shipped.** Inferred/deprecated mutations are forced to dry-run;
+   captured/live-verified methods may reach the normal live-write gate.
 6. **Docs drift tests.** Test the snippets that matter: live-write language,
    `--method` on writes, route-map rebuild notes, package README command names,
    and links in `docs/README.md`.

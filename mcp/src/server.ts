@@ -143,11 +143,12 @@ export const server = new McpServer(
 // structural contract. Capability-registry tools below replace it with a precise schema. This makes
 // structuredContent protocol-valid without inventing fake per-field guarantees for legacy tools.
 const registerToolBase = server.registerTool.bind(server);
-(server as any).registerTool = (name: string, config: any, handler: any) => registerToolBase(
-  name,
-  { outputSchema: z.object({}).catchall(z.unknown()), ...config },
-  handler
-);
+(server as any).registerTool = (name: string, config: any, handler: any) => {
+  const definition = CAPABILITIES.find((entry) => entry.mcp === name);
+  if (!definition) throw new Error(`MCP tool ${name} is missing from the typed capability registry`);
+  if (!capabilityEnabled(definition)) return undefined;
+  return registerToolBase(name, { outputSchema: z.object({}).catchall(z.unknown()), ...config }, handler);
+};
 
 function registerCapabilityTool(id: string, config: any, handler: any): void {
   const definition = CAPABILITIES.find((entry) => entry.id === id);
@@ -2463,13 +2464,13 @@ registerCapabilityTool("options-workbench", {
   title: "Robinhood Options Workbench",
   description: "Analyze one exact options package: premium, expiry payoff samples, signed Greeks, collateral/review, roll comparisons, and a body-bound approval card. Pure analysis; never sends.",
   inputSchema: z.object({
-    symbol: z.string(), expiration: z.string(), underlying_price: z.number(), quantity: z.number().int().positive().default(1),
-    legs: z.array(z.object({ id: z.string(), action: z.enum(["buy", "sell"]), type: z.enum(["call", "put"]), strike: z.number(), premium: z.number(), ratioQuantity: z.number().int().positive().optional(), delta: z.number().optional(), gamma: z.number().optional(), theta: z.number().optional(), vega: z.number().optional() })).min(1),
+    symbol: z.string(), expiration: z.string(), underlying_price: z.number(), quantity: z.number().int().positive().default(1), pricing_mode: z.enum(["natural", "mid"]).default("mid"),
+    legs: z.array(z.object({ id: z.string(), action: z.enum(["buy", "sell"]), type: z.enum(["call", "put"]), strike: z.number(), premium: z.number().optional(), bid: z.number().optional(), ask: z.number().optional(), mark: z.number().optional(), ratioQuantity: z.number().int().positive().optional(), delta: z.number().optional(), gamma: z.number().optional(), theta: z.number().optional(), vega: z.number().optional() })).min(1),
     order_body: z.unknown().optional(), collateral: z.unknown().optional(), review: z.unknown().optional(), roll_alternatives: z.array(z.unknown()).optional()
   }),
   outputSchema: z.object({ contract: z.object({}).catchall(z.unknown()), package: z.object({ netPremium: z.number() }), payoff: z.object({}).catchall(z.unknown()), netGreeks: z.object({ delta: z.number(), gamma: z.number(), theta: z.number(), vega: z.number() }), approvalCard: z.object({}).catchall(z.unknown()), rollAlternatives: z.array(z.unknown()) }),
   annotations: toolAnnotations(true, "read")
-}, async (args: any) => jsonResponse(buildOptionsWorkbench({ symbol: args.symbol, expiration: args.expiration, underlyingPrice: args.underlying_price, quantity: args.quantity, legs: args.legs, orderBody: args.order_body, collateral: args.collateral, review: args.review, rollAlternatives: args.roll_alternatives })));
+}, async (args: any) => jsonResponse(buildOptionsWorkbench({ symbol: args.symbol, expiration: args.expiration, underlyingPrice: args.underlying_price, quantity: args.quantity, pricingMode: args.pricing_mode, legs: args.legs, orderBody: args.order_body, collateral: args.collateral, review: args.review, rollAlternatives: args.roll_alternatives })));
 
 registerCapabilityTool("portfolio-snapshot", {
   title: "Robinhood Portfolio Time Machine",

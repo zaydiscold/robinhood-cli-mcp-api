@@ -9,13 +9,13 @@ describe("typed capability registry", () => {
     }
   });
 
-  it("requires profiles and output schemas for every cross-surface capability", () => {
+  it("requires profiles and output schemas for every MCP capability", () => {
     for (const entry of CAPABILITIES) {
       expect(entry.profiles.length).toBeGreaterThan(0);
       expect(entry.outputSchema).toBeTruthy();
-      expect(entry.cli).toBeTruthy();
       expect(entry.mcp).toMatch(/^robinhood_/);
     }
+    expect(CAPABILITIES.filter((entry) => entry.cli).every((entry) => entry.mcp)).toBe(true);
   });
 
   it("keeps full backward-compatible and filters narrower profiles", () => {

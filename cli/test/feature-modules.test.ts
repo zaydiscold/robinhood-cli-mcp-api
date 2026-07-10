@@ -64,7 +64,19 @@ describe("options workbench", () => {
     expect(result.package.netPremium).toBe(200);
     expect(result.netGreeks.delta).toBe(-20);
     expect(result.payoff.scenarios.find((row) => row.spot === 110)?.pnl).toBe(-300);
+    expect(result.payoff.maxProfit).toBe(200);
+    expect(result.payoff.maxLoss).toBe(300);
+    expect(result.payoff.exactForSameExpiration).toBe(true);
     expect(result.approvalCard.bodyBound).toBe(true);
+    expect(result.approvalCard.bodySha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("marks an uncovered short-call tail as unlimited loss and can price from bid/ask", () => {
+    const result = buildOptionsWorkbench({ symbol: "AAPL", expiration: "2026-12-18", underlyingPrice: 100, pricingMode: "natural", legs: [
+      { id: "short", action: "sell", type: "call", strike: 105, bid: 2.9, ask: 3.1 }
+    ] });
+    expect(result.package.netPremium).toBe(290);
+    expect(result.payoff.maxLoss).toBe("unlimited");
   });
 });
 

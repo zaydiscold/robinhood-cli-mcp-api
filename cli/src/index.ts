@@ -2395,12 +2395,13 @@ options
   .requiredOption("--spot <price>")
   .requiredOption("--legs-json <json>", "JSON array of {id,action,type,strike,premium,ratioQuantity?,greeks?}")
   .option("--quantity <n>", "package quantity", "1")
+  .option("--pricing-mode <mode>", "natural|mid", "mid")
   .option("--order-body-json <json>", "exact planned order body to bind into the approval card")
   .option("--collateral-json <json>", "collateral response for the exact body")
   .option("--review-json <json>", "review response for the exact body")
   .option("--roll-alternatives-json <json>", "array of compared roll alternatives")
   .action((opts: any) => printJson(buildOptionsWorkbench({
-    symbol: opts.symbol, expiration: opts.expiration, underlyingPrice: Number(opts.spot), quantity: Number(opts.quantity),
+    symbol: opts.symbol, expiration: opts.expiration, underlyingPrice: Number(opts.spot), quantity: Number(opts.quantity), pricingMode: opts.pricingMode,
     legs: JSON.parse(opts.legsJson),
     orderBody: opts.orderBodyJson ? JSON.parse(opts.orderBodyJson) : undefined,
     collateral: opts.collateralJson ? JSON.parse(opts.collateralJson) : undefined,

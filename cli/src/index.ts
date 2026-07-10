@@ -749,9 +749,9 @@ brokerage
   .option("--dollars <amount>", "dollar-notional fractional buy (market, regular hours only)")
   .option("--shares <qty>", "share quantity (whole shares for OTC names)")
   .option("--limit <price>", "explicit limit price; else market with ask collar (OTC forces a limit at the ask)")
-  .option("--tif <gfd|gtc>", "time in force", "gfd")
+  .option("--tif <gfd|gtc>", "time in force (default: gfd for market/OTC, gtc for an explicit limit)")
   .option("--dry-run", "print plan/body, send nothing")
-  .option("--live", "send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1); without it the order is dry-run — matches the top-level `buy`")
+  .option("--live", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--force", "skip the pending-duplicate-order check")
   .option("--override-cap", "bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order")
   .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
@@ -773,7 +773,9 @@ brokerage
       amount: opts.dollars ? Number(opts.dollars) : undefined,
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.limit ? Number(opts.limit) : undefined,
-      liveWrite: Boolean(opts.live) && !opts.dryRun,
+      timeInForce: parseTif(opts.tif),
+      dryRun: Boolean(opts.dryRun),
+      liveWrite: Boolean(opts.live ?? opts.liveWrite),
       force: Boolean(opts.force),
       overrideCap: Boolean(opts.overrideCap)
     });
@@ -3181,17 +3183,28 @@ program.addCommand(rollLedger);
 
 // Zayd Khan // cold // www.zayd.wtf
 
+// Coerce a --tif flag to the engine's TIF union, or throw a clear error. undefined → the engine
+// picks (gfd for market/OTC, gtc for an explicit limit). Shared by top-level buy/sell + `brokerage buy`.
+function parseTif(v: string | undefined): "gfd" | "gtc" | undefined {
+  if (v == null) return undefined;
+  const t = String(v).toLowerCase();
+  if (t !== "gfd" && t !== "gtc") throw new Error(`--tif must be gfd or gtc (got "${v}")`);
+  return t;
+}
+
 // ── buy: simple market/limit order — one command, no raw JSON needed ──
 program
   .command("buy")
   .aliases(["order"])
-  .description("Place an equity order. Market buys are fractional. Dry-run by default; pass --live and set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.")
+  .description("Place an equity order. Writes execute when ROBINHOOD_ALLOW_LIVE_WRITE=1; otherwise dry-run. Pass --dry-run to preview even when enabled.")
   .requiredOption("-s, --symbol <symbol>", "Ticker symbol")
   .requiredOption("-a, --account <number>", "Account number")
   .option("-m, --amount <dollars>", "Dollar amount (notional) — alternative to --shares")
   .option("-q, --shares <number>", "Share quantity — alternative to --amount")
   .option("-p, --price <number>", "Limit price (omit for market order)")
-  .option("--live", "Send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--tif <gfd|gtc>", "time in force (default: gfd for market/OTC, gtc for an explicit limit)")
+  .option("--dry-run", "Force a non-sending preview even when live writes are enabled")
+  .option("--live", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--force", "Skip duplicate order check")
   .option("--override-cap", "bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order")
   .option("--json", "emit JSON")
@@ -3205,6 +3218,8 @@ program
       amount: opts.amount ? Number(opts.amount) : undefined,
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.price ? Number(opts.price) : undefined,
+      timeInForce: parseTif(opts.tif),
+      dryRun: Boolean(opts.dryRun),
       liveWrite: Boolean(opts.live),
       force: Boolean(opts.force),
       overrideCap: Boolean(opts.overrideCap)
@@ -3226,13 +3241,15 @@ program
 // ── sell: mirror of buy for closing/reducing positions ──
 program
   .command("sell")
-  .description("Place an equity sell order. Market sells are fractional. Dry-run by default; pass --live and set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute.")
+  .description("Place an equity sell order. Writes execute when ROBINHOOD_ALLOW_LIVE_WRITE=1; otherwise dry-run. Pass --dry-run to preview even when enabled.")
   .requiredOption("-s, --symbol <symbol>", "Ticker symbol")
   .requiredOption("-a, --account <number>", "Account number")
   .option("-m, --amount <dollars>", "Dollar amount (notional) — alternative to --shares")
   .option("-q, --shares <number>", "Share quantity — alternative to --amount")
   .option("-p, --price <number>", "Limit price (omit for market order)")
-  .option("--live", "Send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
+  .option("--tif <gfd|gtc>", "time in force (default: gfd for market/OTC, gtc for an explicit limit)")
+  .option("--dry-run", "Force a non-sending preview even when live writes are enabled")
+  .option("--live", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--force", "Skip duplicate order check")
   .option("--override-cap", "bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order")
   .option("--json", "emit JSON")
@@ -3245,6 +3262,8 @@ program
       amount: opts.amount ? Number(opts.amount) : undefined,
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.price ? Number(opts.price) : undefined,
+      timeInForce: parseTif(opts.tif),
+      dryRun: Boolean(opts.dryRun),
       liveWrite: Boolean(opts.live),
       force: Boolean(opts.force),
       overrideCap: Boolean(opts.overrideCap)
@@ -3267,18 +3286,19 @@ program
 // Zayd Khan // cold // www.zayd.wtf
 program
   .command("cancel")
-  .description("Cancel a pending order by ID (equity or options). Dry-run by default; pass --live and set ROBINHOOD_ALLOW_LIVE_WRITE=1 to execute. Live cancels re-read the order from order history (evidence).")
+  .description("Cancel a pending order. Executes when ROBINHOOD_ALLOW_LIVE_WRITE=1; otherwise dry-run. Pass --dry-run to preview. Live cancels re-read order history.")
   .requiredOption("-i, --id <order_id>", "Order ID or URL to cancel")
   .option("-k, --kind <kind>", "Order kind: equity (default) or options", "equity")
-  .option("--live", "Send live (requires ROBINHOOD_ALLOW_LIVE_WRITE=1)")
-  .option("--force", "Skip duplicate order check")
+  .option("--dry-run", "Force a non-sending preview even when live writes are enabled")
+  .option("--live", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
+  .option("--force", "bypass the fail-closed account pre-read (cancel even when the order's account can't be verified)")
   .option("--json", "emit JSON")
   .action(async (opts: any) => {
     const kind = String(opts.kind ?? "equity").toLowerCase();
     if (kind !== "equity" && kind !== "options") throw new Error(`--kind must be equity or options (got "${opts.kind}")`);
     // Shared engine (cancelOrder in lib.ts) — same path as MCP robinhood_cancel and `panic`:
     // gated write + post-cancel order-history evidence re-read on live sends.
-    const r = await cancelOrder({ idOrUrl: opts.id, kind, liveWrite: Boolean(opts.live) });
+    const r = await cancelOrder({ idOrUrl: opts.id, kind, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.live), force: Boolean(opts.force) });
     if (opts.json) {
       printJson({ generatedAt: new Date().toISOString(), ...r });
       return;
@@ -3339,10 +3359,11 @@ program
   .command("panic")
   .description("Cancel-all: list every open/pending equity+options order across ALL accounts and cancel each (each cancel individually env-gated). DRY-RUN by default — shows the would-cancel list and sends NOTHING; live needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional).")
   .option("-a, --account <number>", "Limit to one account")
+  .option("--dry-run", "Force a non-sending preview even when live writes are enabled")
   .option("--live-write", "optional (back-compat); gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
-  .action(async (opts: { account?: string; liveWrite?: boolean; json?: boolean }) => {
-    const r = await panicCancelAll({ accountNumber: opts.account, liveWrite: Boolean(opts.liveWrite) });
+  .action(async (opts: { account?: string; dryRun?: boolean; liveWrite?: boolean; json?: boolean }) => {
+    const r = await panicCancelAll({ accountNumber: opts.account, dryRun: Boolean(opts.dryRun), liveWrite: Boolean(opts.liveWrite) });
     if (opts.json) {
       printJson({ generatedAt: new Date().toISOString(), ...r });
       return;
@@ -3524,7 +3545,7 @@ program
 // ── risk: portfolio risk scanner ──
 program
   .command("risk")
-  .description("Portfolio risk scanner: max loss per position, ITM assignment exposure, undercovered short legs, margin-call distance, and concentration warnings (>20% in one symbol). Live read.")
+  .description("Portfolio risk scanner: max loss per position, ITM assignment exposure, undercovered short legs, margin utilization, and concentration warnings (>20% in one symbol). Live read.")
   .option("--account <number>", "scope to one account (default: all owned)")
   .option("--json", "emit JSON")
   .action(async (opts: { account?: string; json?: boolean }) => {
@@ -3532,8 +3553,10 @@ program
     if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
     process.stdout.write(`Portfolio Risk — ${r.accountsScanned.length} account(s)\n`);
     process.stdout.write(`Equity: ${usd(r.totalEquityUsd)} · Borrowed: ${usd(r.totalBorrowedUsd)}`);
-    if (r.marginCallDistancePct !== null) process.stdout.write(` · Margin-call buffer: ${r.marginCallDistancePct.toFixed(1)}%`);
-    process.stdout.write(`\nas of ${new Date().toISOString()}\n\n`);
+    if (r.marginUtilizationPct !== null) process.stdout.write(` · Margin utilization: ${r.marginUtilizationPct.toFixed(1)}% (borrowed/equity)`);
+    process.stdout.write(`\nas of ${new Date().toISOString()}\n`);
+    if (r.marginUtilizationPct !== null) process.stdout.write("(margin utilization = borrowed/equity — NOT a margin-call distance; a true call buffer needs maintenance-requirement data this endpoint set doesn't expose)\n");
+    process.stdout.write("\n");
     if (r.concentrationWarnings.length) {
       process.stdout.write("CONCENTRATION WARNINGS:\n");
       for (const c of r.concentrationWarnings) process.stdout.write(`  ⚠️ ${c.message}\n`);
@@ -3543,7 +3566,12 @@ program
       printTable(
         r.positions.map((p) => ({
           kind: p.kind, symbol: p.symbol, desc: p.description.slice(0, 50), side: p.side, qty: p.quantity,
-          mktVal: usd(p.marketValueUsd), maxLoss: p.maxLossUsd !== null ? usd(p.maxLossUsd) : "unlimited",
+          mktVal: usd(p.marketValueUsd),
+          maxLoss: p.maxLossUsd !== null
+            ? usd(p.maxLossUsd)
+            : ("riskClass" in p && p.riskClass === "unlimited") ? "unlimited"
+            : ("riskClass" in p && p.riskClass === "defined-spread") ? "defined-risk"
+            : "not modeled",
           itmRisk: p.itmExpirationRisk ? "⚠️" : "", undercovered: p.undercoveredShortLegs || "",
           acct: `…${p.account.slice(-4)}`
         })),

@@ -628,8 +628,67 @@ describe("computeRisk — portfolio risk scanner", () => {
     const r = await computeRisk({}, fix);
     const pos = r.positions.find(p => p.kind === "option" && p.symbol === "XYZ")!;
     expect(pos).toBeTruthy();
-    // Spread has at least one short leg → maxLoss is null in current engine (no crash / no undefined)
+    // Spread has at least one short leg → maxLoss null (defined-risk left unmodeled), but it must be
+    // positively classified so the CLI renders "defined-risk", never "unlimited".
     expect(pos.maxLossUsd).toBeNull();
+    expect(pos.riskClass).toBe("defined-spread");
+  });
+
+  it("risk exposes margin UTILIZATION (borrowed/equity), not a margin-call buffer", async () => {
+    const fix = buildFixture({
+      accounts: { results: [{ type: "rhs", account_number: "555555555", account_name: "MarginAcct" }] },
+      positions: { "555555555": [] },
+      optionAggregates: { "555555555": [] },
+      portfolios: { "555555555": { equity: "6000.00" } },
+      marginInfo: { "555555555": { amount_borrowed: "1200.00" } },
+      quotes: {}, optionMarks: {}
+    });
+    const r = await computeRisk({}, fix);
+    expect(r.marginUtilizationPct).toBe(20);   // 1200 / 6000 * 100 — utilization, NOT a call buffer
+    expect(r.marginCallDistancePct).toBe(20);  // legacy key preserved for compatibility
+  });
+
+  it("a NAKED short call (no long wing, no shares) is classified 'unlimited'", async () => {
+    const fix = buildFixture({
+      accounts: { results: [{ type: "rhs", account_number: "666666666", account_name: "NakedAcct" }] },
+      positions: { "666666666": [] },
+      optionAggregates: {
+        "666666666": [{
+          symbol: "NKD", strategy: "short call", quantity: "1", average_open_price: "2.00",
+          legs: [{ option_id: "nkCall", position_type: "short", option_type: "call", strike_price: "100.0000", expiration_date: "2026-09-19", ratio_quantity: "1" }]
+        }]
+      },
+      portfolios: { "666666666": { equity: "10000.00" } },
+      quotes: {}, optionMarks: { "nkCall": { instrument_id: "nkCall", adjusted_mark_price: "2.00", mark_price: "2.00" } }
+    });
+    const r = await computeRisk({}, fix);
+    const pos = r.positions.find(p => p.kind === "option" && p.symbol === "NKD")!;
+    expect(pos.maxLossUsd).toBeNull();
+    expect(pos.riskClass).toBe("unlimited");
+  });
+
+  it("a ratio spread (short 2 / long 1 call) is net-naked → 'unlimited', NOT 'defined-spread'", async () => {
+    const fix = buildFixture({
+      accounts: { results: [{ type: "rhs", account_number: "777777777", account_name: "RatioAcct" }] },
+      positions: { "777777777": [] },
+      optionAggregates: {
+        "777777777": [{
+          symbol: "RTO", strategy: "custom", quantity: "1", average_open_price: "1.00",
+          legs: [
+            { option_id: "rtShort", position_type: "short", option_type: "call", strike_price: "100.0000", expiration_date: "2026-09-19", ratio_quantity: "2" },
+            { option_id: "rtLong",  position_type: "long",  option_type: "call", strike_price: "105.0000", expiration_date: "2026-09-19", ratio_quantity: "1" }
+          ]
+        }]
+      },
+      portfolios: { "777777777": { equity: "10000.00" } },
+      quotes: {}, optionMarks: {
+        "rtShort": { instrument_id: "rtShort", adjusted_mark_price: "1.00", mark_price: "1.00" },
+        "rtLong":  { instrument_id: "rtLong",  adjusted_mark_price: "0.50", mark_price: "0.50" }
+      }
+    });
+    const r = await computeRisk({}, fix);
+    const pos = r.positions.find(p => p.kind === "option" && p.symbol === "RTO")!;
+    expect(pos.riskClass).toBe("unlimited");   // net 1 naked short call — the dangerous mislabel guard
   });
 
   it("concentration: exactly 20.00% is NOT flagged, 20.01% IS flagged", async () => {

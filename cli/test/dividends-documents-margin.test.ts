@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   computeDividends,
   detectDividendCadence,
   documentFilename,
   documentYear,
+  downloadDocuments,
   getMarginHealth,
   listDocuments
 } from "../src/lib.js";
@@ -240,6 +244,95 @@ describe("listDocuments — prefix type filter, tax-year filter, account filter"
     expect(r.documents[0]).toMatchObject({ id: "d3", accountLast4: "2222", downloadUrl: "u3" });
     const all = await listDocuments({}, deps);
     expect(all.documents[0].id).toBe("d1");  // 2026-02-11 sorts first
+  });
+});
+
+// ── documents: the bearer must never leave the Robinhood allow-list ─────────────────────────────
+
+describe("downloadDocuments — bearer attaches ONLY to allow-listed Robinhood hosts", () => {
+  const OUT = mkdtempSync(join(tmpdir(), "rh-docs-"));
+  const ORIG_TOKEN = process.env.ROBINHOOD_BROKERAGE_TOKEN;
+  beforeEach(() => { process.env.ROBINHOOD_BROKERAGE_TOKEN = "test-token"; });
+  afterAll(() => {
+    if (ORIG_TOKEN === undefined) delete process.env.ROBINHOOD_BROKERAGE_TOKEN;
+    else process.env.ROBINHOOD_BROKERAGE_TOKEN = ORIG_TOKEN;
+    try { rmSync(OUT, { recursive: true, force: true }); } catch { /* best-effort cleanup */ }
+  });
+
+  const doc = (id: string, download_url: string) => ({
+    id, type: "1099", date: "2026-02-11", filetype: "pdf",
+    account: "https://api.robinhood.com/accounts/111111111/", download_url
+  });
+
+  function makeFetch() {
+    const calls: Array<{ url: string; authorization: string | undefined }> = [];
+    const fetchImpl = async (url: string, init?: { headers?: Record<string, string> }) => {
+      calls.push({ url, authorization: init?.headers?.authorization });
+      return {
+        ok: true, status: 200, statusText: "OK",
+        arrayBuffer: async () => new TextEncoder().encode("PDF-BYTES").buffer
+      };
+    };
+    return { fetchImpl, calls };
+  }
+
+  it("downloads an allow-listed Robinhood download_url WITH the bearer", async () => {
+    const { fetchImpl, calls } = makeFetch();
+    const r = await downloadDocuments({}, {
+      getAll: async () => [doc("ok", "https://api.robinhood.com/documents/ok/download/")],
+      fetchImpl: fetchImpl as unknown as typeof fetch, outDir: OUT
+    });
+    expect(r.downloaded).toHaveLength(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("https://api.robinhood.com/documents/ok/download/");
+    expect(calls[0].authorization).toBe("Bearer test-token");
+  });
+
+  it("REFUSES a non-allow-listed host — no fetch, bearer never leaves the process", async () => {
+    const { fetchImpl, calls } = makeFetch();
+    const r = await downloadDocuments({}, {
+      getAll: async () => [doc("evil", "https://evil.example.com/steal")],
+      fetchImpl: fetchImpl as unknown as typeof fetch, outDir: OUT
+    });
+    expect(r.downloaded).toHaveLength(0);
+    expect(calls).toHaveLength(0); // never fetched → the token was never sent anywhere
+    expect(r.failures[0].error).toMatch(/not in the Robinhood brokerage/);
+  });
+
+  it("refuses a non-HTTPS host too (http:// storage URL)", async () => {
+    const { fetchImpl, calls } = makeFetch();
+    const r = await downloadDocuments({}, {
+      getAll: async () => [doc("plain", "http://api.robinhood.com/documents/plain/download/")],
+      fetchImpl: fetchImpl as unknown as typeof fetch, outDir: OUT
+    });
+    expect(calls).toHaveLength(0);
+    expect(r.failures[0].error).toMatch(/not HTTPS/);
+  });
+
+  it("an invalid download_url is a per-file failure, not a crash", async () => {
+    const { fetchImpl, calls } = makeFetch();
+    const r = await downloadDocuments({}, {
+      getAll: async () => [doc("bad", "not a url")],
+      fetchImpl: fetchImpl as unknown as typeof fetch, outDir: OUT
+    });
+    expect(r.downloaded).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+    expect(r.failures[0].error).toMatch(/invalid URL/);
+  });
+
+  it("one bad host never stops the others (per-file isolation)", async () => {
+    const { fetchImpl, calls } = makeFetch();
+    const r = await downloadDocuments({}, {
+      getAll: async () => [
+        doc("ok", "https://api.robinhood.com/documents/ok/download/"),
+        doc("evil", "https://evil.example.com/steal"),
+        doc("bad", "not a url")
+      ],
+      fetchImpl: fetchImpl as unknown as typeof fetch, outDir: OUT
+    });
+    expect(r.downloaded).toHaveLength(1);     // only the allow-listed doc
+    expect(r.failures).toHaveLength(2);       // evil host + invalid URL
+    expect(calls).toHaveLength(1);            // only the safe URL was ever fetched
   });
 });
 

@@ -2,6 +2,8 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { z } from "zod";
 import {
   buildAccountContextUrl,
@@ -114,7 +116,7 @@ const dateOptionalSchema = dateSchema.optional();
 
 const strikeSchema = z.string().regex(/^\d+(\.\d+)?$/, "Strike must be a positive decimal number");
 
-const server = new McpServer(
+export const server = new McpServer(
   {
     name: "robinhood-cli-mcp",
     title: "Robinhood CLI MCP — Zayd Khan // cold // zayd.wtf",
@@ -128,8 +130,12 @@ const server = new McpServer(
 );
 
 function jsonResponse(value: unknown) {
+  const structuredContent = value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : { result: value };
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }]
+    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) ?? "null" }],
+    structuredContent
   };
 }
 
@@ -139,7 +145,16 @@ function jsonResponse(value: unknown) {
 // `catch (e) { throw e; }` rethrows that previously added nothing. Zayd Khan // cold // www.zayd.wtf
 function mcpError(e: unknown) {
   const message = e instanceof Error ? e.message : String(e);
-  return { isError: true as const, content: [{ type: "text" as const, text: `ERROR: ${message}` }] };
+  const code = e instanceof Error && e.name && e.name !== "Error"
+    ? e.name.replace(/Error$/, "").replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase()
+    : "ROBINHOOD_ERROR";
+  const retryable = /(?:429|rate.?limit|timeout|temporar|ECONNRESET|fetch failed)/i.test(message);
+  const error = { code, message, retryable };
+  return {
+    isError: true as const,
+    content: [{ type: "text" as const, text: `ERROR [${code}]: ${message}` }],
+    structuredContent: { error }
+  };
 }
 
 // Make the execution state of a WRITE tool UNMISSABLE. The operator runs live by default, so the
@@ -705,7 +720,7 @@ server.registerTool(
       fullBody: z.boolean().default(false)
     })
   },
-  async ({ query, method, params, queryParams, body, dryRun, liveWrite: liveWriteParam, live, fullBody }) => {
+  async ({ query, method, params, queryParams, body, dryRun, liveWrite: liveWriteParam, live, fullBody }, extra) => {
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, method);
@@ -722,7 +737,12 @@ server.registerTool(
       body,
       dryRun: effectiveDryRun
     });
-    const result = await executeBrokerageRequest(plan, { body, dryRun: effectiveDryRun, fullBody });
+    const result = await executeBrokerageRequest(plan, {
+      body,
+      dryRun: effectiveDryRun,
+      fullBody,
+      signal: extra.signal
+    });
     const m = method?.toUpperCase();
     const isWrite = riskIsWrite(route.risk) || (m !== undefined && m !== "GET" && m !== "HEAD");
     if (isWrite) return writeStatus(result as object, { dryRun: effectiveDryRun, reason: gate.forcedDryRun ? gate.reason : undefined });
@@ -993,6 +1013,8 @@ server.registerTool(
       amount: z.number().positive().optional(),
       shares: z.number().positive().optional(),
       price: z.number().positive().optional(),
+      time_in_force: z.enum(["gfd", "gtc"]).optional().describe("time in force; omit to let the engine pick (gfd market/OTC, gtc limit). gtc is rejected on a fractional dollar-market order"),
+      dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional(),
       force: z.boolean().default(false),
@@ -1000,12 +1022,13 @@ server.registerTool(
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force, overrideCap }) => {
+  async ({ symbol, account_number, amount, shares, price: limitPrice, dryRun, liveWrite, live, force, overrideCap, time_in_force }) => {
     try {
       await assertAccountOwned(account_number);
       const r = await placeEquityOrder({
         symbol, accountNumber: account_number, side: "buy",
-        amount, shares, limitPrice,
+        amount, shares, limitPrice, timeInForce: time_in_force,
+        dryRun,
         liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force), overrideCap: Boolean(overrideCap)
       });
       const { result: _raw, ...summary } = r;
@@ -1026,18 +1049,21 @@ server.registerTool(
       symbol: symbolSchema, account_number: accountNumberSchema,
       amount: z.number().positive().optional(), shares: z.number().positive().optional(),
       price: z.number().positive().optional(),
+      time_in_force: z.enum(["gfd", "gtc"]).optional().describe("time in force; omit to let the engine pick (gfd market/OTC, gtc limit). gtc is rejected on a fractional dollar-market order"),
+      dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(), live: z.boolean().optional(),
       force: z.boolean().default(false),
       overrideCap: z.boolean().optional().describe("bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order"),
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ symbol, account_number, amount, shares, price: limitPrice, liveWrite, live, force, overrideCap }) => {
+  async ({ symbol, account_number, amount, shares, price: limitPrice, dryRun, liveWrite, live, force, overrideCap, time_in_force }) => {
     try {
       await assertAccountOwned(account_number);
       const r = await placeEquityOrder({
         symbol, accountNumber: account_number, side: "sell",
-        amount, shares, limitPrice,
+        amount, shares, limitPrice, timeInForce: time_in_force,
+        dryRun,
         liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force), overrideCap: Boolean(overrideCap)
       });
       const { result: _raw, ...summary } = r;
@@ -1056,15 +1082,17 @@ server.registerTool(
     inputSchema: z.object({
       order_id: uuidSchema,
       kind: z.enum(["equity", "options"]).default("equity"),
+      dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
-      live: z.boolean().optional()
+      live: z.boolean().optional(),
+      force: z.boolean().default(false).describe("bypass the fail-closed account pre-read — cancel even when the order's account can't be verified"),
     }),
     annotations: toolAnnotations(false, "write-mutate")
   },
-  async ({ order_id, kind, liveWrite, live }) => {
+  async ({ order_id, kind, dryRun, liveWrite, live, force }) => {
     try {
       // Shared engine (cancelOrder in lib.ts) — same path as the CLI `cancel` command and `panic`.
-      const r = await cancelOrder({ idOrUrl: order_id, kind, liveWrite: resolveLiveFlag(liveWrite, live) });
+      const r = await cancelOrder({ idOrUrl: order_id, kind, dryRun, liveWrite: resolveLiveFlag(liveWrite, live), force: Boolean(force) });
       return writeStatus(r, { dryRun: r.dryRun, reason: r.gateReason });
     } catch (e: any) { return mcpError(e); }
   }
@@ -1095,15 +1123,16 @@ server.registerTool(
     description: "PANIC: enumerate every open/pending equity + options order across ALL owned accounts (or one) and cancel each — every cancel individually env-gated (logContext 'panic cancel-all'). DRY-RUN by default: returns the full would-cancel list and sends NOTHING. A live sweep needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (single env switch; liveWrite optional), and re-reads each order from order history for evidence. Summary reports found/cancelled/failed.",
     inputSchema: z.object({
       account_number: accountNumberOptionalSchema,
+      dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional()
     }),
     annotations: toolAnnotations(false, "destructive")
   },
-  async ({ account_number, liveWrite, live }) => {
+  async ({ account_number, dryRun, liveWrite, live }) => {
     await assertAccountOwned(account_number);
     try {
-      const r = await panicCancelAll({ accountNumber: account_number, liveWrite: resolveLiveFlag(liveWrite, live) });
+      const r = await panicCancelAll({ accountNumber: account_number, dryRun, liveWrite: resolveLiveFlag(liveWrite, live) });
       return writeStatus(r, { dryRun: r.dryRun });
     } catch (e: any) { return mcpError(e); }
   }
@@ -1722,7 +1751,7 @@ server.registerTool(
   {
     title: "Robinhood Portfolio Risk Scanner",
     description:
-      "Portfolio risk scanner: max loss per position (debit paid for longs, undefined for naked shorts), ITM assignment exposure by expiration, undercovered short legs, margin-call distance (borrowed/equity %), and concentration warnings (>20% in one symbol). Same shared engine as the CLI `risk` command. Live read; no gate.",
+      "Portfolio risk scanner: max loss per position (debit paid for longs; bounded-but-unmodeled for defined-risk spreads; unlimited only for naked short calls), ITM assignment exposure by expiration, undercovered short legs, margin utilization (borrowed/equity %), and concentration warnings (>20% in one symbol). Same shared engine as the CLI `risk` command. Live read; no gate.",
     inputSchema: z.object({
       account_number: accountNumberOptionalSchema
     }),
@@ -2430,21 +2459,24 @@ server.registerPrompt(
   })
 );
 
-// Live-write discoverability (the silent-dry-run trap): writes need ROBINHOOD_ALLOW_LIVE_WRITE=1 in THIS
-// server's environment (the single master switch). If it's unset, every write tool dry-runs no matter what the
-// caller passes — and that used to fail silently (a re-registered MCP without the env looked healthy but
-// could never trade). Announce it loudly at startup so the gap is visible, not discovered mid-trade.
-if (process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1") {
-  process.stderr.write(
-    "⚠️  robinhood-cli MCP: LIVE WRITES DISABLED — ROBINHOOD_ALLOW_LIVE_WRITE is not \"1\" in this server's " +
-    "environment, so EVERY write tool will dry-run regardless of liveWrite:true (the env switch is the single gate). " +
-    "Reads work normally. To enable real orders, re-register with the env gate and reload, e.g.:\n" +
-    "    claude mcp add robinhood-cli -s user -e ROBINHOOD_ALLOW_LIVE_WRITE=1 -- node <repo>/mcp/dist/server.js\n" +
-    "  then /reload-mcp (or restart the client).\n"
-  );
+export async function startStdioServer(): Promise<void> {
+  // Live-write discoverability (the silent-dry-run trap): writes need the master switch in THIS
+  // server's environment. Keep this inside the executable entry point so protocol tests can import
+  // the configured server without taking over stdio.
+  if (process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1") {
+    process.stderr.write(
+      "⚠️  robinhood-cli MCP: LIVE WRITES DISABLED — ROBINHOOD_ALLOW_LIVE_WRITE is not \"1\" in this server's " +
+      "environment, so EVERY write tool will dry-run regardless of liveWrite:true (the env switch is the single gate). " +
+      "Reads work normally. To enable real orders, re-register with the env gate and reload, e.g.:\n" +
+      "    claude mcp add robinhood-cli -s user -e ROBINHOOD_ALLOW_LIVE_WRITE=1 -- node <repo>/mcp/dist/server.js\n" +
+      "  then /reload-mcp (or restart the client).\n"
+    );
+  }
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 }
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (isMain) await startStdioServer();
 
 // Zayd Khan // cold // www.zayd.wtf

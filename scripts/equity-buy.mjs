@@ -7,14 +7,16 @@
 // scripts and lost. It centralizes: instrument resolution (search-grounded),
 // the OTC / fractional-eligibility guard (so "$3 of RNECY" fails loudly instead
 // of malforming an order), the live collar, clean stderr/stdout separation, and
-// a JSON receipt. Reads are live; writes are DRY-RUN unless --live is passed.
+// a JSON receipt. Reads are live; writes are DRY-RUN unless BOTH --live AND
+// ROBINHOOD_ALLOW_LIVE_WRITE=1 are set (same master switch as the engine).
 //
 // Usage:
 //   node scripts/equity-buy.mjs --preflight
-//   node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --symbol ARKG --dollars 5 [--live]
-//   node scripts/equity-buy.mjs --accounts <ACCOUNT_NUMBER>,<ACCOUNT_NUMBER>,<ACCOUNT_NUMBER> --symbol ARKG --dollars 5 [--live]
-//   node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --all-positions --dollars 3 [--live]
-//   node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --symbol RNECY --shares 1 [--live]   (OTC -> auto limit)
+//   node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --symbol ARKG --dollars 5             # dry-run
+//   ROBINHOOD_ALLOW_LIVE_WRITE=1 node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --symbol ARKG --dollars 5 --live
+//   ROBINHOOD_ALLOW_LIVE_WRITE=1 node scripts/equity-buy.mjs --accounts <ACCT>,<ACCT> --symbol ARKG --dollars 5 --live
+//   ROBINHOOD_ALLOW_LIVE_WRITE=1 node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --all-positions --dollars 3 --live
+//   ROBINHOOD_ALLOW_LIVE_WRITE=1 node scripts/equity-buy.mjs --account <ACCOUNT_NUMBER> --symbol RNECY --shares 1 --live   (OTC -> auto limit)
 //
 // Auth: ROBINHOOD_BROKERAGE_TOKEN (and optional ROBINHOOD_COOKIE / ROBINHOOD_CSRF)
 // from the repo .env. Versions/UA overridable via env (see WEB_HEADERS).
@@ -23,6 +25,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { isLiveWriteEnabled, liveIntentWithoutSwitch, LIVE_SWITCH_MISSING_NOTICE } from "./lib/live-gate.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -208,7 +211,10 @@ const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
 const val = (name) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : undefined; };
 
-const live = flag("live");
+// --live is operator intent; a live send ALSO requires ROBINHOOD_ALLOW_LIVE_WRITE=1.
+// Without the switch we fall back to dry-run (exact bodies printed, nothing sent).
+const live = isLiveWriteEnabled();
+if (liveIntentWithoutSwitch()) log(LIVE_SWITCH_MISSING_NOTICE);
 
 (async () => {
   if (flag("preflight")) { await preflight(); return; }

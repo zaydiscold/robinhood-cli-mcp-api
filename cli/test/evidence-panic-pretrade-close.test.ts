@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   verifyOrderEvidence,
   cancelOrder,
@@ -9,7 +9,8 @@ import {
   OPEN_ORDER_STATES,
   runPretradeChecks,
   closeLegOrientation,
-  buildOptionsClosePlan
+  buildOptionsClosePlan,
+  __resetOwnedAccountsCache
 } from "../src/lib.js";
 
 // Golden-behavior tests for the 2026-06-11 safety rails: post-send order-history EVIDENCE in code
@@ -19,6 +20,13 @@ import {
 
 const NOW = Date.parse("2026-06-11T16:00:00Z");
 const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000).toISOString();
+const originalLiveWriteEnv = process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+beforeEach(() => { delete process.env.ROBINHOOD_ALLOW_LIVE_WRITE; __resetOwnedAccountsCache(); });
+afterAll(() => {
+  if (originalLiveWriteEnv === undefined) delete process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+  else process.env.ROBINHOOD_ALLOW_LIVE_WRITE = originalLiveWriteEnv;
+});
+const enableLiveWrites = () => { process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1"; };
 
 // ───────────────────────────── verifyOrderEvidence ─────────────────────────────
 
@@ -66,6 +74,7 @@ describe("placeEquityOrder — post-send evidence", () => {
       getJson: async (url: string) => {
         if (url.includes("instruments/?symbol")) return { results: [{ id: "iid-1", symbol: "AAPL", fractional_tradability: "tradable" }] };
         if (url.includes("marketdata/quotes")) return { results: [{ last_trade_price: "100.00" }] };
+        if (url.includes("transfer/accounts")) return { results: [{ type: "rhs", account_number: "A1", account_name: "test" }] };
         if (url === "https://api.robinhood.com/orders/") return { results: [] };
         if (url === "https://api.robinhood.com/orders/{0}/") {
           if (fix.rereadThrows) throw new Error("history unavailable");
@@ -79,6 +88,7 @@ describe("placeEquityOrder — post-send evidence", () => {
   }
 
   it("live 2xx + id → evidence confirmed from the order-history re-read", async () => {
+    enableLiveWrites();
     const d = deps({
       writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-1", state: "unconfirmed" }) },
       rereadOrder: { id: "ord-1", state: "queued" }
@@ -88,6 +98,7 @@ describe("placeEquityOrder — post-send evidence", () => {
   });
 
   it("live 2xx but the re-read FAILS → confirmed:false + loud warning (never silent)", async () => {
+    enableLiveWrites();
     const d = deps({
       writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-1", state: "queued" }) },
       rereadThrows: true
@@ -98,6 +109,7 @@ describe("placeEquityOrder — post-send evidence", () => {
   });
 
   it("live non-2xx → unconfirmed evidence, no re-read attempted as proof", async () => {
+    enableLiveWrites();
     const d = deps({ writeResult: { status: 400, dryRun: false, body: JSON.stringify({ detail: "rejected" }) } });
     const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, d);
     expect(r.evidence?.confirmed).toBe(false);
@@ -117,14 +129,19 @@ describe("placeEquityOrder — post-send evidence", () => {
 describe("cancelOrder — shared equity/options cancel with evidence", () => {
   function deps(fix: { writeResult: any; rereadOrder?: any; rereadThrows?: boolean }) {
     const calls = { writes: [] as any[], rereads: [] as string[] };
+    let orderReads = 0;
     return {
       calls,
       deps: {
         write: async (opts: any) => { calls.writes.push(opts); return fix.writeResult; },
         getJson: async (url: string) => {
+          if (url.includes("transfer/accounts")) return { results: [{ type: "rhs", account_number: "OWNED1", account_name: "test" }] };
           calls.rereads.push(url);
-          if (fix.rereadThrows) throw new Error("history down");
-          return fix.rereadOrder ?? {};
+          orderReads++;
+          // rereadThrows models a FAILED evidence re-read: the ownership pre-read (first order read)
+          // still succeeds; the post-cancel evidence re-read (second) fails.
+          if (fix.rereadThrows && orderReads > 1) throw new Error("history down");
+          return fix.rereadOrder ?? { account: "https://api.robinhood.com/accounts/OWNED1/" };
         }
       }
     };
@@ -140,9 +157,10 @@ describe("cancelOrder — shared equity/options cancel with evidence", () => {
   });
 
   it("kind=options hits the options cancel route and the options evidence route", async () => {
+    enableLiveWrites();
     const { deps: d, calls } = deps({
       writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) },
-      rereadOrder: { id: "opt-1", state: "cancelled" }
+      rereadOrder: { id: "opt-1", state: "cancelled", account: "https://api.robinhood.com/accounts/OWNED1/" }
     });
     const r = await cancelOrder({ idOrUrl: "opt-1", kind: "options", liveWrite: true }, d);
     expect(calls.writes[0].url).toBe("https://api.robinhood.com/options/orders/{0}/cancel/");
@@ -153,9 +171,10 @@ describe("cancelOrder — shared equity/options cancel with evidence", () => {
   });
 
   it("a live 2xx whose re-read is NOT cancelled warns (may have filled first)", async () => {
+    enableLiveWrites();
     const { deps: d } = deps({
       writeResult: { status: 200, dryRun: false, body: "{}" },
-      rereadOrder: { id: "ord-1", state: "filled" }
+      rereadOrder: { id: "ord-1", state: "filled", account: "https://api.robinhood.com/accounts/OWNED1/" }
     });
     const r = await cancelOrder({ idOrUrl: "ord-1", liveWrite: true }, d);
     expect(r.evidence?.confirmed).toBe(true);
@@ -163,6 +182,7 @@ describe("cancelOrder — shared equity/options cancel with evidence", () => {
   });
 
   it("a live non-2xx cancel is unconfirmed with a warning", async () => {
+    enableLiveWrites();
     const { deps: d, calls } = deps({ writeResult: { status: 403, dryRun: false, body: JSON.stringify({ detail: "cannot cancel" }) } });
     const r = await cancelOrder({ idOrUrl: "ord-1", liveWrite: true }, d);
     expect(r.evidence?.confirmed).toBe(false);
@@ -171,6 +191,7 @@ describe("cancelOrder — shared equity/options cancel with evidence", () => {
   });
 
   it("a failed evidence re-read after a live cancel is loud, not silent", async () => {
+    enableLiveWrites();
     const { deps: d } = deps({ writeResult: { status: 200, dryRun: false, body: "{}" }, rereadThrows: true });
     const r = await cancelOrder({ idOrUrl: "ord-1", liveWrite: true }, d);
     expect(r.evidence?.confirmed).toBe(false);
@@ -308,6 +329,7 @@ describe("panicCancelAll — dry-run default, per-cancel gating, evidence", () =
   });
 
   it("live mode counts cancelled with per-cancel evidence; one failure never stops the sweep", async () => {
+    enableLiveWrites();
     const { getJson: baseGetJson } = fixtures();
     const getJson = async (url: string, params: any = {}, query: any = {}) => {
       if (url === "https://api.robinhood.com/orders/{0}/") return { id: params["0"], state: "cancelled" };

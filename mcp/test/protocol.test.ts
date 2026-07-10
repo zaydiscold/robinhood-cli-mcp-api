@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { server } from "../src/server.js";
-import { listKnowledge } from "@zaydiscold/robinhood-cli/lib";
+import { CAPABILITIES, listKnowledge } from "@zaydiscold/robinhood-cli/lib";
 
 const client = new Client({ name: "robinhood-cli-protocol-test", version: "1.0.0" });
 
@@ -28,14 +28,15 @@ describe("MCP protocol conformance", () => {
       client.listPrompts()
     ]);
 
-    expect(tools.tools).toHaveLength(73);
+    expect(new Set(tools.tools.map((tool) => tool.name)).size).toBe(tools.tools.length);
+    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(CAPABILITIES.map((entry) => entry.mcp!).sort());
     // Dynamic, not a literal: resources are exactly listKnowledge() mapped (server.ts), so tie the
     // count to the file-backed source. Catches an accidental resource DROP without breaking every time
     // a knowledge/doc Markdown file is added.
     expect(resources.resources.length).toBe(listKnowledge().length);
     expect(templates.resourceTemplates).toHaveLength(1);
     expect(prompts.prompts).toHaveLength(3);
-    expect(tools.tools.every((tool) => tool.inputSchema && tool.annotations)).toBe(true);
+    expect(tools.tools.every((tool) => tool.inputSchema && tool.outputSchema && tool.annotations)).toBe(true);
     expect(resources.resources.map((resource) => resource.name)).toEqual(expect.arrayContaining([
       "readme",
       "docs-readme",
@@ -74,5 +75,30 @@ describe("MCP protocol conformance", () => {
 
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toMatch(/invalid|account|symbol/i);
+  });
+
+  it("forces an inferred raw mutation to dry-run even when the MCP process is armed", async () => {
+    const previous = process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+    process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1";
+    try {
+      const result = await client.callTool({
+        name: "robinhood_brokerage_execute",
+        arguments: {
+          query: "https://api.robinhood.com/ach/relationships/",
+          method: "POST",
+          body: { bank_routing_number: "000000000" },
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual(expect.objectContaining({
+        executed: false,
+        executionStatus: expect.stringMatching(/DRY RUN/),
+        verificationStatus: "inferred",
+      }));
+    } finally {
+      if (previous === undefined) delete process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+      else process.env.ROBINHOOD_ALLOW_LIVE_WRITE = previous;
+    }
   });
 });

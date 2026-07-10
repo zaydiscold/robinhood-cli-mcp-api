@@ -1,4 +1,4 @@
-# GET /portfolio/performance/%7Bid%7D
+# GET /portfolio/performance/%7Bid%7D/
 
 Mutation: no
 Risk: sensitive-read
@@ -11,7 +11,7 @@ Operation ID: n/a
 Route template:
 
 ```text
-https://bonfire.robinhood.com/portfolio/performance/{id}
+https://bonfire.robinhood.com/portfolio/performance/{id}/
 ```
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

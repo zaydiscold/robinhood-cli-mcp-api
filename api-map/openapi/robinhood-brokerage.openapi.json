@@ -112,6 +112,10 @@
       "description": "Reference routes from the brokerage route map."
     },
     {
+      "name": "roll",
+      "description": "Roll routes from the brokerage route map."
+    },
+    {
       "name": "search",
       "description": "Search routes from the brokerage route map."
     },
@@ -10281,6 +10285,60 @@
         "x-robinhood-seen-on": []
       }
     },
+    "/options/maximum_rollable_quantity/{strategy_code}/": {
+      "get": {
+        "operationId": "brokerage_get_options_maximum_rollable_quantity_strategy_code",
+        "summary": "Options brokerage route",
+        "description": "Personal route map entry. Risk: read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "options",
+          "roll"
+        ],
+        "parameters": [
+          {
+            "name": "strategy_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder strategy_code. Mapped route name; live verification should replace with a semantic parameter name when known."
+          },
+          {
+            "name": "account_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/options/maximum_rollable_quantity/{strategy_code}/"
+        ],
+        "x-robinhood-sources": [
+          "cdp-2026-06-23-googl-native-roll (observed + live-verified response)"
+        ],
+        "x-robinhood-seen-on": [
+          "option-roll-builder"
+        ]
+      }
+    },
     "/options/option_settings/{account_number}/": {
       "get": {
         "operationId": "brokerage_get_options_option_settings_account_number",
@@ -10608,11 +10666,13 @@
           "https://api.robinhood.com/options/orders/collateral/"
         ],
         "x-robinhood-sources": [
-          "cdp-2026-06-04-dram-option-order-flow (observed",
-          "collateral pre-check, order passed url-encoded in ?order={json})"
+          "cdp-2026-06-04-dram-option-order-flow",
+          "cdp-2026-06-23-googl-native-roll (response live-verified",
+          "collateral pre-check, full order passed url-encoded in ?order={json})"
         ],
         "x-robinhood-seen-on": [
-          "option-order-ticket"
+          "option-order-ticket",
+          "option-roll-builder"
         ]
       }
     },
@@ -10658,6 +10718,7 @@
         "tags": [
           "options",
           "preview",
+          "roll",
           "trading"
         ],
         "parameters": [],
@@ -10679,6 +10740,8 @@
           "https://bonfire.robinhood.com/options/orders/review"
         ],
         "x-robinhood-sources": [
+          "blocked at $0 BP, nothing placed)",
+          "cdp-2026-06-23-googl-native-roll (atomic 2-leg roll body verified",
           "settings-capture-2026-06-03"
         ],
         "x-robinhood-seen-on": []
@@ -11515,6 +11578,38 @@
           "account-history",
           "account-transfers"
         ]
+      },
+      "post": {
+        "operationId": "brokerage_post_paymenthub_unified_transfers",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: write-mutate. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "write-mutate",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/paymenthub/unified_transfers/"
+        ],
+        "x-robinhood-sources": [
+          "cdp-2026-06-18-transfer-flow"
+        ],
+        "x-robinhood-seen-on": [
+          "account-transfers"
+        ]
       }
     },
     "/paymenthub/unified_transfers/{uuid}/contribution/": {
@@ -11779,7 +11874,7 @@
         ]
       }
     },
-    "/portfolio/performance/{id}": {
+    "/portfolio/performance/{id}/": {
       "get": {
         "operationId": "brokerage_get_portfolio_performance_id",
         "summary": "Unknown brokerage route",
@@ -11849,7 +11944,7 @@
           "bonfire.robinhood.com"
         ],
         "x-robinhood-route-templates": [
-          "https://bonfire.robinhood.com/portfolio/performance/{id}"
+          "https://bonfire.robinhood.com/portfolio/performance/{id}/"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-27-stock-account-sanitized"

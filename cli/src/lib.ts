@@ -3,6 +3,14 @@ import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { maybeShareSafe } from "./share-safe.js";
+
+export * from "./capabilities.js";
+export * from "./doctor.js";
+export * from "./options-workbench.js";
+export * from "./order-lifecycle.js";
+export * from "./share-safe.js";
+export * from "./time-machine.js";
 
 // Walk up from a start dir to a repo marker. Robust across build layouts (cli/dist,
 // mcp/dist, bundled, symlinked): a fixed ../.. silently resolves to the WRONG directory
@@ -66,6 +74,7 @@ function loadRepoEnv(): void {
 loadRepoEnv();
 
 export type RouteRisk = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
+export type RouteVerificationStatus = "inferred" | "captured" | "live_verified" | "deprecated";
 
 export interface BrokerageRoute {
   url: string;
@@ -78,6 +87,11 @@ export interface BrokerageRoute {
   queryKeys?: string[];
   operationId?: string;
   summary?: string;
+  note?: string;
+  /** Machine-enforced provenance for live mutations. */
+  verificationStatus?: RouteVerificationStatus;
+  /** Method-specific override for mixed-method routes such as PATCH+DELETE recurring schedules. */
+  verificationStatusByMethod?: Partial<Record<string, RouteVerificationStatus>>;
   /** Response keys an agent reads off this endpoint (for lists, the item keys). See scripts/harvest-response-fields.mjs. */
   fields?: string[];
   /** Provenance of `fields`: "verified" (from a captured body), "inferred" (documented shape), or "undocumented" (stub). */
@@ -1819,6 +1833,35 @@ export function riskIsWrite(risk: RouteRisk): boolean {
   return risk === "write-safe" || riskMutatesAccount(risk);
 }
 
+export function methodIsWrite(method?: string): boolean {
+  const normalized = method?.toUpperCase();
+  return normalized !== undefined && normalized !== "GET" && normalized !== "HEAD";
+}
+
+/**
+ * Resolve route provenance conservatively. Explicit metadata wins. Legacy entries are derived from
+ * their capture notes so the migration can be incremental without silently blessing unknown writes.
+ */
+export function routeVerificationStatus(route: BrokerageRoute, method?: string): RouteVerificationStatus {
+  const normalized = (method ?? inferBrokerageMethod(route)).toUpperCase();
+  const methodSpecific = route.verificationStatusByMethod?.[normalized];
+  if (methodSpecific) return methodSpecific;
+  if (route.verificationStatus) return route.verificationStatus;
+
+  const evidence = `${route.note ?? ""} ${route.source ?? ""}`.toLowerCase();
+  if (evidence.includes("deprecated") || evidence.includes("retired")) return "deprecated";
+  if (normalized === "DELETE" && evidence.includes("delete unverified")) return "inferred";
+  if (evidence.includes("inferred") || evidence.includes("unverified")) return "inferred";
+  if (/\b(live[-_ ]?verified|verified live|verified 20)/.test(evidence)) return "live_verified";
+  if (/\b(cdp|capture|captured|manual|wire-writes|self-extension)\b/.test(evidence)) return "captured";
+  return methodIsWrite(normalized) || riskIsWrite(route.risk) ? "inferred" : "captured";
+}
+
+export function routeAllowsLiveWrite(route: BrokerageRoute, method?: string): boolean {
+  const status = routeVerificationStatus(route, method);
+  return status === "captured" || status === "live_verified";
+}
+
 export interface LiveWriteGate {
   /** True only when a real write is permitted to leave the machine. */
   allowed: boolean;
@@ -1928,8 +1971,8 @@ export function resolveLiveWriteGate(input: {
   // hand-classified risk. This closes the hole where a route mis-labeled "read" but called with POST
   // would skip the gate entirely. risk-based write-detection still applies for legacy method-less routes.
   const m = input.method?.toUpperCase();
-  const methodIsWrite = m !== undefined && m !== "GET" && m !== "HEAD";
-  const isWrite = riskIsWrite(input.risk) || methodIsWrite;
+  const writeVerb = methodIsWrite(m);
+  const isWrite = riskIsWrite(input.risk) || writeVerb;
   // Explicit per-call preview, or a plain read: never sends.
   if (input.dryRun || !isWrite) {
     return { allowed: true, forcedDryRun: false };
@@ -2803,13 +2846,39 @@ export function optionsOrderNotional(url: string, method: string, body: unknown)
   return Number.isFinite(p) && Number.isFinite(q) && p > 0 && q > 0 ? p * 100 * q : 0;
 }
 
+/** Conservative spend estimate for raw order placement routes. Returns zero for non-orders/cancels. */
+export function brokerageOrderNotional(url: string, method: string, body: unknown): number {
+  if (method.toUpperCase() !== "POST") return 0;
+  const pathname = new URL(url).pathname;
+  const b = body as any;
+  if (/\/options\/orders\/$/.test(pathname)) return optionsOrderNotional(url, method, body);
+  if (!/\/orders\/$/.test(pathname)) return 0;
+
+  const dollarAmount = Number(b?.dollar_based_amount?.amount);
+  if (Number.isFinite(dollarAmount) && dollarAmount > 0) return dollarAmount;
+  const price = Number(b?.price ?? b?.average_price);
+  const quantity = Number(b?.quantity ?? b?.asset_quantity);
+  return Number.isFinite(price) && price > 0 && Number.isFinite(quantity) && quantity > 0
+    ? price * quantity
+    : 0;
+}
+
+export interface GatedBrokerageWriteResult extends ExecuteBrokerageResult {
+  dryRun: boolean;
+  reason?: string;
+  verificationStatus: RouteVerificationStatus;
+}
+
 export async function gatedBrokerageWrite(opts: {
   url: string;
   method: string;
   params?: Record<string, string>;
+  query?: Record<string, string>;
   body?: unknown;
   dryRun?: boolean;
   liveWrite?: boolean;
+  fullBody?: boolean;
+  signal?: AbortSignal;
   /** Human context for the universal write log (e.g. "options order: GOOGL call debit spread"). */
   logContext?: string;
   /** Set by callers that write their OWN richer log entry (placeEquityOrder) to avoid double-logging. */
@@ -2820,7 +2889,13 @@ export async function gatedBrokerageWrite(opts: {
    * options placement. Defaults off — only an explicit caller opt-in (the `--override-cap` flag /
    * `overrideCap` param) bypasses, matching what NotionalCapError tells the user to do. */
   overrideCap?: boolean;
-}): Promise<{ status: number | string; dryRun: boolean; reason?: string; body?: string }> {
+  /** Test/advanced transport overrides. Production callers normally omit this. */
+  executeOptions?: ExecuteBrokerageOptions;
+  /** Injected audit sink for tests; defaults to the append-only local trading log. */
+  logImpl?: typeof logTrade;
+  /** Injected ownership read for deterministic tests. */
+  ownershipGetJson?: typeof brokerageGetJson;
+}): Promise<GatedBrokerageWriteResult> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: opts.url });
   const route = selectRouteByQueryAndMethod(matches, opts.url, opts.method);
   if (!route) {
@@ -2828,21 +2903,44 @@ export async function gatedBrokerageWrite(opts: {
     const tail = suggestions.length ? ` Closest mapped routes: ${suggestions.join(" | ")}.` : "";
     throw new Error(`No ${opts.method ?? "matching"} route for ${opts.url} — a forced write with no matching write route fails closed (never degrades to a read).${tail} Check the map / rebuild (AGENTS.md §3).`);
   }
+  const accountNumber = opts.accountNumber ?? accountFromWriteRequest(opts.body, opts.params);
   const execution = resolveWriteExecution({
     risk: route.risk,
     method: opts.method,
     dryRun: opts.dryRun,
     liveWrite: opts.liveWrite,
-    accountNumber: opts.accountNumber ?? accountFromWriteRequest(opts.body, opts.params)
+    accountNumber
   });
-  const effectiveDryRun = execution.dryRun;
-  // N4 — notional cap for options order placements (equity is capped in placeEquityOrder). Only a
-  // genuine live placement is checked; dry-runs and cancels yield 0. Throws NotionalCapError if over.
-  const optNotional = effectiveDryRun ? 0 : optionsOrderNotional(opts.url, opts.method, opts.body);
-  if (optNotional > 0) checkNotionalCaps(optNotional, { override: opts.overrideCap });
-  const plan = planBrokerageRequest({ route, method: opts.method, params: opts.params ?? {}, body: opts.body, dryRun: effectiveDryRun });
-  const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body: opts.body, fullBody: true });
-  if (optNotional > 0 && Number(result.status) >= 200 && Number(result.status) < 300) recordSessionNotional(optNotional);
+  const verificationStatus = routeVerificationStatus(route, opts.method);
+  let effectiveDryRun = execution.dryRun;
+  let reason = execution.reason;
+  if (!effectiveDryRun && !routeAllowsLiveWrite(route, opts.method)) {
+    effectiveDryRun = true;
+    reason = `Route ${opts.method.toUpperCase()} ${route.url} is ${verificationStatus}; live execution requires verificationStatus=captured or live_verified. Forced to dry-run.`;
+  }
+
+  if (!effectiveDryRun && accountNumber) {
+    await assertAccountOwned(accountNumber, { getJson: opts.ownershipGetJson, onLookupFailure: "block" });
+  }
+
+  const notional = effectiveDryRun ? 0 : brokerageOrderNotional(opts.url, opts.method, opts.body);
+  if (notional > 0) checkNotionalCaps(notional, { override: opts.overrideCap });
+  const plan = planBrokerageRequest({
+    route,
+    method: opts.method,
+    params: opts.params ?? {},
+    query: opts.query,
+    body: opts.body,
+    dryRun: effectiveDryRun
+  });
+  const result = await executeBrokerageRequest(plan, {
+    ...opts.executeOptions,
+    dryRun: effectiveDryRun,
+    body: opts.body,
+    fullBody: opts.fullBody ?? true,
+    signal: opts.signal ?? opts.executeOptions?.signal
+  });
+  if (notional > 0 && result.status >= 200 && result.status < 300) recordSessionNotional(notional);
   // UNIVERSAL WRITE LOG (added 2026-06-11): every LIVE write that leaves this engine — options
   // orders, cancels, settings, recurring, raw `brokerage execute` writes, from BOTH the CLI and the
   // MCP — gets a machine log entry. Equity buy/sell skip here (skipTradeLog) because
@@ -2850,7 +2948,7 @@ export async function gatedBrokerageWrite(opts: {
   // every options trade depended on manual discipline (which decays). Best-effort, never throws.
   if (!effectiveDryRun && !opts.skipTradeLog) {
     const bodyStr = typeof result.body === "string" ? result.body : JSON.stringify(result.body ?? "");
-    await logTrade({
+    await (opts.logImpl ?? logTrade)({
       when: new Date().toISOString(),
       kind: "live-write",
       context: opts.logContext ?? null,
@@ -2862,7 +2960,7 @@ export async function gatedBrokerageWrite(opts: {
       responseHead: bodyStr ? bodyStr.slice(0, 500) : null
     });
   }
-  return { status: result.status, dryRun: effectiveDryRun, reason: execution.reason, body: result.body };
+  return { ...result, dryRun: effectiveDryRun, reason, verificationStatus };
 }
 
 /** Append a trade to the local trading log (JSONL, one line per order). Best-effort. */
@@ -6429,7 +6527,7 @@ export function buildOptionsStrategyPricingSummary(input: {
 }
 
 export function printJson(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(maybeShareSafe(value), null, 2)}\n`);
 }
 
 export function printTable(rows: Array<Record<string, unknown>>, columns: string[]): void {

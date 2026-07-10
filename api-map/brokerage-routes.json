@@ -588,6 +588,7 @@
       "bank_account_holder_name"
     ],
     "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "verificationStatus": "inferred",
     "fields": [],
     "fieldsSource": "undocumented"
   },
@@ -664,6 +665,7 @@
       "direction"
     ],
     "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "verificationStatus": "inferred",
     "fields": [],
     "fieldsSource": "undocumented"
   },
@@ -1109,6 +1111,7 @@
       "drip_enrolled"
     ],
     "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "verificationStatus": "inferred",
     "fields": [],
     "fieldsSource": "undocumented"
   },
@@ -7489,6 +7492,7 @@
       "time_in_force"
     ],
     "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "verificationStatus": "inferred",
     "fields": [],
     "fieldsSource": "undocumented"
   },
@@ -8106,6 +8110,10 @@
       "state"
     ],
     "note": "VERIFIED 2026-05-29: PATCH {\"state\":\"active\"} resumes (200, next_investment_date populates); state field round-trips. DELETE unverified.",
+    "verificationStatusByMethod": {
+      "PATCH": "live_verified",
+      "DELETE": "inferred"
+    },
     "source": "wire-writes 2026-05-29",
     "fields": [],
     "fieldsSource": "undocumented"
@@ -8129,7 +8137,10 @@
       "start_date",
       "account_number"
     ],
-    "note": "inferred 2026-05-29: body shape unverified, confirm via live capture before trusting",
+    "note": "LIVE VERIFIED 2026-06-03: create body returned success and created a real schedule; body includes account_number, amount, frequency, investment_asset, source_of_funds, start_date, and ref_id.",
+    "verificationStatusByMethod": {
+      "POST": "live_verified"
+    },
     "source": "wire-writes 2026-05-29",
     "fields": [],
     "fieldsSource": "undocumented"

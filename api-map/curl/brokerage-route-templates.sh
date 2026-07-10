@@ -627,6 +627,9 @@
 # sensitive-read GET https://bonfire.robinhood.com/paymenthub/unified_transfers/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/paymenthub/unified_transfers/'
 
+# write-mutate POST https://bonfire.robinhood.com/paymenthub/unified_transfers/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/paymenthub/unified_transfers/'
+
 # sensitive-read GET https://bonfire.robinhood.com/paymenthub/unified_transfers/{uuid}/contribution/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/paymenthub/unified_transfers/{uuid}/contribution/'
 
@@ -639,8 +642,8 @@
 # sensitive-read GET https://bonfire.robinhood.com/portfolio/account/{id}/live
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/portfolio/account/{id}/live'
 
-# sensitive-read GET https://bonfire.robinhood.com/portfolio/performance/{id}
-# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/portfolio/performance/{id}'
+# sensitive-read GET https://bonfire.robinhood.com/portfolio/performance/{id}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/portfolio/performance/{id}/'
 
 # sensitive-read GET https://bonfire.robinhood.com/portfolio/performance/{id}/settings_v2/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/portfolio/performance/{id}/settings_v2/'
@@ -890,6 +893,9 @@
 
 # write-safe POST https://bonfire.robinhood.com/options/orders/review
 # curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/options/orders/review'
+
+# read GET https://api.robinhood.com/options/maximum_rollable_quantity/{strategy_code}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/maximum_rollable_quantity/{strategy_code}/'
 
 # write-safe POST https://bonfire.robinhood.com/options/orders/marketability/
 # curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/options/orders/marketability/'

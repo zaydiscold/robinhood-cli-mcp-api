@@ -38,6 +38,7 @@ import {
   parseParamAssignments,
   planBrokerageRequest,
   planCryptoRequest,
+  inferBrokerageMethod,
   resolveLiveWriteGate,
   accountFromWriteRequest,
   riskIsWrite,
@@ -96,7 +97,16 @@ import {
   recurringSymbol,
   detectAccountClass,
   buildAtomicRollOrderBody,
-  resolveRollModel
+  resolveRollModel,
+  appendPortfolioSnapshot,
+  buildOptionsWorkbench,
+  CAPABILITIES,
+  capabilityEnabled,
+  diffPortfolioSnapshots,
+  maybeShareSafe,
+  readPortfolioSnapshots,
+  runDoctor,
+  watchOrderLifecycle
 } from "@zaydiscold/robinhood-cli/lib";
 
 type RiskLevel = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
@@ -129,12 +139,31 @@ export const server = new McpServer(
   }
 );
 
+// Every tool returns an object via jsonResponse(), so every tool declares at least that truthful
+// structural contract. Capability-registry tools below replace it with a precise schema. This makes
+// structuredContent protocol-valid without inventing fake per-field guarantees for legacy tools.
+const registerToolBase = server.registerTool.bind(server);
+(server as any).registerTool = (name: string, config: any, handler: any) => {
+  const definition = CAPABILITIES.find((entry) => entry.mcp === name);
+  if (!definition) throw new Error(`MCP tool ${name} is missing from the typed capability registry`);
+  if (!capabilityEnabled(definition)) return undefined;
+  return registerToolBase(name, { outputSchema: z.object({}).catchall(z.unknown()), ...config }, handler);
+};
+
+function registerCapabilityTool(id: string, config: any, handler: any): void {
+  const definition = CAPABILITIES.find((entry) => entry.id === id);
+  if (!definition?.mcp) throw new Error(`Capability ${id} is missing an MCP name`);
+  if (!capabilityEnabled(definition)) return;
+  (server as any).registerTool(definition.mcp, config, handler);
+}
+
 function jsonResponse(value: unknown) {
-  const structuredContent = value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : { result: value };
+  const safeValue = maybeShareSafe(value);
+  const structuredContent = safeValue !== null && typeof safeValue === "object" && !Array.isArray(safeValue)
+    ? safeValue as Record<string, unknown>
+    : { result: safeValue };
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) ?? "null" }],
+    content: [{ type: "text" as const, text: JSON.stringify(safeValue, null, 2) ?? "null" }],
     structuredContent
   };
 }
@@ -717,35 +746,51 @@ server.registerTool(
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional(),
+      overrideCap: z.boolean().default(false).describe("bypass configured order/session notional caps for this raw order"),
       fullBody: z.boolean().default(false)
     })
   },
-  async ({ query, method, params, queryParams, body, dryRun, liveWrite: liveWriteParam, live, fullBody }, extra) => {
+  async ({ query, method, params, queryParams, body, dryRun, liveWrite: liveWriteParam, live, overrideCap, fullBody }, extra) => {
     const liveWrite = resolveLiveFlag(liveWriteParam, live);
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, method);
     if (!route) {
       throw new Error(`No brokerage route matched: ${query}`);
     }
-    const gate = resolveLiveWriteGate({ risk: route.risk, method, dryRun, liveWrite, accountNumber: accountFromWriteRequest(body, parseParamAssignments(params)) });
-    const effectiveDryRun = dryRun || gate.forcedDryRun;
+    const parsedParams = parseParamAssignments(params);
+    const parsedQuery = parseParamAssignments(queryParams);
+    const requestMethod = (method ?? inferBrokerageMethod(route)).toUpperCase();
+    const isWrite = riskIsWrite(route.risk) || (requestMethod !== "GET" && requestMethod !== "HEAD");
+    if (isWrite) {
+      const result = await gatedBrokerageWrite({
+        url: route.url,
+        method: requestMethod,
+        params: parsedParams,
+        query: parsedQuery,
+        body,
+        dryRun,
+        liveWrite,
+        overrideCap,
+        fullBody,
+        signal: extra.signal,
+        logContext: `raw MCP brokerage execute: ${requestMethod} ${route.url}`
+      });
+      return writeStatus(result, { dryRun: result.dryRun, reason: result.reason });
+    }
     const plan = planBrokerageRequest({
       route,
-      method,
-      params: parseParamAssignments(params),
-      query: parseParamAssignments(queryParams),
+      method: requestMethod,
+      params: parsedParams,
+      query: parsedQuery,
       body,
-      dryRun: effectiveDryRun
+      dryRun
     });
     const result = await executeBrokerageRequest(plan, {
       body,
-      dryRun: effectiveDryRun,
+      dryRun,
       fullBody,
       signal: extra.signal
     });
-    const m = method?.toUpperCase();
-    const isWrite = riskIsWrite(route.risk) || (m !== undefined && m !== "GET" && m !== "HEAD");
-    if (isWrite) return writeStatus(result as object, { dryRun: effectiveDryRun, reason: gate.forcedDryRun ? gate.reason : undefined });
     return jsonResponse(result);
   }
 );
@@ -2391,6 +2436,64 @@ server.registerResource(
     return { contents: [{ uri: uri.href, text: k.content, mimeType: "text/markdown" }] };
   }
 );
+
+const doctorOutputSchema = z.object({
+  ok: z.boolean(),
+  summary: z.object({ pass: z.number(), warn: z.number(), fail: z.number() }),
+  checks: z.array(z.object({ id: z.string(), status: z.enum(["pass", "warn", "fail"]), message: z.string() }))
+});
+const lifecycleOutputSchema = z.object({
+  id: z.string(), state: z.enum(["planned", "sent", "confirmed", "filled", "rejected", "cancelled", "unknown"]),
+  transitions: z.array(z.object({ state: z.string(), at: z.string() }).catchall(z.unknown())), outcomeKnown: z.boolean(), retrySafe: z.literal(false)
+});
+
+registerCapabilityTool("doctor", {
+  title: "Robinhood Doctor",
+  description: "Offline health check for source/dist parity, credential-file hygiene, route provenance, write-gate state, knowledge files, share-safe state, and MCP profile. Never calls Robinhood.",
+  inputSchema: z.object({}), outputSchema: doctorOutputSchema, annotations: toolAnnotations(true, "read")
+}, async () => jsonResponse(runDoctor(process.cwd())));
+
+registerCapabilityTool("order-lifecycle", {
+  title: "Robinhood Durable Order Watch",
+  description: "Poll order history to a terminal state. Performs a final reconciliation read before unknown and never retries an order whose outcome is unknown.",
+  inputSchema: z.object({ id: z.string(), interval_ms: z.number().int().min(0).default(2000), timeout_ms: z.number().int().positive().default(120000) }),
+  outputSchema: lifecycleOutputSchema, annotations: toolAnnotations(true, "read")
+}, async ({ id, interval_ms, timeout_ms }: any) => jsonResponse(await watchOrderLifecycle({ id, poll: getOrderStatus, intervalMs: interval_ms, timeoutMs: timeout_ms })));
+
+registerCapabilityTool("options-workbench", {
+  title: "Robinhood Options Workbench",
+  description: "Analyze one exact options package: premium, expiry payoff samples, signed Greeks, collateral/review, roll comparisons, and a body-bound approval card. Pure analysis; never sends.",
+  inputSchema: z.object({
+    symbol: z.string(), expiration: z.string(), underlying_price: z.number(), quantity: z.number().int().positive().default(1), pricing_mode: z.enum(["natural", "mid"]).default("mid"),
+    legs: z.array(z.object({ id: z.string(), action: z.enum(["buy", "sell"]), type: z.enum(["call", "put"]), strike: z.number(), premium: z.number().optional(), bid: z.number().optional(), ask: z.number().optional(), mark: z.number().optional(), ratioQuantity: z.number().int().positive().optional(), delta: z.number().optional(), gamma: z.number().optional(), theta: z.number().optional(), vega: z.number().optional() })).min(1),
+    order_body: z.unknown().optional(), collateral: z.unknown().optional(), review: z.unknown().optional(), roll_alternatives: z.array(z.unknown()).optional()
+  }),
+  outputSchema: z.object({ contract: z.object({}).catchall(z.unknown()), package: z.object({ netPremium: z.number() }), payoff: z.object({}).catchall(z.unknown()), netGreeks: z.object({ delta: z.number(), gamma: z.number(), theta: z.number(), vega: z.number() }), approvalCard: z.object({}).catchall(z.unknown()), rollAlternatives: z.array(z.unknown()) }),
+  annotations: toolAnnotations(true, "read")
+}, async (args: any) => jsonResponse(buildOptionsWorkbench({ symbol: args.symbol, expiration: args.expiration, underlyingPrice: args.underlying_price, quantity: args.quantity, pricingMode: args.pricing_mode, legs: args.legs, orderBody: args.order_body, collateral: args.collateral, review: args.review, rollAlternatives: args.roll_alternatives })));
+
+registerCapabilityTool("portfolio-snapshot", {
+  title: "Robinhood Portfolio Time Machine",
+  description: "Capture, list, or diff private timestamped portfolio snapshots. Capture performs live reads; list/diff are local-only.",
+  inputSchema: z.object({ action: z.enum(["capture", "list", "diff"]).default("capture"), account_number: z.string().optional(), path: z.string().default(resolve(process.cwd(), "local/portfolio-snapshots.jsonl")) }),
+  outputSchema: z.object({}).catchall(z.unknown()), annotations: toolAnnotations(true, "read")
+}, async ({ action, account_number, path }: any) => {
+  const snapshots = readPortfolioSnapshots(path);
+  if (action === "list") return jsonResponse({ path, count: snapshots.length, snapshots: snapshots.map(({ id, capturedAt }) => ({ id, capturedAt })) });
+  if (action === "diff") {
+    if (snapshots.length < 2) return mcpError(new Error("Need at least two snapshots to diff"));
+    return jsonResponse(diffPortfolioSnapshots(snapshots.at(-2)!, snapshots.at(-1)!));
+  }
+  const snapshot = { version: 1 as const, id: randomUUID(), capturedAt: new Date().toISOString(), source: "portfolio" as const, data: await computePortfolioPnl({ accountNumber: account_number, top: 0 }) };
+  appendPortfolioSnapshot(path, snapshot);
+  return jsonResponse({ path, snapshot });
+});
+
+registerCapabilityTool("share-safe", {
+  title: "Robinhood Share-safe Preview",
+  description: "Redact sensitive fields from an object without changing server state. Set ROBINHOOD_SHARE_SAFE=1 to apply the same policy to every tool response.",
+  inputSchema: z.object({ value: z.unknown() }), outputSchema: z.object({ result: z.unknown() }), annotations: toolAnnotations(true, "read")
+}, async ({ value }: any) => jsonResponse({ result: maybeShareSafe(value, { ...process.env, ROBINHOOD_SHARE_SAFE: "1" }) }));
 
 // ── MCP Prompts: reusable operating templates ────────────────────────────────────────────────────
 // Surfaced so a client can offer them as slash-commands / starters. Each just orchestrates EXISTING

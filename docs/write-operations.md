@@ -13,6 +13,11 @@ This is a personal `zaydiscold` repo. It is read/write capable.
   request is planned but never sent (the result carries a `liveWriteBlocked` reason).
 - Reads (`read`, `sensitive-read`) always run live; no gate applies to them.
 - Write-capable risks emit `[WRITES TO LIVE ROBINHOOD]` to stderr before sending.
+- **Route provenance is enforced.** A live mutation must resolve to
+  `verificationStatus: captured|live_verified` (or the method-specific equivalent).
+  `inferred` and `deprecated` routes are forced to dry-run even when the master switch is armed.
+- Raw CLI/MCP execution uses the same ownership verification, notional/session caps, route
+  provenance, and append-only audit log as first-class writes; it is not a policy bypass.
 
 ## Risk Levels
 

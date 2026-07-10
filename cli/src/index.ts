@@ -100,7 +100,8 @@ import {
   printJson,
   printTable,
   resolveLiveWriteGate,
-  accountFromWriteRequest,
+  inferBrokerageMethod,
+  riskIsWrite,
   selectNearStrikes,
   signCryptoRequest,
   summarizeApiMap,
@@ -110,7 +111,13 @@ import {
   fetchRecurringSchedules,
   setRecurringState,
   finiteNumber,
-  optionMoney
+  optionMoney,
+  appendPortfolioSnapshot,
+  buildOptionsWorkbench,
+  diffPortfolioSnapshots,
+  readPortfolioSnapshots,
+  runDoctor,
+  watchOrderLifecycle
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -123,6 +130,12 @@ program
   .name("robinhood-cli")
   .description("Personal live Robinhood API map CLI. Crypto signing helper plus brokerage/account route inventory and executor.")
   .version("0.1.0");
+
+program
+  .option("--share-safe", "redact account numbers, balances, order/document identifiers, signed URLs, and private notes from JSON output")
+  .hook("preAction", (command) => {
+    if (command.optsWithGlobals().shareSafe) process.env.ROBINHOOD_SHARE_SAFE = "1";
+  });
 
 // Help-only credit line — must never print on normal or --json command output.
 program.addHelpText("after", "\nby zayd @ zayd.wtf");
@@ -695,38 +708,53 @@ brokerage
   .option("--body-json <json>", "JSON request body")
   .option("--dry-run", "print execution plan without sending")
   .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
+  .option("--override-cap", "bypass configured order/session notional caps for this raw order")
   .option("--full", "print full response body instead of bounded preview")
   .option("--json", "emit JSON")
-  .action(async (query: string, options: { method?: string; param?: string[]; queryParam?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; full?: boolean; json?: boolean }) => {
+  .action(async (query: string, options: { method?: string; param?: string[]; queryParam?: string[]; bodyJson?: string; dryRun?: boolean; liveWrite?: boolean; overrideCap?: boolean; full?: boolean; json?: boolean }) => {
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query });
     const route = selectRouteByQueryAndMethod(matches, query, options.method);
     if (!route) {
       throw new Error(noMatchHint(query));
     }
     const reqParams = parseParamAssignments(options.param);
+    const reqQuery = parseParamAssignments(options.queryParam);
     const reqBody = parseJsonBody(options.bodyJson);
-    const gate = resolveLiveWriteGate({
-      risk: route.risk,
-      method: options.method,
-      dryRun: Boolean(options.dryRun),
-      liveWrite: Boolean(options.liveWrite),
-      accountNumber: accountFromWriteRequest(reqBody, reqParams)
-    });
-    if (gate.forcedDryRun && gate.reason) {
-      process.stderr.write(`${gate.reason}\n`);
+    const requestMethod = (options.method ?? inferBrokerageMethod(route)).toUpperCase();
+    const isWrite = riskIsWrite(route.risk) || (requestMethod !== "GET" && requestMethod !== "HEAD");
+    if (isWrite) {
+      const result = await gatedBrokerageWrite({
+        url: route.url,
+        method: requestMethod,
+        params: reqParams,
+        query: reqQuery,
+        body: reqBody,
+        dryRun: Boolean(options.dryRun),
+        liveWrite: Boolean(options.liveWrite),
+        overrideCap: Boolean(options.overrideCap),
+        fullBody: Boolean(options.full),
+        logContext: `raw brokerage execute: ${requestMethod} ${route.url}`
+      });
+      if (result.reason) process.stderr.write(`${result.reason}\n`);
+      if (options.json) {
+        printJson(result);
+        return;
+      }
+      process.stdout.write(`${result.status} ${result.statusText} ${result.method} ${result.url}\n`);
+      process.stdout.write(result.body ? `${result.body}\n` : "");
+      return;
     }
-    const effectiveDryRun = Boolean(options.dryRun) || gate.forcedDryRun;
     const plan = planBrokerageRequest({
       route,
-      method: options.method,
+      method: requestMethod,
       params: reqParams,
-      query: parseParamAssignments(options.queryParam),
+      query: reqQuery,
       body: reqBody,
-      dryRun: effectiveDryRun
+      dryRun: Boolean(options.dryRun)
     });
     const result = await executeBrokerageRequest(plan, {
-      dryRun: effectiveDryRun,
-      body: parseJsonBody(options.bodyJson),
+      dryRun: Boolean(options.dryRun),
+      body: reqBody,
       fullBody: Boolean(options.full)
     });
     if (options.json) {
@@ -2358,6 +2386,28 @@ options
     process.stdout.write(`\n${r.note}\n`);
     for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
   });
+
+options
+  .command("workbench")
+  .description("Analyze one exact option package: net premium, expiry payoff samples, signed Greeks, collateral/review response, roll alternatives, and a body-bound approval card. Pure analysis; never sends.")
+  .requiredOption("--symbol <symbol>")
+  .requiredOption("--expiration <date>")
+  .requiredOption("--spot <price>")
+  .requiredOption("--legs-json <json>", "JSON array of {id,action,type,strike,premium,ratioQuantity?,greeks?}")
+  .option("--quantity <n>", "package quantity", "1")
+  .option("--pricing-mode <mode>", "natural|mid", "mid")
+  .option("--order-body-json <json>", "exact planned order body to bind into the approval card")
+  .option("--collateral-json <json>", "collateral response for the exact body")
+  .option("--review-json <json>", "review response for the exact body")
+  .option("--roll-alternatives-json <json>", "array of compared roll alternatives")
+  .action((opts: any) => printJson(buildOptionsWorkbench({
+    symbol: opts.symbol, expiration: opts.expiration, underlyingPrice: Number(opts.spot), quantity: Number(opts.quantity), pricingMode: opts.pricingMode,
+    legs: JSON.parse(opts.legsJson),
+    orderBody: opts.orderBodyJson ? JSON.parse(opts.orderBodyJson) : undefined,
+    collateral: opts.collateralJson ? JSON.parse(opts.collateralJson) : undefined,
+    review: opts.reviewJson ? JSON.parse(opts.reviewJson) : undefined,
+    rollAlternatives: opts.rollAlternativesJson ? JSON.parse(opts.rollAlternativesJson) : undefined
+  })));
 
 program.addCommand(options);
 
@@ -4121,6 +4171,44 @@ crypto
   );
 
 program.addCommand(crypto);
+
+program
+  .command("doctor")
+  .description("Offline health check: auth-file hygiene, source/dist parity, route verification, write-gate state, knowledge files, share-safe state, and MCP profile. Never calls Robinhood.")
+  .option("--json", "emit JSON")
+  .action((opts: any) => {
+    const result = runDoctor(process.cwd());
+    if (opts.json) return printJson(result);
+    printTable(result.checks.map((check) => ({ ...check })), ["id", "status", "message"]);
+    process.stdout.write(`\n${result.ok ? "PASS" : "FAIL"}: ${result.summary.pass} pass, ${result.summary.warn} warn, ${result.summary.fail} fail\n`);
+  });
+
+program
+  .command("order-watch")
+  .description("Durably poll order history until filled/rejected/cancelled or unknown. Reconciles once more before unknown and never retries the order itself.")
+  .requiredOption("-i, --id <order_id>")
+  .option("--interval-ms <n>", "poll interval", "2000")
+  .option("--timeout-ms <n>", "maximum polling time", "120000")
+  .action(async (opts: any) => printJson(await watchOrderLifecycle({ id: opts.id, poll: getOrderStatus, intervalMs: Number(opts.intervalMs), timeoutMs: Number(opts.timeoutMs) })));
+
+program
+  .command("portfolio-snapshot")
+  .description("Capture/list/diff timestamped local portfolio snapshots. Capture performs normal portfolio reads; data is stored mode 600 under local/.")
+  .argument("[action]", "capture|list|diff", "capture")
+  .option("--account <number>")
+  .option("--path <path>", "snapshot JSONL path", resolvePath("local/portfolio-snapshots.jsonl"))
+  .action(async (action: string, opts: any) => {
+    const snapshots = readPortfolioSnapshots(opts.path);
+    if (action === "list") return printJson({ path: opts.path, count: snapshots.length, snapshots: snapshots.map(({ id, capturedAt }) => ({ id, capturedAt })) });
+    if (action === "diff") {
+      if (snapshots.length < 2) throw new Error("Need at least two snapshots to diff");
+      return printJson(diffPortfolioSnapshots(snapshots.at(-2)!, snapshots.at(-1)!));
+    }
+    if (action !== "capture") throw new Error("action must be capture|list|diff");
+    const snapshot = { version: 1 as const, id: randomUUID(), capturedAt: new Date().toISOString(), source: "portfolio" as const, data: await computePortfolioPnl({ accountNumber: opts.account, top: 0 }) };
+    appendPortfolioSnapshot(opts.path, snapshot);
+    printJson({ path: opts.path, snapshot });
+  });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);

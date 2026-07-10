@@ -15,6 +15,7 @@ folder stays local and is never pushed.
 | `cli-mcp-architecture.md` | How CLI and MCP share one engine, request flow, route-map rules, maintenance invariants, and improvement backlog |
 | `auth.md` | Browser-session bearer auth, token refresh, and local `.env` behavior |
 | `write-operations.md` | The dry-run/live-write gate and mutation rules |
+| `safety-and-workflow-features-2026-07-10.md` | Doctor, durable order watch, options workbench, portfolio snapshots, share-safe output, MCP schemas/profiles |
 | `account-settings-capability-map-2026-06-03.md` | Account-page surfaces: funding, recurring, DRIP, cash sweep, stock lending, margin, futures, event contracts |
 | `account-context-routing-2026-06-02.md` | Browser `?account_number=` routing behavior |
 | `security-research-account-number-context-routing-2026-06-03.md` | Security-research notes for account-number context routing |

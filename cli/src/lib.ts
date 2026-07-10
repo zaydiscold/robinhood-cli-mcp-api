@@ -3,6 +3,14 @@ import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { maybeShareSafe } from "./share-safe.js";
+
+export * from "./capabilities.js";
+export * from "./doctor.js";
+export * from "./options-workbench.js";
+export * from "./order-lifecycle.js";
+export * from "./share-safe.js";
+export * from "./time-machine.js";
 
 // Walk up from a start dir to a repo marker. Robust across build layouts (cli/dist,
 // mcp/dist, bundled, symlinked): a fixed ../.. silently resolves to the WRONG directory
@@ -6519,7 +6527,7 @@ export function buildOptionsStrategyPricingSummary(input: {
 }
 
 export function printJson(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(maybeShareSafe(value), null, 2)}\n`);
 }
 
 export function printTable(rows: Array<Record<string, unknown>>, columns: string[]): void {

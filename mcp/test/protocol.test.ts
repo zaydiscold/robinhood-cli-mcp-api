@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { server } from "../src/server.js";
-import { listKnowledge } from "@zaydiscold/robinhood-cli/lib";
+import { CAPABILITIES, listKnowledge } from "@zaydiscold/robinhood-cli/lib";
 
 const client = new Client({ name: "robinhood-cli-protocol-test", version: "1.0.0" });
 
@@ -28,14 +28,15 @@ describe("MCP protocol conformance", () => {
       client.listPrompts()
     ]);
 
-    expect(tools.tools).toHaveLength(73);
+    expect(new Set(tools.tools.map((tool) => tool.name)).size).toBe(tools.tools.length);
+    expect(tools.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(CAPABILITIES.map((entry) => entry.mcp)));
     // Dynamic, not a literal: resources are exactly listKnowledge() mapped (server.ts), so tie the
     // count to the file-backed source. Catches an accidental resource DROP without breaking every time
     // a knowledge/doc Markdown file is added.
     expect(resources.resources.length).toBe(listKnowledge().length);
     expect(templates.resourceTemplates).toHaveLength(1);
     expect(prompts.prompts).toHaveLength(3);
-    expect(tools.tools.every((tool) => tool.inputSchema && tool.annotations)).toBe(true);
+    expect(tools.tools.every((tool) => tool.inputSchema && tool.outputSchema && tool.annotations)).toBe(true);
     expect(resources.resources.map((resource) => resource.name)).toEqual(expect.arrayContaining([
       "readme",
       "docs-readme",

@@ -23,7 +23,7 @@ its STOP conditions, and update your status row when done.
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale)
 
 > **All six executed and committed.** Current verification: both package typechecks pass; the suite
-> is green (CLI 420 + MCP 4 as of 2026-07-10). Highlights:
+> is green (CLI 423 + MCP 4 as of 2026-07-10). Highlights:
 > 001 shared `scripts/lib/live-gate.mjs` (both write scripts double-gated); 002 `assertAccountOwned`
 > `onLookupFailure` policy + dedup/cancel fail-closed with a `force` escape hatch (panic threads the
 > owned account); 003 `downloadDocuments` validates the host before attaching the bearer; 004 adds a

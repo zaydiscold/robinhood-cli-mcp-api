@@ -97,4 +97,17 @@ describe("doctor", () => {
     expect(JSON.stringify(result)).not.toContain("should-never-print");
     expect(result.checks.find((check) => check.id === "source-dist-parity")?.status).toBe("pass");
   });
+
+  it("does not interpret synthetic Windows mode bits as a POSIX permission failure", () => {
+    const root = mkdtempSync(join(tmpdir(), "rh-doctor-win-"));
+    for (const path of ["api-map", "cli/dist/api-map", "docs", "local"]) mkdirSync(join(root, path), { recursive: true });
+    writeFileSync(join(root, ".env"), "ROBINHOOD_BROKERAGE_TOKEN=secret\n");
+    writeFileSync(join(root, "api-map/brokerage-routes.json"), "[]");
+    writeFileSync(join(root, "cli/dist/api-map/brokerage-routes.json"), "[]");
+    for (const path of ["AGENTS.md", "SKILL.md", "docs/cli-mcp-architecture.md", "docs/write-operations.md"]) writeFileSync(join(root, path), "ok");
+    const result = runDoctor(root, {}, "win32");
+    expect(result.checks.find((check) => check.id === "env-permissions")).toMatchObject({ status: "warn" });
+    expect(result.summary.fail).toBe(0);
+    expect(JSON.stringify(result)).not.toContain("secret");
+  });
 });

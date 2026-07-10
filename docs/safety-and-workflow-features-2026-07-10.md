@@ -24,7 +24,8 @@ bound to the supplied order body. This is pure analysis.
 
 `portfolio-snapshot capture|list|diff` and `robinhood_portfolio_snapshot` persist JSONL snapshots
 under `local/portfolio-snapshots.jsonl` by default with mode 600. Capture uses the shared portfolio
-engine; list/diff are local-only. Diffs include total and per-position drift.
+engine; list/diff are local-only. Diffs include total and per-position drift. The runtime JSONL path
+is explicitly gitignored even though other curated `local/` content is git-crypt tracked.
 
 ## Share-safe output
 

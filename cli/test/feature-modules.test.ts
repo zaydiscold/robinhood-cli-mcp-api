@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -45,6 +45,11 @@ describe("durable order lifecycle", () => {
 });
 
 describe("portfolio time machine", () => {
+  it("keeps the default private runtime snapshot out of git", () => {
+    const ignore = readFileSync(new URL("../../.gitignore", import.meta.url), "utf8");
+    expect(ignore).toMatch(/^local\/portfolio-snapshots\.jsonl$/m);
+  });
+
   it("persists private JSONL snapshots and reports position drift", () => {
     const path = join(mkdtempSync(join(tmpdir(), "rh-snap-")), "snapshots.jsonl");
     const before: any = { version: 1, id: "a", capturedAt: "2026-01-01T00:00:00Z", source: "portfolio", data: { totals: { equity: 100, day: 1, afterHours: 0 }, drivers: [{ kind: "equity", symbol: "AAPL", value: 50, dayUsd: 1, qty: 1 }] } };

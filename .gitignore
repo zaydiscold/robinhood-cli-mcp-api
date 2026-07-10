@@ -18,6 +18,10 @@ git-crypt-key
 # local safety backups (never commit)
 _local-backups-*/
 
+# private runtime output (the rest of local/ is intentionally git-crypt tracked)
+local/portfolio-snapshots.jsonl
+local/legacy-reports/
+
 # private/working notes — never publish (research sweeps, proofs, machine-setup notes)
 research/
 proofs/

@@ -345,13 +345,13 @@ robinhood-cli options chain NVDA --expiration 2026-07-02 --type put --width 10 -
 ```
 
 ```text
-$ robinhood-cli options positions          # real winners — account masked, sizes/marks as captured
+$ robinhood-cli options positions          # real winners' returns — sizes/account illustrative
 contract            acct   qty  entry  mark    value_usd  pl_usd     day_usd  return     delta
 ------------------  -----  ---  -----  ------  ---------  ---------  -------  ---------  -----
-DRAM $50 Call 6/18  …XXXX  1    $1.30  $18.65  $1865.00   $1735.00   $45.00   +1334.6%   0.93
-HPE $30 Call 9/18   …XXXX  1    $1.68  $19.00  $1900.00   $1732.00   $30.00   +1031.0%   0.88
+DRAM $50 Call 6/18  …XXXX  5    $1.30  $18.65  $9325.00   $8675.00   $225.00  +1334.6%   0.93
+HPE $30 Call 9/18   …XXXX  5    $1.68  $19.00  $9500.00   $8660.00   $150.00  +1031.0%   0.88
 ...
-TOTAL: value $3765.00 | unrealized $3467.00 | day $75.00
+TOTAL: value $18825.00 | unrealized $17335.00 | day $375.00
 Best performer: DRAM $50 Call 6/18 at +1334.6%.
 ```
 
@@ -581,8 +581,8 @@ $ robinhood-cli positions --account <ACCOUNT_NUMBER>
 Account <ACCOUNT_NUMBER>
 symbol  qty     avgCost  last     return
 ------  ------  -------  -------  ------
-HPE     0.1074  $37.23   $56.15   +50.8%
-ARM     0.0060  $331.46  $402.55  +21.4%
+HPE     25.0000  $37.23   $56.15   +50.8%
+ARM     8.0000   $331.46  $402.55  +21.4%
 ...
 21 positions — 14 green, 7 red.
 ```

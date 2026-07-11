@@ -6,7 +6,8 @@ These features are offline or read-only unless explicitly noted. None sends an o
 
 `robinhood-cli doctor --json` checks Node compatibility, credential-file permissions without
 printing values, source/dist route-map parity, inferred mutation counts, required knowledge files,
-the live-write gate, share-safe state, and the active MCP profile. MCP: `robinhood_doctor`.
+the live-write gate, share-safe state, and the active MCP profile. MCP: `robinhood_doctor`. Both
+resolve the repository from the installed module path, so they work from any current directory.
 
 ## Durable order lifecycle
 
@@ -25,7 +26,8 @@ bound to the supplied order body. This is pure analysis.
 `portfolio-snapshot capture|list|diff` and `robinhood_portfolio_snapshot` persist JSONL snapshots
 under `local/portfolio-snapshots.jsonl` by default with mode 600. Capture uses the shared portfolio
 engine; list/diff are local-only. Diffs include total and per-position drift. The runtime JSONL path
-is explicitly gitignored even though other curated `local/` content is git-crypt tracked.
+is explicitly gitignored even though other curated `local/` content is git-crypt tracked, and its
+default remains anchored to the repository when CLI/MCP callers launch from another directory.
 
 ## Share-safe output
 

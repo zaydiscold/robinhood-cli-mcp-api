@@ -9,8 +9,8 @@
     "robinhood-cli-mcp": "dist/server.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "pretest": "corepack pnpm --filter @zaydiscold/robinhood-cli build",
+    "build": "tsc -p tsconfig.json && node scripts/ensure-bin-mode.mjs",
+    "pretest": "corepack pnpm --filter @zaydiscold/robinhood-cli build && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp build",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

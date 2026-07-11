@@ -98,6 +98,7 @@ import {
   detectAccountClass,
   buildAtomicRollOrderBody,
   resolveRollModel,
+  repositoryRoot,
   appendPortfolioSnapshot,
   buildOptionsWorkbench,
   CAPABILITIES,
@@ -2451,7 +2452,7 @@ registerCapabilityTool("doctor", {
   title: "Robinhood Doctor",
   description: "Offline health check for source/dist parity, credential-file hygiene, route provenance, write-gate state, knowledge files, share-safe state, and MCP profile. Never calls Robinhood.",
   inputSchema: z.object({}), outputSchema: doctorOutputSchema, annotations: toolAnnotations(true, "read")
-}, async () => jsonResponse(runDoctor(process.cwd())));
+}, async () => jsonResponse(runDoctor(repositoryRoot())));
 
 registerCapabilityTool("order-lifecycle", {
   title: "Robinhood Durable Order Watch",
@@ -2475,7 +2476,7 @@ registerCapabilityTool("options-workbench", {
 registerCapabilityTool("portfolio-snapshot", {
   title: "Robinhood Portfolio Time Machine",
   description: "Capture, list, or diff private timestamped portfolio snapshots. Capture performs live reads; list/diff are local-only.",
-  inputSchema: z.object({ action: z.enum(["capture", "list", "diff"]).default("capture"), account_number: z.string().optional(), path: z.string().default(resolve(process.cwd(), "local/portfolio-snapshots.jsonl")) }),
+  inputSchema: z.object({ action: z.enum(["capture", "list", "diff"]).default("capture"), account_number: z.string().optional(), path: z.string().default(resolve(repositoryRoot(), "local/portfolio-snapshots.jsonl")) }),
   outputSchema: z.object({}).catchall(z.unknown()), annotations: toolAnnotations(true, "read")
 }, async ({ action, account_number, path }: any) => {
   const snapshots = readPortfolioSnapshots(path);

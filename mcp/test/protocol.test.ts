@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { server } from "../src/server.js";
@@ -20,6 +22,11 @@ afterAll(async () => {
 });
 
 describe("MCP protocol conformance", () => {
+  it.skipIf(process.platform === "win32")("builds the declared package binary as executable", () => {
+    const serverBin = fileURLToPath(new URL("../dist/server.js", import.meta.url));
+    expect(statSync(serverBin).mode & 0o111).not.toBe(0);
+  });
+
   it("advertises the complete tool/resource/prompt surface with valid schemas and annotations", async () => {
     const [tools, resources, templates, prompts] = await Promise.all([
       client.listTools(),

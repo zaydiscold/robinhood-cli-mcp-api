@@ -10,4 +10,10 @@ describe("workspace package scripts", () => {
       }
     }
   });
+
+  it("repairs the Unix executable mode for the declared MCP package binary", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../../mcp/package.json", import.meta.url), "utf8"));
+    expect(manifest.bin?.["robinhood-cli-mcp"]).toBe("dist/server.js");
+    expect(manifest.scripts?.build).toContain("ensure-bin-mode.mjs");
+  });
 });

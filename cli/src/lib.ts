@@ -45,6 +45,14 @@ function repoRoot(): string {
   return ascendToRepoRoot() ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
 
+/**
+ * Absolute repository root resolved from the installed module location, never the caller's cwd.
+ * CLI commands and MCP clients are commonly launched from $HOME or an application directory.
+ */
+export function repositoryRoot(): string {
+  return repoRoot();
+}
+
 // Auto-load the repo .env so every consumer (CLI, MCP server, scripts) gets auth
 // with no shell sourcing. Explicit env vars always win — only unset keys are filled.
 // Runs once at module load; a missing/garbled file is non-fatal.

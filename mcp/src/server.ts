@@ -2,6 +2,7 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -2580,7 +2581,16 @@ export async function startStdioServer(): Promise<void> {
   await server.connect(transport);
 }
 
-const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+export function isMainModule(moduleUrl: string, argvPath: string | undefined): boolean {
+  if (!argvPath) return false;
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(resolve(argvPath));
+  } catch {
+    return false;
+  }
+}
+
+const isMain = isMainModule(import.meta.url, process.argv[1]);
 if (isMain) await startStdioServer();
 
 // Zayd Khan // cold // www.zayd.wtf

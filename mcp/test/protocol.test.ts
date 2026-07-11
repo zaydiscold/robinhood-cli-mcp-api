@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { statSync } from "node:fs";
+import { mkdtempSync, statSync, symlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { server } from "../src/server.js";
+import { isMainModule, server } from "../src/server.js";
 import { CAPABILITIES, listKnowledge } from "@zaydiscold/robinhood-cli/lib";
 
 const client = new Client({ name: "robinhood-cli-protocol-test", version: "1.0.0" });
@@ -25,6 +27,13 @@ describe("MCP protocol conformance", () => {
   it.skipIf(process.platform === "win32")("builds the declared package binary as executable", () => {
     const serverBin = fileURLToPath(new URL("../dist/server.js", import.meta.url));
     expect(statSync(serverBin).mode & 0o111).not.toBe(0);
+  });
+
+  it.skipIf(process.platform === "win32")("recognizes the package binary when launched through a PATH symlink", () => {
+    const serverBin = fileURLToPath(new URL("../dist/server.js", import.meta.url));
+    const link = join(mkdtempSync(join(tmpdir(), "rh-mcp-bin-")), "robinhood-cli-mcp");
+    symlinkSync(serverBin, link);
+    expect(isMainModule(new URL("../dist/server.js", import.meta.url).href, link)).toBe(true);
   });
 
   it("advertises the complete tool/resource/prompt surface with valid schemas and annotations", async () => {

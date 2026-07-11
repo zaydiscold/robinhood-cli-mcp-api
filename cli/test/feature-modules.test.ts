@@ -8,6 +8,7 @@ import {
   diffPortfolioSnapshots,
   redactShareSafe,
   readPortfolioSnapshots,
+  repositoryRoot,
   runDoctor,
   watchOrderLifecycle
 } from "../src/lib.js";
@@ -86,6 +87,22 @@ describe("options workbench", () => {
 });
 
 describe("doctor", () => {
+  it("resolves the repository from the module location instead of the caller cwd", () => {
+    const originalCwd = process.cwd();
+    const unrelatedCwd = mkdtempSync(join(tmpdir(), "rh-cwd-"));
+    try {
+      process.chdir(unrelatedCwd);
+      const root = repositoryRoot();
+      expect(root).not.toBe(unrelatedCwd);
+      expect(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8")).toContain("packages:");
+      const doctor = runDoctor(root);
+      expect(doctor.checks.find((check) => check.id === "source-dist-parity")?.status).not.toBe("fail");
+      expect(doctor.checks.find((check) => check.id === "knowledge")?.status).toBe("pass");
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   it("is offline, detects source/dist drift, and never emits credential values", () => {
     const root = mkdtempSync(join(tmpdir(), "rh-doctor-"));
     for (const path of ["api-map", "cli/dist/api-map", "docs"]) mkdirSync(join(root, path), { recursive: true });

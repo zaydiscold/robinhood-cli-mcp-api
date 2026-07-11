@@ -112,6 +112,7 @@ import {
   setRecurringState,
   finiteNumber,
   optionMoney,
+  repositoryRoot,
   appendPortfolioSnapshot,
   buildOptionsWorkbench,
   diffPortfolioSnapshots,
@@ -4177,7 +4178,7 @@ program
   .description("Offline health check: auth-file hygiene, source/dist parity, route verification, write-gate state, knowledge files, share-safe state, and MCP profile. Never calls Robinhood.")
   .option("--json", "emit JSON")
   .action((opts: any) => {
-    const result = runDoctor(process.cwd());
+    const result = runDoctor(repositoryRoot());
     if (opts.json) return printJson(result);
     printTable(result.checks.map((check) => ({ ...check })), ["id", "status", "message"]);
     process.stdout.write(`\n${result.ok ? "PASS" : "FAIL"}: ${result.summary.pass} pass, ${result.summary.warn} warn, ${result.summary.fail} fail\n`);
@@ -4196,7 +4197,7 @@ program
   .description("Capture/list/diff timestamped local portfolio snapshots. Capture performs normal portfolio reads; data is stored mode 600 under local/.")
   .argument("[action]", "capture|list|diff", "capture")
   .option("--account <number>")
-  .option("--path <path>", "snapshot JSONL path", resolvePath("local/portfolio-snapshots.jsonl"))
+  .option("--path <path>", "snapshot JSONL path", resolvePath(repositoryRoot(), "local/portfolio-snapshots.jsonl"))
   .action(async (action: string, opts: any) => {
     const snapshots = readPortfolioSnapshots(opts.path);
     if (action === "list") return printJson({ path: opts.path, count: snapshots.length, snapshots: snapshots.map(({ id, capturedAt }) => ({ id, capturedAt })) });

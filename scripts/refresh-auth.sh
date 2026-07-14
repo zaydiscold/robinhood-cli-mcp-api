@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# Refresh the brokerage bearer token for robinhood-cli — fully agentic, browser-free.
+# Refresh the brokerage bearer token for robinhood-cli — fully agentic.
+#
+# Token source, in priority order:
+#   1. LIVE read over CDP from a running debug Chrome (chrome-debug / port 9222):
+#      reads localStorage["web:auth_state"] straight from the tab's memory — the
+#      authoritative, always-current value. Fixes the case where Chrome hasn't
+#      flushed a freshly-rotated token to disk yet. Opt out with ROBINHOOD_NO_CDP=1.
+#   2. FALLBACK: scan Chrome's on-disk localStorage LevelDB (browser-free, zero
+#      network) — used headless/offline or when no debug Chrome is reachable.
 #
 # Robinhood's web app keeps its auth in localStorage["web:auth_state"], and Chrome
 # continuously flushes that to disk as a LevelDB store. The web app rotates its own
@@ -67,9 +75,58 @@ export CHROME_BASE
 export BRAVE_BASE
 export EDGE_BASE
 
-# Python does the disk scan, writes .env, chmods it, and prints the status — so the
-# token value never passes through the shell. Heredoc goes straight to python (no
-# nesting inside $(), which trips macOS bash 3.2's paren scanner).
+# --- CDP-first (live-memory) read -------------------------------------------
+# The disk scan below reads Chrome's on-disk LevelDB, which Chrome flushes
+# LAZILY — so a token that rotated minutes ago (or a fresh login) may not be on
+# disk yet, and the scan finds nothing even though you're logged in. When a
+# debug Chrome is reachable (chrome-debug / --remote-debugging-port=9222) we
+# instead read localStorage["web:auth_state"] straight from the LIVE tab over
+# CDP: authoritative, always current. Populates RH_CDP_JSON for the python
+# below; on any failure we fall through to the disk scan (headless/offline path).
+# Opt out with ROBINHOOD_NO_CDP=1.
+cdp_try() {
+    [ -n "${ROBINHOOD_NO_CDP:-}" ] && return 0
+    command -v curl >/dev/null || return 0
+    local port="${ROBINHOOD_CDP_PORT:-9222}"
+    curl -fsS --max-time 2 "http://127.0.0.1:${port}/json/version" >/dev/null 2>&1 || return 0
+    command -v browser-harness-js >/dev/null || return 0
+    browser-harness-js --start >/dev/null 2>&1 || return 0
+
+    local payload repl_url log b64
+    repl_url="http://127.0.0.1:${CDP_REPL_PORT:-9876}"
+    log="${CDP_REPL_LOG:-/tmp/browser-harness-js.log}"
+    payload='
+try { await session.Target.getTargets(); } catch (e) {
+  const ws = (await (await fetch("http://127.0.0.1:'"${port}"'/json/version")).json()).webSocketDebuggerUrl;
+  await session.connect({wsUrl: ws, timeoutMs: 30000});
+}
+let ts = await session.Target.getTargets();
+let rh = ts.targetInfos.find(t => t.type === "page" && t.url.includes("robinhood.com"));
+let made = false;
+if (!rh) {
+  const {targetId} = await session.Target.createTarget({url: "https://robinhood.com/", background: true});
+  made = true; await new Promise(r => setTimeout(r, 6000));
+  ts = await session.Target.getTargets();
+  rh = ts.targetInfos.find(t => t.targetId === targetId);
+}
+await session.use(rh.targetId);
+const res = await session.Runtime.evaluate({expression: "localStorage.getItem(\"web:auth_state\") || \"\"", returnByValue: true});
+if (made) { try { await session.Target.closeTarget({targetId: rh.targetId}); } catch (e) {} }
+console.log("RHCDP_OUT:" + (res.result.value ? Buffer.from(res.result.value).toString("base64") : "MISSING"));
+"done"'
+    curl -fsS --max-time 60 --data-binary "$payload" "$repl_url/eval" >/dev/null 2>&1 || return 0
+    b64=$(grep 'RHCDP_OUT:' "$log" 2>/dev/null | tail -1 | sed 's/.*RHCDP_OUT://')
+    [ -z "$b64" ] || [ "$b64" = "MISSING" ] && return 0
+    RH_CDP_JSON=$(printf '%s' "$b64" | base64 -d 2>/dev/null) || return 0
+    export RH_CDP_JSON
+    echo "[refresh-auth] token read live via CDP (port ${port})"
+}
+cdp_try || true
+
+# Python prefers RH_CDP_JSON (live) when present; else does the disk scan. It
+# writes .env, chmods it, and prints the status — so the token value never
+# passes through the shell. Heredoc goes straight to python (no nesting inside
+# $(), which trips macOS bash 3.2's paren scanner).
 "$PYTHON_BIN" << 'PYEOF'
 import re, json, glob, os, sys, datetime
 
@@ -77,6 +134,18 @@ env_path = os.environ["ROBINHOOD_ENV_PATH"]
 base = os.environ.get("CHROME_BASE")
 brave = os.environ.get("BRAVE_BASE")
 edge = os.environ.get("EDGE_BASE")
+
+# Live CDP read wins when available — it's the authoritative in-memory token,
+# not the lazily-flushed disk copy. RH_CDP_JSON is the raw web:auth_state JSON.
+cdp_raw = os.environ.get("RH_CDP_JSON")
+cdp_best = None
+if cdp_raw:
+    try:
+        obj = json.loads(cdp_raw)
+        if isinstance(obj, dict) and obj.get("access_token"):
+            cdp_best = obj
+    except Exception:
+        cdp_best = None
 
 # Try Chrome first, then Brave, then Edge
 bases = [b for b in [base, brave, edge] if b]
@@ -131,20 +200,26 @@ for f in files:
         if isinstance(obj, dict) and obj.get("access_token") and obj.get("refresh_token"):
             candidates.append((os.path.getmtime(f), obj))
 
-if not candidates:
+if cdp_best is not None:
+    best = cdp_best
+    source = "live CDP (localStorage)"
+elif candidates:
+    candidates.sort(key=lambda c: (c[0], len(str(c[1]["access_token"]))), reverse=True)
+    best = candidates[0][1]
+    source = "on-disk localStorage"
+else:
     sys.stderr.write(
-        "[refresh-auth] no Robinhood auth found in any Chrome profile's localStorage. "
-        "Log in to robinhood.com in Chrome and retry.\n")
+        "[refresh-auth] no Robinhood auth found via CDP or in any Chrome profile's "
+        "on-disk localStorage. Log in to robinhood.com in Chrome (or start chrome-debug) "
+        "and retry.\n")
     sys.exit(2)
 
-candidates.sort(key=lambda c: (c[0], len(str(c[1]["access_token"]))), reverse=True)
-best = candidates[0][1]
 tok = str(best["access_token"])
 exp = int(best.get("expires_in", 0) or 0)
 ttype = best.get("token_type", "Bearer")
 
 header = (
-    "# Robinhood brokerage auth — read from Chrome's on-disk localStorage "
+    "# Robinhood brokerage auth — " + source + " "
     + datetime.datetime.utcnow().isoformat() + "Z\n"
     + "# token_type=" + str(ttype) + " expires_in=" + str(exp)
     + "s (~%.1fd)\n" % (exp / 86400)

@@ -113,6 +113,15 @@ describe("doctor", () => {
     expect(result.ok).toBe(true);
     expect(JSON.stringify(result)).not.toContain("should-never-print");
     expect(result.checks.find((check) => check.id === "source-dist-parity")?.status).toBe("pass");
+    expect(result.checks.find((check) => check.id === "mcp-profile")).toMatchObject({
+      status: "pass",
+      message: "MCP profile: lean (default)"
+    });
+
+    const invalidProfile = runDoctor(root, { ROBINHOOD_MCP_PROFILE: "typo" });
+    expect(invalidProfile.ok).toBe(false);
+    expect(invalidProfile.checks.find((check) => check.id === "mcp-profile")).toMatchObject({ status: "fail" });
+    expect(invalidProfile.checks.find((check) => check.id === "mcp-profile")?.message).toMatch(/Invalid ROBINHOOD_MCP_PROFILE/);
   });
 
   it("does not interpret synthetic Windows mode bits as a POSIX permission failure", () => {

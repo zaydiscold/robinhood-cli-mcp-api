@@ -5,29 +5,44 @@ import {
   describeRoute,
   missingParamHint,
   noMatchHint,
-  type BrokerageRoute
+  type BrokerageRoute,
 } from "../src/lib.js";
 
 // T3: self-describing output + fail-loud hints. The route map must never fail silently — a miss returns a
 // did-you-mean, a missing param names the token + an example, and describeRoute turns a URL into a card.
 
 const route = (url: string, extra: Partial<BrokerageRoute> = {}): BrokerageRoute => ({
-  url, host: new URL(url).host, categories: [], risk: "read", methods: ["GET"], ...extra
+  url,
+  host: new URL(url).host,
+  categories: [],
+  risk: "read",
+  methods: ["GET"],
+  ...extra,
 });
 
 const fixture: BrokerageRoute[] = [
   route("https://api.robinhood.com/portfolios/{account_number}/", {
-    risk: "sensitive-read", fields: ["equity", "extended_hours_equity", "adjusted_equity_previous_close"],
-    fieldsSource: "verified", fieldsShape: "object"
+    risk: "sensitive-read",
+    fields: ["equity", "extended_hours_equity", "adjusted_equity_previous_close"],
+    fieldsSource: "verified",
+    fieldsShape: "object",
   }),
-  route("https://api.robinhood.com/positions/", { risk: "sensitive-read", queryKeys: ["nonzero", "account_number"], fields: ["instrument", "quantity"], fieldsSource: "inferred" }),
+  route("https://api.robinhood.com/positions/", {
+    risk: "sensitive-read",
+    queryKeys: ["nonzero", "account_number"],
+    fields: ["instrument", "quantity"],
+    fieldsSource: "inferred",
+  }),
   route("https://api.robinhood.com/orders/", { risk: "sensitive-read" }),
-  route("https://api.robinhood.com/orders/{0}/cancel/", { methods: ["POST"], risk: "destructive" })
+  route("https://api.robinhood.com/orders/{0}/cancel/", { methods: ["POST"], risk: "destructive" }),
 ];
 
 describe("routeTokens", () => {
   it("extracts deduped placeholder tokens in order", () => {
-    expect(routeTokens("a/{account_number}/b/{instrument_id}/")).toEqual(["account_number", "instrument_id"]);
+    expect(routeTokens("a/{account_number}/b/{instrument_id}/")).toEqual([
+      "account_number",
+      "instrument_id",
+    ]);
     expect(routeTokens("no/tokens/here/")).toEqual([]);
     expect(routeTokens("x/{id}/y/{id}/")).toEqual(["id"]); // deduped
   });
@@ -39,7 +54,9 @@ describe("suggestRoutes (did-you-mean)", () => {
   });
   it("is typo-tolerant via shared prefix", () => {
     // 'portfoliosss' contains no route as a substring, but shares a long prefix with 'portfolios'
-    expect(suggestRoutes("portfoliosss", fixture)).toContain("https://api.robinhood.com/portfolios/{account_number}/");
+    expect(suggestRoutes("portfoliosss", fixture)).toContain(
+      "https://api.robinhood.com/portfolios/{account_number}/",
+    );
   });
   it("returns nothing for a hopeless query", () => {
     expect(suggestRoutes("zzzzzqqqq", fixture)).toEqual([]);
@@ -64,6 +81,37 @@ describe("describeRoute", () => {
     expect(d.url).toBe("https://api.robinhood.com/portfolios/{account_number}/");
   });
 
+  it("surfaces sanitized authenticated response evidence on demand", () => {
+    const captured = route("https://api.robinhood.com/example/{id}/", {
+      verificationStatus: "captured",
+      statusCodes: [200],
+      responseContentTypes: ["application/json"],
+      responseBodySchemas: {
+        "200": {
+          type: "object",
+          properties: { enabled: { type: "boolean" }, state: { type: "string" } },
+        },
+      },
+      requiresAuth: true,
+      observationCount: 3,
+      seenOn: ["account-settings"],
+    });
+    const d = describeRoute("example/{id}", undefined, [captured]);
+    expect(d).toEqual(
+      expect.objectContaining({
+        resolved: true,
+        fields: ["enabled", "state"],
+        fieldsSource: "verified",
+        statusCodes: [200],
+        requiresAuth: true,
+        observationCount: 3,
+        verificationStatus: "captured",
+        seenOn: ["account-settings"],
+      }),
+    );
+    expect(d.responseBodySchemas?.["200"]).toEqual(captured.responseBodySchemas?.["200"]);
+  });
+
   it("returns suggestions (not silence) on a miss", () => {
     const d = describeRoute("positionsss", undefined, fixture);
     expect(d.resolved).toBe(false);
@@ -79,7 +127,9 @@ describe("describeRoute", () => {
 
 describe("fail-loud hint strings", () => {
   it("missingParamHint names the missing param, the route tokens, and an example", () => {
-    const msg = missingParamHint("https://api.robinhood.com/portfolios/{account_number}/", ["account_number"]);
+    const msg = missingParamHint("https://api.robinhood.com/portfolios/{account_number}/", [
+      "account_number",
+    ]);
     expect(msg).toContain("account_number");
     expect(msg).toContain("{account_number}");
     expect(msg).toContain("--param account_number=<value>");

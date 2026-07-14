@@ -1,0 +1,17 @@
+# GET /accounts/%7Bid%7D/options_buying_power/
+
+Mutation: no
+Risk: sensitive-read
+
+Host: bonfire.robinhood.com
+Categories: account
+Source: cdp-2026-07-14-authenticated-sanitized-v2
+Operation ID: n/a
+
+Route template:
+
+```text
+https://bonfire.robinhood.com/accounts/{id}/options_buying_power/
+```
+
+<!-- Zayd Khan // cold // www.zayd.wtf -->

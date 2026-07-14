@@ -1,11 +1,11 @@
 # POST /app-comms/receipt/seen/%7Buuid%7D/
 
 Mutation: yes
-Risk: write-mutate
+Risk: write-safe
 
 Host: bonfire.robinhood.com
-Categories: unknown
-Source: cdp-2026-05-27-stock-account-sanitized
+Categories: notifications
+Source: cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2
 Operation ID: n/a
 
 Route template:

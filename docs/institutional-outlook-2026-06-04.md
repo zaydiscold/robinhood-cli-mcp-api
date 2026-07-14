@@ -2,7 +2,7 @@
 
 **Compiled:** 2026-06-04
 **Audience:** any agent (Claude / Hermes / Codex) operating this read-only tool that wants a slow, high-authority macro/thesis frame.
-**Status:** READ-ONLY research layer. **This file places no orders, sets no risk, and authorizes nothing.** It is an information layer — the consensus "regime view" of large asset managers — meant to *frame* attention, not dictate trades. Risk and sizing remain the operator's call (same neutral stance as `ball-knowledge.md` and SKILL.md "Signal sourcing").
+**Status:** READ-ONLY research layer. **This file places no orders, sets no risk, and authorizes nothing.** It is an information layer — the consensus "regime view" of large asset managers — meant to *frame* attention, not dictate trades. Risk and sizing remain the operator's call (same neutral stance as `ball-knowledge.md` and `knowledge/signals.md`).
 
 > **As-of honesty:** these are published on a slow cadence — year-ahead outlooks land Nov–Dec, the big Long-Term Capital Market Assumptions (CMA/LTCMA) update ~annually, and the houses revise intra-year. As of the 2026-06-04 research date the **2026 year-ahead vintage (late-2025)** is the current full cycle, and several firms have since pushed **mid-2026 updates** (e.g. Goldman/Morgan Stanley S&P targets raised in May 2026, Vanguard VCMM refreshed to 31 Mar 2026). Each figure below is tagged with its own as-of date. Where a number could not be pinned to a primary source it is flagged "unverified."
 
@@ -74,7 +74,7 @@ This doc is the **slow, high-authority macro/thesis layer.** Its job is to *fram
 - **Feed it into Ball Knowledge as regime context, not as alpha.** When a `ball-knowledge.md` entry (a ticker, sector, or `@handle`) aligns with a cross-firm mega force, say so plainly ("your semis note maps onto the AI-capex mega force every major house is anchored on; that's regime tailwind, not confirmation of this specific thesis"). When an entry runs *against* consensus (e.g. an aggressively bullish small-cap long-US-growth bet vs. the CMA-bear "low US returns" view), surface the divergence neutrally — it's the operator's call, and contrarian-vs-consensus is itself useful framing.
 - **Use it to weight, not gate.** A consensus tailwind slightly raises the prior that a fast signal is real; a consensus headwind is a "be aware the house view disagrees" flag — not a veto. Never let this layer override live market data, brokerage order history, or explicit user intent (same rule as Ball Knowledge: context, not authority, not permission).
 - **Hold both sides of the central split.** Present the **momentum/bull** read (Goldman/MS earnings case) *and* the **valuation/CMA-bear** read (Vanguard/Fidelity/GMO low-10yr-return case) when framing US equity exposure — they answer different horizons. Don't collapse them into one "the market thinks X."
-- **Cite the firm + as-of date when this layer shapes an answer** ("per JPM's 2026 LTCMA, Oct-2025, US large-cap 10-yr expected ≈6.7% — a low-return decade prior"), the same way SKILL.md requires naming when Ball Knowledge shaped a call.
+- **Cite the firm + as-of date when this layer shapes an answer** ("per JPM's 2026 LTCMA, Oct-2025, US large-cap 10-yr expected ≈6.7% — a low-return decade prior"), following the Ball Knowledge attribution rule in `knowledge/signals.md`.
 
 ---
 

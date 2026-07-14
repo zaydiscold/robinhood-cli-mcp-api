@@ -83,6 +83,7 @@ loadRepoEnv();
 
 export type RouteRisk = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
 export type RouteVerificationStatus = "inferred" | "captured" | "live_verified" | "deprecated";
+export type CapturedJsonSchema = Record<string, unknown>;
 
 export interface BrokerageRoute {
   url: string;
@@ -106,6 +107,20 @@ export interface BrokerageRoute {
   fieldsSource?: "verified" | "inferred" | "undocumented";
   /** Whether the response is a single object or a list (item keys reported in `fields`). */
   fieldsShape?: "object" | "list";
+  /** Status codes and shape-only schemas observed in sanitized authenticated browser traffic. */
+  statusCodes?: number[];
+  requestContentTypes?: string[];
+  responseContentTypes?: string[];
+  requestBodySchema?: CapturedJsonSchema;
+  responseBodySchemas?: Record<string, CapturedJsonSchema>;
+  requiresAuth?: boolean;
+  observationCount?: number;
+  provenance?: {
+    captureId?: string;
+    capturedAt?: string;
+    sanitized?: boolean;
+    schemaVersion?: number;
+  };
 }
 
 export interface BrowserRoute extends BrokerageRoute {
@@ -1741,7 +1756,42 @@ export interface RouteDescription {
   fields?: string[];
   fieldsSource?: BrokerageRoute["fieldsSource"];
   fieldsShape?: BrokerageRoute["fieldsShape"];
+  statusCodes?: number[];
+  requestContentTypes?: string[];
+  responseContentTypes?: string[];
+  requestBodySchema?: CapturedJsonSchema;
+  responseBodySchemas?: Record<string, CapturedJsonSchema>;
+  requiresAuth?: boolean;
+  observationCount?: number;
+  verificationStatus?: RouteVerificationStatus;
+  source?: string;
+  seenOn?: string[];
+  provenance?: BrokerageRoute["provenance"];
   warnings?: string[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function fieldsFromCapturedSchema(route: BrokerageRoute): Pick<RouteDescription, "fields" | "fieldsSource" | "fieldsShape"> {
+  const queue: unknown[] = Object.values(route.responseBodySchemas ?? {});
+  while (queue.length) {
+    const schema = queue.shift();
+    if (!isRecord(schema)) continue;
+    if (Array.isArray(schema.anyOf)) queue.push(...schema.anyOf);
+    if (schema.type === "object" && isRecord(schema.properties)) {
+      return { fields: Object.keys(schema.properties).sort(), fieldsSource: "verified", fieldsShape: "object" };
+    }
+    if (schema.type === "array") {
+      const items = schema.items;
+      if (isRecord(items) && items.type === "object" && isRecord(items.properties)) {
+        return { fields: Object.keys(items.properties).sort(), fieldsSource: "verified", fieldsShape: "list" };
+      }
+      if (items !== undefined) queue.push(items);
+    }
+  }
+  return { fields: route.fields ?? [], fieldsSource: route.fieldsSource, fieldsShape: route.fieldsShape };
 }
 
 /** A self-describing view of a route: what it needs, what it returns, and the command that drives it. */
@@ -1760,6 +1810,7 @@ export function describeRoute(
     throw e;
   }
   if (!route) return { query, resolved: false, suggestions: suggestRoutes(query, routes) };
+  const capturedFields = fieldsFromCapturedSchema(route);
   return {
     query,
     resolved: true,
@@ -1769,9 +1820,18 @@ export function describeRoute(
     command: commandForRoute(route),
     requiredTokens: routeTokens(route.url),
     queryKeys: route.queryKeys ?? [],
-    fields: route.fields ?? [],
-    fieldsSource: route.fieldsSource,
-    fieldsShape: route.fieldsShape,
+    ...capturedFields,
+    statusCodes: route.statusCodes ?? [],
+    requestContentTypes: route.requestContentTypes ?? [],
+    responseContentTypes: route.responseContentTypes ?? [],
+    requestBodySchema: route.requestBodySchema,
+    responseBodySchemas: route.responseBodySchemas,
+    requiresAuth: route.requiresAuth,
+    observationCount: route.observationCount,
+    verificationStatus: route.verificationStatus,
+    source: route.source,
+    seenOn: route.seenOn ?? [],
+    provenance: route.provenance,
     warnings: riskWarnings(route.risk)
   };
 }

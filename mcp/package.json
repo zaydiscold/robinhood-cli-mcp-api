@@ -12,15 +12,13 @@
     "build": "tsc -p tsconfig.json && node scripts/ensure-bin-mode.mjs",
     "pretest": "corepack pnpm --filter @zaydiscold/robinhood-cli build && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp build",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@zaydiscold/robinhood-cli": "workspace:*",
     "zod": "^4.2.0"
-  },
-  "devDependencies": {
-    "tsx": "^4.22.3"
   },
   "engines": {
     "node": ">=20"

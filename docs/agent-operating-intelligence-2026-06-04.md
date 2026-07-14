@@ -18,7 +18,7 @@ unless noted). Account numbers are masked to last-4.
 Do this before any account-specific operation. It fails you fast instead of
 mid-batch.
 
-1. **Read the safety model first** (§ below + `SKILL.md` "Failure modes"). The cost
+1. **Read the safety model first** (§ below + `knowledge/execution-safety.md`). The cost
    of skipping it is real money; the cost of reading it is 90 seconds.
 2. **`date`** — expirations, staged rolls, after-hours behavior, the §1256 1-year
    line, and recurring timing all depend on knowing today.
@@ -40,7 +40,7 @@ mid-batch.
 
 7. **On any finance / research / due-diligence task, read the two memory layers** (repo root):
    `ball-knowledge.md` (the investing-memory ledger — apply the **Signal-sourcing** framework, §1
-   "Signal is a surface" + SKILL.md "Signal sourcing"/"Ball Knowledge": lead DD with the off-platform
+   "Signal is a surface" + `knowledge/signals.md`: lead DD with the off-platform
    pulse, treat RH `midlands/*`+news as the slow confirmer, classify entries by type) and
    `trading-log.md` (execution + intent history — the strategy thread / "what we're rolling from"). Both
    are context, never permission to trade. **After any execution, append a `trading-log.md` entry**
@@ -108,7 +108,7 @@ comes from changes how much it's worth — and the platform's own feed is the *s
 - This is a *framework for sourcing*, not a sizing/risk rule — the operator decides what to do with it.
   Themes + trusted sources accumulate in the **Ball Knowledge** ledger (`ball-knowledge.md`) — read it
   on finance tasks as the operator's investing-memory layer (context, not permission; classify entries
-  by type; minor recency bias). Full version: SKILL.md "Signal sourcing" + "Ball Knowledge"; AGENTS §13/§14.
+  by type; minor recency bias). Full version: `knowledge/signals.md`; AGENTS §13/§14.
 
 **And the same instinct applies to whether an order happened.** An order *exists* only if the brokerage
 **order history** shows it (filled/pending/rejected/cancelled) or a position/cash/buying-power change

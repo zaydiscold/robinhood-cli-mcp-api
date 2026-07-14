@@ -16,10 +16,10 @@ RULES:    Full logging rules live in SKILL.md "Trading log". Append only; never 
   recurring pause/resume). Append at the **bottom**, newest last; never edit or delete old entries.
 - **Status is honest:** mark an order `executed` **only if brokerage order history confirms** it
   (filled/pending/cancelled record, or a position/cash/buying-power change) — per the order-evidence
-  rule (SKILL failure mode #20). UI/screenshots/"the button was clicked" are **not** proof.
+  rule (`knowledge/execution-safety.md`). UI/screenshots/"the button was clicked" are **not** proof.
 - **Intent + strategy thread are the point.** Order history already has price/qty/time; this log adds
-  *why*, and links legs into a thread (e.g. a Wheel: CSP → assignment → CC → roll), so the agent can
-  reconstruct **what it's rolling *from*** without re-deriving it.
+  _why_, and links legs into a thread (e.g. a Wheel: CSP → assignment → CC → roll), so the agent can
+  reconstruct **what it's rolling _from_** without re-deriving it.
 - **This file is public + committed.** Keep entries **generic / non-sensitive** (account masked to
   last-4). Real, sensitive personal trade logs should stay generic here or in the git-crypt-encrypted
   `local/` overlay.
@@ -40,7 +40,7 @@ THREAD:  <strategy thread if any — e.g. "Wheel on F: leg 2 CC after CSP assign
 
 ### Example entries (format illustration — NOT live trades; delete/replace)
 
-> The two blocks below are illustrative, modeled on the *shape* of real trades (account masked). They
+> The two blocks below are illustrative, modeled on the _shape_ of real trades (account masked). They
 > show the format only — an agent should not treat them as live positions or conviction.
 
 ```
@@ -68,4 +68,5 @@ THREAD:  Wheel on F → leg 1 CSP $12P assigned 2026-05-30 (100 sh @ $12) → le
 ```
 
 ---
+
 <!-- Real trade-log entries go below this line, newest at the bottom. -->

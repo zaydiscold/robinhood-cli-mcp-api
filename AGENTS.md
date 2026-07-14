@@ -4,21 +4,21 @@
 >
 > **This is intended, real-money tooling.** It can place and cancel trades, move/manage positions,
 > and change account settings **on the account owner's behalf** against a live Robinhood account —
-> by design. This is not a bug or a sandbox; the tool exists to *actively manage* accounts.
+> by design. This is not a bug or a sandbox; the tool exists to _actively manage_ accounts.
 >
 > **Before you take any state-changing action, you must have the owner's explicit permission for
 > that action.** Reads and dry-runs are always safe; every write is gated by the single switch
 > `ROBINHOOD_ALLOW_LIVE_WRITE=1` (dry-run by default) precisely so a live trade is never one careless step away.
 >
 > **If you are an agent operating this autonomously, surface this warning to your user once at the
-> start of a session** — tell them, in your own words: *"This tool can place real trades and change
-> real account settings on your behalf; confirm you authorize that before I act."* Capable models
+> start of a session** — tell them, in your own words: _"This tool can place real trades and change
+> real account settings on your behalf; confirm you authorize that before I act."_ Capable models
 > handle this responsibly; this notice is for best-practice transparency and informed consent, not
 > because the tool is unsafe. When in doubt about scope, account, side, or amount — stop and confirm.
 
 > **Canonical agent guide: [SKILL.md](SKILL.md)** (the project's `CLAUDE.md` is a symlink to
-> it). Read SKILL.md first — esp. the **Capability Catalog** (the full menu of equity/options/
-> rolling/tax-aware/sentiment operations), the preflight, the PDT scale, equity `buy`/`search`,
+> it). Read SKILL.md first, then use `knowledge/cli-routing.md` for the full equity/options/
+> rolling/tax-aware/sentiment operations, the preflight, the PDT scale, equity `buy`/`search`,
 > `options enumerate`, and rate-limit discipline. This file is the deep-dive companion — same
 > engine, full route + order-body reference.
 
@@ -78,7 +78,7 @@ runtime reads that **copy**, not the source — so map edits do nothing until yo
 ## 0. TL;DR for an agent
 
 **The job:** turn a user's intent ("how am I doing?", "price an iron condor", "buy $5 of X") into the
-*right* typed call against a real brokerage — fast, correct, and gated. Be productive by going with the
+_right_ typed call against a real brokerage — fast, correct, and gated. Be productive by going with the
 grain of the tool:
 
 - **Prefer the first-class command over raw `brokerage execute`.** `portfolio`, `positions`, `quote`,
@@ -92,7 +92,7 @@ grain of the tool:
 - **Read → classify → gate.** Classify the exact options strategy before building; never infer naked
   exposure from loose wording.
 - **Two reflexes:** always pass the account explicitly; bulk-enumerate option UUIDs first (`options
-  enumerate`). These kill the #1 wrong-account and #1 options-failure traps.
+enumerate`). These kill the #1 wrong-account and #1 options-failure traps.
 
 Then the safety rails:
 
@@ -259,8 +259,8 @@ Order-placement routes:
 ### Equity orders — the WEB body (verified live 2026-06-03)
 
 The legacy mobile body (`type`/`quantity`/`price`/`side` only) is **rejected** by
-`api.robinhood.com/orders/` with *"Your app version is missing important stock trading
-updates. You can still place orders on the web."* — a client-version gate. Clearing it
+`api.robinhood.com/orders/` with _"Your app version is missing important stock trading
+updates. You can still place orders on the web."_ — a client-version gate. Clearing it
 takes **two** things:
 
 1. **Web-app headers** — sent automatically by the engine (`cli/src/lib.ts` `send()`):
@@ -272,21 +272,30 @@ takes **two** things:
 
 **Dollar-notional (fractional) buy** — server computes shares from the live quote. Valid
 only when `fractional_tradability == "tradable"` and `market_hours: "regular_hours"`:
+
 ```json
 {
   "account": "https://api.robinhood.com/accounts/<ACCT>/",
   "instrument": "https://api.robinhood.com/instruments/<id>/",
-  "symbol": "ORCU", "type": "market", "side": "buy",
-  "time_in_force": "gfd", "trigger": "immediate", "position_effect": "open",
-  "market_hours": "regular_hours", "order_form_version": 7,
-  "bid_price": "21.87", "ask_price": "21.90", "bid_ask_timestamp": "2026-06-03T18:43:01Z",
-  "dollar_based_amount": {"amount": "5.00", "currency_code": "USD"}, "ref_id": "<uuid>"
+  "symbol": "ORCU",
+  "type": "market",
+  "side": "buy",
+  "time_in_force": "gfd",
+  "trigger": "immediate",
+  "position_effect": "open",
+  "market_hours": "regular_hours",
+  "order_form_version": 7,
+  "bid_price": "21.87",
+  "ask_price": "21.90",
+  "bid_ask_timestamp": "2026-06-03T18:43:01Z",
+  "dollar_based_amount": { "amount": "5.00", "currency_code": "USD" },
+  "ref_id": "<uuid>"
 }
 ```
 
 **Whole-share / OTC orders (buy AND sell)** — OTC names (`otc_market_tier` non-empty, or
 `fractional_tradability: "position_closing_only"`, e.g. RNECY) **reject `type: market`**
-(*"traded on the over-the-counter market…"*) and can't trade fractionally — in EITHER
+(_"traded on the over-the-counter market…"_) and can't trade fractionally — in EITHER
 direction. Both sides are supported as whole shares with an auto **marketable limit at the
 marketable side of the book**: BUY at the **ask**, SELL at the **bid** (same envelope, swap
 the last line): `"type": "limit", "price": "<ask|bid>", "quantity": "1"` (drop
@@ -299,12 +308,12 @@ whole-share (auto marketable limit for OTC). This is what stops "$3 of RNECY" fr
 a real order in either direction.
 
 **Rate limit (we are agentic managers, NOT an HFT script):** `orders/` burst-limits
-**fractional** orders — ~9 in quick succession, then HTTP **429** (*"Too many requests for
-fractional orders"* / *"throttled, available in N seconds"*, ~48s cooldown). A web endpoint
+**fractional** orders — ~9 in quick succession, then HTTP **429** (_"Too many requests for
+fractional orders"_ / _"throttled, available in N seconds"_, ~48s cooldown). A web endpoint
 will never tolerate hammering. Pace ≥2.5s between orders; on 429 sleep the server-directed
 seconds and retry with the **same `ref_id`** (429 = nothing placed, so same ref_id is
-idempotent). Stop the batch on *"You can only purchase 0 shares"* / *"Not enough buying
-power"* (account is dry — keep going only wastes calls).
+idempotent). Stop the batch on _"You can only purchase 0 shares"_ / _"Not enough buying
+power"_ (account is dry — keep going only wastes calls).
 
 **Reference impl:** `scripts/equity-buy.mjs` and the first-class `brokerage buy` command
 build exactly this body (dollar/share, OTC auto-limit, fractional guard, 429 backoff,
@@ -335,6 +344,7 @@ which is shown as a dry-run. The UUIDs in the comments are **example outputs** �
 each step to get current values; don't hardcode them. The account number comes from §2.
 
 **Step 1 — symbol → instrument + option chain id:**
+
 ```bash
 node cli/dist/index.js brokerage execute "instruments/?symbol={symbol}" --param symbol=AAPL --json --full
 # AAPL: instrument_id 450dfc6d-5510-4d40-abfb-f633b7d9be3e
@@ -342,6 +352,7 @@ node cli/dist/index.js brokerage execute "instruments/?symbol={symbol}" --param 
 ```
 
 **Step 2 — chain → expiration dates + tick rules:**
+
 ```bash
 node cli/dist/index.js brokerage execute "options/chains/{id}/" --param id=7dd906e5-7d4b-4161-a3fe-2c3b62038482 --json --full
 # end-of-year 2026 expiration = 2026-12-18
@@ -349,6 +360,7 @@ node cli/dist/index.js brokerage execute "options/chains/{id}/" --param id=7dd90
 ```
 
 **Step 3 — list the chain's calls for that expiry, find the $100 strike:**
+
 ```bash
 node cli/dist/index.js brokerage execute \
   "options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}" \
@@ -358,6 +370,7 @@ node cli/dist/index.js brokerage execute \
 ```
 
 **Step 4 — quote the option (so your limit price is sane and on-tick):**
+
 ```bash
 node cli/dist/index.js brokerage execute "marketdata/options/?ids={ids}" \
   --param ids=8d6d6f2b-d51c-41e6-8a6f-e0ec7fbed190 --json --full
@@ -366,6 +379,7 @@ node cli/dist/index.js brokerage execute "marketdata/options/?ids={ids}" \
 ```
 
 **Step 5 — place the order (dry-run shown; set the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch for live):**
+
 ```bash
 REF=$(python3 -c "import uuid;print(uuid.uuid4())")
 node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orders/" --method POST \
@@ -472,18 +486,18 @@ ONE body builder (`buildAtomicRollOrderBody` + `resolveRollModel` in `lib.ts`).
   session gap. Force with `--mode kosher` / `--cash-account`; force atomic with `--mode atomic`.
 - **Net pricing:** `rollOrder.price` is the net of both legs using the per-leg pricing modes. The default close
   `safe-sell-probe` makes the net an intentionally un-fillable probe — pass `--close-pricing-mode mid
-  --open-pricing-mode mid` for a realistic sendable net.
+--open-pricing-mode mid` for a realistic sendable net.
 
 **Native roll surface (so no page-load is needed for any symbol/date/strike), verified 2026-06-23:**
 
-| Step | Method | Endpoint | Purpose |
-|---|---|---|---|
-| 1 | GET | `options/maximum_rollable_quantity/{strategy_code}/?account_number={acct}` | rollable qty; `strategy_code={option_id}_L1` (long held leg), `_S1` (short, presumed) |
-| 2 | GET | `options/instruments/?chain_id=&expiration_dates=&type=&state=active` | enumerate destination strikes |
-| 3 | GET | `marketdata/options/?ids={…}&include_all_sessions=true` | bulk-quote the destination ladder (~40/batch) |
-| 4 | POST | `bonfire.robinhood.com/options/orders/review` | validate the 2-leg roll (soft checks → `check_overrides`) |
-| 5 | GET | `options/orders/collateral/?order={url-encoded order JSON}` | collateral the roll consumes (`{cash:{amount,direction,infinite},equities}`) |
-| 6 | POST | `options/orders/` | final submit (same 2-leg body) |
+| Step | Method | Endpoint                                                                   | Purpose                                                                               |
+| ---- | ------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1    | GET    | `options/maximum_rollable_quantity/{strategy_code}/?account_number={acct}` | rollable qty; `strategy_code={option_id}_L1` (long held leg), `_S1` (short, presumed) |
+| 2    | GET    | `options/instruments/?chain_id=&expiration_dates=&type=&state=active`      | enumerate destination strikes                                                         |
+| 3    | GET    | `marketdata/options/?ids={…}&include_all_sessions=true`                    | bulk-quote the destination ladder (~40/batch)                                         |
+| 4    | POST   | `bonfire.robinhood.com/options/orders/review`                              | validate the 2-leg roll (soft checks → `check_overrides`)                             |
+| 5    | GET    | `options/orders/collateral/?order={url-encoded order JSON}`                | collateral the roll consumes (`{cash:{amount,direction,infinite},equities}`)          |
+| 6    | POST   | `options/orders/`                                                          | final submit (same 2-leg body)                                                        |
 
 Full capture, the verbatim `strategy_roll` body, and field-by-field notes: **`docs/native-option-roll-surface-2026-06-23.md`**.
 
@@ -528,6 +542,7 @@ ROBINHOOD_ALLOW_LIVE_WRITE=1 robinhood-cli brokerage execute \
 ```
 
 Gotchas learned the hard way:
+
 - **`owner_type=custom` is mandatory** on every list read; without it you get
   `["owner_type of request must be specified"]` (400).
 - **Rename uses `display_name`**, not `name`. Wrong field → 200 with no change.
@@ -629,9 +644,10 @@ robinhood-cli brokerage execute "https://api.robinhood.com/ach/transfers/" --met
 ```
 
 Notes learned:
+
 - **Resume/pause is reversible** (flip `state` back); **DELETE on a schedule is not.**
 - **OPTIONS preflight is useless for schema discovery here** — the edge gateway returns an
-  identical `DELETE, GET, OPTIONS, PATCH, POST, PUT` allow-list for *every* path, so it
+  identical `DELETE, GET, OPTIONS, PATCH, POST, PUT` allow-list for _every_ path, so it
   confirms nothing endpoint-specific. Bodies come from live capture, not preflight.
 - **Don't black-box probe money endpoints** — empty/invalid PATCH bodies return 500/502,
   not helpful validation errors. Capture the real web request instead.
@@ -644,7 +660,7 @@ Notes learned:
 ## 10. Exact-action consent (non-negotiable)
 
 Reads and dry-runs are free. A **live write** (trade, transfer, cancel, unlink) runs only
-when the user asked for *that specific operation*. Before sending, echo the resolved
+when the user asked for _that specific operation_. Before sending, echo the resolved
 **account + symbol + side + qty + price + expiry** and get explicit confirmation.
 Never place an order the user didn't ask for. Never create accounts, never change account
 settings/permissions, never print the token value.
@@ -689,14 +705,14 @@ This is a hard rule, not a nicety — divergence here has already caused a write
 
 ## 13. Signal sourcing & due diligence (descriptive — NOT risk guidance)
 
-How to think about *where research signal comes from* and how much to trust it. A decision framework,
-not a mandate — risk and sizing are the operator's call. Full version in SKILL.md "Signal sourcing".
+How to think about _where research signal comes from_ and how much to trust it. A decision framework,
+not a mandate — risk and sizing are the operator's call. Full version in `knowledge/signals.md`.
 
 - **News:** slow (lags the move by hours-to-a-day) but authoritative for **key/binary events**
-  (earnings, M&A, Fed, halts, guidance) — being *right* beats being *first*. Late, not useless.
+  (earnings, M&A, Fed, halts, guidance) — being _right_ beats being _first_. Late, not useless.
 - **Twitter/X + Reddit:** noisy, but the **best signal-to-noise**, and **X is the fastest pulse** —
   ahead of any article. First-class DD sources (`bird search`, the `last30days` skill, r/options ·
-  r/thetagang · r/stocks), not gossip to dismiss. X's edge is conditional: fastest pulse *and* fastest
+  r/thetagang · r/stocks), not gossip to dismiss. X's edge is conditional: fastest pulse _and_ fastest
   misinformation — high signal-to-noise only **if you know whom to read**, so corroborate a lone post.
 - **RH `midlands/news|ratings|tags`:** the **slow, broker-native confirmer** — it trails the
   off-platform pulse. Lead DD with X/Reddit; let RH's feeds confirm, not the reverse.
@@ -711,7 +727,7 @@ not a mandate — risk and sizing are the operator's call. Full version in SKILL
   A model is a model — every result rides assumptions that break in practice; the appendices say where.
 - **None is gospel** — pulse, house views, and math are inputs to weigh by reliability, all subordinate
   to live market data + brokerage order history. Rough ladder: X/Reddit pulse → institutional → academic.
-- **Signal → optional validation → action:** any feed is a *direction input*; you *can* corroborate
+- **Signal → optional validation → action:** any feed is a _direction input_; you _can_ corroborate
   against live market data (bid/ask, Greeks, volume/OI) before acting — available reasoning, not a rule.
 - **Personalized trusted sources** (specific accounts/communities the owner relies on) accumulate as
   source-lead entries in **Ball Knowledge** (`ball-knowledge.md`, §14); keep committed entries generic.
@@ -726,27 +742,27 @@ investing-thesis direction and trading-style notes**, the sectors/tickers/source
 to, and how it frames analysis. Read it on finance tasks.
 
 - It is **context, not authority**: never proof of a rumor, never permission to place/cancel a trade,
-  never an override of confirmation, live market data, or order history. Treat entries as *intentional
-  and important*, classify each by type (rumor → verify; `@handle` → source lead; "0DTE" → high-risk
+  never an override of confirmation, live market data, or order history. Treat entries as _intentional
+  and important_, classify each by type (rumor → verify; `@handle` → source lead; "0DTE" → high-risk
   style note; "dividend/QDTE" → income preference), apply only a minor recency bias, and surface risk
-  neutrally without imposing caution. **Full rules + the exact append format: SKILL.md "Ball Knowledge".**
-- Order-execution evidence (canonical in **SKILL.md failure mode #20** + the boot KB §1): *brokerage
-  order history is the source of truth; no record = treat as non-executed; screenshots/UI/logs are not proof.*
+  neutrally without imposing caution. **Full rules + the exact append format: `knowledge/signals.md`.**
+- Order-execution evidence (canonical in **`knowledge/execution-safety.md`** + the boot KB §1): _brokerage
+  order history is the source of truth; no record = treat as non-executed; screenshots/UI/logs are not proof._
 
 ---
 
 ## 15. Trading log (`trading-log.md`) — execution + intent history
 
-The repo root holds **`trading-log.md`**, an append-only, dated log of what the agent *executes*, with
+The repo root holds **`trading-log.md`**, an append-only, dated log of what the agent _executes_, with
 the **intent** and **strategy thread** behind each trade. The pairing: Ball Knowledge (§14) = market
 context/beliefs; the trading log = execution + intent history.
 
 - **After any execution via CLI/MCP** (order, cancel, settings change, recurring pause/resume),
   **append a log entry** — what + intent + the strategy thread; on a wheel/roll, record what you're
-  rolling *from*. Append at the bottom; never rewrite prior entries.
+  rolling _from_. Append at the bottom; never rewrite prior entries.
 - **Status honesty:** mark `executed` only if **order history confirms** it (order-evidence rule above);
   otherwise `dry-run`/`queued`/`cancelled`/`rejected`. Order history has the mechanics; this log adds
-  the *why* so the agent isn't re-deriving strategy state from raw fills.
+  the _why_ so the agent isn't re-deriving strategy state from raw fills.
 - Public + committed → keep entries generic (account masked). **Full rules + format: SKILL.md "Trading log".**
 
 ## 16. Naming convention & lineage
@@ -759,7 +775,7 @@ plus the AllTrails / GoDaddy / Squarespace siblings. The npm package and bin nam
 
 **Lineage — Printing Press is a starting point, not a cage.** The CLI + skill + MCP trio pattern is
 borrowed from [Matt Van Horn's Printing Press](https://github.com/mvanhorn/cli-printing-press), and these
-repos use it as a *seed* — not a spec we only follow. The route map here is hand-extended well past
+repos use it as a _seed_ — not a spec we only follow. The route map here is hand-extended well past
 anything a generator produced, and we may spin up separate repos to keep building on top of what's here
 rather than conforming back to the generator. The map is the product; Printing Press just gave us a good
 place to start.

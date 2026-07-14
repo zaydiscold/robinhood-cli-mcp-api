@@ -3,10 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-// MCP annotation guard. The 2026-06-18 audit caught a real bug: write tools (buy/sell/cancel) were
-// annotated destructiveHint:false because the server mapped destructiveHint to risk==="destructive"
-// ONLY, so clients were told an order "isn't destructive". That was fixed (destructiveHint = any
-// write tier). NOTHING tested it — so a future tool could be mis-tagged and ship green again.
+// MCP annotation guard. Money/account mutations must be destructive, while value-free local writes
+// such as signing a payload or appending an operator note must not be mislabeled destructive.
 //
 // This test is the lock. It parses mcp/src/server.ts source (zero boot, zero network — same pattern
 // as mcp-server.test.ts / mcp-tool-count.test.ts), extracts the (readOnly, risk) pair every tool
@@ -18,12 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const serverSrc = readFileSync(resolve(here, "../../mcp/src/server.ts"), "utf8");
 
 type RiskLevel =
-  | "read"
-  | "sensitive-read"
-  | "write-safe"
-  | "write-mutate"
-  | "write-or-sensitive"
-  | "destructive";
+  "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
 
 const VALID_RISKS: readonly RiskLevel[] = [
   "read",
@@ -31,19 +24,19 @@ const VALID_RISKS: readonly RiskLevel[] = [
   "write-safe",
   "write-mutate",
   "write-or-sensitive",
-  "destructive"
+  "destructive",
 ];
 const READ_TIERS = new Set<RiskLevel>(["read", "sensitive-read"]);
 
 // Replica of toolAnnotations() in mcp/src/server.ts — kept in lockstep BY this test. If the server's
 // derivation changes, update this and the assertions together (that's the point: a conscious change).
 function deriveHints(readOnly: boolean, risk: RiskLevel) {
-  const isWrite = !READ_TIERS.has(risk);
+  const destructive = ["write-mutate", "write-or-sensitive", "destructive"].includes(risk);
   return {
     readOnlyHint: readOnly,
-    destructiveHint: isWrite,
+    destructiveHint: destructive,
     idempotentHint: readOnly || risk === "write-safe",
-    openWorldHint: true
+    openWorldHint: true,
   };
 }
 
@@ -67,8 +60,8 @@ function parseToolRegs(src: string): ToolReg[] {
 
 const allToolNames = [
   ...new Set(
-    [...serverSrc.matchAll(/registerTool\(\s*"(robinhood_[a-z0-9_]+)"/g)].map((m) => m[1])
-  )
+    [...serverSrc.matchAll(/registerTool\(\s*"(robinhood_[a-z0-9_]+)"/g)].map((m) => m[1]),
+  ),
 ];
 const regs = parseToolRegs(serverSrc);
 const byName = new Map(regs.map((r) => [r.name, r]));
@@ -78,7 +71,7 @@ describe("MCP annotations — every tool is annotated", () => {
     const missing = allToolNames.filter((n) => !byName.has(n));
     expect(
       missing,
-      `tools registered without a literal annotations: toolAnnotations(<bool>, "<risk>") — ${missing.join(", ")}`
+      `tools registered without a literal annotations: toolAnnotations(<bool>, "<risk>") — ${missing.join(", ")}`,
     ).toEqual([]);
     // Every name resolves to exactly one annotation.
     expect(regs.length).toBe(allToolNames.length);
@@ -95,21 +88,33 @@ describe("MCP annotations — readOnly flag agrees with the risk tier", () => {
     const inconsistent = regs.filter((r) => r.readOnly !== READ_TIERS.has(r.risk));
     expect(
       inconsistent,
-      `readOnly flag contradicts risk tier (a read tagged as write, or vice versa): ${JSON.stringify(inconsistent)}`
+      `readOnly flag contradicts risk tier (a read tagged as write, or vice versa): ${JSON.stringify(inconsistent)}`,
     ).toEqual([]);
   });
 });
 
 describe("MCP annotations — derived hints are correct for every tool", () => {
-  it("write-tier tools are destructiveHint:true + readOnlyHint:false (the C4 regression guard)", () => {
-    const writes = regs.filter((r) => !READ_TIERS.has(r.risk));
-    for (const r of writes) {
+  it("mutating/destructive tools are destructiveHint:true + readOnlyHint:false", () => {
+    const destructiveWrites = regs.filter((r) =>
+      ["write-mutate", "write-or-sensitive", "destructive"].includes(r.risk),
+    );
+    for (const r of destructiveWrites) {
       const h = deriveHints(r.readOnly, r.risk);
       expect(h.destructiveHint, `${r.name} (${r.risk}) must be destructiveHint:true`).toBe(true);
       expect(h.readOnlyHint, `${r.name} (${r.risk}) must be readOnlyHint:false`).toBe(false);
     }
-    // Sanity: there is in fact a population of write tools (so the loop isn't vacuous).
-    expect(writes.length).toBeGreaterThan(5);
+    expect(destructiveWrites.length).toBeGreaterThan(5);
+  });
+
+  it("write-safe tools remain writes without claiming destructive side effects", () => {
+    const safeWrites = regs.filter((r) => r.risk === "write-safe");
+    for (const r of safeWrites) {
+      const h = deriveHints(r.readOnly, r.risk);
+      expect(h.readOnlyHint, `${r.name} must remain a write`).toBe(false);
+      expect(h.destructiveHint, `${r.name} must not claim destructive behavior`).toBe(false);
+      expect(h.idempotentHint, `${r.name} must remain idempotent`).toBe(true);
+    }
+    expect(safeWrites.length).toBeGreaterThan(0);
   });
 
   it("read-tier tools are readOnlyHint:true + destructiveHint:false + idempotentHint:true", () => {
@@ -140,7 +145,7 @@ describe("MCP annotations — the lethal-trifecta order tools are correctly flag
     "robinhood_watchlist_add",
     "robinhood_watchlist_remove",
     "robinhood_watchlist_create",
-    "robinhood_watchlist_buy"
+    "robinhood_watchlist_buy",
   ];
 
   it("known write tools are present and tagged as writes (readOnly:false, destructiveHint:true)", () => {
@@ -160,7 +165,10 @@ describe("MCP annotations — the lethal-trifecta order tools are correctly flag
   it("order-placement tools are non-idempotent", () => {
     for (const name of ["robinhood_buy", "robinhood_sell", "robinhood_watchlist_buy"]) {
       const r = byName.get(name)!;
-      expect(deriveHints(r.readOnly, r.risk).idempotentHint, `${name} must be idempotentHint:false`).toBe(false);
+      expect(
+        deriveHints(r.readOnly, r.risk).idempotentHint,
+        `${name} must be idempotentHint:false`,
+      ).toBe(false);
     }
   });
 });
@@ -178,7 +186,7 @@ describe("MCP annotations — known sensitive reads stay reads", () => {
     "robinhood_dividends",
     "robinhood_quote",
     "robinhood_options_chain",
-    "robinhood_pretrade"
+    "robinhood_pretrade",
   ];
 
   it("known read tools are present and tagged read-only", () => {

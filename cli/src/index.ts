@@ -651,6 +651,10 @@ brokerage
     process.stdout.write(`  command:   ${desc.command ?? "— (use brokerage execute)"}\n`);
     process.stdout.write(`  tokens:    ${desc.requiredTokens?.length ? desc.requiredTokens.map((t) => `{${t}}`).join(", ") : "none"}\n`);
     process.stdout.write(`  queryKeys: ${desc.queryKeys?.length ? desc.queryKeys.join(", ") : "none"}\n`);
+    process.stdout.write(`  statuses:  ${desc.statusCodes?.length ? desc.statusCodes.join(", ") : "not observed"}\n`);
+    process.stdout.write(`  auth:      ${desc.requiresAuth === undefined ? "not recorded" : desc.requiresAuth ? "observed" : "not observed"}\n`);
+    process.stdout.write(`  evidence:  ${desc.verificationStatus ?? "inferred"}; ${desc.observationCount ?? 0} observations\n`);
+    process.stdout.write(`  seenOn:    ${desc.seenOn?.length ? desc.seenOn.join(", ") : "not recorded"}\n`);
     const fieldLabel = desc.fields?.length ? `${desc.fields.length} (${desc.fieldsSource}, ${desc.fieldsShape ?? "object"})` : `none (${desc.fieldsSource ?? "undocumented"})`;
     process.stdout.write(`  fields:    ${fieldLabel}\n`);
     if (desc.fields?.length) process.stdout.write(`             ${desc.fields.join(", ")}\n`);

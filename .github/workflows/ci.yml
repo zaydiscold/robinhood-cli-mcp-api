@@ -23,9 +23,10 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # HIGH/CRITICAL advisories stop the merge. The remaining LOW `cli` finding is a pnpm audit
-      # false positive: it mistakes this workspace's `cli/` package for the unrelated npm package.
-      - run: pnpm audit --audit-level high
+      # pnpm 10's audit client calls npm's retired legacy endpoint (HTTP 410). Pin a current audit
+      # client that uses the supported bulk-advisory endpoint without changing the build/install line.
+      # HIGH/CRITICAL advisories still stop the merge.
+      - run: npx --yes pnpm@11.13.0 --pm-on-fail=ignore audit --audit-level high
       - run: pnpm quality
 
   test:

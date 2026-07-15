@@ -20,7 +20,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # The supported pnpm 11 bulk-advisory audit client requires Node >=22.13. Node 20 remains
+          # fully covered by the build/test/coverage matrix below.
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # pnpm 10's audit client calls npm's retired legacy endpoint (HTTP 410). Pin a current audit

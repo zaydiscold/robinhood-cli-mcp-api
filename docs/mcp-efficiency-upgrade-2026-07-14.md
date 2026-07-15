@@ -13,7 +13,8 @@ is another roughly 30,500 tokens, and the required knowledge-index call can add
 roughly 7,300 more. A repo-local trading session can therefore spend close to
 65,000 tokens on instructions and discovery before answering the operator.
 
-Historical local usage supports a smaller default. In the inspectable Claude
+Historical local usage showed that a smaller profile is useful as an option, but
+it does not justify hiding capabilities in the owner's personal default. In the inspectable Claude
 history, 46 calls across nine sessions used 13 tools. Seven calls failed, mostly
 because broad raw-route tools were hard to steer. Large results were also common:
 259,171 output characters across the 46 calls, with individual responses above
@@ -44,8 +45,8 @@ not extract commands, arguments, account data, or result values.
 - CLI and MCP share the execution engine in `cli/src/lib.ts`.
 - Protocol tests already connect to the built stdio server and compare the full
   tool roster with the capability registry.
-- `knowledge/` and `docs/` already provide the deep material needed for
-  progressive disclosure. The problem is that `SKILL.md` repeats too much of it.
+- `SKILL.md` is the comprehensive agent operating handbook. `knowledge/` and
+  `docs/` supplement it; they are not substitutes for the incorporated contract.
 
 The upgrade reuses these parts. It does not add a second router, second MCP
 server, proxy daemon, or parallel financial engine.
@@ -56,13 +57,13 @@ server, proxy daemon, or parallel financial engine.
 operator request
       |
       v
-small SKILL router (safety + intent + 80/20)
+comprehensive SKILL handbook (full operating context)
       |
       +---------------------+
       |                     |
       v                     v
 focused knowledge       MCP tools/list
-module, on demand       lean profile by default
+module, on demand       full profile by default
                               |
                               v
                   typed capability registry
@@ -82,7 +83,7 @@ Compatibility remains explicit and reversible:
 
 ```text
 ROBINHOOD_MCP_PROFILE
-  unset      -> lean default
+  unset      -> full personal default
   core       -> read-oriented operating set
   trading    -> trading workflows and writes
   research   -> analysis workflows
@@ -95,28 +96,61 @@ ROBINHOOD_MCP_PROFILE
 
 The built stdio server now produces these discovery payloads:
 
-| Profile | Tools | `tools/list` bytes | Rough tokens | Instruction bytes |
+| Profile | Tools | `tools/list` bytes | Exact `o200k_base` tokens | Instruction bytes |
 |---|---:|---:|---:|---:|
-| `lean` (default) | 15 | 14,414 | 3,604 | 620 |
-| `full` | 78 | 82,520 | 20,630 | 2,060 |
+| `lean` (explicit opt-in) | 15 | 14,414 | 3,545 | 620 |
+| `full` (default) | 78 | 82,781 | 20,894 | 2,060 |
 
-The default tool-discovery payload is therefore about 82.5% smaller while the
-full compatibility surface remains one environment variable away. `SKILL.md`
-fell from roughly 30,536 to 4,216 `o200k_base` tokens, an 86.2% reduction. Large
-route, recipe, workflow, knowledge, and Crypto catalogs are paged at 25 entries
-by default. Non-full MCP results treat `structuredContent` as authoritative and
-keep the text fallback compact; `full` retains the legacy duplicate text for
-compatibility.
+Lean discovery remains **83.03% smaller by exact tokens** and **82.59% smaller by bytes** as an
+explicit constrained-agent option,
+but the personal default exposes every capability. `SKILL.md` was restored and
+expanded from the rejected 4,216-token router to 31,544 `o200k_base` tokens—about
+7.48x as much incorporated operating context and slightly more detail than the
+original 30,536-token handbook.
+
+Large route, recipe, workflow, knowledge, and Crypto catalogs are paged at 25 entries by default.
+Route catalogs additionally return lossless routing summaries by default and retain the complete
+captured schemas behind `detail: "full"` or the one-route describe tool:
+
+| Brokerage catalog mode | Bytes | Exact `o200k_base` tokens | Change |
+|---|---:|---:|---:|
+| Default: 25 summary rows | 22,944 | 6,146 | baseline agent path |
+| 25 full-schema rows | 99,423 | 22,990 | default is 73.27% fewer tokens |
+| 200 full-schema rows | 832,782 | 196,329 | default is 96.87% fewer tokens |
+
+Non-full MCP results treat `structuredContent` as authoritative and keep the text fallback compact;
+`full` retains the legacy duplicate text for compatibility.
+
+## Direct authenticated API regression found and fixed
+
+The release check sourced the existing local credential environment, explicitly removed
+`ROBINHOOD_ALLOW_LIVE_WRITE`, and ran the built `quote AAPL --json` command. The first direct read
+failed before network I/O because the latest CDP capture correctly consolidated query variants into
+one path plus `queryKeys`, while `brokerageGetJson` still expected the old query-bearing route URL.
+After query-aware route matching was added, a second direct read reached the instruments endpoint but
+the planned request dropped `?ids=...`, causing a Robinhood `400` from the quote endpoint.
+
+The permanent fix preserves a caller's templated query string only after its origin, path, method, and
+query-key names match the sanitized captured route. Unknown query keys still fail closed. Regression
+tests cover template and concrete URLs, rejected unobserved keys, and the final executed URL. The same
+safe live read then succeeded with an AAPL symbol match and the expected bid/ask/last quote shape. No
+account identifiers, token values, quote values, or raw responses were recorded, and no write was sent.
+
+Reproduction (the final parser must print shape and key presence only, never quote values):
+
+```sh
+unset ROBINHOOD_ALLOW_LIVE_WRITE
+node cli/dist/index.js quote AAPL --json | <shape-only JSON parser>
+```
 
 ## Engineering decisions
 
-### 1. Lean is the default; full remains available
+### 1. Full is the personal default; lean remains available
 
-The default profile should contain approximately 10 to 15 common workflow tools,
-not every route browser, raw executor, strategy helper, and maintenance command.
-The default must cover account discovery, quote/search, portfolio/positions,
-buying power, options holdings/chain, pretrade, order status, Doctor, and an
-intent/discovery entry point. Advanced users can select an explicit profile.
+The owner's personal setup must expose every route browser, account/settings tool,
+research workflow, strategy helper, and guarded write tool without requiring an
+environment override. The 15-tool `lean` profile remains useful for intentionally
+constrained agents, but it is never silently selected.
 
 Profile membership must be explicit capability data. Tool-name regular
 expressions are too clever for a real-money control surface.
@@ -141,7 +175,8 @@ Budgets belong in tests:
 - full `tools/list`: measured and capped against accidental growth
 - default knowledge index: under 5,000 bytes
 - common result fallback text: under 1,000 bytes where practical
-- `SKILL.md`: 4,000 to 6,000 `o200k` tokens
+- `SKILL.md`: at least 120,000 UTF-8 bytes with all required operating sections;
+  no maximum-size benchmark
 
 ### 4. Quality gates ratchet; they do not demand a rewrite
 
@@ -166,7 +201,7 @@ with profile and output behavior changes would increase blast radius.
 
 ```text
 PROFILE SELECTION
-  unset --------> lean tools present, advanced tools absent        [protocol]
+  unset --------> exact full roster, including settings/admin      [protocol]
   core ---------> required/forbidden roster                       [protocol]
   trading ------> write tools present, developer tools absent     [protocol]
   research -----> quote/search dependencies + analysis tools      [protocol]
@@ -183,9 +218,9 @@ PAYLOAD CONTROL
 
 SKILL ROUTING
   safety rules --------------------------> present                 [text contract]
-  required intent families --------------> linked                  [text contract]
-  moved deep sections -------------------> reachable               [link check]
-  token count ---------------------------> within budget           [CI]
+  complete handbook sections ------------> present                 [text contract]
+  local deep links ----------------------> reachable               [link check]
+  size/detail floor, with no maximum ----> preserved               [CI]
 
 QUALITY/DISTRIBUTION
   typecheck, lint ceiling, format check, dead code, coverage       [CI]
@@ -199,10 +234,10 @@ QUALITY/DISTRIBUTION
 | Failure | Test | Handling | Agent experience |
 |---|---|---|---|
 | Invalid profile removes tools capability | Required | Startup + Doctor reject value | Clear allowed-values error |
-| Lean profile omits a dependency such as quote/search | Required | Explicit profile contract | Test fails before release |
+| Default profile hides a personal capability | Required | Unset profile equals exact full registry | Test fails before release |
 | Large route/knowledge list overruns context | Required | Default bound + explicit continuation/full mode | Compact result with next action |
 | Tool handler returns `{error}` as success | Required | Standard `isError` result | Model can retry or explain failure |
-| Skill split breaks a safety rule or link | Required | Contract/link tests | CI blocks release |
+| Skill condensation removes operating detail | Required | Size floor, required sections, and link checks | CI blocks release |
 | Dependency patch changes build output | Existing full suite | Frozen lockfile + build/test matrix | Release blocked |
 | Client still launches stale dist | Existing Doctor plus runtime probe | Source/dist freshness check | Actionable reload/rebuild message |
 
@@ -213,7 +248,7 @@ No new path may fail silently without both error handling and a regression test.
 | Lane | Modules | Depends on |
 |---|---|---|
 | A: profiles and payloads | `cli/src/capabilities`, `cli/src/doctor`, `mcp/src`, protocol tests | baseline measurements |
-| B: progressive skill | `SKILL.md`, `knowledge/`, focused docs | existing safety contract |
+| B: comprehensive skill | `SKILL.md`, `knowledge/`, focused docs | existing safety contract |
 | C: quality and dependencies | workspace config, CI, lint/coverage/dead-code tooling | current warning/test baseline |
 | D: integration and documentation | architecture docs, usage evidence, installed runtime | A + B + C |
 
@@ -272,7 +307,8 @@ The upgrade is complete only when:
 2. Every documented profile has a tested contract and invalid values fail clearly.
 3. High-cardinality tools are bounded by default without deleting the explicit
    compatibility path.
-4. `SKILL.md` is a small router and every moved topic remains reachable.
+4. `SKILL.md` remains a comprehensive incorporated handbook, passes its integrity
+   floor, and every supplemental topic remains reachable.
 5. The dependency audit has no actionable advisory in the supported workflows.
 6. Typecheck, lint ratchet, format check, dead-code check, coverage, tests, build,
    Doctor, protocol probes, and installed PATH launches pass.

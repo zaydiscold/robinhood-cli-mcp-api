@@ -1,5 +1,6 @@
 {
   "name": "robinhood-cli-workspace",
+  "version": "1.0.0",
   "private": true,
   "engines": {
     "node": ">=20.19"
@@ -12,6 +13,7 @@
     "sanitize:cdp": "node scripts/sanitize-cdp-capture.mjs",
     "merge:cdp": "node scripts/merge-cdp-capture.mjs",
     "test:api-map": "node scripts/test-cdp-capture.mjs",
+    "test:skill": "python3 scripts/check-skill-integrity.py",
     "generate:api-map": "node scripts/generate-brokerage-openapi.mjs && node scripts/generate-unified-api-map.mjs && node scripts/generate-brokerage-markdown.mjs && node scripts/generate-brokerage-curl.mjs && node scripts/generate-endpoint-markdown.mjs",
     "test": "corepack pnpm build && corepack pnpm test:built",
     "test:built": "corepack pnpm --filter @zaydiscold/robinhood-cli exec vitest run && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp exec vitest run",
@@ -21,7 +23,7 @@
     "cli": "corepack pnpm --filter @zaydiscold/robinhood-cli cli",
     "auth:refresh": "bash scripts/refresh-auth.sh",
     "version:refresh": "node scripts/scrape-web-app-version.mjs",
-    "quality": "corepack pnpm lint && corepack pnpm format:check && corepack pnpm deadcode && corepack pnpm test:api-map",
+    "quality": "corepack pnpm lint && corepack pnpm format:check && corepack pnpm deadcode && corepack pnpm test:api-map && corepack pnpm test:skill",
     "lint": "node scripts/check-eslint-ratchet.mjs",
     "lint:report": "eslint cli/src mcp/src",
     "lint:fix": "eslint cli/src mcp/src --fix",

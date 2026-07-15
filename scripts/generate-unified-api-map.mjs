@@ -75,7 +75,7 @@ function mergeSpecs(cryptoSpec, brokerageSpec) {
     openapi: "3.1.0",
     info: {
       title: "Robinhood Unified API Map",
-      version: "0.1.0",
+      version: "1.0.0",
       description:
         "Combined Robinhood map: official Robinhood Crypto Trading OpenAPI plus browser-backed brokerage/account route map. Crypto operations should use official Ed25519 signing; brokerage/account routes use caller-owned web/brokerage auth.",
     },

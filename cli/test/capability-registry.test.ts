@@ -5,7 +5,7 @@ import {
   MCP_PROFILE_NAMES,
   capabilitiesForProfile,
   capabilityEnabled,
-  parseCapabilityProfile
+  parseCapabilityProfile,
 } from "../src/lib.js";
 
 describe("typed capability registry", () => {
@@ -27,22 +27,24 @@ describe("typed capability registry", () => {
 
   it("keeps full backward-compatible and filters narrower profiles", () => {
     expect(CAPABILITIES.every((entry) => capabilityEnabled(entry, "full"))).toBe(true);
-    expect(CAPABILITIES.find((entry) => entry.id === "options-workbench") && capabilityEnabled(CAPABILITIES.find((entry) => entry.id === "options-workbench")!, "admin")).toBe(false);
+    expect(
+      CAPABILITIES.find((entry) => entry.id === "options-workbench") &&
+        capabilityEnabled(
+          CAPABILITIES.find((entry) => entry.id === "options-workbench")!,
+          "admin",
+        ),
+    ).toBe(false);
   });
 
-  it("uses a small explicit lean profile by default", () => {
-    expect(DEFAULT_MCP_PROFILE).toBe("lean");
-    expect(parseCapabilityProfile(undefined)).toBe("lean");
-    expect(capabilitiesForProfile(DEFAULT_MCP_PROFILE)).toHaveLength(15);
-    expect(capabilitiesForProfile(DEFAULT_MCP_PROFILE).every((entry) => entry.access === "read")).toBe(true);
-    expect(capabilitiesForProfile(DEFAULT_MCP_PROFILE).map((entry) => entry.mcp)).toEqual(expect.arrayContaining([
-      "robinhood_accounts",
-      "robinhood_portfolio",
-      "robinhood_options_chain",
-      "robinhood_pretrade",
-      "robinhood_order_status",
-      "robinhood_doctor"
-    ]));
+  it("uses the complete full profile by default while retaining explicit lean mode", () => {
+    expect(DEFAULT_MCP_PROFILE).toBe("full");
+    expect(parseCapabilityProfile(undefined)).toBe("full");
+    expect(capabilitiesForProfile(DEFAULT_MCP_PROFILE)).toHaveLength(CAPABILITIES.length);
+    expect(
+      capabilitiesForProfile(DEFAULT_MCP_PROFILE).some((entry) => entry.access === "write"),
+    ).toBe(true);
+    expect(capabilitiesForProfile("lean")).toHaveLength(15);
+    expect(capabilitiesForProfile("lean").every((entry) => entry.access === "read")).toBe(true);
   });
 
   it("validates every named profile and rejects typos instead of advertising zero tools", () => {
@@ -50,7 +52,9 @@ describe("typed capability registry", () => {
       expect(parseCapabilityProfile(profile)).toBe(profile);
       expect(capabilitiesForProfile(profile).length).toBeGreaterThan(0);
     }
-    expect(() => parseCapabilityProfile("typo")).toThrow(/Invalid ROBINHOOD_MCP_PROFILE.*lean.*full/);
+    expect(() => parseCapabilityProfile("typo")).toThrow(
+      /Invalid ROBINHOOD_MCP_PROFILE.*lean.*full/,
+    );
     expect(() => capabilitiesForProfile("typo")).toThrow(/Invalid ROBINHOOD_MCP_PROFILE/);
   });
 });

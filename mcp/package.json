@@ -1,6 +1,6 @@
 {
   "name": "@zaydiscold/robinhood-cli-mcp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "MCP server for personal live Robinhood read/write API-map tools.",

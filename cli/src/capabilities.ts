@@ -1,6 +1,8 @@
 export const MCP_PROFILE_NAMES = ["lean", "core", "trading", "research", "admin", "full"] as const;
 export type CapabilityProfile = (typeof MCP_PROFILE_NAMES)[number];
-export const DEFAULT_MCP_PROFILE: CapabilityProfile = "lean";
+// Personal installations should expose the complete control surface without requiring an
+// environment override. Narrow profiles remain available for constrained or low-context agents.
+export const DEFAULT_MCP_PROFILE: CapabilityProfile = "full";
 
 export interface CapabilityDefinition {
   id: string;
@@ -274,10 +276,10 @@ const WRITE_TOOL_NAMES = new Set<string>([
   "robinhood_buy",
   "robinhood_cancel",
   "robinhood_crypto_execute",
-  "robinhood_options_close",
   "robinhood_panic",
   "robinhood_recurring",
   "robinhood_review_note",
+  "robinhood_roll_ledger",
   "robinhood_sell",
   "robinhood_settings",
   "robinhood_watchlist_add",

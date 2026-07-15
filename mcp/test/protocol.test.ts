@@ -132,7 +132,17 @@ describe("MCP protocol conformance", () => {
       expect.arrayContaining(["readme", "docs-readme", "cli-mcp-architecture", "wheel"]),
     );
 
-    expect(tools.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+    const accessByName = new Map(
+      capabilitiesForProfile(activeMcpProfile).map((entry) => [entry.mcp, entry.access]),
+    );
+    const annotationMismatches = tools.tools
+      .filter((tool) => tool.annotations?.readOnlyHint !== (accessByName.get(tool.name) === "read"))
+      .map((tool) => ({
+        name: tool.name,
+        registryAccess: accessByName.get(tool.name),
+        readOnlyHint: tool.annotations?.readOnlyHint,
+      }));
+    expect(annotationMismatches).toEqual([]);
   });
 
   it("returns both text and structured content over the wire", async () => {
@@ -149,7 +159,23 @@ describe("MCP protocol conformance", () => {
       expect.arrayContaining([expect.objectContaining({ type: "text" })]),
     );
     expect(result.structuredContent).toEqual(expect.any(Object));
-    expect(JSON.stringify(result.content)).not.toContain("long-call");
+  });
+
+  it("serves compact and full route-catalog detail through the active server", async () => {
+    const summary = await client.callTool({
+      name: "robinhood_brokerage_routes",
+      arguments: { limit: 1 },
+    });
+    const full = await client.callTool({
+      name: "robinhood_brokerage_routes",
+      arguments: { detail: "full", limit: 1 },
+    });
+    const summaryRoute = (summary.structuredContent as { routes: unknown[] }).routes[0];
+    const fullRoute = (full.structuredContent as { routes: unknown[] }).routes[0];
+    expect(summary.structuredContent).toEqual(expect.objectContaining({ detail: "summary" }));
+    expect(summaryRoute).not.toHaveProperty("responseBodySchemas");
+    expect(full.structuredContent).toEqual(expect.objectContaining({ detail: "full" }));
+    expect(fullRoute).toHaveProperty("responseBodySchemas");
   });
 
   it("surfaces schema failures as protocol errors without invoking a tool", async () => {
@@ -212,7 +238,7 @@ describe("MCP profile protocol surfaces", () => {
     });
   }
 
-  it("keeps the default lean tools/list below explicit byte and estimated-token budgets", async () => {
+  it("keeps explicit lean mode below discovery byte and estimated-token budgets", async () => {
     const { profileClient } = await connectProfile("lean");
     try {
       const tools = await profileClient.listTools();
@@ -225,6 +251,35 @@ describe("MCP profile protocol surfaces", () => {
       expect(instructionBytes).toBeLessThanOrEqual(800);
     } finally {
       await profileClient.close();
+    }
+  });
+
+  it("defaults to the complete full manifest when no profile override is present", async () => {
+    const environment = childEnvironment("full");
+    delete environment.ROBINHOOD_MCP_PROFILE;
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [serverBin],
+      env: environment,
+      cwd: fileURLToPath(new URL("../..", import.meta.url)),
+      stderr: "pipe",
+    });
+    const defaultClient = new Client({
+      name: "robinhood-cli-default-protocol-test",
+      version: "1.0.0",
+    });
+    await defaultClient.connect(transport);
+    try {
+      const tools = await defaultClient.listTools();
+      expect(tools.tools.map((tool) => tool.name).sort()).toEqual(
+        capabilitiesForProfile("full")
+          .map((entry) => entry.mcp!)
+          .sort(),
+      );
+      expect(tools.tools).toHaveLength(78);
+      expect(defaultClient.getInstructions()).toMatch(/ROBINHOOD_ALLOW_LIVE_WRITE/);
+    } finally {
+      await defaultClient.close();
     }
   });
 
@@ -249,6 +304,16 @@ describe("MCP profile protocol surfaces", () => {
       );
       const routes = (first.structuredContent as { routes: unknown[] }).routes;
       expect(routes).toHaveLength(25);
+      expect(first.structuredContent).toEqual(expect.objectContaining({ detail: "summary" }));
+      expect(routes[0]).toEqual(
+        expect.objectContaining({
+          url: expect.any(String),
+          methods: expect.any(Array),
+          risk: expect.any(String),
+          response: expect.objectContaining({ fieldCount: expect.any(Number) }),
+        }),
+      );
+      expect(routes[0]).not.toHaveProperty("responseBodySchemas");
 
       const second = await profileClient.callTool({
         name: "robinhood_brokerage_routes",
@@ -257,6 +322,35 @@ describe("MCP profile protocol surfaces", () => {
       expect(second.structuredContent).toEqual(
         expect.objectContaining({ offset: 25, limit: 10, count: 10 }),
       );
+
+      const detailed = await profileClient.callTool({
+        name: "robinhood_brokerage_routes",
+        arguments: { detail: "full", limit: 25 },
+      });
+      const detailedRoutes = (detailed.structuredContent as { routes: unknown[] }).routes;
+      expect(detailed.structuredContent).toEqual(expect.objectContaining({ detail: "full" }));
+      expect(
+        detailedRoutes.some((route) => Object.hasOwn(route as object, "responseBodySchemas")),
+      ).toBe(true);
+
+      const [unified, browser] = await Promise.all([
+        profileClient.callTool({
+          name: "robinhood_routes",
+          arguments: { limit: 1 },
+        }),
+        profileClient.callTool({
+          name: "robinhood_browser_routes",
+          arguments: { limit: 1 },
+        }),
+      ]);
+      for (const result of [unified, browser]) {
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toEqual(
+          expect.objectContaining({ detail: "summary", count: 1 }),
+        );
+        const catalogRows = (result.structuredContent as { routes: unknown[] }).routes;
+        expect(catalogRows[0]).not.toHaveProperty("responseBodySchemas");
+      }
     } finally {
       await profileClient.close();
     }

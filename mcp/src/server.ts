@@ -109,7 +109,9 @@ import {
   maybeShareSafe,
   readPortfolioSnapshots,
   runDoctor,
+  routeVerificationStatus,
   watchOrderLifecycle,
+  type BrokerageRoute,
 } from "@zaydiscold/robinhood-cli/lib";
 
 type RiskLevel =
@@ -138,7 +140,7 @@ export const server = new McpServer(
   {
     name: "robinhood-cli-mcp",
     title: "Robinhood CLI MCP — Zayd Khan // cold // zayd.wtf",
-    version: "0.1.0",
+    version: "1.0.0",
   },
   {
     // Boot pointer for MCP-only agents (no repo checkout needed) — Zayd Khan // cold // www.zayd.wtf
@@ -204,6 +206,30 @@ export function page<T>(items: readonly T[], offset: number, limit: number) {
     hasMore: offset + rows.length < items.length,
     nextOffset: offset + rows.length < items.length ? offset + rows.length : undefined,
     rows,
+  };
+}
+
+type CatalogDetail = "summary" | "full";
+
+function routeCatalogEntry(route: BrokerageRoute, detail: CatalogDetail) {
+  if (detail === "full") return route;
+  return {
+    url: route.url,
+    methods: route.methods ?? ["GET"],
+    risk: route.risk,
+    categories: route.categories,
+    queryKeys: route.queryKeys ?? [],
+    operationId: route.operationId,
+    summary: route.summary,
+    verificationStatus: routeVerificationStatus(route),
+    response: {
+      fieldCount: route.fields?.length ?? 0,
+      fieldsSource: route.fieldsSource ?? "undocumented",
+      fieldsShape: route.fieldsShape,
+      statusCodes: route.statusCodes ?? [],
+    },
+    requiresAuth: route.requiresAuth,
+    observationCount: route.observationCount ?? 0,
   };
 }
 
@@ -404,14 +430,20 @@ server.registerTool(
       category: z.string().optional(),
       host: z.string().optional(),
       query: z.string().optional(),
+      detail: z.enum(["summary", "full"]).default("summary"),
       offset: z.number().int().min(0).default(0),
       limit: z.number().int().min(1).max(200).default(25),
     }),
   },
-  async ({ risk, category, host, query, offset, limit }) => {
+  async ({ risk, category, host, query, detail, offset, limit }) => {
     const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { risk, category, host, query });
     const pagination = page(matches, offset, limit);
-    return jsonResponse({ ...pagination, routes: pagination.rows, rows: undefined });
+    return jsonResponse({
+      ...pagination,
+      detail,
+      routes: pagination.rows.map((route) => routeCatalogEntry(route, detail)),
+      rows: undefined,
+    });
   },
 );
 
@@ -436,14 +468,20 @@ server.registerTool(
       category: z.string().optional(),
       host: z.string().optional(),
       query: z.string().optional(),
+      detail: z.enum(["summary", "full"]).default("summary"),
       offset: z.number().int().min(0).default(0),
       limit: z.number().int().min(1).max(300).default(25),
     }),
   },
-  async ({ risk, category, host, query, offset, limit }) => {
+  async ({ risk, category, host, query, detail, offset, limit }) => {
     const matches = filterRobinhoodRoutes(loadRobinhoodRoutes(), { risk, category, host, query });
     const pagination = page(matches, offset, limit);
-    return jsonResponse({ ...pagination, routes: pagination.rows, rows: undefined });
+    return jsonResponse({
+      ...pagination,
+      detail,
+      routes: pagination.rows.map((route) => routeCatalogEntry(route, detail)),
+      rows: undefined,
+    });
   },
 );
 
@@ -466,16 +504,22 @@ server.registerTool(
           "destructive",
         ])
         .optional(),
+      detail: z.enum(["summary", "full"]).default("summary"),
       offset: z.number().int().min(0).default(0),
       limit: z.number().int().min(1).max(250).default(25),
     }),
   },
-  async ({ host, risk, offset, limit }) => {
+  async ({ host, risk, detail, offset, limit }) => {
     const matches = loadBrowserRoutes().filter(
       (route) => (!host || route.host === host) && (!risk || route.risk === risk),
     );
     const pagination = page(matches, offset, limit);
-    return jsonResponse({ ...pagination, routes: pagination.rows, rows: undefined });
+    return jsonResponse({
+      ...pagination,
+      detail,
+      routes: pagination.rows.map((route) => routeCatalogEntry(route, detail)),
+      rows: undefined,
+    });
   },
 );
 

@@ -198,7 +198,7 @@ const spec = {
   openapi: "3.1.0",
   info: {
     title: "Robinhood Brokerage API Map",
-    version: "0.1.0",
+    version: "1.0.0",
     description:
       "Personal Robinhood brokerage/account API map from reverse-engineered routes and sanitized authenticated browser capture. This repo can execute live with caller-owned auth; pass dryRun/--dry-run for non-sending tests. Made with love by Zayd Khan / cold.",
   },

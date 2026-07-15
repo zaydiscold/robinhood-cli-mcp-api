@@ -1,14 +1,14 @@
-# SKILL.md progressive-disclosure map — 2026-07-14
+# SKILL.md completeness restoration — 2026-07-14
 
 ## What changed
 
-`SKILL.md` was converted from a 1,627-line, 30,536-token combined handbook into a compact router and
-real-money operating contract. The router retains the safety warning, preflight, intent mapping,
-80/20 commands, complete account discovery rule, write gate, confirmation lifecycle, and order-history
-evidence rule. Deep material is loaded only when the active task needs it.
+The initial integration converted the 1,627-line, 30,536-token handbook into a 4,216-token router.
+That optimization was rejected because `SKILL.md` is the incorporated operating memory for agents,
+not merely a directory. The complete handbook has been restored and extended with the full-default
+MCP contract and authenticated API-map rules. It is now 31,544 `o200k_base` tokens.
 
-This change removes duplicated prompt cost; it does not remove the underlying operational knowledge.
-`CLAUDE.md` remains a symlink to `SKILL.md`.
+Focused `knowledge/` modules remain useful supplements, but no longer justify removing the same
+high-value context from `SKILL.md`. `CLAUDE.md` remains a symlink to `SKILL.md`.
 
 ## Where each former section lives now
 
@@ -75,15 +75,17 @@ broader topic summary above.
 
 ## Maintenance rule
 
-Keep `SKILL.md` between 4,000 and 6,000 `o200k_base` tokens. Add durable topic-specific knowledge to
-one focused `knowledge/*.md` module, and link it from the router/index. Do not grow the router with a
-new tool-by-tool catalog: live help, the capability registry, and MCP `tools/list` are authoritative.
+Keep `SKILL.md` comprehensive. It has a 120,000-byte minimum integrity floor and no maximum-size
+benchmark. Durable topic-specific knowledge may also live in focused modules, but moving material is
+not permission to delete useful incorporated context. The live capability registry and `tools/list`
+remain authoritative for exact tool membership.
 
 Verify the budget with:
 
 ```bash
-python3 scripts/check-skill-token-budget.py
+python3 scripts/check-skill-integrity.py
 ```
 
-The script uses `tiktoken`'s `o200k_base` encoding and fails with installation guidance if the module
-is absent. Local Markdown links are checked separately during documentation verification.
+The script checks the byte floor, required operating sections, safety contracts, and local Markdown
+links. If `tiktoken` is installed it also reports the exact `o200k_base` count, but tokenization is not
+a gate and there is deliberately no maximum.

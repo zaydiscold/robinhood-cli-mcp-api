@@ -4,22 +4,24 @@ Load this module for registration, profile selection, missing tools, stale serve
 size. The CLI and MCP are two front doors over the same engine, authentication, route map, and
 real-money write gate.
 
-## Choose the narrowest profile
+## Full personal default, narrower profiles when explicitly wanted
 
-Set `ROBINHOOD_MCP_PROFILE` explicitly in each client registration. The capability registry and live
-`tools/list` are authoritative; profile membership can evolve. Current profile intents are:
+Leave `ROBINHOOD_MCP_PROFILE` unset in the owner's normal registrations to expose the complete
+surface. Set a narrower profile only when intentionally constraining a particular agent. The
+capability registry and live `tools/list` are authoritative; profile membership can evolve.
 
 | Profile | Use it for |
 |---|---|
+| `lean` | Explicit 15-tool read-only mode for unusually constrained contexts |
 | `core` | Routine account/position/quote reads and compact operational checks |
 | `trading` | Order planning/lifecycle plus trading and options workflows |
 | `research` | Portfolio analysis, signals, performance, risk, and options research |
 | `admin` | Route-map, browser-research, crypto/admin, and maintenance work |
-| `full` | Compatibility/debugging when a narrower profile demonstrably lacks a needed tool |
+| `full` | Complete personal surface and the default when the variable is unset |
 
-Do not default to `full` merely because it exists. Tool discovery metadata is paid on every new agent
-context; a narrow profile is the normal operating posture. Move up for the task, then return to the
-smaller profile.
+Do not silently switch the personal default to a smaller profile for a benchmark. Token efficiency is
+handled through bounded catalog results and focused describe calls. `lean` is an opt-in mode, not a
+requirement for accessing the repo normally.
 
 Validate profile names with `robinhood-cli doctor` and the connected server's `tools/list`. An unknown
 profile must fail clearly; it must never silently expose zero tools or be reported healthy.
@@ -33,17 +35,15 @@ pnpm --filter @zaydiscold/robinhood-cli build
 pnpm --filter @zaydiscold/robinhood-cli-mcp build
 ```
 
-Register a read/dry-run server with an explicit profile and an absolute server path:
+Register the full, dry-run-by-default personal server with an absolute server path:
 
 ```bash
 # Claude Code example
 claude mcp add robinhood-cli -s user \
-  -e ROBINHOOD_MCP_PROFILE=core -- \
   node /absolute/path/to/robinhood-cli/mcp/dist/server.js
 
 # Hermes example
 hermes mcp add robinhood-cli --command node \
-  --env ROBINHOOD_MCP_PROFILE=core \
   --args /absolute/path/to/robinhood-cli/mcp/dist/server.js
 ```
 
@@ -62,7 +62,7 @@ After changing the build, profile, or registration:
 
 1. Restart or reload the MCP server.
 2. Inspect `tools/list` from that client.
-3. Confirm the expected narrow tool families are present and unrelated families are absent.
+3. With no profile override, confirm the complete 78-tool registry is present.
 4. Run a harmless read such as `robinhood_quote` and one account-aware read.
 5. Run `robinhood_doctor` if the active profile exposes it.
 
@@ -94,8 +94,8 @@ inputs, better defaults, safer account routing, and more predictable responses.
 - Use composite tools (`portfolio`, pretrade, workbench, snapshot) when they replace several raw calls
   without returning redundant payloads.
 - Do not call both CLI and MCP for the same fact unless verifying parity.
-- Do not load the full `AGENTS.md`, every knowledge module, or the whole route map for routine account
-  questions. Start at `SKILL.md`, then load one module.
+- Read the incorporated `SKILL.md` as the canonical operating handbook. Load focused modules when
+  their extra depth is useful; do not treat them as replacements for the handbook.
 - Treat `structuredContent` as the machine-readable result. Text should be a compact human summary,
   not a second pretty-printed copy of the same object.
 - When a tool returns pagination metadata, follow it deliberately rather than asking for an unlimited

@@ -19,10 +19,10 @@ dividend/income preferences, risk appetite, watchlist ideas — or anything else
 An entry can be as small as a ticker, a sector word, or a single `@handle`, or as loose as a hunch or
 a rumor. It does not need to be polished, verified, or immediately actionable.
 
-## How to read it (the rules live in SKILL.md "Ball Knowledge")
+## How to read it (the rules live in `knowledge/signals.md`)
 
 - **Anything in this file was intentionally added — treat it as important investing context.** That
-  means *pay attention to it*, not *blindly obey it*.
+  means _pay attention to it_, not _blindly obey it_.
 - **Context, not proof, not permission.** Nothing here authorizes a trade, proves a rumor, or overrides
   verification, user confirmation, live market data, or brokerage order history.
 - **Classify by type before using it** (the file stays unlabeled — the agent infers): rumor → verify;
@@ -76,4 +76,5 @@ sector/context note, never a trade instruction. Replace this with your own real 
 ```
 
 ---
+
 <!-- Real Ball Knowledge entries go below this line, newest at the bottom. -->

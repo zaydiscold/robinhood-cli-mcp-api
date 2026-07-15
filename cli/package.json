@@ -1,6 +1,6 @@
 {
   "name": "@zaydiscold/robinhood-cli",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Personal live Robinhood API map plus read/write CLI for Crypto and brokerage/account routes.",
   "type": "module",
   "bin": {
@@ -25,6 +25,7 @@
     "build": "tsc -p tsconfig.json && node scripts/copy-api-map.mjs",
     "cli": "tsx src/index.ts",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

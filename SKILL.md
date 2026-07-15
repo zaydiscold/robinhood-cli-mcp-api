@@ -1599,6 +1599,89 @@ query params) — use the `positions` command, or just `portfolio`.
 
 ---
 
+## Full-Power MCP and Authenticated API Map (v1.0.0)
+
+The personal installation defaults to the complete MCP surface. An agent should not require a
+profile override to discover account controls, settings, route-development tools, research,
+options workflows, Crypto operations, or the guarded write tools that are part of this repo.
+
+```text
+ROBINHOOD_MCP_PROFILE unset      -> full (all 78 tools; personal default)
+ROBINHOOD_MCP_PROFILE=full       -> full (explicit equivalent)
+ROBINHOOD_MCP_PROFILE=lean       -> 15 common read-only tools for constrained agents
+ROBINHOOD_MCP_PROFILE=core       -> broad read-oriented operating set
+ROBINHOOD_MCP_PROFILE=trading    -> trading workflows and guarded writes
+ROBINHOOD_MCP_PROFILE=research   -> analysis and research workflows
+ROBINHOOD_MCP_PROFILE=admin      -> route, developer, and account-control workflows
+invalid value                    -> startup and Doctor failure with allowed values
+```
+
+Profiles control discovery only. They do not weaken the single live-write gate. Advertising a
+write-capable tool in `full` does **not** authorize a trade or account mutation: writes remain dry-run
+unless `ROBINHOOD_ALLOW_LIVE_WRITE=1`, and the user must still have requested the exact operation.
+
+### Token efficiency without hiding capability
+
+The full profile remains the default, while efficiency is applied inside high-cardinality tools:
+
+- route, recipe, workflow, knowledge, and Crypto catalogs return 25 rows by default;
+- use `offset` and `limit` to continue instead of asking for the entire catalog again;
+- use the describe tool for one route when request/response detail is needed;
+- protocol failures set `isError=true` with a structured, retry-aware error payload;
+- `lean` remains an explicit opt-in when an agent truly needs the smallest discovery surface.
+
+This preserves the full operating vocabulary while preventing a single route-list call from flooding
+the conversation with hundreds of entries. Do not change the personal default back to `lean` merely
+to improve a benchmark. A default-profile change is a product decision and requires explicit user
+approval.
+
+### Authenticated shape-only API evidence
+
+The 2026-07-14 browser/CDP sweep added method-specific, value-free evidence for authenticated web-app
+traffic. The public map may retain:
+
+- allowed Robinhood host, normalized path, HTTP method, and query **key names**;
+- observed status codes, content types, UI surfaces, and authentication-present boolean;
+- bounded request and response JSON shapes containing field names and primitive types;
+- observation count, capture date, sanitizer version, and provenance.
+
+It must never retain query values, header values, cookies, bearer tokens, account numbers, balances,
+holdings, order IDs, transfer IDs, document IDs, or scalar request/response values. Raw captures stay
+under gitignored `info/` with owner-only permissions. Run the sanitizer contract before merging:
+
+```bash
+pnpm test:api-map
+pnpm merge:cdp info/cdp-sanitized-YYYY-MM-DD.json
+pnpm generate:api-map
+```
+
+Use the shared describe path from either surface:
+
+```bash
+node cli/dist/index.js brokerage describe "orders/order_checks/presubmit_data/" --json
+# MCP: robinhood_brokerage_describe {"query":"orders/order_checks/presubmit_data/"}
+```
+
+The result includes the resolved method/risk, observed statuses, auth presence, UI evidence,
+provenance, request schema, and status-specific response schemas. A captured 400/404 is evidence that
+the web app attempted the call, not proof of a successful contract. Keep that distinction visible.
+
+### Capture safety
+
+Browser navigation is read-only, but ordinary page loads can automatically emit layout persistence,
+notification-receipt, and telemetry PATCH/POST calls. Observe and classify those calls; never replay
+them during mapping. Never open an order review/submit flow, initiate a transfer, cancel an order,
+change a watchlist or recurring schedule, or save account settings merely to improve coverage.
+
+Deep implementation and reproducibility details:
+
+- `docs/authenticated-api-map-capture-2026-07-14.md`
+- `docs/mcp-efficiency-upgrade-2026-07-14.md`
+- `knowledge/mcp-operations.md`
+- `knowledge/cli-routing.md`
+
+---
+
 ## Verification Checklist
 
 - [ ] `pnpm install && pnpm build` completes without errors
@@ -1607,6 +1690,10 @@ query params) — use the `positions` command, or just `portfolio`.
 - [ ] `node cli/dist/index.js brokerage execute "bonfire.robinhood.com/transfer/accounts/" --json --full` shows the full account list
 - [ ] `node cli/dist/index.js brokerage execute "portfolios/" --json --full` returns portfolio data
 - [ ] MCP server starts: `node mcp/dist/server.js` (or `hermes mcp add` registered)
+- [ ] With `ROBINHOOD_MCP_PROFILE` unset, `tools/list` advertises all 78 tools
+- [ ] With `ROBINHOOD_MCP_PROFILE=lean`, `tools/list` advertises the explicit 15-tool read-only subset
+- [ ] An invalid `ROBINHOOD_MCP_PROFILE` fails startup and Doctor with the allowed values
+- [ ] `pnpm test:api-map` proves raw auth/body/query values cannot survive sanitization
 - [ ] Route map count: `node cli/dist/index.js brokerage routes --json | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])"` returns the live count (~300+ and growing — do NOT assert a hardcoded number; the count drifts as routes are captured)
 - [ ] Watchlists work: `node cli/dist/index.js brokerage execute "discovery/lists/?owner_type=custom" --json` returns 200
 - [ ] Dry-run default works: a POST without `ROBINHOOD_ALLOW_LIVE_WRITE=1` returns `liveWriteBlocked` (the single switch unset → forced dry-run)

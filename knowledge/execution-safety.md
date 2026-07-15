@@ -92,7 +92,8 @@ stop and ask. Never default into naked/undefined-risk exposure.
 
 ## Deep dives
 
-- `SKILL.md` — "Failure modes — hard rules" (the canonical 20) + "Live Write & Order Lifecycle".
+- `SKILL.md` — the compact binding lifecycle and high-value guards; this module is the canonical
+  detailed failure-mode checklist.
 - `docs/agent-operating-intelligence-2026-06-04.md` §4 — symptom → diagnosis → fix decision tree.
 - `docs/error-code-reference-2026-06-11.md` — the error taxonomy one-for-one.
 - `docs/live-write-verification-2026-06-03.md`, `docs/account-settings-capability-map-2026-06-03.md` — what is live-verified vs research-only.

@@ -4,20 +4,38 @@ The full Robinhood route map combines Robinhood's official Crypto OpenAPI with c
 
 Official Crypto routes are first-class executable routes in the personal CLI and MCP server. Use `crypto execute` / `robinhood_crypto_execute` for `trading.robinhood.com` routes; use `brokerage execute` / `robinhood_brokerage_execute` for browser-backed brokerage/account routes.
 
-Current counts after the 2026-06-03 options/account-settings hardening pass:
+Current counts after the 2026-07-14 authenticated structural-schema pass:
 
-- 301 unified route entries.
+- 377 unified route entries.
 - 16 official Crypto route entries from Robinhood's published OpenAPI.
-- 285 brokerage/account route entries.
-- 250 latest authenticated browser route templates.
-- 267 normalized unified OpenAPI paths and 282 unified operations in `api-map/openapi/robinhood-unified.openapi.json`.
-- 253 normalized brokerage OpenAPI paths and 266 brokerage operations in `api-map/openapi/robinhood-brokerage.openapi.json`.
-- 77 read.
-- 194 sensitive-read.
-- 4 write-safe.
-- 6 write-mutate.
-- 6 write-or-sensitive.
-- 14 destructive.
+- 361 brokerage/account route entries.
+- 214 latest authenticated browser operation templates, method-split so GET and
+  PATCH/POST schemas cannot contaminate each other.
+- 343 normalized unified OpenAPI paths and 365 unified operations in
+  `api-map/openapi/robinhood-unified.openapi.json`.
+- 329 normalized brokerage OpenAPI paths and 349 brokerage operations in
+  `api-map/openapi/robinhood-brokerage.openapi.json`.
+- 99 read.
+- 236 sensitive-read.
+- 11 write-safe.
+- 13 write-mutate.
+- 7 write-or-sensitive.
+- 11 destructive.
+
+2026-07-14 authenticated structural-schema pass:
+
+- Evidence: `api-map/browser-cdp-routes-2026-07-14.json`.
+- Detailed capture protocol, coverage, corrections, new route families, raw
+  evidence policy, and reproducibility:
+  `docs/authenticated-api-map-capture-2026-07-14.md`.
+- Coverage: 17 read-only web surfaces, 1,430 sanitized observations, seven API
+  hosts, 214 operation templates, 204 response shapes, and 79 operations not in
+  the pre-pass map.
+- Stored: route/query/header-shape metadata, status codes, content types,
+  auth-presence boolean, observation counts, sanitized request/response schemas,
+  and capture provenance.
+- Never stored: cookies, auth values, query values, account identifiers, balances,
+  holdings, order/document/transfer identifiers, or scalar request/response values.
 
 2026-05-26 CDP capture:
 
@@ -52,8 +70,8 @@ Current counts after the 2026-06-03 options/account-settings hardening pass:
 2026-06-03 equity-order gate + instrument search (verified live):
 
 - **`POST api.robinhood.com/orders/` — the WEB body.** The legacy mobile body
-  (`type`/`quantity`/`price`/`side`) is rejected with *"Your app version is missing important
-  stock trading updates. You can still place orders on the web."* Clearing the gate needs
+  (`type`/`quantity`/`price`/`side`) is rejected with _"Your app version is missing important
+  stock trading updates. You can still place orders on the web."_ Clearing the gate needs
   (1) web-app headers — now sent by the engine: `x-robinhood-api-version`,
   `x-robinhood-web-app-version`, `x-hyper-ex: enabled`, web `user-agent`, `origin`/`referer` —
   and (2) `order_form_version: 7` + a live bid/ask collar
@@ -78,11 +96,11 @@ Current counts after the 2026-06-03 options/account-settings hardening pass:
   e.g. RNECY) **reject `type: market`** — buy AND sell are both supported, but only as whole
   shares with a marketable **limit** at the marketable side (buy at the ask, sell at the bid;
   the shared engine auto-limits when no explicit price is given).
-- **Rate limit:** `orders/` burst-limits *fractional* orders — ~9 then HTTP **429**
-  (*"Too many requests for fractional orders"* / *"throttled, available in N seconds"*, ~48s
+- **Rate limit:** `orders/` burst-limits _fractional_ orders — ~9 then HTTP **429**
+  (_"Too many requests for fractional orders"_ / _"throttled, available in N seconds"_, ~48s
   cooldown). Honor it by sleeping the directed seconds and retrying the same `ref_id` (429 =
-  nothing placed). Insufficient funds returns 400 *"You can only purchase 0 shares"* /
-  *"Not enough buying power."*
+  nothing placed). Insufficient funds returns 400 _"You can only purchase 0 shares"_ /
+  _"Not enough buying power."_
 - **`GET api.robinhood.com/midlands/search/?query=<q>`** — Robinhood's global instrument search
   (the web search bar). Returns `instruments[]` (+ `lists`) with full instrument objects
   (symbol, name, tradability, fractional_tradability, otc_market_tier). Read-only; added to the
@@ -94,7 +112,7 @@ Current counts after the 2026-06-03 options/account-settings hardening pass:
 ## 2026-06-15 — Watchlist write surface (`discovery/lists/items/`)
 
 Captured live to wire `watchlist add/remove/create` across CLI + MCP. **Corrects a prior assumption**:
-the write endpoint is `discovery/lists/items/`, *not* `midlands/lists/items/` (the `midlands/lists/*`
+the write endpoint is `discovery/lists/items/`, _not_ `midlands/lists/items/` (the `midlands/lists/*`
 entries are unrelated read routes).
 
 1. **Discovery source.** CDP network capture on `robinhood.com` (Add-to-Lists modal → Save), then

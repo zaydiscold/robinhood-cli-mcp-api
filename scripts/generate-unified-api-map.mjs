@@ -17,7 +17,11 @@ function cryptoRisk(path, method) {
   const lower = path.toLowerCase();
   if (method === "post" && lower.includes("/cancel/")) return "destructive";
   if (method === "post") return "write-mutate";
-  if (lower.includes("/trading/accounts") || lower.includes("/trading/holdings") || lower.includes("/trading/orders")) {
+  if (
+    lower.includes("/trading/accounts") ||
+    lower.includes("/trading/holdings") ||
+    lower.includes("/trading/orders")
+  ) {
     return "sensitive-read";
   }
   return "read";
@@ -57,11 +61,13 @@ function cryptoRoutesFromSpec(spec) {
         seenOn: ["official-robinhood-crypto-docs"],
         queryKeys: extractQueryKeys(operation),
         operationId: operation.operationId,
-        summary: operation.summary
+        summary: operation.summary,
       });
     }
   }
-  return routes.sort((a, b) => a.url.localeCompare(b.url) || a.methods[0].localeCompare(b.methods[0]));
+  return routes.sort(
+    (a, b) => a.url.localeCompare(b.url) || a.methods[0].localeCompare(b.methods[0]),
+  );
 }
 
 function mergeSpecs(cryptoSpec, brokerageSpec) {
@@ -69,23 +75,35 @@ function mergeSpecs(cryptoSpec, brokerageSpec) {
     openapi: "3.1.0",
     info: {
       title: "Robinhood Unified API Map",
-      version: "0.1.0",
+      version: "1.0.0",
       description:
-        "Combined Robinhood map: official Robinhood Crypto Trading OpenAPI plus browser-backed brokerage/account route map. Crypto operations should use official Ed25519 signing; brokerage/account routes use caller-owned web/brokerage auth."
+        "Combined Robinhood map: official Robinhood Crypto Trading OpenAPI plus browser-backed brokerage/account route map. Crypto operations should use official Ed25519 signing; brokerage/account routes use caller-owned web/brokerage auth.",
     },
     servers: [
-      { url: "https://trading.robinhood.com", description: "Official Robinhood Crypto Trading API" },
-      { url: "https://api.robinhood.com", description: "Browser-backed brokerage/account API surface" },
-      { url: "https://bonfire.robinhood.com", description: "Browser-backed Robinhood web API surface" },
-      { url: "https://nummus.robinhood.com", description: "Browser-backed crypto/account web API surface" },
+      {
+        url: "https://trading.robinhood.com",
+        description: "Official Robinhood Crypto Trading API",
+      },
+      {
+        url: "https://api.robinhood.com",
+        description: "Browser-backed brokerage/account API surface",
+      },
+      {
+        url: "https://bonfire.robinhood.com",
+        description: "Browser-backed Robinhood web API surface",
+      },
+      {
+        url: "https://nummus.robinhood.com",
+        description: "Browser-backed crypto/account web API surface",
+      },
       { url: "https://cashier.robinhood.com" },
       { url: "https://dora.robinhood.com" },
       { url: "https://identi.robinhood.com" },
       { url: "https://minerva.robinhood.com" },
-      { url: "https://phoenix.robinhood.com" }
+      { url: "https://phoenix.robinhood.com" },
     ],
     tags: [],
-    paths: {}
+    paths: {},
   };
 
   const tagNames = new Set();
@@ -129,16 +147,27 @@ function riskCounts(routes) {
 
 function markdownRows(routes) {
   return routes.map((route) => {
-    const mutation = ["write-safe", "write-mutate", "write-or-sensitive", "destructive"].includes(route.risk) ? "yes" : "no";
+    const mutation = ["write-safe", "write-mutate", "write-or-sensitive", "destructive"].includes(
+      route.risk,
+    )
+      ? "yes"
+      : "no";
     return `| ${mutation} | ${route.risk} | ${(route.methods ?? []).join(",") || "inferred"} | ${(route.categories ?? []).join(", ")} | ${route.host} | ${route.source ?? "brokerage-browser-map"} | \`${route.url}\` |`;
   });
 }
 
 const brokerageRoutes = JSON.parse(await readFile(brokerageRoutesPath, "utf8"));
+const latestCaptureDate = brokerageRoutes
+  .flatMap((route) => [...String(route.source ?? "").matchAll(/cdp-(\d{4}-\d{2}-\d{2})/g)])
+  .map((match) => match[1])
+  .sort()
+  .at(-1);
 const cryptoSpec = JSON.parse(await readFile(cryptoSpecPath, "utf8"));
 const brokerageSpec = JSON.parse(await readFile(brokerageSpecPath, "utf8"));
 const cryptoRoutes = cryptoRoutesFromSpec(cryptoSpec);
-const unifiedRoutes = [...cryptoRoutes, ...brokerageRoutes].sort((a, b) => a.host.localeCompare(b.host) || a.url.localeCompare(b.url));
+const unifiedRoutes = [...cryptoRoutes, ...brokerageRoutes].sort(
+  (a, b) => a.host.localeCompare(b.host) || a.url.localeCompare(b.url),
+);
 const unifiedSpec = mergeSpecs(cryptoSpec, brokerageSpec);
 if (unifiedSpec?.info?.description && !/made with love/i.test(unifiedSpec.info.description)) {
   unifiedSpec.info.description += " Made with love by Zayd Khan / cold.";
@@ -154,14 +183,17 @@ const counts = riskCounts(unifiedRoutes);
 const markdown = [
   "# Robinhood Unified Route Map",
   "",
-  "Source: official Robinhood Crypto Trading OpenAPI plus sanitized authenticated Chrome/CDP brokerage/account route captures through 2026-05-27.",
+  `Source: official Robinhood Crypto Trading OpenAPI plus sanitized authenticated Chrome/CDP brokerage/account route captures${latestCaptureDate ? ` through ${latestCaptureDate}` : ""}.`,
   "",
   "Crypto operations are official Robinhood-published endpoints and should use Ed25519 signing. Brokerage/account operations are browser-backed route-map entries and use caller-owned brokerage token or browser cookie auth.",
   "",
   `Current count: ${unifiedRoutes.length} route entries.`,
   `Official Crypto route entries: ${cryptoRoutes.length}.`,
   `Brokerage/account route entries: ${brokerageRoutes.length}.`,
-  `Risk counts: ${Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)).map(([risk, count]) => `${risk}=${count}`).join(", ")}.`,
+  `Risk counts: ${Object.entries(counts)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([risk, count]) => `${risk}=${count}`)
+    .join(", ")}.`,
   "",
   "Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.",
   "",
@@ -169,11 +201,13 @@ const markdown = [
   "|---|---|---|---|---|---|---|",
   ...markdownRows(unifiedRoutes),
   "",
-  "<!-- Zayd Khan // cold // www.zayd.wtf -->"
+  "<!-- Zayd Khan // cold // www.zayd.wtf -->",
 ].join("\n");
 
 await writeFile(markdownOutPath, `${markdown}\n`);
 console.error(`wrote ${routesOutPath}`);
 console.error(`wrote ${openapiOutPath}`);
 console.error(`wrote ${markdownOutPath}`);
-console.error(`unified routes=${unifiedRoutes.length} crypto=${cryptoRoutes.length} brokerage=${brokerageRoutes.length}`);
+console.error(
+  `unified routes=${unifiedRoutes.length} crypto=${cryptoRoutes.length} brokerage=${brokerageRoutes.length}`,
+);

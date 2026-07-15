@@ -1,6 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { maybeShareSafe } from "./share-safe.js";
@@ -26,7 +34,7 @@ export * from "./time-machine.js";
 const REPO_MARKERS = ["pnpm-workspace.yaml", ".git"];
 export function ascendToRepoRoot(
   markers: string[] = REPO_MARKERS,
-  startDir: string = dirname(fileURLToPath(import.meta.url))
+  startDir: string = dirname(fileURLToPath(import.meta.url)),
 ): string | undefined {
   let current = startDir;
   for (let i = 0; i < 12; i += 1) {
@@ -81,8 +89,10 @@ function loadRepoEnv(): void {
 }
 loadRepoEnv();
 
-export type RouteRisk = "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
+export type RouteRisk =
+  "read" | "sensitive-read" | "write-safe" | "write-mutate" | "write-or-sensitive" | "destructive";
 export type RouteVerificationStatus = "inferred" | "captured" | "live_verified" | "deprecated";
+export type CapturedJsonSchema = Record<string, unknown>;
 
 export interface BrokerageRoute {
   url: string;
@@ -106,6 +116,20 @@ export interface BrokerageRoute {
   fieldsSource?: "verified" | "inferred" | "undocumented";
   /** Whether the response is a single object or a list (item keys reported in `fields`). */
   fieldsShape?: "object" | "list";
+  /** Status codes and shape-only schemas observed in sanitized authenticated browser traffic. */
+  statusCodes?: number[];
+  requestContentTypes?: string[];
+  responseContentTypes?: string[];
+  requestBodySchema?: CapturedJsonSchema;
+  responseBodySchemas?: Record<string, CapturedJsonSchema>;
+  requiresAuth?: boolean;
+  observationCount?: number;
+  provenance?: {
+    captureId?: string;
+    capturedAt?: string;
+    sanitized?: boolean;
+    schemaVersion?: number;
+  };
 }
 
 export interface BrowserRoute extends BrokerageRoute {
@@ -115,7 +139,8 @@ export interface BrowserRoute extends BrokerageRoute {
   requestTypes: string[];
 }
 
-export type AccountContextBehavior = "propagates" | "mixed" | "ignored" | "not-applicable" | "stale-route";
+export type AccountContextBehavior =
+  "propagates" | "mixed" | "ignored" | "not-applicable" | "stale-route";
 
 export interface AccountContextWorkflow {
   id: string;
@@ -561,7 +586,7 @@ export const BROKERAGE_AUTH_HOSTS = Object.freeze([
   "identi.robinhood.com",
   "minerva.robinhood.com",
   "nummus.robinhood.com",
-  "phoenix.robinhood.com"
+  "phoenix.robinhood.com",
 ] as const);
 
 export class UnsafeBrokerageHostError extends Error {
@@ -579,10 +604,16 @@ export function assertBrokerageAuthDestination(url: string): URL {
     throw new UnsafeBrokerageHostError(url, "invalid URL");
   }
   if (parsed.protocol !== "https:") {
-    throw new UnsafeBrokerageHostError(url, `protocol ${parsed.protocol || "(missing)"} is not HTTPS`);
+    throw new UnsafeBrokerageHostError(
+      url,
+      `protocol ${parsed.protocol || "(missing)"} is not HTTPS`,
+    );
   }
   if (!(BROKERAGE_AUTH_HOSTS as readonly string[]).includes(parsed.hostname)) {
-    throw new UnsafeBrokerageHostError(url, `host ${parsed.hostname} is not in the Robinhood brokerage allow-list`);
+    throw new UnsafeBrokerageHostError(
+      url,
+      `host ${parsed.hostname} is not in the Robinhood brokerage allow-list`,
+    );
   }
   return parsed;
 }
@@ -656,12 +687,14 @@ export function loadUnifiedOpenApi(root = repoRootFromCli()): any {
 export function listCryptoRoutes(root = repoRootFromCli()): CryptoRoute[] {
   const spec = loadCryptoSpec(root);
   return Object.entries<Record<string, any>>(spec.paths ?? {}).map(([path, item]) => {
-    const methods = Object.keys(item).filter((key) => ["get", "post", "put", "patch", "delete"].includes(key));
+    const methods = Object.keys(item).filter((key) =>
+      ["get", "post", "put", "patch", "delete"].includes(key),
+    );
     return {
       path,
       methods,
       summary: methods.map((method) => item[method]?.summary).filter(Boolean)[0],
-      operationIds: methods.map((method) => item[method]?.operationId).filter(Boolean)
+      operationIds: methods.map((method) => item[method]?.operationId).filter(Boolean),
     };
   });
 }
@@ -677,7 +710,7 @@ const ACCOUNT_TOKEN_ALIASES: Record<string, string> = {
   n: "account_number",
   account: "account_number",
   acct: "account_number",
-  account_number: "account_number"
+  account_number: "account_number",
 };
 export function canonicalToken(name: string): string {
   return ACCOUNT_TOKEN_ALIASES[name] ?? name;
@@ -687,7 +720,10 @@ export function normalizeUrlTokens(url: string): string {
   return url.replace(/\{([^}]+)\}/g, (_m, name: string) => `{${canonicalToken(name)}}`);
 }
 /** Resolve a param value by its exact name OR by any alias that canonicalizes to the same token. */
-export function resolveParamValue(params: Record<string, string | undefined>, name: string): string | undefined {
+export function resolveParamValue(
+  params: Record<string, string | undefined>,
+  name: string,
+): string | undefined {
   const direct = params[name];
   if (direct !== undefined && direct !== "") return direct;
   const canon = canonicalToken(name);
@@ -698,9 +734,30 @@ export function resolveParamValue(params: Record<string, string | undefined>, na
   return undefined;
 }
 
+/**
+ * Captured routes are consolidated by origin + path, with observed query-string names stored in
+ * `queryKeys`. Internal callers still use executable templates such as
+ * `https://api.robinhood.com/instruments/?symbol={symbol}`. Match those templates (and concrete
+ * query URLs) to the consolidated route without falling back to a loose substring match.
+ */
+function matchesCapturedQuery(route: BrokerageRoute, query: string): boolean {
+  if (!/^https?:\/\//i.test(query) || !query.includes("?")) return false;
+  try {
+    const requested = new URL(normalizeUrlTokens(query));
+    const captured = new URL(normalizeUrlTokens(route.url));
+    if (requested.origin !== captured.origin || requested.pathname !== captured.pathname)
+      return false;
+    const declaredKeys = new Set([...(route.queryKeys ?? []), ...captured.searchParams.keys()]);
+    const requestedKeys = [...requested.searchParams.keys()];
+    return requestedKeys.length > 0 && requestedKeys.every((key) => declaredKeys.has(key));
+  } catch {
+    return false;
+  }
+}
+
 export function filterBrokerageRoutes(
   routes: BrokerageRoute[],
-  filters: { risk?: string; category?: string; host?: string; query?: string }
+  filters: { risk?: string; category?: string; host?: string; query?: string },
 ): BrokerageRoute[] {
   const query = filters.query?.toLowerCase();
   // A templated query (contains a {token}) is matched token-insensitively so a legacy {num} query still
@@ -713,8 +770,10 @@ export function filterBrokerageRoutes(
     if (filters.category && !route.categories?.includes(filters.category)) return false;
     if (filters.host && route.host !== filters.host) return false;
     if (query) {
-      const haystack = queryHasToken ? normalizeUrlTokens(route.url.toLowerCase()) : route.url.toLowerCase();
-      if (!haystack.includes(normQuery!)) return false;
+      const haystack = queryHasToken
+        ? normalizeUrlTokens(route.url.toLowerCase())
+        : route.url.toLowerCase();
+      if (!haystack.includes(normQuery!) && !matchesCapturedQuery(route, query)) return false;
     }
     return true;
   });
@@ -728,8 +787,17 @@ export const filterRobinhoodRoutes = filterBrokerageRoutes;
 // the CLI (`api-map directory`) and the MCP (`robinhood_api_map_directory`) per the alignment invariant.
 
 export const ENDPOINT_DOMAINS = [
-  "accounts", "portfolio", "marketdata", "orders", "options", "settings",
-  "money-movement", "sentiment", "ipo", "crypto", "other"
+  "accounts",
+  "portfolio",
+  "marketdata",
+  "orders",
+  "options",
+  "settings",
+  "money-movement",
+  "sentiment",
+  "ipo",
+  "crypto",
+  "other",
 ] as const;
 export type EndpointDomain = (typeof ENDPOINT_DOMAINS)[number];
 
@@ -737,18 +805,47 @@ export type EndpointDomain = (typeof ENDPOINT_DOMAINS)[number];
 export function domainForRoute(route: BrokerageRoute): EndpointDomain {
   const u = route.url.toLowerCase();
   if (/\b(ipo_access|ipo)\b/.test(u)) return "ipo";
-  if (u.includes("trading.robinhood.com") || u.includes("nummus") || /\bcrypto\b/.test(u)) return "crypto";
-  if (u.includes("midlands/news") || u.includes("midlands/ratings") || u.includes("midlands/tags") ||
-      u.includes("midlands/movers") || u.includes("midlands/search") || u.includes("earnings")) return "sentiment";
-  if (u.includes("ach") || u.includes("cashier") || u.includes("acats") || u.includes("transfers") ||
-      route.categories?.includes("money-movement")) return "money-movement";
+  if (u.includes("trading.robinhood.com") || u.includes("nummus") || /\bcrypto\b/.test(u))
+    return "crypto";
+  if (
+    u.includes("midlands/news") ||
+    u.includes("midlands/ratings") ||
+    u.includes("midlands/tags") ||
+    u.includes("midlands/movers") ||
+    u.includes("midlands/search") ||
+    u.includes("earnings")
+  )
+    return "sentiment";
+  if (
+    u.includes("ach") ||
+    u.includes("cashier") ||
+    u.includes("acats") ||
+    u.includes("transfers") ||
+    route.categories?.includes("money-movement")
+  )
+    return "money-movement";
   if (u.includes("options/")) return "options";
   if (u.includes("/orders/") || u.endsWith("/orders")) return "orders";
-  if (u.includes("marketdata") || u.includes("/quotes") || u.includes("/instruments/") || u.endsWith("/instruments")) return "marketdata";
+  if (
+    u.includes("marketdata") ||
+    u.includes("/quotes") ||
+    u.includes("/instruments/") ||
+    u.endsWith("/instruments")
+  )
+    return "marketdata";
   if (u.includes("portfolios") || u.includes("positions")) return "portfolio";
-  if (u.includes("drip") || u.includes("option_settings") || u.includes("/margin/") || u.includes("sweep") ||
-      u.includes("recurring") || u.includes("subscription") || u.includes("settings")) return "settings";
-  if (u.includes("/accounts/") || u.includes("transfer/accounts") || u.includes("/user")) return "accounts";
+  if (
+    u.includes("drip") ||
+    u.includes("option_settings") ||
+    u.includes("/margin/") ||
+    u.includes("sweep") ||
+    u.includes("recurring") ||
+    u.includes("subscription") ||
+    u.includes("settings")
+  )
+    return "settings";
+  if (u.includes("/accounts/") || u.includes("transfer/accounts") || u.includes("/user"))
+    return "accounts";
   return "other";
 }
 
@@ -767,7 +864,7 @@ const COMMAND_HINTS: Array<{ match: string; command: string }> = [
   { match: "recurring", command: "recurring" },
   { match: "midlands/news", command: "brokerage execute (sentiment read)" },
   { match: "/orders/", command: "history (read) / brokerage execute (write)" },
-  { match: "/accounts/", command: "accounts" }
+  { match: "/accounts/", command: "accounts" },
 ];
 function commandForRoute(route: BrokerageRoute): string | undefined {
   return COMMAND_HINTS.find((h) => route.url.includes(h.match))?.command;
@@ -796,7 +893,7 @@ export interface EndpointDirectory {
  */
 export function buildEndpointDirectory(
   opts: { domain?: EndpointDomain; query?: string; withFields?: boolean } = {},
-  routes: BrokerageRoute[] = loadBrokerageRoutes()
+  routes: BrokerageRoute[] = loadBrokerageRoutes(),
 ): EndpointDirectory {
   const q = opts.query?.toLowerCase();
   const coverage = { verified: 0, inferred: 0, undocumented: 0 };
@@ -817,23 +914,21 @@ export function buildEndpointDirectory(
       command: commandForRoute(route),
       fieldCount: route.fields?.length ?? 0,
       fieldsSource: src,
-      ...(opts.withFields ? { fields: route.fields ?? [] } : {})
+      ...(opts.withFields ? { fields: route.fields ?? [] } : {}),
     };
     const list = byDomain.get(domain) ?? [];
     list.push(entry);
     byDomain.set(domain, list);
   }
-  const domains = ENDPOINT_DOMAINS
-    .filter((d) => byDomain.has(d))
-    .map((domain) => {
-      const entries = byDomain.get(domain)!.sort((a, b) => a.url.localeCompare(b.url));
-      return { domain, routeCount: entries.length, entries };
-    });
+  const domains = ENDPOINT_DOMAINS.filter((d) => byDomain.has(d)).map((domain) => {
+    const entries = byDomain.get(domain)!.sort((a, b) => a.url.localeCompare(b.url));
+    return { domain, routeCount: entries.length, entries };
+  });
   return {
     generatedFrom: "api-map/brokerage-routes.json",
     totalRoutes: routes.length,
     fieldsCoverage: coverage,
-    domains
+    domains,
   };
 }
 
@@ -858,13 +953,16 @@ export function filterRecipes(recipes: Recipe[], query?: string): Recipe[] {
   if (!query) return recipes;
   const q = query.toLowerCase();
   return recipes.filter((r) =>
-    [r.id, r.intent, r.command, r.mcpTool, r.notes ?? "", ...r.triggers].join("\n").toLowerCase().includes(q)
+    [r.id, r.intent, r.command, r.mcpTool, r.notes ?? "", ...r.triggers]
+      .join("\n")
+      .toLowerCase()
+      .includes(q),
   );
 }
 
 export function filterAccountContextWorkflows(
   workflows: AccountContextWorkflow[],
-  filters: { behavior?: AccountContextBehavior; surface?: string; query?: string }
+  filters: { behavior?: AccountContextBehavior; surface?: string; query?: string },
 ): AccountContextWorkflow[] {
   const query = filters.query?.toLowerCase();
   return workflows.filter((workflow) => {
@@ -879,7 +977,7 @@ export function filterAccountContextWorkflows(
         workflow.webRoute,
         workflow.behavior,
         workflow.cliGuidance,
-        ...workflow.apiRouteFamilies
+        ...workflow.apiRouteFamilies,
       ]
         .join("\n")
         .toLowerCase()
@@ -893,15 +991,19 @@ export function filterAccountContextWorkflows(
 
 export function filterOptionsStrategyWorkflows(
   workflows: OptionsStrategyWorkflow[],
-  filters: { category?: string; aggressiveness?: string; definedRisk?: boolean; query?: string }
+  filters: { category?: string; aggressiveness?: string; definedRisk?: boolean; query?: string },
 ): OptionsStrategyWorkflow[] {
   const query = filters.query?.toLowerCase();
-  const ambiguousCoveredShortPut = Boolean(query?.includes("covered") && query.includes("short") && query.includes("put"));
+  const ambiguousCoveredShortPut = Boolean(
+    query?.includes("covered") && query.includes("short") && query.includes("put"),
+  );
   return workflows.filter((workflow) => {
     if (filters.category && workflow.category !== filters.category) return false;
     if (filters.aggressiveness && workflow.aggressiveness !== filters.aggressiveness) return false;
-    if (filters.definedRisk !== undefined && workflow.definedRisk !== filters.definedRisk) return false;
-    if (ambiguousCoveredShortPut && ["cash-secured-short-put", "covered-put"].includes(workflow.id)) return true;
+    if (filters.definedRisk !== undefined && workflow.definedRisk !== filters.definedRisk)
+      return false;
+    if (ambiguousCoveredShortPut && ["cash-secured-short-put", "covered-put"].includes(workflow.id))
+      return true;
     if (
       query &&
       ![
@@ -912,7 +1014,7 @@ export function filterOptionsStrategyWorkflows(
         workflow.volatilityView,
         workflow.cliGuidance,
         ...workflow.riskNotes,
-        ...workflow.lookupSteps
+        ...workflow.lookupSteps,
       ]
         .join("\n")
         .toLowerCase()
@@ -928,7 +1030,7 @@ function fillTemplateString(
   template: string,
   params: Record<string, string | undefined>,
   missing: Set<string>,
-  options: { encode?: boolean } = { encode: true }
+  options: { encode?: boolean } = { encode: true },
 ): string {
   return template.replace(/\{([^}]+)\}/g, (_match, name: string) => {
     const value = params[name];
@@ -940,41 +1042,55 @@ function fillTemplateString(
   });
 }
 
-function fillTemplateValue(value: unknown, params: Record<string, string | undefined>, missing: Set<string>): unknown {
-  if (typeof value === "string") return fillTemplateString(value, params, missing, { encode: false });
+function fillTemplateValue(
+  value: unknown,
+  params: Record<string, string | undefined>,
+  missing: Set<string>,
+): unknown {
+  if (typeof value === "string")
+    return fillTemplateString(value, params, missing, { encode: false });
   if (Array.isArray(value)) return value.map((item) => fillTemplateValue(item, params, missing));
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, fillTemplateValue(item, params, missing)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, fillTemplateValue(item, params, missing)]),
+    );
   }
   return value;
 }
 
 export function buildAccountContextUrl(
   workflow: AccountContextWorkflow,
-  params: Record<string, string | undefined>
+  params: Record<string, string | undefined>,
 ): BuiltWorkflowUrl {
   const missing = new Set<string>();
   const url = fillTemplateString(workflow.webRoute, params, missing);
   const warnings = riskWarnings(workflow.risk);
   if (workflow.behavior === "mixed") {
-    warnings.push("Mixed account-context behavior observed: URL may preserve account_number while some API calls use page/default context.");
+    warnings.push(
+      "Mixed account-context behavior observed: URL may preserve account_number while some API calls use page/default context.",
+    );
   } else if (workflow.behavior === "ignored") {
-    warnings.push("Observed page ignored the supplied account_number query; use explicit API account fields instead.");
+    warnings.push(
+      "Observed page ignored the supplied account_number query; use explicit API account fields instead.",
+    );
   } else if (workflow.behavior === "stale-route") {
     warnings.push("Observed as a stale/404 web route; do not automate from this URL.");
   }
-  if (!workflow.safeToAutomate) warnings.push("Not safe to automate blindly. Keep this as read-first research or an approval-gated planner.");
+  if (!workflow.safeToAutomate)
+    warnings.push(
+      "Not safe to automate blindly. Keep this as read-first research or an approval-gated planner.",
+    );
   return {
     workflow,
     url,
     missingParams: [...missing],
-    warnings
+    warnings,
   };
 }
 
 export function buildOptionsStrategyOrderPlan(
   workflow: OptionsStrategyWorkflow,
-  params: Record<string, string | undefined> = {}
+  params: Record<string, string | undefined> = {},
 ): OptionsStrategyOrderPlan {
   const missing = new Set<string>();
   const order = fillTemplateValue(workflow.orderTemplate, params, missing);
@@ -982,10 +1098,12 @@ export function buildOptionsStrategyOrderPlan(
   const warnings = [
     "Dry-run plan only. Options orders require explicit account, current option instrument URLs, limit price, quantity, and Robinhood live-write gates before sending.",
     ...riskWarnings("write-mutate"),
-    ...workflow.riskNotes
+    ...workflow.riskNotes,
   ];
   if (workflow.aggressiveness === "aggressive") {
-    warnings.push("Aggressive options posture: verify max loss, collateral/margin, assignment risk, liquidity, and expiration behavior before any live order.");
+    warnings.push(
+      "Aggressive options posture: verify max loss, collateral/margin, assignment risk, liquidity, and expiration behavior before any live order.",
+    );
   }
   return {
     workflow,
@@ -995,11 +1113,15 @@ export function buildOptionsStrategyOrderPlan(
     missingParams: [...missing],
     warnings,
     mode: "dry_run",
-    risk: "write-mutate"
+    risk: "write-mutate",
   };
 }
 
-function requireKnownValue<T extends string>(value: string | undefined, allowed: readonly T[], label: string): T | undefined {
+function requireKnownValue<T extends string>(
+  value: string | undefined,
+  allowed: readonly T[],
+  label: string,
+): T | undefined {
   if (value === undefined || value === "") return undefined;
   const normalized = value.toLowerCase() as T;
   if (!allowed.includes(normalized)) {
@@ -1028,10 +1150,14 @@ function apiUrl(path: string, query: Record<string, string | undefined> = {}): s
   return unescapeTemplatePlaceholders(url.toString());
 }
 
-export function buildOptionsContractNavigationPlan(input: OptionsContractNavigationInput): OptionsContractNavigationPlan {
+export function buildOptionsContractNavigationPlan(
+  input: OptionsContractNavigationInput,
+): OptionsContractNavigationPlan {
   const optionType = requireKnownValue(input.optionType, ["call", "put"], "option type");
   const side = requireKnownValue(input.side, ["buy", "sell"], "side");
-  const positionEffect = requireKnownValue(input.positionEffect ?? "open", ["open", "close"], "position effect") ?? "open";
+  const positionEffect =
+    requireKnownValue(input.positionEffect ?? "open", ["open", "close"], "position effect") ??
+    "open";
   const symbol = input.symbol?.trim().toUpperCase();
   const strike = input.strike?.trim();
   const expiration = input.expiration?.trim();
@@ -1043,7 +1169,7 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
     expiration,
     type: optionType,
     side,
-    strike
+    strike,
   })) {
     if (!value) missing.add(key);
   }
@@ -1061,21 +1187,23 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
     strike,
     strike_price: strike,
     position_effect: positionEffect,
-    source
+    source,
   };
   const optionInstrumentToken = input.optionInstrumentId || "{option_instrument_id}";
   const chainIdToken = input.chainId || "{chain_id}";
   const accountChainUrl = webUrl(chainPath, { account_number: input.accountNumber });
   const candidateContractUrl = webUrl(chainPath, contractQuery);
   const fragment = new URLSearchParams(
-    Object.fromEntries(Object.entries(contractQuery).filter((entry): entry is [string, string] => Boolean(entry[1])))
+    Object.fromEntries(
+      Object.entries(contractQuery).filter((entry): entry is [string, string] => Boolean(entry[1])),
+    ),
   ).toString();
   const strategyQuoteType = side === "sell" ? "short" : "long";
   const strategyQuoteUrl = apiUrl("/marketdata/options/strategy/quotes/", {
     ids: optionInstrumentToken,
     ratios: "1",
     types: strategyQuoteType,
-    include_all_sessions: "true"
+    include_all_sessions: "true",
   });
   const direction = side === "buy" ? "debit" : "credit";
 
@@ -1084,21 +1212,21 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       id: "options-chain-account-shell",
       url: accountChainUrl,
       confidence: input.accountNumber ? "observed" : "candidate",
-      purpose: "Open the Robinhood web options-chain shell with explicit account context."
+      purpose: "Open the Robinhood web options-chain shell with explicit account context.",
     },
     {
       id: "options-chain-contract-query-candidate",
       url: candidateContractUrl,
       confidence: "candidate",
       purpose:
-        "Probe whether web state accepts expiration/type/side/strike query params. The browser pass has not proven these keys."
+        "Probe whether web state accepts expiration/type/side/strike query params. The browser pass has not proven these keys.",
     },
     {
       id: "options-chain-contract-fragment-candidate",
       url: `${accountChainUrl}#${fragment}`,
       confidence: "candidate",
-      purpose: "Probe a fragment-state variant without changing the server-visible query string."
-    }
+      purpose: "Probe a fragment-state variant without changing the server-visible query string.",
+    },
   ];
 
   const apiResolutionSteps: OptionsContractNavigationPlan["apiResolutionSteps"] = [
@@ -1107,27 +1235,27 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       method: "GET",
       url: apiUrl("/instruments/", { symbol }),
       purpose: "Resolve the equity instrument UUID if it was not supplied.",
-      required: !input.equityInstrumentId
+      required: !input.equityInstrumentId,
     },
     {
       id: "resolve-chain-by-symbol",
       method: "GET",
       url: apiUrl("/options/chains/", {
         account_number: input.accountNumber,
-        underlying_symbol: symbol
+        underlying_symbol: symbol,
       }),
       purpose: "Get chain ids available to the selected account and symbol.",
-      required: !input.chainId
+      required: !input.chainId,
     },
     {
       id: "resolve-chain-by-equity-instrument",
       method: "GET",
       url: apiUrl("/options/chains/", {
         account_number: input.accountNumber,
-        equity_instrument_id: input.equityInstrumentId || "{equity_instrument_id}"
+        equity_instrument_id: input.equityInstrumentId || "{equity_instrument_id}",
       }),
       purpose: "Fallback chain lookup when symbol routing is ambiguous or for index/edge cases.",
-      required: Boolean(input.equityInstrumentId) && !input.chainId
+      required: Boolean(input.equityInstrumentId) && !input.chainId,
     },
     {
       id: "resolve-contracts-for-expiration-type",
@@ -1137,44 +1265,47 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
         chain_id: chainIdToken,
         expiration_dates: expiration,
         state: "active",
-        type: optionType
+        type: optionType,
       }),
-      purpose: "Enumerate contracts for the selected expiration and call/put side; filter by exact strike_price.",
-      required: !input.optionInstrumentId
+      purpose:
+        "Enumerate contracts for the selected expiration and call/put side; filter by exact strike_price.",
+      required: !input.optionInstrumentId,
     },
     {
       id: "quote-single-contract",
       method: "GET",
       url: apiUrl("/marketdata/options/", {
         ids: optionInstrumentToken,
-        include_all_sessions: "true"
+        include_all_sessions: "true",
       }),
       purpose: "Fetch mark/bid/ask/greeks for the exact option instrument id.",
-      required: true
+      required: true,
     },
     {
       id: "quote-single-leg-strategy",
       method: "GET",
       url: strategyQuoteUrl,
-      purpose: "Ask Robinhood for package pricing using the same ids/ratios/types shape used by spreads.",
-      required: false
+      purpose:
+        "Ask Robinhood for package pricing using the same ids/ratios/types shape used by spreads.",
+      required: false,
     },
     {
       id: "check-chain-collateral",
       method: "GET",
       url: apiUrl(`/options/chains/${encodeURIComponent(chainIdToken)}/collateral/`, {
-        account_number: input.accountNumber
+        account_number: input.accountNumber,
       }),
       purpose: "Check collateral/margin context before short or uncovered strategies.",
-      required: side === "sell" || positionEffect === "close"
+      required: side === "sell" || positionEffect === "close",
     },
     {
       id: "handoff-order-endpoint",
       method: "POST",
       url: "https://api.robinhood.com/options/orders/",
-      purpose: "Dry-run handoff only; live send still requires exact approval and the ROBINHOOD_ALLOW_LIVE_WRITE=1 write switch.",
-      required: true
-    }
+      purpose:
+        "Dry-run handoff only; live send still requires exact approval and the ROBINHOOD_ALLOW_LIVE_WRITE=1 write switch.",
+      required: true,
+    },
   ];
 
   return {
@@ -1194,7 +1325,7 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       optionPositionId: input.optionPositionId,
       aggregatePositionId: input.aggregatePositionId,
       optionOrderId: input.optionOrderId,
-      source
+      source,
     },
     webNavigation,
     queryParamCandidates: {
@@ -1204,7 +1335,7 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       side: ["side", "action"],
       strike: ["strike", "strike_price"],
       positionEffect: ["position_effect"],
-      source: ["source"]
+      source: ["source"],
     },
     apiResolutionSteps,
     exactMatchChecklist: [
@@ -1217,30 +1348,38 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       "option instrument state is active/tradable for open orders, or position exists for close orders",
       "side and position_effect are explicit; do not infer buy-to-open, sell-to-open, buy-to-close, or sell-to-close",
       "marketdata/options quote id equals the selected option instrument id",
-      "for any spread or strategy, every leg repeats the same account/chain/expiration verification"
+      "for any spread or strategy, every leg repeats the same account/chain/expiration verification",
     ],
     orderHandoff: {
       endpoint: "https://api.robinhood.com/options/orders/",
       strategyQuoteUrl,
       orderTemplate: {
-        account: input.accountNumber ? `https://api.robinhood.com/accounts/${input.accountNumber}/` : "https://api.robinhood.com/accounts/{account_number}/",
+        account: input.accountNumber
+          ? `https://api.robinhood.com/accounts/${input.accountNumber}/`
+          : "https://api.robinhood.com/accounts/{account_number}/",
         direction,
         legs: [
           {
             side,
             option: `https://api.robinhood.com/options/instruments/${optionInstrumentToken}/`,
             position_effect: positionEffect,
-            ratio_quantity: 1
-          }
+            ratio_quantity: 1,
+          },
         ],
         type: "limit",
         time_in_force: "{time_in_force}",
         trigger: "immediate",
         price: "{limit_price}",
         quantity: "{quantity}",
-        ref_id: "{ref_id}"
+        ref_id: "{ref_id}",
       },
-      requiredOrderParams: ["option_instrument_id", "limit_price", "quantity", "time_in_force", "ref_id"]
+      requiredOrderParams: [
+        "option_instrument_id",
+        "limit_price",
+        "quantity",
+        "time_in_force",
+        "ref_id",
+      ],
     },
     missingParams: [...missing],
     warnings: [
@@ -1248,18 +1387,21 @@ export function buildOptionsContractNavigationPlan(input: OptionsContractNavigat
       "Only account_number on the web options-chain shell is browser-observed. Expiration, strike, side, and type query keys are candidate probe keys, not proven URL state.",
       "For exact contracts, prefer API resolution: chains -> instruments filtered by expiration/type/strike -> marketdata/options -> strategy quote -> dry-run order body.",
       "Live options orders remain blocked unless exact user approval and ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional) are present.",
-      ...riskWarnings("write-mutate")
+      ...riskWarnings("write-mutate"),
     ],
     evidence: [
       {
         source: "api-map/account-context-browser-workflows-2026-06-02.json",
-        finding: "The options-chain web shell accepted account_number as mixed account-context routing; exact contract fields were not encoded in the location bar."
-      }
-    ]
+        finding:
+          "The options-chain web shell accepted account_number as mixed account-context routing; exact contract fields were not encoded in the location bar.",
+      },
+    ],
   };
 }
 
-export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleInput): OptionsContractLinkBundle {
+export function buildOptionsContractLinkBundle(
+  input: OptionsContractLinkBundleInput,
+): OptionsContractLinkBundle {
   const navigationPlan = buildOptionsContractNavigationPlan(input);
   const selector = navigationPlan.selector;
   const source = selector.source || "robinhood-cli-contract-links";
@@ -1267,11 +1409,15 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
   const optionInstrumentId = selector.optionInstrumentId;
   const optionInstrumentUrl =
     input.optionInstrumentUrl ??
-    (optionInstrumentId ? `https://api.robinhood.com/options/instruments/${optionInstrumentId}/` : undefined);
+    (optionInstrumentId
+      ? `https://api.robinhood.com/options/instruments/${optionInstrumentId}/`
+      : undefined);
   const farLimitOffset = input.farLimitOffset ?? 200;
   const accountScopedWebShell =
     navigationPlan.webNavigation.find((link) => link.id === "options-chain-account-shell")?.url ??
-    webUrl(`/options/chains/${encodeURIComponent(selector.symbol || "{symbol}")}`, { account_number: selector.accountNumber });
+    webUrl(`/options/chains/${encodeURIComponent(selector.symbol || "{symbol}")}`, {
+      account_number: selector.accountNumber,
+    });
 
   const quote = input.quote;
   const bid = finitePrice(quote?.bid);
@@ -1280,15 +1426,19 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
   const last = finitePrice(quote?.last);
   const hasBidAsk = Number.isFinite(bid) && Number.isFinite(ask) && ask >= bid && ask > 0;
   const naturalPrice =
-    selector.side === "sell" ? firstFinite(bid, mark, last, ask) : firstFinite(ask, mark, last, bid);
-  const midPrice = hasBidAsk ? (bid + ask) / 2 : firstFinite(mark, last, selector.side === "sell" ? bid : ask);
+    selector.side === "sell"
+      ? firstFinite(bid, mark, last, ask)
+      : firstFinite(ask, mark, last, bid);
+  const midPrice = hasBidAsk
+    ? (bid + ask) / 2
+    : firstFinite(mark, last, selector.side === "sell" ? bid : ask);
   const bidAskWidth = Number.isFinite(bid) && Number.isFinite(ask) ? ask - bid : Number.NaN;
   const normalizedQuote = quote
     ? {
         ...quote,
         naturalPrice: roundOptionMoney(naturalPrice),
         midPrice: roundOptionMoney(midPrice),
-        bidAskWidth: roundOptionMoney(bidAskWidth)
+        bidAskWidth: roundOptionMoney(bidAskWidth),
       }
     : undefined;
 
@@ -1307,9 +1457,10 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
   const webContractPageDesktop = optionInstrumentId
     ? `https://robinhood.com/options/instruments/${encodeURIComponent(optionInstrumentId)}/`
     : undefined;
-  const webContractPageDesktopAccountPinned = optionInstrumentId && selector.accountNumber
-    ? `https://robinhood.com/options/instruments/${encodeURIComponent(optionInstrumentId)}/?account_number=${encodeURIComponent(selector.accountNumber)}`
-    : undefined;
+  const webContractPageDesktopAccountPinned =
+    optionInstrumentId && selector.accountNumber
+      ? `https://robinhood.com/options/instruments/${encodeURIComponent(optionInstrumentId)}/?account_number=${encodeURIComponent(selector.accountNumber)}`
+      : undefined;
   // Recognized app route but server/version-gated as of 2026-06-03 ("update app" on latest build).
   const appContractById = optionInstrumentId
     ? `robinhood://option?option_id=${encodeURIComponent(optionInstrumentId)}`
@@ -1319,29 +1470,39 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
     .map((link) => ({ id: link.id, url: link.url, confidence: "candidate" as const }));
   const exactApiResolutionProven = Boolean(
     selector.accountNumber &&
-      selector.symbol &&
-      selector.expiration &&
-      selector.optionType &&
-      selector.side &&
-      selector.strike &&
-      chainId &&
-      optionInstrumentId
+    selector.symbol &&
+    selector.expiration &&
+    selector.optionType &&
+    selector.side &&
+    selector.strike &&
+    chainId &&
+    optionInstrumentId,
   );
 
   const warnings = [
     "Verified 2026-06-03 (on-device): the DESKTOP web contract page links.webContractPageDesktop (options/instruments/{option_instrument_id}/) opens a working order ticket for the exact contract. Mobile Safari 404s (no app handoff). The app scheme robinhood://option?option_id= is a recognized route but server/version-gated ('update app' on latest). The app option_chain deep link reads chain_id only (opens nearest-expiry ATM). No single URL preselects side+account across all platforms.",
     "This bundle is for dry-run navigation and webhook R&D. It does not send an order.",
     "Use the exact API contract id as the source of truth; use links only as navigation handoffs.",
-    ...navigationPlan.warnings
+    ...navigationPlan.warnings,
   ];
   if (appChainById) {
-    warnings.push("The app-scheme chain link is chain-id scoped, not proven exact-contract scoped.");
+    warnings.push(
+      "The app-scheme chain link is chain-id scoped, not proven exact-contract scoped.",
+    );
   }
   if (!exactApiResolutionProven) {
-    warnings.push("Exact API resolution is incomplete until chain_id and option_instrument_id are present.");
+    warnings.push(
+      "Exact API resolution is incomplete until chain_id and option_instrument_id are present.",
+    );
   }
-  if (normalizedQuote && Number.isFinite(normalizedQuote.bidAskWidth) && normalizedQuote.bidAskWidth > 1) {
-    warnings.push(`Bid/ask width is wide (${normalizedQuote.bidAskWidth.toFixed(2)}); do not tighten pricing without a fresh quote.`);
+  if (
+    normalizedQuote &&
+    Number.isFinite(normalizedQuote.bidAskWidth) &&
+    normalizedQuote.bidAskWidth > 1
+  ) {
+    warnings.push(
+      `Bid/ask width is wide (${normalizedQuote.bidAskWidth.toFixed(2)}); do not tighten pricing without a fresh quote.`,
+    );
   }
 
   return {
@@ -1353,14 +1514,14 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
       ...selector,
       underlyingInstrumentId: input.underlyingInstrumentId,
       optionInstrumentUrl,
-      occSymbol: input.occSymbol
+      occSymbol: input.occSymbol,
     },
     resolvedContract: {
       chainId,
       underlyingInstrumentId: input.underlyingInstrumentId,
       optionInstrumentId,
       optionInstrumentUrl,
-      occSymbol: input.occSymbol
+      occSymbol: input.occSymbol,
     },
     links: {
       accountScopedWebShell,
@@ -1370,14 +1531,14 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
       webContractPageDesktop,
       webContractPageDesktopAccountPinned,
       appContractById,
-      candidateExactWebQueries
+      candidateExactWebQueries,
     },
     webhookHandoff: {
       recommendedFlow: [
         "Resolve symbol, account, expiration, option type, and strike through the API.",
         "Verify the returned option_instrument_id, OCC symbol, bid/ask/mark/Greeks, and expiration.",
         "Open the account-scoped web shell or chain-id app handoff for user navigation.",
-        "If ordering is desired, build a dry-run options/orders body from the exact option_instrument_id; do not trust URL state as the order source."
+        "If ordering is desired, build a dry-run options/orders body from the exact option_instrument_id; do not trust URL state as the order source.",
       ],
       copyPastePrimary: appChainById ?? accountScopedWebShell,
       payload: {
@@ -1393,17 +1554,21 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
         occSymbol: input.occSymbol,
         accountScopedWebShell,
         appChainById,
-        webChainById
-      }
+        webChainById,
+      },
     },
     quote: normalizedQuote,
     pricingControls: {
       naturalPrice: Number.isFinite(naturalPrice) ? roundOptionMoney(naturalPrice) : undefined,
       midPrice: Number.isFinite(midPrice) ? roundOptionMoney(midPrice) : undefined,
-      safeSellProbeLimit: Number.isFinite(naturalPrice) ? roundOptionMoney(naturalPrice + farLimitOffset) : undefined,
-      safeBuyProbeLimit: Number.isFinite(naturalPrice) ? roundOptionMoney(Math.max(0.01, naturalPrice - farLimitOffset)) : undefined,
+      safeSellProbeLimit: Number.isFinite(naturalPrice)
+        ? roundOptionMoney(naturalPrice + farLimitOffset)
+        : undefined,
+      safeBuyProbeLimit: Number.isFinite(naturalPrice)
+        ? roundOptionMoney(Math.max(0.01, naturalPrice - farLimitOffset))
+        : undefined,
       farLimitOffset,
-      rule: "For sell/credit dry-run probes, use natural sell credit plus the far offset; for buy/debit probes, use max(0.01, natural debit minus the far offset)."
+      rule: "For sell/credit dry-run probes, use natural sell credit plus the far offset; for buy/debit probes, use max(0.01, natural debit minus the far offset).",
     },
     strategyQuoteUrl: input.strategyQuoteUrl,
     strategyQuote: input.strategyQuote,
@@ -1414,18 +1579,20 @@ export function buildOptionsContractLinkBundle(input: OptionsContractLinkBundleI
       {
         source: "app-link-route-research",
         finding:
-          "External option-chain navigation accepts chain_id and source. Exact strike/expiration/side fields remain API-resolved, not proven external URL params."
+          "External option-chain navigation accepts chain_id and source. Exact strike/expiration/side fields remain API-resolved, not proven external URL params.",
       },
       {
         source: "api-map/browser-cdp-routes-2026-06-02.json",
         finding:
-          "Browser-captured routes include account-context options chain APIs and an account_switcher/option_chain/{chain_uuid} surface useful for navigation research."
-      }
-    ]
+          "Browser-captured routes include account-context options chain APIs and an account_switcher/option_chain/{chain_uuid} surface useful for navigation research.",
+      },
+    ],
   };
 }
 
-export function buildOptionsQuantReviewContract(workflow: OptionsStrategyWorkflow): OptionsQuantReviewContract {
+export function buildOptionsQuantReviewContract(
+  workflow: OptionsStrategyWorkflow,
+): OptionsQuantReviewContract {
   const intent = workflow.category === "position-management" ? "close" : "open";
   const requiredChecks = [
     "account context matches the selected account_number",
@@ -1437,16 +1604,22 @@ export function buildOptionsQuantReviewContract(workflow: OptionsStrategyWorkflo
     "net Greeks are summed over signed legs with the 100-share multiplier and unit labels",
     "liquidity is reviewed: bid/ask width, volume/open interest if available, and stale quote flags",
     "expiration risks are reviewed: 0DTE/near-expiration, assignment/exercise, and dividend events",
-    "writes are dry-run unless exact approval and ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional) are present"
+    "writes are dry-run unless exact approval and ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional) are present",
   ];
   if (workflow.requiresUnderlying) {
-    requiredChecks.push("coverage is verified in the same account before treating the strategy as covered");
+    requiredChecks.push(
+      "coverage is verified in the same account before treating the strategy as covered",
+    );
   }
   if (workflow.requiresMargin || workflow.aggressiveness === "aggressive") {
-    requiredChecks.push("margin/collateral eligibility is explicitly verified; do not infer naked exposure");
+    requiredChecks.push(
+      "margin/collateral eligibility is explicitly verified; do not infer naked exposure",
+    );
   }
   if (!workflow.definedRisk) {
-    requiredChecks.push("undefined or stock-like loss shape is explicitly acknowledged by strategy id and warning");
+    requiredChecks.push(
+      "undefined or stock-like loss shape is explicitly acknowledged by strategy id and warning",
+    );
   }
   return {
     intent,
@@ -1463,7 +1636,7 @@ export function buildOptionsQuantReviewContract(workflow: OptionsStrategyWorkflo
       "quantity",
       "limit_price",
       "time_in_force",
-      "ref_id"
+      "ref_id",
     ],
     requiredChecks,
     greekMath: {
@@ -1477,61 +1650,63 @@ export function buildOptionsQuantReviewContract(workflow: OptionsStrategyWorkflo
         "state whether Robinhood returned theta per day or model theta was converted from per-year",
         "state whether vega is broker-normalized per volatility point or model vega divided by 100",
         "state whether rho is broker-normalized per rate point or model rho divided by 100",
-        "report local sensitivity separately from expiration payoff and max-loss math"
-      ]
+        "report local sensitivity separately from expiration payoff and max-loss math",
+      ],
     },
     scenarioRows: [
       {
         id: "spot-plus-minus-1pct",
         purpose: "directional delta/gamma sanity check",
-        formulaOrCheck: "approx_pnl = net_delta*dS + 0.5*net_gamma*dS^2"
+        formulaOrCheck: "approx_pnl = net_delta*dS + 0.5*net_gamma*dS^2",
       },
       {
         id: "iv-plus-minus-5vol",
         purpose: "long-vol versus short-vol check",
-        formulaOrCheck: "approx_pnl contribution = net_vega*dIV"
+        formulaOrCheck: "approx_pnl contribution = net_vega*dIV",
       },
       {
         id: "one-calendar-day",
         purpose: "theta decay/accrual check",
-        formulaOrCheck: "approx_pnl contribution = net_theta*1"
+        formulaOrCheck: "approx_pnl contribution = net_theta*1",
       },
       {
         id: "breakevens-at-expiration",
         purpose: "payoff graph consistency",
-        formulaOrCheck: "expiration payoff equals zero at every listed breakeven"
+        formulaOrCheck: "expiration payoff equals zero at every listed breakeven",
       },
       {
         id: "max-loss-boundary",
         purpose: "defined-risk proof or undefined-risk flag",
-        formulaOrCheck: "computed max_loss matches strategy payoff; undefined risk remains blocked without exact confirmation"
-      }
+        formulaOrCheck:
+          "computed max_loss matches strategy payoff; undefined risk remains blocked without exact confirmation",
+      },
     ],
     variantResolution: [
       {
         phrase: "sell a call",
-        conservativeOrModeratePath: "sell-to-close-long-option, covered-call, or call-credit-spread",
+        conservativeOrModeratePath:
+          "sell-to-close-long-option, covered-call, or call-credit-spread",
         aggressivePath: "naked-short-call",
-        rule: "ask which structure; never infer naked short-call exposure"
+        rule: "ask which structure; never infer naked short-call exposure",
       },
       {
         phrase: "sell a put",
         conservativeOrModeratePath: "cash-secured-short-put or put-credit-spread",
         aggressivePath: "naked-short-put",
-        rule: "verify cash collateral before calling it cash-secured"
+        rule: "verify cash collateral before calling it cash-secured",
       },
       {
         phrase: "covered short put",
         conservativeOrModeratePath: "cash-secured-short-put in common retail wording",
         aggressivePath: "covered-put, meaning short stock plus short put",
-        rule: "show both candidates and require the user to choose the actual structure"
+        rule: "show both candidates and require the user to choose the actual structure",
       },
       {
         phrase: "straddle or strangle",
         conservativeOrModeratePath: "long debit structure",
         aggressivePath: "short undefined-risk structure",
-        rule: "ask long or short before planning legs"
-      }
+        rule: "ask long or short before planning legs",
+      },
     ],
     hardBlockers: [
       "missing account_number",
@@ -1541,8 +1716,8 @@ export function buildOptionsQuantReviewContract(workflow: OptionsStrategyWorkflo
       "coverage or collateral claim not verified in the same account",
       "strategy quote stale or missing for a multi-leg order",
       "missing limit_price, quantity, time_in_force, or ref_id",
-      "any live write attempted without ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)"
-    ]
+      "any live write attempted without ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)",
+    ],
   };
 }
 
@@ -1551,7 +1726,9 @@ export function parseParamAssignments(values: string[] = []): Record<string, str
   for (const value of values) {
     const index = value.indexOf("=");
     if (index <= 0) {
-      throw new Error(`Invalid --param value "${value}". Use name=value, for example --param 0=abc123`);
+      throw new Error(
+        `Invalid --param value "${value}". Use name=value, for example --param 0=abc123`,
+      );
     }
     params[value.slice(0, index)] = value.slice(index + 1);
   }
@@ -1601,7 +1778,7 @@ export function planBrokerageRequest(input: {
     mode: input.dryRun ? "dry_run" : "execute",
     mutatesAccount,
     requiresAuth: input.route.risk !== "read" || input.route.host === "api.robinhood.com",
-    body: input.body
+    body: input.body,
   };
 }
 
@@ -1613,8 +1790,13 @@ export function planCryptoRequest(input: {
   body?: string;
   dryRun?: boolean;
 }): PlannedCryptoRequest {
-  if (input.route.source !== "official-crypto-openapi" || input.route.host !== "trading.robinhood.com") {
-    throw new Error("Crypto execution only supports Robinhood's official Crypto Trading API routes.");
+  if (
+    input.route.source !== "official-crypto-openapi" ||
+    input.route.host !== "trading.robinhood.com"
+  ) {
+    throw new Error(
+      "Crypto execution only supports Robinhood's official Crypto Trading API routes.",
+    );
   }
   const params = input.params ?? {};
   const missingParams: string[] = [];
@@ -1631,8 +1813,13 @@ export function planCryptoRequest(input: {
     parsed.searchParams.set(key, value);
   }
   const method = (input.method ?? inferBrokerageMethod(input.route)).toUpperCase();
-  if (input.route.methods?.length && !input.route.methods.map((routeMethod) => routeMethod.toUpperCase()).includes(method)) {
-    throw new Error(`${input.route.url} does not support ${method} in the official Crypto API map.`);
+  if (
+    input.route.methods?.length &&
+    !input.route.methods.map((routeMethod) => routeMethod.toUpperCase()).includes(method)
+  ) {
+    throw new Error(
+      `${input.route.url} does not support ${method} in the official Crypto API map.`,
+    );
   }
   const path = `${parsed.pathname}${parsed.search}`;
   const warnings = riskWarnings(input.route.risk);
@@ -1649,13 +1836,19 @@ export function planCryptoRequest(input: {
     mode: input.dryRun ? "dry_run" : "execute",
     mutatesAccount,
     requiresAuth: true,
-    body: input.body
+    body: input.body,
   };
 }
 
 export function inferBrokerageMethod(route: BrokerageRoute): string {
   if (route.methods?.length) return route.methods[0] ?? "GET";
-  if (route.risk === "destructive" || route.risk === "write-or-sensitive" || route.risk === "write-mutate" || route.risk === "write-safe") return "POST";
+  if (
+    route.risk === "destructive" ||
+    route.risk === "write-or-sensitive" ||
+    route.risk === "write-mutate" ||
+    route.risk === "write-safe"
+  )
+    return "POST";
   return "GET";
 }
 
@@ -1666,7 +1859,7 @@ export class AmbiguousRouteError extends Error {
     super(
       `Ambiguous route: "${query}" matches ${candidates.length} different routes ` +
         `(${candidates.slice(0, 8).join(", ")}${candidates.length > 8 ? ", …" : ""}). ` +
-        `Pass a more specific/exact URL — refusing to guess which one to act on.`
+        `Pass a more specific/exact URL — refusing to guess which one to act on.`,
     );
     this.name = "AmbiguousRouteError";
     this.candidates = candidates;
@@ -1683,7 +1876,10 @@ export function routeTokens(url: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const m of url.matchAll(/\{([^}]+)\}/g)) {
-    if (!seen.has(m[1])) { seen.add(m[1]); out.push(m[1]); }
+    if (!seen.has(m[1])) {
+      seen.add(m[1]);
+      out.push(m[1]);
+    }
   }
   return out;
 }
@@ -1698,7 +1894,11 @@ function sharedPrefix(a: string, b: string): number {
 /** Closest routes to a query that didn't resolve — the did-you-mean behind fail-loud errors. Matches
  *  exact substrings first, then falls back to bidirectional containment / shared-prefix so a typo like
  *  "portfoliosss" still surfaces "portfolios/". */
-export function suggestRoutes(query: string, routes: BrokerageRoute[] = loadBrokerageRoutes(), limit = 5): string[] {
+export function suggestRoutes(
+  query: string,
+  routes: BrokerageRoute[] = loadBrokerageRoutes(),
+  limit = 5,
+): string[] {
   const nq = normalizeUrlTokens(query.toLowerCase()).replace(/^https?:\/\//, "");
   const qSegs = nq.split(/[/?&={}]+/).filter((s) => s.length > 2);
   const scored = routes
@@ -1707,11 +1907,17 @@ export function suggestRoutes(query: string, routes: BrokerageRoute[] = loadBrok
       const rSegs = ru.split(/[/?&={}]+/).filter((s) => s.length > 2);
       let score = 0;
       for (const q of qSegs) {
-        if (ru.includes(q)) { score += q.length; continue; } // exact substring — strongest
+        if (ru.includes(q)) {
+          score += q.length;
+          continue;
+        } // exact substring — strongest
         let best = 0;
         for (const r of rSegs) {
           if (q.includes(r) || r.includes(q)) best = Math.max(best, Math.min(q.length, r.length));
-          else { const p = sharedPrefix(q, r); if (p >= 4) best = Math.max(best, p); } // typo-tolerant
+          else {
+            const p = sharedPrefix(q, r);
+            if (p >= 4) best = Math.max(best, p);
+          } // typo-tolerant
         }
         score += best;
       }
@@ -1741,25 +1947,77 @@ export interface RouteDescription {
   fields?: string[];
   fieldsSource?: BrokerageRoute["fieldsSource"];
   fieldsShape?: BrokerageRoute["fieldsShape"];
+  statusCodes?: number[];
+  requestContentTypes?: string[];
+  responseContentTypes?: string[];
+  requestBodySchema?: CapturedJsonSchema;
+  responseBodySchemas?: Record<string, CapturedJsonSchema>;
+  requiresAuth?: boolean;
+  observationCount?: number;
+  verificationStatus?: RouteVerificationStatus;
+  source?: string;
+  seenOn?: string[];
+  provenance?: BrokerageRoute["provenance"];
   warnings?: string[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function fieldsFromCapturedSchema(
+  route: BrokerageRoute,
+): Pick<RouteDescription, "fields" | "fieldsSource" | "fieldsShape"> {
+  const queue: unknown[] = Object.values(route.responseBodySchemas ?? {});
+  while (queue.length) {
+    const schema = queue.shift();
+    if (!isRecord(schema)) continue;
+    if (Array.isArray(schema.anyOf)) queue.push(...schema.anyOf);
+    if (schema.type === "object" && isRecord(schema.properties)) {
+      return {
+        fields: Object.keys(schema.properties).sort(),
+        fieldsSource: "verified",
+        fieldsShape: "object",
+      };
+    }
+    if (schema.type === "array") {
+      const items = schema.items;
+      if (isRecord(items) && items.type === "object" && isRecord(items.properties)) {
+        return {
+          fields: Object.keys(items.properties).sort(),
+          fieldsSource: "verified",
+          fieldsShape: "list",
+        };
+      }
+      if (items !== undefined) queue.push(items);
+    }
+  }
+  return {
+    fields: route.fields ?? [],
+    fieldsSource: route.fieldsSource,
+    fieldsShape: route.fieldsShape,
+  };
 }
 
 /** A self-describing view of a route: what it needs, what it returns, and the command that drives it. */
 export function describeRoute(
   query: string,
   method?: string,
-  routes: BrokerageRoute[] = loadBrokerageRoutes()
+  routes: BrokerageRoute[] = loadBrokerageRoutes(),
 ): RouteDescription {
   const matches = filterBrokerageRoutes(routes, { query });
-  if (matches.length === 0) return { query, resolved: false, suggestions: suggestRoutes(query, routes) };
+  if (matches.length === 0)
+    return { query, resolved: false, suggestions: suggestRoutes(query, routes) };
   let route: BrokerageRoute | undefined;
   try {
     route = selectRouteByQueryAndMethod(matches, query, method);
   } catch (e: any) {
-    if (e instanceof AmbiguousRouteError) return { query, resolved: false, ambiguous: e.candidates };
+    if (e instanceof AmbiguousRouteError)
+      return { query, resolved: false, ambiguous: e.candidates };
     throw e;
   }
   if (!route) return { query, resolved: false, suggestions: suggestRoutes(query, routes) };
+  const capturedFields = fieldsFromCapturedSchema(route);
   return {
     query,
     resolved: true,
@@ -1769,22 +2027,37 @@ export function describeRoute(
     command: commandForRoute(route),
     requiredTokens: routeTokens(route.url),
     queryKeys: route.queryKeys ?? [],
-    fields: route.fields ?? [],
-    fieldsSource: route.fieldsSource,
-    fieldsShape: route.fieldsShape,
-    warnings: riskWarnings(route.risk)
+    ...capturedFields,
+    statusCodes: route.statusCodes ?? [],
+    requestContentTypes: route.requestContentTypes ?? [],
+    responseContentTypes: route.responseContentTypes ?? [],
+    requestBodySchema: route.requestBodySchema,
+    responseBodySchemas: route.responseBodySchemas,
+    requiresAuth: route.requiresAuth,
+    observationCount: route.observationCount,
+    verificationStatus: route.verificationStatus,
+    source: route.source,
+    seenOn: route.seenOn ?? [],
+    provenance: route.provenance,
+    warnings: riskWarnings(route.risk),
   };
 }
 
 /** Fail-loud, actionable message for missing params on a resolved route. */
 export function missingParamHint(url: string, missing: string[]): string {
-  const tokens = routeTokens(url).map((t) => `{${t}}`).join(", ") || "none";
+  const tokens =
+    routeTokens(url)
+      .map((t) => `{${t}}`)
+      .join(", ") || "none";
   const example = missing[0] ? ` Example: --param ${missing[0]}=<value>.` : "";
   return `Missing params for ${url}: ${missing.join(", ")}. Route tokens: ${tokens}.${example} (Legacy account aliases num=/account= are also accepted.)`;
 }
 
 /** Fail-loud "no match" message with did-you-mean candidates. */
-export function noMatchHint(query: string, routes: BrokerageRoute[] = loadBrokerageRoutes()): string {
+export function noMatchHint(
+  query: string,
+  routes: BrokerageRoute[] = loadBrokerageRoutes(),
+): string {
   const suggestions = suggestRoutes(query, routes);
   const tail = suggestions.length
     ? ` Did you mean: ${suggestions.join(" | ")}`
@@ -1811,14 +2084,16 @@ export function noMatchHint(query: string, routes: BrokerageRoute[] = loadBroker
 export function selectRouteByQueryAndMethod<T extends { url: string; methods?: string[] }>(
   matches: T[],
   query: string,
-  method?: string
+  method?: string,
 ): T | undefined {
   const candidates = matches.filter((candidate) => candidate.url === query);
   const pool = candidates.length > 0 ? candidates : matches;
   let eligible = pool;
   if (method) {
     const requested = method.toUpperCase();
-    const exact = pool.filter((candidate) => candidate.methods?.map((item) => item.toUpperCase()).includes(requested));
+    const exact = pool.filter((candidate) =>
+      candidate.methods?.map((item) => item.toUpperCase()).includes(requested),
+    );
     if (exact.length > 0) {
       eligible = exact;
     } else {
@@ -1850,7 +2125,10 @@ export function methodIsWrite(method?: string): boolean {
  * Resolve route provenance conservatively. Explicit metadata wins. Legacy entries are derived from
  * their capture notes so the migration can be incremental without silently blessing unknown writes.
  */
-export function routeVerificationStatus(route: BrokerageRoute, method?: string): RouteVerificationStatus {
+export function routeVerificationStatus(
+  route: BrokerageRoute,
+  method?: string,
+): RouteVerificationStatus {
   const normalized = (method ?? inferBrokerageMethod(route)).toUpperCase();
   const methodSpecific = route.verificationStatusByMethod?.[normalized];
   if (methodSpecific) return methodSpecific;
@@ -1861,7 +2139,8 @@ export function routeVerificationStatus(route: BrokerageRoute, method?: string):
   if (normalized === "DELETE" && evidence.includes("delete unverified")) return "inferred";
   if (evidence.includes("inferred") || evidence.includes("unverified")) return "inferred";
   if (/\b(live[-_ ]?verified|verified live|verified 20)/.test(evidence)) return "live_verified";
-  if (/\b(cdp|capture|captured|manual|wire-writes|self-extension)\b/.test(evidence)) return "captured";
+  if (/\b(cdp|capture|captured|manual|wire-writes|self-extension)\b/.test(evidence))
+    return "captured";
   return methodIsWrite(normalized) || riskIsWrite(route.risk) ? "inferred" : "captured";
 }
 
@@ -1908,9 +2187,15 @@ export interface WriteExecutionPolicy extends LiveWriteGate {
 // forced to dry-run even when the master switch is on (mirrors the official RH MCP's dedicated-
 // account isolation). Unset / empty → no restriction (behavior unchanged).
 export function parseAllowedAccounts(env: NodeJS.ProcessEnv = process.env): string[] {
-  return (env.ROBINHOOD_ALLOWED_ACCOUNT ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return (env.ROBINHOOD_ALLOWED_ACCOUNT ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
-export function isAccountAllowed(accountNumber: string, env: NodeJS.ProcessEnv = process.env): boolean {
+export function isAccountAllowed(
+  accountNumber: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
   const allow = parseAllowedAccounts(env);
   return allow.length === 0 || allow.includes(String(accountNumber).trim());
 }
@@ -1920,7 +2205,10 @@ export function isAccountAllowed(accountNumber: string, env: NodeJS.ProcessEnv =
 // where the account isn't passed explicitly. Recognizes params (account_number/account/num) and
 // body.account (the /accounts/{num}/ URL) or body.account_number. undefined when none is found —
 // the lock then can't apply (e.g. account-less cancels), which is documented as a known gap.
-export function accountFromWriteRequest(body?: unknown, params?: Record<string, string>): string | undefined {
+export function accountFromWriteRequest(
+  body?: unknown,
+  params?: Record<string, string>,
+): string | undefined {
   const p = params ?? {};
   for (const k of ["account_number", "account", "num"]) {
     const v = p[k];
@@ -1942,25 +2230,44 @@ export function accountFromWriteRequest(body?: unknown, params?: Record<string, 
 // whose notional exceeds the per-order cap, or would push cumulative session spend past the session
 // cap, throws NotionalCapError unless overridden. Dry-runs/previews are never blocked.
 let sessionNotionalSpent = 0;
-export function getSessionNotionalSpent(): number { return sessionNotionalSpent; }
-export function resetSessionNotionalSpent(): void { sessionNotionalSpent = 0; }
-export class NotionalCapError extends Error {
-  constructor(message: string) { super(message); this.name = "NotionalCapError"; }
+export function getSessionNotionalSpent(): number {
+  return sessionNotionalSpent;
 }
-export function checkNotionalCaps(notionalDollars: number, opts: { override?: boolean; env?: NodeJS.ProcessEnv } = {}): void {
+export function resetSessionNotionalSpent(): void {
+  sessionNotionalSpent = 0;
+}
+export class NotionalCapError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NotionalCapError";
+  }
+}
+export function checkNotionalCaps(
+  notionalDollars: number,
+  opts: { override?: boolean; env?: NodeJS.ProcessEnv } = {},
+): void {
   if (opts.override) return;
   const env = opts.env ?? process.env;
   const perOrder = Number(env.ROBINHOOD_MAX_ORDER_DOLLARS);
   if (Number.isFinite(perOrder) && perOrder > 0 && notionalDollars > perOrder) {
-    throw new NotionalCapError(`Order notional $${notionalDollars.toFixed(2)} exceeds ROBINHOOD_MAX_ORDER_DOLLARS=$${perOrder.toFixed(2)}. Raise the cap or pass overrideCap to bypass.`);
+    throw new NotionalCapError(
+      `Order notional $${notionalDollars.toFixed(2)} exceeds ROBINHOOD_MAX_ORDER_DOLLARS=$${perOrder.toFixed(2)}. Raise the cap or pass overrideCap to bypass.`,
+    );
   }
   const perSession = Number(env.ROBINHOOD_MAX_SESSION_DOLLARS);
-  if (Number.isFinite(perSession) && perSession > 0 && sessionNotionalSpent + notionalDollars > perSession) {
-    throw new NotionalCapError(`This order ($${notionalDollars.toFixed(2)}) would push session spend to $${(sessionNotionalSpent + notionalDollars).toFixed(2)}, over ROBINHOOD_MAX_SESSION_DOLLARS=$${perSession.toFixed(2)}. Raise the cap or pass overrideCap to bypass.`);
+  if (
+    Number.isFinite(perSession) &&
+    perSession > 0 &&
+    sessionNotionalSpent + notionalDollars > perSession
+  ) {
+    throw new NotionalCapError(
+      `This order ($${notionalDollars.toFixed(2)}) would push session spend to $${(sessionNotionalSpent + notionalDollars).toFixed(2)}, over ROBINHOOD_MAX_SESSION_DOLLARS=$${perSession.toFixed(2)}. Raise the cap or pass overrideCap to bypass.`,
+    );
   }
 }
 export function recordSessionNotional(notionalDollars: number): void {
-  if (Number.isFinite(notionalDollars) && notionalDollars > 0) sessionNotionalSpent += notionalDollars;
+  if (Number.isFinite(notionalDollars) && notionalDollars > 0)
+    sessionNotionalSpent += notionalDollars;
 }
 
 export function resolveLiveWriteGate(input: {
@@ -1991,7 +2298,7 @@ export function resolveLiveWriteGate(input: {
     return {
       allowed: false,
       forcedDryRun: true,
-      reason: `Account ${input.accountNumber} is not in ROBINHOOD_ALLOWED_ACCOUNT (${parseAllowedAccounts(env).join(", ") || "empty"}) — forced to dry-run even with the live switch on. Add it to the allow-list to write live to it.`
+      reason: `Account ${input.accountNumber} is not in ROBINHOOD_ALLOWED_ACCOUNT (${parseAllowedAccounts(env).join(", ") || "empty"}) — forced to dry-run even with the live switch on. Add it to the allow-list to write live to it.`,
     };
   }
   // Single master switch: ROBINHOOD_ALLOW_LIVE_WRITE=1 turns live writes ON by default,
@@ -2004,7 +2311,7 @@ export function resolveLiveWriteGate(input: {
     allowed: false,
     forcedDryRun: true,
     reason:
-      "Live writes are OFF — forced to dry-run. Turn them on by setting ROBINHOOD_ALLOW_LIVE_WRITE=1 in the environment (locally it lives in .env / the MCP registration). Pass --dry-run / dryRun:true to preview a single call even when live writes are on."
+      "Live writes are OFF — forced to dry-run. Turn them on by setting ROBINHOOD_ALLOW_LIVE_WRITE=1 in the environment (locally it lives in .env / the MCP registration). Pass --dry-run / dryRun:true to preview a single call even when live writes are on.",
   };
 }
 
@@ -2027,31 +2334,44 @@ export function resolveWriteExecution(input: {
     dryRun: Boolean(input.dryRun),
     liveWrite: input.liveWrite,
     accountNumber: input.accountNumber,
-    env: input.env
+    env: input.env,
   });
   const dryRun = Boolean(input.dryRun) || gate.forcedDryRun;
   return { ...gate, dryRun, live: !dryRun };
 }
 
 export function riskWriteWarning(risk: RouteRisk, url: string): string | undefined {
-  if (risk === "write-safe") return `[WRITES TO LIVE ROBINHOOD] ${url} sends a live non-account-state write such as telemetry or preference acknowledgement.`;
-  if (risk === "write-mutate" || risk === "write-or-sensitive") return `[WRITES TO LIVE ROBINHOOD] ${url} may modify your Robinhood account.`;
-  if (risk === "destructive") return `[WRITES TO LIVE ROBINHOOD] ${url} can cancel, unlink, disable, or destroy account state.`;
+  if (risk === "write-safe")
+    return `[WRITES TO LIVE ROBINHOOD] ${url} sends a live non-account-state write such as telemetry or preference acknowledgement.`;
+  if (risk === "write-mutate" || risk === "write-or-sensitive")
+    return `[WRITES TO LIVE ROBINHOOD] ${url} may modify your Robinhood account.`;
+  if (risk === "destructive")
+    return `[WRITES TO LIVE ROBINHOOD] ${url} can cancel, unlink, disable, or destroy account state.`;
   return undefined;
 }
 
 export function riskWarnings(risk: RouteRisk): string[] {
   switch (risk) {
     case "destructive":
-      return ["Destructive route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)."];
+      return [
+        "Destructive route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional).",
+      ];
     case "write-mutate":
-      return ["Write route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)."];
+      return [
+        "Write route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional).",
+      ];
     case "write-safe":
-      return ["Non-account-state write route such as telemetry or acknowledgement. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)."];
+      return [
+        "Non-account-state write route such as telemetry or acknowledgement. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional).",
+      ];
     case "write-or-sensitive":
-      return ["Potential write or highly sensitive route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional)."];
+      return [
+        "Potential write or highly sensitive route. Dry-run by default; a live write needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional).",
+      ];
     case "sensitive-read":
-      return ["Sensitive read route. Redact account identifiers, positions, documents, and tax data in shared artifacts."];
+      return [
+        "Sensitive read route. Redact account identifiers, positions, documents, and tax data in shared artifacts.",
+      ];
     default:
       return [];
   }
@@ -2061,7 +2381,7 @@ function authFromEnv(options: ExecuteBrokerageOptions) {
   return {
     token: options.token ?? process.env.ROBINHOOD_BROKERAGE_TOKEN,
     cookie: options.cookie ?? process.env.ROBINHOOD_COOKIE,
-    csrfToken: options.csrfToken ?? process.env.ROBINHOOD_CSRF_TOKEN
+    csrfToken: options.csrfToken ?? process.env.ROBINHOOD_CSRF_TOKEN,
   };
 }
 
@@ -2075,7 +2395,9 @@ function cryptoAuthFromEnv(options: ExecuteCryptoOptions) {
   return {
     apiKey: options.apiKey ?? process.env.ROBINHOOD_CRYPTO_API_KEY ?? process.env.ROBINHOOD_API_KEY,
     privateKeyBase64:
-      options.privateKeyBase64 ?? process.env.ROBINHOOD_CRYPTO_PRIVATE_KEY_B64 ?? process.env.ROBINHOOD_PRIVATE_KEY_B64
+      options.privateKeyBase64 ??
+      process.env.ROBINHOOD_CRYPTO_PRIVATE_KEY_B64 ??
+      process.env.ROBINHOOD_PRIVATE_KEY_B64,
   };
 }
 
@@ -2084,11 +2406,17 @@ function cryptoAuthFromEnv(options: ExecuteCryptoOptions) {
 // request can be retried once. Returns undefined if the refresh produced nothing.
 // Runs in the CLI's own (TCC-permitted) context, so no daemon / Full Disk Access
 // grant is needed. See scripts/refresh-auth.sh for the disk-read rationale.
-export function resolveBash(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string {
+export function resolveBash(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   // Explicit, absolute override (validated) — never PATH-resolve on a token-handling path.
   const override = env.ROBINHOOD_BASH_PATH;
   if (override) {
-    if (!isAbsolute(override)) throw new Error(`ROBINHOOD_BASH_PATH must be an ABSOLUTE path (got: ${override}) — never PATH-resolve bash on a token-handling path.`);
+    if (!isAbsolute(override))
+      throw new Error(
+        `ROBINHOOD_BASH_PATH must be an ABSOLUTE path (got: ${override}) — never PATH-resolve bash on a token-handling path.`,
+      );
     if (existsSync(override)) return override;
     throw new Error(`ROBINHOOD_BASH_PATH is set but not found: ${override}`);
   }
@@ -2109,7 +2437,7 @@ export function resolveBash(platform: NodeJS.Platform = process.platform, env: N
     // brokerage token being written. Fail loud instead.
     throw new Error(
       "Cannot locate a trusted bash (Git for Windows not found at the standard paths). " +
-      "Install Git for Windows, or set ROBINHOOD_BASH_PATH to an absolute bash.exe path."
+        "Install Git for Windows, or set ROBINHOOD_BASH_PATH to an absolute bash.exe path.",
     );
   }
   return "/bin/bash";
@@ -2126,7 +2454,10 @@ export function tokenFromEnvFile(envPath: string = join(repoRoot(), ".env")): st
       const t = line.trim();
       if (!t || t.startsWith("#")) continue;
       if (t.startsWith("ROBINHOOD_BROKERAGE_TOKEN=")) {
-        const val = t.slice("ROBINHOOD_BROKERAGE_TOKEN=".length).trim().replace(/^["']|["']$/g, "");
+        const val = t
+          .slice("ROBINHOOD_BROKERAGE_TOKEN=".length)
+          .trim()
+          .replace(/^["']|["']$/g, "");
         return val || undefined;
       }
     }
@@ -2144,7 +2475,7 @@ export function tokenFromEnvFile(envPath: string = join(repoRoot(), ".env")): st
 // scrape:false (tests / injected-fetch paths) skips the Chrome subprocess but still re-reads disk.
 export function refreshBrokerageToken(
   current?: string,
-  opts: { scrape?: boolean; envPath?: string } = {}
+  opts: { scrape?: boolean; envPath?: string } = {},
 ): string | undefined {
   const envPath = opts.envPath ?? join(repoRoot(), ".env");
   const onDisk = tokenFromEnvFile(envPath);
@@ -2193,14 +2524,25 @@ export interface RobinhoodErrorClassification {
  * overnight-BP, min-tick, OTC reject, app-version gate) so retry/recovery/messaging is uniform
  * and testable. Pure — no I/O. Use for both human messaging and programmatic retry decisions.
  */
-export function classifyRobinhoodError(status: number, bodyText: string, headers?: Headers): RobinhoodErrorClassification {
+export function classifyRobinhoodError(
+  status: number,
+  bodyText: string,
+  headers?: Headers,
+): RobinhoodErrorClassification {
   if (status >= 200 && status < 300) return { kind: "ok", status, detail: "", retryable: false };
   const body = (bodyText || "").toString();
   const lower = body.toLowerCase();
   const detail = (() => {
     try {
       const j = JSON.parse(body);
-      return String(j.detail ?? (Array.isArray(j.non_field_errors) ? j.non_field_errors.join("; ") : "") ?? j.reject_reason ?? "").trim() || body.slice(0, 200);
+      return (
+        String(
+          j.detail ??
+            (Array.isArray(j.non_field_errors) ? j.non_field_errors.join("; ") : "") ??
+            j.reject_reason ??
+            "",
+        ).trim() || body.slice(0, 200)
+      );
     } catch {
       return body.slice(0, 200);
     }
@@ -2208,15 +2550,72 @@ export function classifyRobinhoodError(status: number, bodyText: string, headers
   if (status === 429 || lower.includes("too many requests") || lower.includes("rate limit")) {
     const retryHeader = Number(headers?.get?.("retry-after"));
     const m = /(\d+)\s*second/.exec(body);
-    const secs = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : m ? parseInt(m[1], 10) : 30;
-    return { kind: "rate_limited", status, detail, retryable: true, retryAfterMs: Math.min(120, secs + 2) * 1000, hint: `Rate-limited; wait ${secs}s and retry the SAME ref_id (nothing was placed).` };
+    const secs =
+      Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : m ? parseInt(m[1], 10) : 30;
+    return {
+      kind: "rate_limited",
+      status,
+      detail,
+      retryable: true,
+      retryAfterMs: Math.min(120, secs + 2) * 1000,
+      hint: `Rate-limited; wait ${secs}s and retry the SAME ref_id (nothing was placed).`,
+    };
   }
-  if (lower.includes("overnight buying power")) return { kind: "overnight_buying_power", status, detail, retryable: false, hint: "GTC option opens are gated by OVERNIGHT buying power, not regular BP. Use a day order or fund the account." };
-  if (lower.includes("buying power") || lower.includes("not enough") || lower.includes("only purchase 0")) return { kind: "insufficient_buying_power", status, detail, retryable: false, hint: "Insufficient buying power for this order size." };
-  if (lower.includes("min tick") || lower.includes("does not satisfy")) return { kind: "below_min_tick", status, detail, retryable: false, hint: "Price below the chain cutoff must use below_tick (read options/chains/{id} min_ticks; often $0.05)." };
-  if (lower.includes("market order") && (lower.includes("otc") || lower.includes("not eligible"))) return { kind: "otc_market_order", status, detail, retryable: false, hint: "OTC names reject market/fractional orders — use whole shares + a marketable limit." };
-  if (lower.includes("app version") || lower.includes("important stock trading updates")) return { kind: "app_version_gate", status, detail, retryable: false, hint: "Equity orders need order_form_version:7 + the web headers (the engine sends these). If Robinhood rotated the web build, set ROBINHOOD_WEB_APP_VERSION to the current x-robinhood-web-app-version header (grab it from any logged-in robinhood.com request) and retry." };
-  if (status === 401 || status === 403) return { kind: "unauthorized", status, detail, retryable: status === 401, hint: status === 401 ? "401 — brokerage token rejected. `pnpm auth:refresh` reads a logged-in robinhood.com Chrome session ON THIS machine and rewrites .env; if this box has no Robinhood login, sync a fresh .env onto it. The engine re-reads .env on a 401, so an updated file is picked up without a restart." : "Forbidden (entitlement/permission)." };
+  if (lower.includes("overnight buying power"))
+    return {
+      kind: "overnight_buying_power",
+      status,
+      detail,
+      retryable: false,
+      hint: "GTC option opens are gated by OVERNIGHT buying power, not regular BP. Use a day order or fund the account.",
+    };
+  if (
+    lower.includes("buying power") ||
+    lower.includes("not enough") ||
+    lower.includes("only purchase 0")
+  )
+    return {
+      kind: "insufficient_buying_power",
+      status,
+      detail,
+      retryable: false,
+      hint: "Insufficient buying power for this order size.",
+    };
+  if (lower.includes("min tick") || lower.includes("does not satisfy"))
+    return {
+      kind: "below_min_tick",
+      status,
+      detail,
+      retryable: false,
+      hint: "Price below the chain cutoff must use below_tick (read options/chains/{id} min_ticks; often $0.05).",
+    };
+  if (lower.includes("market order") && (lower.includes("otc") || lower.includes("not eligible")))
+    return {
+      kind: "otc_market_order",
+      status,
+      detail,
+      retryable: false,
+      hint: "OTC names reject market/fractional orders — use whole shares + a marketable limit.",
+    };
+  if (lower.includes("app version") || lower.includes("important stock trading updates"))
+    return {
+      kind: "app_version_gate",
+      status,
+      detail,
+      retryable: false,
+      hint: "Equity orders need order_form_version:7 + the web headers (the engine sends these). If Robinhood rotated the web build, set ROBINHOOD_WEB_APP_VERSION to the current x-robinhood-web-app-version header (grab it from any logged-in robinhood.com request) and retry.",
+    };
+  if (status === 401 || status === 403)
+    return {
+      kind: "unauthorized",
+      status,
+      detail,
+      retryable: status === 401,
+      hint:
+        status === 401
+          ? "401 — brokerage token rejected. `pnpm auth:refresh` reads a logged-in robinhood.com Chrome session ON THIS machine and rewrites .env; if this box has no Robinhood login, sync a fresh .env onto it. The engine re-reads .env on a 401, so an updated file is picked up without a restart."
+          : "Forbidden (entitlement/permission).",
+    };
   if (status === 404) return { kind: "not_found", status, detail, retryable: false };
   if (status === 400) return { kind: "bad_request", status, detail, retryable: false };
   return { kind: "unknown", status, detail, retryable: false };
@@ -2229,15 +2628,21 @@ async function waitWithAbort(wait: Promise<void>, signal?: AbortSignal): Promise
     const aborted = () => reject(signal.reason);
     signal.addEventListener("abort", aborted, { once: true });
     wait.then(
-      () => { signal.removeEventListener("abort", aborted); resolve(); },
-      (error) => { signal.removeEventListener("abort", aborted); reject(error); }
+      () => {
+        signal.removeEventListener("abort", aborted);
+        resolve();
+      },
+      (error) => {
+        signal.removeEventListener("abort", aborted);
+        reject(error);
+      },
     );
   });
 }
 
 export async function executeBrokerageRequest(
   plan: PlannedBrokerageRequest,
-  options: ExecuteBrokerageOptions = {}
+  options: ExecuteBrokerageOptions = {},
 ): Promise<ExecuteBrokerageResult> {
   // Defense in depth: route-map compromise or a malformed injected plan must never turn the
   // private bearer/cookie into an arbitrary-host credential. Validate before even a dry-run so
@@ -2256,7 +2661,7 @@ export async function executeBrokerageRequest(
       requiresAuth: plan.requiresAuth,
       contentType: "application/json",
       body: JSON.stringify(plan, null, 2),
-      truncated: false
+      truncated: false,
     };
   }
 
@@ -2269,32 +2674,33 @@ export async function executeBrokerageRequest(
   const { cookie, csrfToken } = authFromEnv(options);
   // Cold start: no token at all — try a browser-free disk refresh before giving up,
   // so a fresh MCP/CLI process self-arms without any manual setup.
-  if (
-    plan.requiresAuth &&
-    !token &&
-    !cookie &&
-    options.autoRefresh !== false
-  ) {
-    const fresh = refreshBrokerageToken(undefined, { scrape: options.fetchImpl === undefined, envPath: options.envPath });
+  if (plan.requiresAuth && !token && !cookie && options.autoRefresh !== false) {
+    const fresh = refreshBrokerageToken(undefined, {
+      scrape: options.fetchImpl === undefined,
+      envPath: options.envPath,
+    });
     if (fresh) {
       token = fresh;
       process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
     }
   }
   if (plan.requiresAuth && !token && !cookie) {
-    throw new Error("Missing auth: set ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE outside the repo.");
+    throw new Error(
+      "Missing auth: set ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE outside the repo.",
+    );
   }
 
   const body = options.body ?? plan.body;
   const serializedBody = stringifyBody(body);
   const fetchImpl = options.fetchImpl ?? fetch;
   const envTimeout = Number(process.env.ROBINHOOD_REQUEST_TIMEOUT_MS);
-  const requestedTimeout = options.timeoutMs ?? (Number.isFinite(envTimeout) && envTimeout >= 0 ? envTimeout : 30_000);
+  const requestedTimeout =
+    options.timeoutMs ?? (Number.isFinite(envTimeout) && envTimeout >= 0 ? envTimeout : 30_000);
   const requestSignal = (): AbortSignal | undefined => {
     const timeoutSignal = requestedTimeout > 0 ? AbortSignal.timeout(requestedTimeout) : undefined;
     return options.signal && timeoutSignal
       ? AbortSignal.any([options.signal, timeoutSignal])
-      : options.signal ?? timeoutSignal;
+      : (options.signal ?? timeoutSignal);
   };
 
   const send = (authToken?: string) => {
@@ -2304,14 +2710,17 @@ export async function executeBrokerageRequest(
     // (captured live 2026-06-03) clear that gate. Versions rotate — override via env.
     const headers: Record<string, string> = {
       accept: "application/json, text/plain, */*",
-      "user-agent": process.env.ROBINHOOD_USER_AGENT ?? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+      "user-agent":
+        process.env.ROBINHOOD_USER_AGENT ??
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
       origin: "https://robinhood.com",
       referer: "https://robinhood.com/",
       "x-robinhood-api-version": process.env.ROBINHOOD_API_VERSION ?? "1.431.4",
       // Fallback rotates with Robinhood's web builds — refresh via `pnpm version:refresh`
       // (CDP-scrapes the login page; no auth needed) or set ROBINHOOD_WEB_APP_VERSION.
-      "x-robinhood-web-app-version": process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.24.3589+55c48b8f7a1c",
-      "x-hyper-ex": "enabled"
+      "x-robinhood-web-app-version":
+        process.env.ROBINHOOD_WEB_APP_VERSION ?? "2026.24.3589+55c48b8f7a1c",
+      "x-hyper-ex": "enabled",
     };
     if (authToken) headers.authorization = `Bearer ${authToken}`;
     if (cookie) headers.cookie = cookie;
@@ -2321,7 +2730,7 @@ export async function executeBrokerageRequest(
       method: plan.method,
       headers,
       body: plan.method === "GET" ? undefined : serializedBody,
-      signal: requestSignal()
+      signal: requestSignal(),
     });
   };
 
@@ -2331,15 +2740,14 @@ export async function executeBrokerageRequest(
   // A 401 means the token expired and the request was rejected (never executed),
   // so retrying after a refresh is safe even for writes. Only self-heal real token
   // auth — skip for cookie-only or injected test fetch impls.
-  if (
-    response.status === 401 &&
-    token &&
-    options.autoRefresh !== false
-  ) {
+  if (response.status === 401 && token && options.autoRefresh !== false) {
     // Re-read the .env file first — an out-of-band refresh / peer sync may have written a
     // fresh token that this long-running process never loaded — then fall back to a local
     // Chrome scrape. The disk re-read runs even with an injected fetch; the scrape does not.
-    const fresh = refreshBrokerageToken(token, { scrape: options.fetchImpl === undefined, envPath: options.envPath });
+    const fresh = refreshBrokerageToken(token, {
+      scrape: options.fetchImpl === undefined,
+      envPath: options.envPath,
+    });
     if (fresh && fresh !== token) {
       process.env.ROBINHOOD_BROKERAGE_TOKEN = fresh;
       currentToken = fresh;
@@ -2354,7 +2762,8 @@ export async function executeBrokerageRequest(
   // the server-directed cooldown is idempotent and safe even for writes. Bounded; skipped for injected
   // test fetch impls and when autoRetry:false. Uses classifyRobinhoodError to read the cooldown.
   if (options.autoRetry !== false) {
-    const sleep = options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const sleep =
+      options.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     const maxRetries = options.maxRateLimitRetries ?? 3;
     let attempts = 0;
     while (response.status === 429 && attempts < maxRetries) {
@@ -2369,7 +2778,7 @@ export async function executeBrokerageRequest(
       text = await response.text();
     }
   }
-  const max = options.fullBody ? Number.POSITIVE_INFINITY : options.maxBodyBytes ?? 4000;
+  const max = options.fullBody ? Number.POSITIVE_INFINITY : (options.maxBodyBytes ?? 4000);
   const truncated = text.length > max;
   return {
     ok: response.ok,
@@ -2382,7 +2791,7 @@ export async function executeBrokerageRequest(
     requiresAuth: plan.requiresAuth,
     contentType: response.headers.get("content-type"),
     body: truncated ? text.slice(0, max) : text,
-    truncated
+    truncated,
   };
 }
 
@@ -2395,12 +2804,21 @@ export async function brokerageGetJson(
   url: string,
   params: Record<string, string> = {},
   query: Record<string, string> = {},
-  options: ExecuteBrokerageOptions = {}
+  options: ExecuteBrokerageOptions = {},
 ): Promise<any> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: url });
   const route = selectRouteByQueryAndMethod(matches, url, "GET");
   if (!route) throw new Error(`${noMatchHint(url)} (rebuild the map after edits — AGENTS.md §3.)`);
-  const plan = planBrokerageRequest({ route, method: "GET", params, dryRun: false });
+  // The capture merger intentionally consolidates `path?symbol=...`, `path?ids=...`, etc. into one
+  // path route plus `queryKeys`. Once that approved query shape matched, execute the caller's
+  // template so its query string is not discarded when the request is planned.
+  const executableRoute = matchesCapturedQuery(route, url) ? { ...route, url } : route;
+  const plan = planBrokerageRequest({
+    route: executableRoute,
+    method: "GET",
+    params,
+    dryRun: false,
+  });
   if (plan.missingParams.length > 0) {
     throw new Error(missingParamHint(url, plan.missingParams));
   }
@@ -2410,7 +2828,8 @@ export async function brokerageGetJson(
     plan.url = parsed.toString();
   }
   const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true, ...options });
-  if (result.status !== 200) throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
+  if (result.status !== 200)
+    throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
   return JSON.parse(result.body || "{}");
 }
 
@@ -2428,7 +2847,7 @@ export async function brokerageGetAllResults(
   url: string,
   params: Record<string, string> = {},
   query: Record<string, string> = {},
-  options: ExecuteBrokerageOptions & { maxPages?: number } = {}
+  options: ExecuteBrokerageOptions & { maxPages?: number } = {},
 ): Promise<any[]> {
   const maxPages = options.maxPages ?? 50;
   const all: any[] = [];
@@ -2453,7 +2872,7 @@ export async function brokerageGetAllResults(
 export async function tryBrokerageGetJson(
   url: string,
   params: Record<string, string> = {},
-  query: Record<string, string> = {}
+  query: Record<string, string> = {},
 ): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
   try {
     return { ok: true, data: await brokerageGetJson(url, params, query) };
@@ -2486,13 +2905,17 @@ export function __resetOwnedAccountsCache(): void {
  * so a transient/offline read WARNS rather than wedging every write.
  */
 export async function loadOwnedAccounts(
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<OwnedAccounts | null> {
   if (_ownedAccountsCache) return _ownedAccountsCache;
   const getJson = deps.getJson ?? brokerageGetJson;
   try {
     const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
-    const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+    const rows: any[] = Array.isArray(graph?.results)
+      ? graph.results
+      : Array.isArray(graph)
+        ? graph
+        : [];
     const numbers = new Set<string>();
     const labels = new Map<string, string>();
     for (const a of rows) {
@@ -2519,7 +2942,7 @@ export async function loadOwnedAccounts(
  */
 export async function assertAccountOwned(
   accountNumber: string | undefined,
-  deps: { getJson?: typeof brokerageGetJson; onLookupFailure?: "warn" | "block" } = {}
+  deps: { getJson?: typeof brokerageGetJson; onLookupFailure?: "warn" | "block" } = {},
 ): Promise<string | undefined> {
   if (!accountNumber) return undefined; // account-less call (e.g. panic across all accounts) — nothing to validate
   const owned = await loadOwnedAccounts(deps);
@@ -2528,18 +2951,18 @@ export async function assertAccountOwned(
       throw new Error(
         `Refusing a LIVE write to account ${accountNumber}: could not verify it against your owned accounts ` +
           `(ownership lookup failed). The wrong-account defense fails CLOSED on live sends — retry when the ` +
-          `account read works, or preview with a dry-run.`
+          `account read works, or preview with a dry-run.`,
       );
     }
     process.stderr.write(
-      `⚠️  Could not verify account ${accountNumber} against your owned accounts (lookup failed). Proceeding — double-check the number.\n`
+      `⚠️  Could not verify account ${accountNumber} against your owned accounts (lookup failed). Proceeding — double-check the number.\n`,
     );
     return undefined;
   }
   if (!owned.numbers.has(String(accountNumber))) {
     throw new Error(
       `Account ${accountNumber} is not one of your trading accounts (${[...owned.numbers].map((nm) => "…" + nm.slice(-4)).join(", ")}). ` +
-        `Refusing to act on an unowned/typo'd account.`
+        `Refusing to act on an unowned/typo'd account.`,
     );
   }
   return owned.labels.get(String(accountNumber)) || "";
@@ -2548,14 +2971,14 @@ export async function assertAccountOwned(
 /** Fetch equity marketdata quotes for many instrument ids, chunked (≤40/req) to keep URLs bounded. */
 export async function fetchQuotes(
   instrumentIds: string[],
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<Map<string, any>> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const quotes = new Map<string, any>();
   const chunkSize = 40;
   for (let i = 0; i < instrumentIds.length; i += chunkSize) {
     const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
-      ids: instrumentIds.slice(i, i + chunkSize).join(",")
+      ids: instrumentIds.slice(i, i + chunkSize).join(","),
     });
     for (const row of data.results ?? []) {
       if (row?.instrument_id) quotes.set(row.instrument_id, row);
@@ -2567,14 +2990,14 @@ export async function fetchQuotes(
 /** Fetch option marketdata for many option instrument ids, chunked (≤40/req). */
 export async function fetchOptionMarks(
   ids: string[],
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<Map<string, any>> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const marks = new Map<string, any>();
   const chunkSize = 40;
   for (let i = 0; i < ids.length; i += chunkSize) {
     const data = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", {
-      ids: ids.slice(i, i + chunkSize).join(",")
+      ids: ids.slice(i, i + chunkSize).join(","),
     });
     for (const row of data.results ?? []) {
       if (row?.instrument_id) marks.set(row.instrument_id, row);
@@ -2603,7 +3026,7 @@ export interface PortfolioPnlOptions {
  */
 export async function computePortfolioPnl(
   opts: PortfolioPnlOptions = {},
-  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {}
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {},
 ): Promise<any> {
   // Injectable fetchers default to the real engine (prod), overridable for tests (golden fixtures).
   const getJson = deps.getJson ?? brokerageGetJson;
@@ -2612,7 +3035,11 @@ export async function computePortfolioPnl(
   const window = opts.window ?? "both";
   // 1. Accounts — transfer/accounts/ is the COMPLETE graph; trading accounts only.
   const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
-  const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+  const rows: any[] = Array.isArray(graph?.results)
+    ? graph.results
+    : Array.isArray(graph)
+      ? graph
+      : [];
   const rhLabels = new Map<string, string>();
   let accts: string[] = [];
   for (const a of rows) {
@@ -2623,7 +3050,9 @@ export async function computePortfolioPnl(
   }
   if (opts.accountNumber) {
     if (!accts.includes(String(opts.accountNumber)))
-      throw new Error(`Account ${opts.accountNumber} is not one of your trading accounts (${accts.map((x) => "…" + x.slice(-4)).join(", ")}).`);
+      throw new Error(
+        `Account ${opts.accountNumber} is not one of your trading accounts (${accts.map((x) => "…" + x.slice(-4)).join(", ")}).`,
+      );
     accts = [String(opts.accountNumber)];
   }
   // Optional git-crypt-encrypted nickname overlay (local/accounts.local.json).
@@ -2633,43 +3062,106 @@ export async function computePortfolioPnl(
       const obj = JSON.parse(readFileSync(join(repoRoot(), rel), "utf8"));
       for (const [k, v] of Object.entries(obj)) localLabels.set(String(k), String(v));
       break;
-    } catch { /* try next */ }
+    } catch {
+      /* try next */
+    }
   }
   const labelFor = (acct: string) => {
     const l4 = acct.slice(-4);
-    return localLabels.get(acct) || localLabels.get("…" + l4) || localLabels.get(l4) || rhLabels.get(acct) || `…${l4}`;
+    return (
+      localLabels.get(acct) ||
+      localLabels.get("…" + l4) ||
+      localLabels.get(l4) ||
+      rhLabels.get(acct) ||
+      `…${l4}`
+    );
   };
 
   // 2. Per-account top-line + raw positions + buying power, in parallel; a failure degrades to a warning.
-  const perAccount = await Promise.all(accts.map(async (acct) => {
-    const a: any = { acct, label: labelFor(acct), equity: Number.NaN, day: Number.NaN, afterHours: Number.NaN, buyingPower: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
-    try {
-      const p = await getJson("https://api.robinhood.com/portfolios/{account_number}/", { account_number: acct });
-      const equity = n(p.equity), ext = n(p.extended_hours_equity);
-      const adjPrev = n(p.adjusted_equity_previous_close), rawPrev = n(p.equity_previous_close);
-      const prevClose = Number.isFinite(adjPrev) && adjPrev !== 0 ? adjPrev : (Number.isFinite(rawPrev) && rawPrev !== 0 ? rawPrev : Number.NaN);
-      a.equity = equity;
-      a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
-      a.day = Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
-    } catch (e: any) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
-    try {
-      const bp = await getJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", { num: acct });
-      a.buyingPower = n(bp.buying_power);
-    } catch { /* buying power is best-effort; degrade silently */ }
-    try {
-      const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
-      a.equityPositions = eq.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
-    } catch { a.warnings.push(`equity positions read failed (${acct})`); }
-    try {
-      const od = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
-      a.optionPositions = od.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: n(x.quantity), underlyingType: x.underlying_type ?? null }));
-    } catch { a.warnings.push(`option positions read failed (${acct})`); }
-    return a;
-  }));
+  const perAccount = await Promise.all(
+    accts.map(async (acct) => {
+      const a: any = {
+        acct,
+        label: labelFor(acct),
+        equity: Number.NaN,
+        day: Number.NaN,
+        afterHours: Number.NaN,
+        buyingPower: Number.NaN,
+        equityPositions: [],
+        optionPositions: [],
+        warnings: [] as string[],
+      };
+      try {
+        const p = await getJson("https://api.robinhood.com/portfolios/{account_number}/", {
+          account_number: acct,
+        });
+        const equity = n(p.equity),
+          ext = n(p.extended_hours_equity);
+        const adjPrev = n(p.adjusted_equity_previous_close),
+          rawPrev = n(p.equity_previous_close);
+        const prevClose =
+          Number.isFinite(adjPrev) && adjPrev !== 0
+            ? adjPrev
+            : Number.isFinite(rawPrev) && rawPrev !== 0
+              ? rawPrev
+              : Number.NaN;
+        a.equity = equity;
+        a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
+        a.day =
+          Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
+      } catch (e: any) {
+        a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`);
+      }
+      try {
+        const bp = await getJson(
+          "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
+          { num: acct },
+        );
+        a.buyingPower = n(bp.buying_power);
+      } catch {
+        /* buying power is best-effort; degrade silently */
+      }
+      try {
+        const eq = await getAll(
+          "https://api.robinhood.com/positions/",
+          {},
+          { nonzero: "true", account_number: acct },
+        );
+        a.equityPositions = eq
+          .filter((x: any) => n(x.quantity) > 0)
+          .map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
+      } catch {
+        a.warnings.push(`equity positions read failed (${acct})`);
+      }
+      try {
+        const od = await getAll(
+          "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+          {},
+          { account_numbers: acct, nonzero: "true" },
+        );
+        a.optionPositions = od
+          .filter((x: any) => n(x.quantity) > 0)
+          .map((x: any) => ({
+            symbol: x.symbol,
+            name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(),
+            oid: x.legs?.[0]?.option_id,
+            qty: n(x.quantity),
+            underlyingType: x.underlying_type ?? null,
+          }));
+      } catch {
+        a.warnings.push(`option positions read failed (${acct})`);
+      }
+      return a;
+    }),
+  );
 
   // 3. Batch quotes + option marks across all accounts (one ticker quoted once).
-  const allEqIds = [...new Set(perAccount.flatMap((a) => a.equityPositions.map((p: any) => p.iid).filter(Boolean)))];
-  const allOptIds = [...new Set(perAccount.flatMap((a) => a.optionPositions.map((p: any) => p.oid).filter(Boolean)))];
+  const allEqIds = [
+    ...new Set(perAccount.flatMap((a) => a.equityPositions.map((p: any) => p.iid).filter(Boolean))),
+  ];
+  const allOptIds = [
+    ...new Set(perAccount.flatMap((a) => a.optionPositions.map((p: any) => p.oid).filter(Boolean))),
+  ];
   const fetchMap = async (url: string, ids: string[]) => {
     const map = new Map<string, any>();
     for (let i = 0; i < ids.length; i += 40) {
@@ -2681,11 +3173,24 @@ export async function computePortfolioPnl(
   // The batch quote/marks fetch must NOT take down the whole command — the account top-line is fully
   // computable from portfolios/{num}/ alone. Degrade per-name drivers to a warning on any failure.
   const globalWarnings: string[] = [];
-  let quotes = new Map<string, any>(), marks = new Map<string, any>();
-  try { if (allEqIds.length) quotes = await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds); }
-  catch (e: any) { globalWarnings.push(`equity quotes batch failed — per-name drivers degraded; account top-line is authoritative (${(e as Error).message.slice(0, 50)})`); }
-  try { if (allOptIds.length) marks = await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds); }
-  catch (e: any) { globalWarnings.push(`option marks batch failed — option drivers degraded (${(e as Error).message.slice(0, 50)})`); }
+  let quotes = new Map<string, any>(),
+    marks = new Map<string, any>();
+  try {
+    if (allEqIds.length)
+      quotes = await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds);
+  } catch (e: any) {
+    globalWarnings.push(
+      `equity quotes batch failed — per-name drivers degraded; account top-line is authoritative (${(e as Error).message.slice(0, 50)})`,
+    );
+  }
+  try {
+    if (allOptIds.length)
+      marks = await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds);
+  } catch (e: any) {
+    globalWarnings.push(
+      `option marks batch failed — option drivers degraded (${(e as Error).message.slice(0, 50)})`,
+    );
+  }
 
   // 3b. WINDOW COHERENCE (the pre-open $0-options bug). Between a session close and the next open,
   // marketdata/options/ rolls previous_close_price to the JUST-COMPLETED session while equity quotes
@@ -2693,8 +3198,22 @@ export async function computePortfolioPnl(
   // exactly $0 and the whole options bleed lands in "residual". Detect the mismatch from the feeds'
   // own previous_close_date stamps (no clock/TZ guessing, holiday-proof) and re-anchor option "previous"
   // to the close BEFORE the last completed session via batch daily historicals.
-  const eqPrevDates = [...new Set([...quotes.values()].map((q: any) => q?.previous_close_date).filter(Boolean).map(String))].sort();
-  const optPrevDates = [...new Set([...marks.values()].map((m: any) => m?.previous_close_date).filter(Boolean).map(String))].sort();
+  const eqPrevDates = [
+    ...new Set(
+      [...quotes.values()]
+        .map((q: any) => q?.previous_close_date)
+        .filter(Boolean)
+        .map(String),
+    ),
+  ].sort();
+  const optPrevDates = [
+    ...new Set(
+      [...marks.values()]
+        .map((m: any) => m?.previous_close_date)
+        .filter(Boolean)
+        .map(String),
+    ),
+  ].sort();
   const eqPrevDate = eqPrevDates.at(-1) ?? null;
   const optPrevDate = optPrevDates.at(-1) ?? null;
   const betweenSessions = Boolean(eqPrevDate && optPrevDate && optPrevDate > eqPrevDate);
@@ -2702,26 +3221,48 @@ export async function computePortfolioPnl(
   if (betweenSessions && allOptIds.length) {
     try {
       for (let i = 0; i < allOptIds.length; i += 40) {
-        const data = await getJson("https://api.robinhood.com/marketdata/options/historicals/?ids={ids}&interval={interval}&span={span}",
-          { ids: allOptIds.slice(i, i + 40).join(","), interval: "day", span: "week" });
+        const data = await getJson(
+          "https://api.robinhood.com/marketdata/options/historicals/?ids={ids}&interval={interval}&span={span}",
+          { ids: allOptIds.slice(i, i + 40).join(","), interval: "day", span: "week" },
+        );
         for (const r of data.results ?? []) {
           // Batch historicals results carry `id` + `instrument` URL, NOT `instrument_id` (live-verified 2026-06-11).
-          const key = r?.instrument_id ?? r?.id ?? String(r?.instrument ?? "").split("/").filter(Boolean).pop();
+          const key =
+            r?.instrument_id ??
+            r?.id ??
+            String(r?.instrument ?? "")
+              .split("/")
+              .filter(Boolean)
+              .pop();
           if (!key) continue;
-          const dps = (r.data_points ?? r.historicals ?? []).filter((d: any) => String(d.begins_at).slice(0, 10) <= String(eqPrevDate));
+          const dps = (r.data_points ?? r.historicals ?? []).filter(
+            (d: any) => String(d.begins_at).slice(0, 10) <= String(eqPrevDate),
+          );
           const close = dps.length ? Number(dps[dps.length - 1].close_price) : Number.NaN;
           if (Number.isFinite(close)) optPrevOverride.set(String(key), close);
         }
       }
       if (!optPrevOverride.size)
-        globalWarnings.push("option historicals re-anchor returned no usable closes — option day drivers may read $0 between sessions");
+        globalWarnings.push(
+          "option historicals re-anchor returned no usable closes — option day drivers may read $0 between sessions",
+        );
     } catch (e: any) {
-      globalWarnings.push(`option historicals re-anchor failed — option day drivers may read $0 between sessions (${(e as Error).message.slice(0, 60)})`);
+      globalWarnings.push(
+        `option historicals re-anchor failed — option day drivers may read $0 between sessions (${(e as Error).message.slice(0, 60)})`,
+      );
     }
   }
   const dayWindow = betweenSessions
-    ? { phase: "between-sessions", sessionDate: optPrevDate, note: `Market not in regular session — 'day' figures are the LAST COMPLETED session (${optPrevDate}); option drivers re-anchored to the ${eqPrevDate} close so they attribute that session instead of $0.` }
-    : { phase: "session", sessionDate: eqPrevDate ? `after ${eqPrevDate} close` : null, note: null };
+    ? {
+        phase: "between-sessions",
+        sessionDate: optPrevDate,
+        note: `Market not in regular session — 'day' figures are the LAST COMPLETED session (${optPrevDate}); option drivers re-anchored to the ${eqPrevDate} close so they attribute that session instead of $0.`,
+      }
+    : {
+        phase: "session",
+        sessionDate: eqPrevDate ? `after ${eqPrevDate} close` : null,
+        note: null,
+      };
 
   // 4. Per-position dollar drivers.
   const drivers: any[] = [];
@@ -2729,12 +3270,22 @@ export async function computePortfolioPnl(
     for (const p of a.equityPositions) {
       const q = quotes.get(p.iid) ?? {};
       const last = n(q.last_trade_price);
-      const ext = q.last_extended_hours_trade_price != null ? n(q.last_extended_hours_trade_price) : Number.NaN;
+      const ext =
+        q.last_extended_hours_trade_price != null
+          ? n(q.last_extended_hours_trade_price)
+          : Number.NaN;
       const prev = n(q.adjusted_previous_close ?? q.previous_close);
-      drivers.push({ acct: a.acct, label: a.label, kind: "equity", symbol: p.symbol, name: p.symbol, qty: p.qty,
+      drivers.push({
+        acct: a.acct,
+        label: a.label,
+        kind: "equity",
+        symbol: p.symbol,
+        name: p.symbol,
+        qty: p.qty,
         value: Number.isFinite(last) ? p.qty * last : Number.NaN,
         dayUsd: Number.isFinite(last) && Number.isFinite(prev) ? p.qty * (last - prev) : Number.NaN,
-        ahUsd: Number.isFinite(ext) && Number.isFinite(last) ? p.qty * (ext - last) : Number.NaN });
+        ahUsd: Number.isFinite(ext) && Number.isFinite(last) ? p.qty * (ext - last) : Number.NaN,
+      });
     }
     for (const p of a.optionPositions) {
       const m = marks.get(p.oid) ?? {};
@@ -2742,18 +3293,35 @@ export async function computePortfolioPnl(
       // Between sessions, re-anchored prev (close before the last completed session) keeps the option
       // measuring the SAME window as the account top-line; in-session, previous_close_price is correct.
       const prev = optPrevOverride.get(p.oid) ?? n(m.previous_close_price);
-      drivers.push({ acct: a.acct, label: a.label, kind: "option", symbol: p.symbol, name: p.name, qty: p.qty,
+      drivers.push({
+        acct: a.acct,
+        label: a.label,
+        kind: "option",
+        symbol: p.symbol,
+        name: p.name,
+        qty: p.qty,
         value: Number.isFinite(mark) ? mark * 100 * p.qty : Number.NaN,
-        dayUsd: Number.isFinite(mark) && Number.isFinite(prev) ? (mark - prev) * 100 * p.qty : Number.NaN,
-        ahUsd: 0 }); // per-name option AH not attributed; account-level extended_hours_equity captures it
-      if (p.underlyingType === "index" && !globalWarnings.some((w) => w.startsWith("index options held")))
-        globalWarnings.push(`index options held (${p.symbol}): index options DO trade extended sessions — per-name AH is not attributed here, but the account-level after-hours number includes it`);
+        dayUsd:
+          Number.isFinite(mark) && Number.isFinite(prev) ? (mark - prev) * 100 * p.qty : Number.NaN,
+        ahUsd: 0,
+      }); // per-name option AH not attributed; account-level extended_hours_equity captures it
+      if (
+        p.underlyingType === "index" &&
+        !globalWarnings.some((w) => w.startsWith("index options held"))
+      )
+        globalWarnings.push(
+          `index options held (${p.symbol}): index options DO trade extended sessions — per-name AH is not attributed here, but the account-level after-hours number includes it`,
+        );
     }
   }
 
   // 5. Totals, reconciliation, rollups.
   const sum = (xs: number[]) => xs.filter((x) => Number.isFinite(x)).reduce((s, x) => s + x, 0);
-  const totals = { equity: sum(perAccount.map((a) => a.equity)), day: sum(perAccount.map((a) => a.day)), afterHours: sum(perAccount.map((a) => a.afterHours)) };
+  const totals = {
+    equity: sum(perAccount.map((a) => a.equity)),
+    day: sum(perAccount.map((a) => a.day)),
+    afterHours: sum(perAccount.map((a) => a.afterHours)),
+  };
   const failedReads = perAccount.filter((a) => !Number.isFinite(a.equity)).length;
   const driverDaySum = drivers.reduce((s, d) => s + (Number.isFinite(d.dayUsd) ? d.dayUsd : 0), 0);
   const residual = Number.isFinite(totals.day) ? totals.day - driverDaySum : Number.NaN;
@@ -2762,37 +3330,92 @@ export async function computePortfolioPnl(
   const mispricedPositions = drivers.filter((d) => !Number.isFinite(d.dayUsd)).length;
   // After-hours is meaningful only in an extended session; intraday/closed it's ~0. Flag so callers don't
   // read a regular-session "$0 after-hours / no AH losers" as a failed or flat session.
-  const afterHoursActive = perAccount.some((a) => Number.isFinite(a.afterHours) && Math.abs(a.afterHours) > 0.005);
+  const afterHoursActive = perAccount.some(
+    (a) => Number.isFinite(a.afterHours) && Math.abs(a.afterHours) > 0.005,
+  );
 
   const byU = new Map<string, any>();
   for (const d of drivers) {
-    const u = byU.get(d.symbol) ?? { symbol: d.symbol, value: 0, dayUsd: 0, ahUsd: 0, accts: new Set<string>(), kinds: new Set<string>() };
+    const u = byU.get(d.symbol) ?? {
+      symbol: d.symbol,
+      value: 0,
+      dayUsd: 0,
+      ahUsd: 0,
+      accts: new Set<string>(),
+      kinds: new Set<string>(),
+    };
     u.value += Number.isFinite(d.value) ? d.value : 0;
     u.dayUsd += Number.isFinite(d.dayUsd) ? d.dayUsd : 0;
     u.ahUsd += Number.isFinite(d.ahUsd) ? d.ahUsd : 0;
-    u.accts.add(d.acct); u.kinds.add(d.kind);
+    u.accts.add(d.acct);
+    u.kinds.add(d.kind);
     byU.set(d.symbol, u);
   }
-  const sortVal = (x: any) => window === "after-hours" ? (Number.isFinite(x.ahUsd) ? x.ahUsd : 0)
-    : window === "day" ? (Number.isFinite(x.dayUsd) ? x.dayUsd : 0)
-    : (Number.isFinite(x.dayUsd) ? x.dayUsd : 0) + (Number.isFinite(x.ahUsd) ? x.ahUsd : 0);
+  const sortVal = (x: any) =>
+    window === "after-hours"
+      ? Number.isFinite(x.ahUsd)
+        ? x.ahUsd
+        : 0
+      : window === "day"
+        ? Number.isFinite(x.dayUsd)
+          ? x.dayUsd
+          : 0
+        : (Number.isFinite(x.dayUsd) ? x.dayUsd : 0) + (Number.isFinite(x.ahUsd) ? x.ahUsd : 0);
   const rank = (xs: any[]) => xs.slice().sort((x, y) => sortVal(x) - sortVal(y));
   const top = opts.top && opts.top > 0 ? opts.top : undefined;
   // Rank on the RAW driver objects (dayUsd/ahUsd) BEFORE mapping to output field names — sortVal reads
   // dayUsd/ahUsd, so ranking the mapped objects (dayChangeUsd/...) silently compared 0 vs 0 and left
   // the "ranked" tables in insertion order. (Live-caught 2026-06-11.)
-  const byUnderlying = rank([...byU.values()]).map((u) => ({ symbol: u.symbol, marketValueUsd: u.value, dayChangeUsd: u.dayUsd, afterHoursChangeUsd: u.ahUsd, accounts: [...u.accts], kinds: [...u.kinds] }));
-  const byPosition = rank(drivers).map((d) => ({ accountNumber: d.acct, label: d.label, kind: d.kind, symbol: d.symbol, name: d.name, qty: d.qty, marketValueUsd: d.value, dayChangeUsd: d.dayUsd, afterHoursChangeUsd: d.ahUsd }));
+  const byUnderlying = rank([...byU.values()]).map((u) => ({
+    symbol: u.symbol,
+    marketValueUsd: u.value,
+    dayChangeUsd: u.dayUsd,
+    afterHoursChangeUsd: u.ahUsd,
+    accounts: [...u.accts],
+    kinds: [...u.kinds],
+  }));
+  const byPosition = rank(drivers).map((d) => ({
+    accountNumber: d.acct,
+    label: d.label,
+    kind: d.kind,
+    symbol: d.symbol,
+    name: d.name,
+    qty: d.qty,
+    marketValueUsd: d.value,
+    dayChangeUsd: d.dayUsd,
+    afterHoursChangeUsd: d.ahUsd,
+  }));
 
   return {
-    window, complete: failedReads === 0 && globalWarnings.length === 0, afterHoursActive, dayWindow,
-    totals: { equityUsd: totals.equity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
-    reconciliation: { driverDayChangeUsd: driverDaySum, totalsDayChangeUsd: totals.day, residualUsd: residual, mispricedPositions,
-      note: "residual = cash/dividends/transfers/option-vs-equity timing (NOT failed pricing — see mispricedPositions); after-hours is EQUITY-only (options don't print after-hours)" },
-    accounts: perAccount.map((a) => ({ accountNumber: a.acct, label: a.label, equityUsd: a.equity, dayChangeUsd: a.day, afterHoursChangeUsd: a.afterHours, buyingPower: a.buyingPower, partial: !Number.isFinite(a.equity), warnings: a.warnings })),
+    window,
+    complete: failedReads === 0 && globalWarnings.length === 0,
+    afterHoursActive,
+    dayWindow,
+    totals: {
+      equityUsd: totals.equity,
+      dayChangeUsd: totals.day,
+      afterHoursChangeUsd: totals.afterHours,
+    },
+    reconciliation: {
+      driverDayChangeUsd: driverDaySum,
+      totalsDayChangeUsd: totals.day,
+      residualUsd: residual,
+      mispricedPositions,
+      note: "residual = cash/dividends/transfers/option-vs-equity timing (NOT failed pricing — see mispricedPositions); after-hours is EQUITY-only (options don't print after-hours)",
+    },
+    accounts: perAccount.map((a) => ({
+      accountNumber: a.acct,
+      label: a.label,
+      equityUsd: a.equity,
+      dayChangeUsd: a.day,
+      afterHoursChangeUsd: a.afterHours,
+      buyingPower: a.buyingPower,
+      partial: !Number.isFinite(a.equity),
+      warnings: a.warnings,
+    })),
     byUnderlying: top ? byUnderlying.slice(0, top) : byUnderlying,
     byPosition: top ? byPosition.slice(0, top) : byPosition,
-    warnings: globalWarnings
+    warnings: globalWarnings,
   };
 }
 
@@ -2812,25 +3435,36 @@ export interface OptionsOrderFlow {
 }
 export async function readOptionsOrderFlow(
   opts: { accountNumber?: string; chainId?: string } = {},
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<OptionsOrderFlow> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const out: OptionsOrderFlow = { accountNumber: opts.accountNumber, warnings: [] };
   if (opts.accountNumber) {
     try {
-      out.buyingPower = await getJson("https://bonfire.robinhood.com/accounts/{account_number}/options_buying_power", { account_number: opts.accountNumber });
-    } catch (e: any) { out.warnings.push(`options buying power read failed: ${(e as Error).message.slice(0, 60)}`); }
+      out.buyingPower = await getJson(
+        "https://bonfire.robinhood.com/accounts/{account_number}/options_buying_power",
+        { account_number: opts.accountNumber },
+      );
+    } catch (e: any) {
+      out.warnings.push(`options buying power read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
   } else {
     out.warnings.push("no --account given: options buying power is per-account and was skipped.");
   }
   try {
     out.fees = await getJson("https://api.robinhood.com/options/fees/");
-  } catch (e: any) { out.warnings.push(`options fees read failed: ${(e as Error).message.slice(0, 60)}`); }
+  } catch (e: any) {
+    out.warnings.push(`options fees read failed: ${(e as Error).message.slice(0, 60)}`);
+  }
   try {
     out.collateral = opts.chainId
-      ? await getJson("https://api.robinhood.com/options/chains/{id}/collateral/", { id: opts.chainId })
+      ? await getJson("https://api.robinhood.com/options/chains/{id}/collateral/", {
+          id: opts.chainId,
+        })
       : await getJson("https://api.robinhood.com/options/orders/collateral/");
-  } catch (e: any) { out.warnings.push(`options collateral read failed: ${(e as Error).message.slice(0, 60)}`); }
+  } catch (e: any) {
+    out.warnings.push(`options collateral read failed: ${(e as Error).message.slice(0, 60)}`);
+  }
   return out;
 }
 
@@ -2909,7 +3543,9 @@ export async function gatedBrokerageWrite(opts: {
   if (!route) {
     const suggestions = suggestRoutes(opts.url);
     const tail = suggestions.length ? ` Closest mapped routes: ${suggestions.join(" | ")}.` : "";
-    throw new Error(`No ${opts.method ?? "matching"} route for ${opts.url} — a forced write with no matching write route fails closed (never degrades to a read).${tail} Check the map / rebuild (AGENTS.md §3).`);
+    throw new Error(
+      `No ${opts.method ?? "matching"} route for ${opts.url} — a forced write with no matching write route fails closed (never degrades to a read).${tail} Check the map / rebuild (AGENTS.md §3).`,
+    );
   }
   const accountNumber = opts.accountNumber ?? accountFromWriteRequest(opts.body, opts.params);
   const execution = resolveWriteExecution({
@@ -2917,7 +3553,7 @@ export async function gatedBrokerageWrite(opts: {
     method: opts.method,
     dryRun: opts.dryRun,
     liveWrite: opts.liveWrite,
-    accountNumber
+    accountNumber,
   });
   const verificationStatus = routeVerificationStatus(route, opts.method);
   let effectiveDryRun = execution.dryRun;
@@ -2928,7 +3564,10 @@ export async function gatedBrokerageWrite(opts: {
   }
 
   if (!effectiveDryRun && accountNumber) {
-    await assertAccountOwned(accountNumber, { getJson: opts.ownershipGetJson, onLookupFailure: "block" });
+    await assertAccountOwned(accountNumber, {
+      getJson: opts.ownershipGetJson,
+      onLookupFailure: "block",
+    });
   }
 
   const notional = effectiveDryRun ? 0 : brokerageOrderNotional(opts.url, opts.method, opts.body);
@@ -2939,14 +3578,14 @@ export async function gatedBrokerageWrite(opts: {
     params: opts.params ?? {},
     query: opts.query,
     body: opts.body,
-    dryRun: effectiveDryRun
+    dryRun: effectiveDryRun,
   });
   const result = await executeBrokerageRequest(plan, {
     ...opts.executeOptions,
     dryRun: effectiveDryRun,
     body: opts.body,
     fullBody: opts.fullBody ?? true,
-    signal: opts.signal ?? opts.executeOptions?.signal
+    signal: opts.signal ?? opts.executeOptions?.signal,
   });
   if (notional > 0 && result.status >= 200 && result.status < 300) recordSessionNotional(notional);
   // UNIVERSAL WRITE LOG (added 2026-06-11): every LIVE write that leaves this engine — options
@@ -2955,7 +3594,8 @@ export async function gatedBrokerageWrite(opts: {
   // placeEquityOrder writes its own richer entry. Before this, only equity orders auto-logged and
   // every options trade depended on manual discipline (which decays). Best-effort, never throws.
   if (!effectiveDryRun && !opts.skipTradeLog) {
-    const bodyStr = typeof result.body === "string" ? result.body : JSON.stringify(result.body ?? "");
+    const bodyStr =
+      typeof result.body === "string" ? result.body : JSON.stringify(result.body ?? "");
     await (opts.logImpl ?? logTrade)({
       when: new Date().toISOString(),
       kind: "live-write",
@@ -2965,7 +3605,7 @@ export async function gatedBrokerageWrite(opts: {
       params: opts.params ?? {},
       status: result.status,
       requestBody: opts.body ?? null,
-      responseHead: bodyStr ? bodyStr.slice(0, 500) : null
+      responseHead: bodyStr ? bodyStr.slice(0, 500) : null,
     });
   }
   return { ...result, dryRun: effectiveDryRun, reason, verificationStatus };
@@ -2979,7 +3619,9 @@ export async function logTrade(entry: Record<string, unknown>) {
     const logDir = join(repoRoot(), "local");
     if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
     appendFileSync(join(logDir, "trading-log.jsonl"), JSON.stringify(entry) + "\n");
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
 }
 
 // ───────────────────────── Watchlist writes (shared CLI + MCP) ─────────────────────────
@@ -3000,12 +3642,15 @@ export const DISCOVERY_LISTS_ITEMS_URL = "https://api.robinhood.com/discovery/li
 /** Resolve an equity ticker to its Robinhood instrument UUID (instruments/?symbol=). */
 export async function resolveInstrumentId(
   symbol: string,
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<string> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const sym = symbol.trim().toUpperCase();
-  const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: sym })).results?.[0];
-  if (!inst?.id) throw new Error(`Symbol ${sym} not found (instruments/?symbol= returned no match).`);
+  const inst = (
+    await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: sym })
+  ).results?.[0];
+  if (!inst?.id)
+    throw new Error(`Symbol ${sym} not found (instruments/?symbol= returned no match).`);
   return inst.id as string;
 }
 
@@ -3018,7 +3663,7 @@ export interface WatchlistRef {
 /** Resolve a custom watchlist by id or (case-insensitive) display_name. Reads owner_type=custom only. */
 export async function resolveWatchlist(
   nameOrId: string,
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<WatchlistRef> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const data = await getJson(DISCOVERY_LISTS_URL, {}, { owner_type: "custom" });
@@ -3028,10 +3673,18 @@ export async function resolveWatchlist(
     lists.find((l) => l.id === q) ??
     lists.find((l) => String(l.display_name ?? "").toLowerCase() === q.toLowerCase());
   if (!match) {
-    const names = lists.map((l) => l.display_name).filter(Boolean).join(", ") || "(none)";
+    const names =
+      lists
+        .map((l) => l.display_name)
+        .filter(Boolean)
+        .join(", ") || "(none)";
     throw new Error(`No custom watchlist matches "${nameOrId}". Existing custom lists: ${names}.`);
   }
-  return { id: match.id, display_name: match.display_name, allowed_object_types: match.allowed_object_types ?? [] };
+  return {
+    id: match.id,
+    display_name: match.display_name,
+    allowed_object_types: match.allowed_object_types ?? [],
+  };
 }
 
 export interface WatchlistMutateInput {
@@ -3056,11 +3709,15 @@ export interface WatchlistMutateDeps {
  * Add or remove tickers in a custom watchlist. Resolves the list (by name/id) and each ticker (to an
  * instrument UUID), builds the list-keyed batch body, and sends it through the env-gated write path.
  */
-export async function watchlistMutateItems(input: WatchlistMutateInput, deps: WatchlistMutateDeps = {}) {
+export async function watchlistMutateItems(
+  input: WatchlistMutateInput,
+  deps: WatchlistMutateDeps = {},
+) {
   const getJson = deps.getJson ?? brokerageGetJson;
   const write = deps.write ?? gatedBrokerageWrite;
   const objectType = input.objectType ?? "instrument";
-  const resolveInstrument = deps.resolveInstrument ?? ((s: string) => resolveInstrumentId(s, { getJson }));
+  const resolveInstrument =
+    deps.resolveInstrument ?? ((s: string) => resolveInstrumentId(s, { getJson }));
   const symbols = input.symbols.map((s) => s.trim().toUpperCase()).filter(Boolean);
   if (symbols.length === 0) throw new Error("No symbols given.");
   const wl = await resolveWatchlist(input.list, { getJson });
@@ -3071,7 +3728,11 @@ export async function watchlistMutateItems(input: WatchlistMutateInput, deps: Wa
     resolved.push({ symbol: sym, object_id });
   }
   const body = {
-    [wl.id]: resolved.map((r) => ({ object_id: r.object_id, object_type: objectType, operation: input.operation }))
+    [wl.id]: resolved.map((r) => ({
+      object_id: r.object_id,
+      object_type: objectType,
+      operation: input.operation,
+    })),
   };
   const verb = input.operation === "create" ? "add" : "remove";
   const result = await write({
@@ -3080,7 +3741,7 @@ export async function watchlistMutateItems(input: WatchlistMutateInput, deps: Wa
     body,
     dryRun: input.dryRun,
     liveWrite: input.liveWrite,
-    logContext: `watchlist ${verb}: ${symbols.join(",")} ${verb === "add" ? "->" : "<-"} ${wl.display_name}`
+    logContext: `watchlist ${verb}: ${symbols.join(",")} ${verb === "add" ? "->" : "<-"} ${wl.display_name}`,
   });
   return { list: wl, operation: input.operation, items: resolved, body, result };
 }
@@ -3088,7 +3749,7 @@ export async function watchlistMutateItems(input: WatchlistMutateInput, deps: Wa
 /** Create a new custom watchlist (POST discovery/lists/). Env-gated. */
 export async function createWatchlist(
   input: { displayName: string; iconEmoji?: string; dryRun?: boolean; liveWrite?: boolean },
-  deps: { write?: typeof gatedBrokerageWrite } = {}
+  deps: { write?: typeof gatedBrokerageWrite } = {},
 ) {
   const write = deps.write ?? gatedBrokerageWrite;
   const body: Record<string, unknown> = { display_name: input.displayName };
@@ -3099,7 +3760,7 @@ export async function createWatchlist(
     body,
     dryRun: input.dryRun,
     liveWrite: input.liveWrite,
-    logContext: `watchlist create: ${input.displayName}`
+    logContext: `watchlist create: ${input.displayName}`,
   });
   return { displayName: input.displayName, body, result };
 }
@@ -3107,7 +3768,7 @@ export async function createWatchlist(
 /** Delete a custom watchlist by id (DELETE discovery/lists/{id}/). Env-gated; irreversible. */
 export async function deleteWatchlist(
   input: { id: string; dryRun?: boolean; liveWrite?: boolean },
-  deps: { write?: typeof gatedBrokerageWrite } = {}
+  deps: { write?: typeof gatedBrokerageWrite } = {},
 ) {
   const write = deps.write ?? gatedBrokerageWrite;
   const result = await write({
@@ -3116,7 +3777,7 @@ export async function deleteWatchlist(
     params: { id: input.id },
     dryRun: input.dryRun,
     liveWrite: input.liveWrite,
-    logContext: `watchlist delete: ${input.id}`
+    logContext: `watchlist delete: ${input.id}`,
   });
   return { id: input.id, result };
 }
@@ -3142,11 +3803,15 @@ export interface WatchlistItem {
  */
 export async function getWatchlistItems(
   nameOrId: string,
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<{ list: WatchlistRef; items: WatchlistItem[] }> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const wl = await resolveWatchlist(nameOrId, { getJson });
-  const data = await getJson(DISCOVERY_LISTS_ITEMS_URL, {}, { list_id: wl.id, owner_type: "custom" });
+  const data = await getJson(
+    DISCOVERY_LISTS_ITEMS_URL,
+    {},
+    { list_id: wl.id, owner_type: "custom" },
+  );
   const results: any[] = Array.isArray(data?.results) ? data.results : [];
   const items: WatchlistItem[] = results.map((r) => {
     const object_type = String(r.object_type ?? "instrument");
@@ -3157,8 +3822,12 @@ export async function getWatchlistItems(
       object_id: r.object_id ?? r.id ?? null,
       us_tradability: r.us_tradability ?? null,
       state: r.state ?? null,
-      tradable: object_type === "instrument" && r.us_tradability === "tradable" && r.state === "active" && Boolean(r.symbol),
-      price: r.price != null && Number.isFinite(Number(r.price)) ? Number(r.price) : null
+      tradable:
+        object_type === "instrument" &&
+        r.us_tradability === "tradable" &&
+        r.state === "active" &&
+        Boolean(r.symbol),
+      price: r.price != null && Number.isFinite(Number(r.price)) ? Number(r.price) : null,
     };
   });
   return { list: wl, items };
@@ -3199,7 +3868,15 @@ export interface WatchlistBasketBuyResult {
   amountPerTicker: number;
   buyingPower?: number;
   dryRun: boolean;
-  counts: { items: number; tradable: number; attempted: number; placed: number; skipped: number; failed: number; blocked: number };
+  counts: {
+    items: number;
+    tradable: number;
+    attempted: number;
+    placed: number;
+    skipped: number;
+    failed: number;
+    blocked: number;
+  };
   legs: WatchlistBasketLeg[];
 }
 
@@ -3213,18 +3890,23 @@ export interface WatchlistBasketBuyResult {
  */
 export async function buyWatchlistBasket(
   input: WatchlistBasketBuyInput,
-  deps: { getJson?: typeof brokerageGetJson; placeOrder?: typeof placeEquityOrder; sleep?: (ms: number) => Promise<void> } = {}
+  deps: {
+    getJson?: typeof brokerageGetJson;
+    placeOrder?: typeof placeEquityOrder;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
 ): Promise<WatchlistBasketBuyResult> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const placeOrder = deps.placeOrder ?? placeEquityOrder;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const amount = Number(input.amount);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount must be a positive dollar value (Robinhood minimum is $1.00).");
+  if (!Number.isFinite(amount) || amount <= 0)
+    throw new Error("amount must be a positive dollar value (Robinhood minimum is $1.00).");
   const delayMs = input.delayMs ?? 2500;
   const execution = resolveWriteExecution({
     dryRun: input.dryRun,
     liveWrite: input.liveWrite,
-    accountNumber: input.accountNumber
+    accountNumber: input.accountNumber,
   });
 
   const { list, items } = await getWatchlistItems(input.list, { getJson });
@@ -3233,16 +3915,24 @@ export async function buyWatchlistBasket(
 
   // Non-equity / non-tradable members are skipped loudly (futures/index/currency_pair, halted, etc.).
   for (const i of items.filter((x) => !x.tradable)) {
-    legs.push({ symbol: i.symbol ?? i.object_id ?? "?", status: "skipped", reason: `not equity-buyable (object_type=${i.object_type}, us_tradability=${i.us_tradability ?? "?"}, state=${i.state ?? "?"})` });
+    legs.push({
+      symbol: i.symbol ?? i.object_id ?? "?",
+      status: "skipped",
+      reason: `not equity-buyable (object_type=${i.object_type}, us_tradability=${i.us_tradability ?? "?"}, state=${i.state ?? "?"})`,
+    });
   }
 
   // BP-aware sizing: read buying power once and only attempt what fits.
   let buyingPower: number | undefined;
   try {
-    const bp = await getJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", { num: input.accountNumber });
+    const bp = await getJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", {
+      num: input.accountNumber,
+    });
     const v = Number(bp?.buying_power);
     if (Number.isFinite(v)) buyingPower = v;
-  } catch { /* best-effort: if BP read fails, attempt all and let per-order rejection report */ }
+  } catch {
+    /* best-effort: if BP read fails, attempt all and let per-order rejection report */
+  }
 
   let candidates = tradable;
   if (input.limit && input.limit > 0) candidates = candidates.slice(0, input.limit);
@@ -3252,7 +3942,11 @@ export async function buyWatchlistBasket(
     if (candidates.length > maxN) {
       affordable = candidates.slice(0, maxN);
       for (const i of candidates.slice(maxN)) {
-        legs.push({ symbol: i.symbol as string, status: "skipped", reason: `insufficient buying power — basket of ${candidates.length}×$${amount.toFixed(2)}=$${(candidates.length * amount).toFixed(2)} exceeds BP $${buyingPower.toFixed(2)}; placed the first ${maxN}` });
+        legs.push({
+          symbol: i.symbol as string,
+          status: "skipped",
+          reason: `insufficient buying power — basket of ${candidates.length}×$${amount.toFixed(2)}=$${(candidates.length * amount).toFixed(2)} exceeds BP $${buyingPower.toFixed(2)}; placed the first ${maxN}`,
+        });
       }
     }
   }
@@ -3270,7 +3964,7 @@ export async function buyWatchlistBasket(
         dryRun: execution.dryRun,
         liveWrite: input.liveWrite,
         force: input.force,
-        overrideCap: input.overrideCap
+        overrideCap: input.overrideCap,
       });
     } catch (e: any) {
       const msg = String(e?.message ?? e);
@@ -3279,27 +3973,63 @@ export async function buyWatchlistBasket(
       continue;
     }
     if (res.preflightBlocked) {
-      legs.push({ symbol: sym, status: "blocked", reason: res.sessionWarning, sessionWarning: res.sessionWarning });
+      legs.push({
+        symbol: sym,
+        status: "blocked",
+        reason: res.sessionWarning,
+        sessionWarning: res.sessionWarning,
+      });
     } else if (res.dryRun) {
-      legs.push({ symbol: sym, status: "dry-run", shares: res.shares, estimatedTotal: res.estimatedTotal, sessionWarning: res.sessionWarning });
+      legs.push({
+        symbol: sym,
+        status: "dry-run",
+        shares: res.shares,
+        estimatedTotal: res.estimatedTotal,
+        sessionWarning: res.sessionWarning,
+      });
     } else if (res.evidence?.confirmed === true) {
-      legs.push({ symbol: sym, status: "placed", shares: res.shares, estimatedTotal: res.estimatedTotal, orderId: res.orderId, evidenceConfirmed: true, sessionWarning: res.sessionWarning });
+      legs.push({
+        symbol: sym,
+        status: "placed",
+        shares: res.shares,
+        estimatedTotal: res.estimatedTotal,
+        orderId: res.orderId,
+        evidenceConfirmed: true,
+        sessionWarning: res.sessionWarning,
+      });
       placed++;
     } else {
-      legs.push({ symbol: sym, status: "failed", reason: res.evidence?.warning ?? res.sessionWarning ?? `live send returned ${res.httpStatus} — unconfirmed`, orderId: res.orderId, evidenceConfirmed: res.evidence?.confirmed ?? null, sessionWarning: res.sessionWarning });
+      legs.push({
+        symbol: sym,
+        status: "failed",
+        reason:
+          res.evidence?.warning ??
+          res.sessionWarning ??
+          `live send returned ${res.httpStatus} — unconfirmed`,
+        orderId: res.orderId,
+        evidenceConfirmed: res.evidence?.confirmed ?? null,
+        sessionWarning: res.sessionWarning,
+      });
     }
     if (execution.live && delayMs > 0 && idx < affordable.length - 1) await sleep(delayMs);
   }
 
   return {
-    list, account: input.accountNumber, amountPerTicker: amount, buyingPower, dryRun: execution.dryRun,
+    list,
+    account: input.accountNumber,
+    amountPerTicker: amount,
+    buyingPower,
+    dryRun: execution.dryRun,
     counts: {
-      items: items.length, tradable: tradable.length, attempted: affordable.length, placed,
+      items: items.length,
+      tradable: tradable.length,
+      attempted: affordable.length,
+      placed,
       skipped: legs.filter((l) => l.status === "skipped").length,
       failed: legs.filter((l) => l.status === "failed").length,
-      blocked: legs.filter((l) => l.status === "blocked").length
+      blocked: legs.filter((l) => l.status === "blocked").length,
     },
-    legs
+    legs,
   };
 }
 
@@ -3321,13 +4051,23 @@ export const DEDUP_WINDOW_MS = 300_000;
  * Stale pending orders (older than the window) do NOT block — a forgotten GTC limit from
  * yesterday is not a duplicate of today's intent.
  */
-export function filterRecentPending(orders: any[], side: "buy" | "sell", nowMs: number, windowMs: number = DEDUP_WINDOW_MS): any[] {
+export function filterRecentPending(
+  orders: any[],
+  side: "buy" | "sell",
+  nowMs: number,
+  windowMs: number = DEDUP_WINDOW_MS,
+): any[] {
   return (Array.isArray(orders) ? orders : []).filter((o: any) => {
     // A future-dated created_at (server clock skew) still blocks — it is pending NOW.
     const age = nowMs - Date.parse(String(o?.created_at ?? 0));
-    return o?.side === side
-      && o?.state !== "filled" && o?.state !== "cancelled" && o?.state !== "rejected"
-      && Number.isFinite(age) && age < windowMs;
+    return (
+      o?.side === side &&
+      o?.state !== "filled" &&
+      o?.state !== "cancelled" &&
+      o?.state !== "rejected" &&
+      Number.isFinite(age) &&
+      age < windowMs
+    );
   });
 }
 
@@ -3349,14 +4089,21 @@ export interface MarketSessionInfo {
 /** ET calendar date `YYYY-MM-DD` for an epoch ms — DST-correct via Intl (en-CA yields ISO order). */
 export function etDateString(nowMs: number): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).format(new Date(nowMs));
 }
 
 /** ET-clock session heuristic — the fallback ONLY (no holiday/half-day awareness). */
 export function etClockSession(nowMs: number): MarketSession {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
   }).formatToParts(new Date(nowMs));
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   const wd = get("weekday");
@@ -3373,26 +4120,41 @@ export function etClockSession(nowMs: number): MarketSession {
  * Best-effort: any read failure falls back to the ET clock (still useful, just holiday-blind).
  */
 export async function computeMarketSession(
-  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {}
+  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {},
 ): Promise<MarketSessionInfo> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const nowMs = (deps.now ?? Date.now)();
   let hours: any;
   try {
     hours = await getJson("https://api.robinhood.com/markets/{market}/hours/{date}/", {
-      market: "XNYS", date: etDateString(nowMs)
+      market: "XNYS",
+      date: etDateString(nowMs),
     });
   } catch {
-    return { session: etClockSession(nowMs), isTradingDay: etClockSession(nowMs) !== "closed", authoritative: false };
+    return {
+      session: etClockSession(nowMs),
+      isTradingDay: etClockSession(nowMs) !== "closed",
+      authoritative: false,
+    };
   }
   if (!hours?.is_open) return { session: "closed", isTradingDay: false, authoritative: true };
   const t = (s?: string) => (s ? Date.parse(s) : NaN);
-  const open = t(hours.opens_at), close = t(hours.closes_at);
-  const extOpen = t(hours.extended_opens_at), extClose = t(hours.extended_closes_at);
+  const open = t(hours.opens_at),
+    close = t(hours.closes_at);
+  const extOpen = t(hours.extended_opens_at),
+    extClose = t(hours.extended_closes_at);
   let session: MarketSession = "closed";
-  if (Number.isFinite(open) && Number.isFinite(close) && nowMs >= open && nowMs < close) session = "regular";
-  else if (Number.isFinite(extOpen) && Number.isFinite(open) && nowMs >= extOpen && nowMs < open) session = "pre_market";
-  else if (Number.isFinite(close) && Number.isFinite(extClose) && nowMs >= close && nowMs < extClose) session = "after_hours";
+  if (Number.isFinite(open) && Number.isFinite(close) && nowMs >= open && nowMs < close)
+    session = "regular";
+  else if (Number.isFinite(extOpen) && Number.isFinite(open) && nowMs >= extOpen && nowMs < open)
+    session = "pre_market";
+  else if (
+    Number.isFinite(close) &&
+    Number.isFinite(extClose) &&
+    nowMs >= close &&
+    nowMs < extClose
+  )
+    session = "after_hours";
   return { session, isTradingDay: true, authoritative: true };
 }
 
@@ -3470,7 +4232,10 @@ export interface EquityOrderResult {
  *   6. trading-log append on live sends
  * Dry-run unless the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch is set — the engine's env gate still applies.
  */
-export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrderDeps = {}): Promise<EquityOrderResult> {
+export async function placeEquityOrder(
+  input: EquityOrderInput,
+  deps: EquityOrderDeps = {},
+): Promise<EquityOrderResult> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const write = deps.write ?? gatedBrokerageWrite;
   const log = deps.log ?? logTrade;
@@ -3478,7 +4243,8 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   const getMarketSession = deps.getMarketSession ?? computeMarketSession;
   const symbol = input.symbol.toUpperCase();
   const side = input.side;
-  if (!input.amount && !input.shares) throw new Error("Must specify amount (dollars) or shares (quantity)");
+  if (!input.amount && !input.shares)
+    throw new Error("Must specify amount (dollars) or shares (quantity)");
   if (input.amount && input.shares) throw new Error("Specify amount OR shares, not both");
 
   // 0. Resolve the write policy up front so the ownership & dedup defenses can key on whether this
@@ -3486,7 +4252,7 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   const execution = resolveWriteExecution({
     dryRun: input.dryRun,
     liveWrite: input.liveWrite,
-    accountNumber: input.accountNumber
+    accountNumber: input.accountNumber,
   });
 
   // Owned-account guard — the #1 money-loss risk is a write to the WRONG account (a typo'd or
@@ -3496,31 +4262,42 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   // AND the MCP robinhood_buy/robinhood_sell tools. Zayd Khan // cold // www.zayd.wtf
   await assertAccountOwned(input.accountNumber, {
     getJson,
-    onLookupFailure: execution.live ? "block" : "warn"
+    onLookupFailure: execution.live ? "block" : "warn",
   });
 
   // 1. Resolve instrument — the response carries the OTC/fractional signals.
-  const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })).results?.[0];
+  const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol }))
+    .results?.[0];
   if (!inst) throw new Error(`Symbol ${symbol} not found`);
   const iid = inst.id;
-  const otc = Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
+  const otc =
+    Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
   if (input.amount && inst.fractional_tradability && inst.fractional_tradability !== "tradable") {
     // BOTH directions: a "$X of <OTC>" dollar/fractional order is impossible whether buying or
     // selling — switch to whole shares (the engine then auto-limits at the marketable side).
-    throw new Error(`${symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional ${side} order. Use shares (whole qty)${otc ? ` (OTC: auto-limits at the ${side === "buy" ? "ask" : "bid"})` : ""}.`);
+    throw new Error(
+      `${symbol}: fractional_tradability=${inst.fractional_tradability} — cannot place a dollar/fractional ${side} order. Use shares (whole qty)${otc ? ` (OTC: auto-limits at the ${side === "buy" ? "ask" : "bid"})` : ""}.`,
+    );
   }
 
   // 2. Quote — hard-fail on a dead/missing quote so sizing math can't divide by zero.
-  const q = (await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: iid })).results?.[0];
+  const q = (await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: iid }))
+    .results?.[0];
   const last = Number(q?.last_trade_price);
-  if (!Number.isFinite(last) || last <= 0) throw new Error(`Invalid or missing quote for ${symbol} (last_trade_price=${q?.last_trade_price ?? "none"})`);
+  if (!Number.isFinite(last) || last <= 0)
+    throw new Error(
+      `Invalid or missing quote for ${symbol} (last_trade_price=${q?.last_trade_price ?? "none"})`,
+    );
 
   // 3. Quantity (Robinhood: 4 decimal places for fractional shares).
   const rawShares = input.amount ? Number(input.amount) / last : Number(input.shares);
   const shares = Number(rawShares.toFixed(4));
-  if (!Number.isFinite(shares) || shares <= 0) throw new Error(`Computed share quantity is invalid (${rawShares}) for ${symbol}`);
+  if (!Number.isFinite(shares) || shares <= 0)
+    throw new Error(`Computed share quantity is invalid (${rawShares}) for ${symbol}`);
   if (otc && !Number.isInteger(shares)) {
-    throw new Error(`${symbol}: OTC/ADR names trade in WHOLE shares only — got ${shares}. Round to a whole quantity.`);
+    throw new Error(
+      `${symbol}: OTC/ADR names trade in WHOLE shares only — got ${shares}. Round to a whole quantity.`,
+    );
   }
 
   // 3b. OTC marketable-limit guard, BOTH directions (verified live: OTC rejects market orders).
@@ -3533,9 +4310,14 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   if (otc && effectiveLimit == null) {
     const ask = Number(q?.ask_price);
     const bid = Number(q?.bid_price);
-    effectiveLimit = side === "buy"
-      ? (Number.isFinite(ask) && ask > 0 ? ask : last)
-      : (Number.isFinite(bid) && bid > 0 ? bid : last);
+    effectiveLimit =
+      side === "buy"
+        ? Number.isFinite(ask) && ask > 0
+          ? ask
+          : last
+        : Number.isFinite(bid) && bid > 0
+          ? bid
+          : last;
     otcAutoLimit = true;
   }
 
@@ -3544,7 +4326,9 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   // explicit input.timeInForce overrides — but gtc is invalid on a market order (RH market orders are
   // day/gfd), so reject that combo loudly rather than silently mangle a real order.
   if (input.timeInForce === "gtc" && isMarket) {
-    throw new Error(`${symbol}: time_in_force=gtc is invalid for a market order (Robinhood market orders are day/gfd). Pass an explicit --limit for a gtc order, or omit --tif.`);
+    throw new Error(
+      `${symbol}: time_in_force=gtc is invalid for a market order (Robinhood market orders are day/gfd). Pass an explicit --limit for a gtc order, or omit --tif.`,
+    );
   }
   const tif = input.timeInForce ?? (isMarket || otcAutoLimit ? "gfd" : "gtc");
   const price = isMarket ? last.toFixed(2) : Number(effectiveLimit).toFixed(2);
@@ -3555,17 +4339,21 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   // possible duplicate order.
   if (execution.live && !input.force) {
     try {
-      const recent = await getJson("https://api.robinhood.com/orders/", {}, {
-        instrument: `https://api.robinhood.com/instruments/${iid}/`,
-        account_numbers: input.accountNumber,
-        is_closed: "false"
-      });
+      const recent = await getJson(
+        "https://api.robinhood.com/orders/",
+        {},
+        {
+          instrument: `https://api.robinhood.com/instruments/${iid}/`,
+          account_numbers: input.accountNumber,
+          is_closed: "false",
+        },
+      );
       const pending = filterRecentPending(recent?.results, side, now());
       if (pending.length > 0) {
         throw new Error(
           `DEDUP: ${pending.length} pending ${side} order(s) for ${symbol} already exist. ` +
-          `IDs: ${pending.map((o: any) => String(o.id ?? "").slice(0, 8)).join(", ")}. ` +
-          `Pass --force (CLI) / force:true (MCP) to skip this check.`
+            `IDs: ${pending.map((o: any) => String(o.id ?? "").slice(0, 8)).join(", ")}. ` +
+            `Pass --force (CLI) / force:true (MCP) to skip this check.`,
         );
       }
     } catch (e) {
@@ -3576,8 +4364,8 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
       // duplicate detection, never the ownership guard above, which already ran).
       throw new Error(
         `DEDUP-PREFLIGHT-FAILED: could not verify there are no pending ${side} order(s) for ${symbol} ` +
-        `(the duplicate-order read failed: ${msg}). Blocking this live send to avoid a double order. ` +
-        `Pass --force (CLI) / force:true (MCP) to skip the duplicate check and send anyway.`
+          `(the duplicate-order read failed: ${msg}). Blocking this live send to avoid a double order. ` +
+          `Pass --force (CLI) / force:true (MCP) to skip the duplicate check and send anyway.`,
       );
     }
   }
@@ -3607,7 +4395,9 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   let sessionWarning: string | undefined;
   try {
     session = (await getMarketSession({ getJson, now })).session;
-  } catch { /* best-effort — leave session undefined */ }
+  } catch {
+    /* best-effort — leave session undefined */
+  }
   if (session && session !== "regular") {
     if (dollarBased) {
       sessionWarning = `Session is ${session}: fractional dollar orders fill ONLY in regular hours, so this will QUEUE to the next regular session — it will not fill now.`;
@@ -3623,12 +4413,24 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
   if (dollarBased && session && session !== "regular" && !input.force) {
     const reason = `Pre-flight: a fractional $${input.amount} ${side} of ${symbol} can't be placed during ${session} — Robinhood rejects dollar/market orders outside regular hours (they only fill in the regular session). Wait for the regular session, or buy whole shares with a limit. Pass force to attempt anyway.`;
     return {
-      symbol, account: input.accountNumber, side, shares,
-      estimatedPrice: last, estimatedTotal: shares * last,
-      type: "market", otcAutoLimit, dollarBased,
-      session, sessionWarning: reason,
-      live: false, dryRun: false, preflightBlocked: true,
-      refId, orderId: null, state: null, httpStatus: 0
+      symbol,
+      account: input.accountNumber,
+      side,
+      shares,
+      estimatedPrice: last,
+      estimatedTotal: shares * last,
+      type: "market",
+      otcAutoLimit,
+      dollarBased,
+      session,
+      sessionWarning: reason,
+      live: false,
+      dryRun: false,
+      preflightBlocked: true,
+      refId,
+      orderId: null,
+      state: null,
+      httpStatus: 0,
     };
   }
 
@@ -3641,7 +4443,7 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
     trigger: "immediate",
     side,
     order_form_version: "7",
-    ref_id: refId
+    ref_id: refId,
   };
   let body: Record<string, unknown>;
   if (dollarBased) {
@@ -3654,7 +4456,7 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
       position_effect: side === "buy" ? "open" : "close",
       ...(Number.isFinite(bid) && bid > 0 ? { bid_price: bid.toFixed(2) } : {}),
       ...(Number.isFinite(ask) && ask > 0 ? { ask_price: ask.toFixed(2) } : {}),
-      ...(q?.updated_at ? { bid_ask_timestamp: String(q.updated_at) } : {})
+      ...(q?.updated_at ? { bid_ask_timestamp: String(q.updated_at) } : {}),
     };
   } else {
     body = { ...baseBody, quantity: String(shares), price };
@@ -3673,15 +4475,19 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
     body,
     dryRun: execution.dryRun,
     liveWrite: input.liveWrite,
-    accountNumber: input.accountNumber
+    accountNumber: input.accountNumber,
   });
   // Record session spend ONLY on a confirmed live send (2xx) — a rejected order must not consume
   // the session budget and falsely block the next one.
-  if (!result.dryRun && Number(result.status) >= 200 && Number(result.status) < 300) recordSessionNotional(notional);
+  if (!result.dryRun && Number(result.status) >= 200 && Number(result.status) < 300)
+    recordSessionNotional(notional);
 
   const rb = (() => {
-    try { return typeof result.body === "string" ? JSON.parse(result.body) : result.body; }
-    catch { return undefined; }
+    try {
+      return typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+    } catch {
+      return undefined;
+    }
   })();
 
   // 6. Log live sends to local/trading-log.jsonl (order history stays the source of truth).
@@ -3689,13 +4495,21 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
     try {
       await log({
         ts: new Date().toISOString(),
-        symbol, account: input.accountNumber, side,
+        symbol,
+        account: input.accountNumber,
+        side,
         type: isMarket ? "market" : "limit",
-        shares, price: isMarket ? last : Number(effectiveLimit),
-        estimatedTotal: shares * last, refId,
-        orderId: (rb as any)?.id ?? null, state: (rb as any)?.state ?? null, httpStatus: result.status
+        shares,
+        price: isMarket ? last : Number(effectiveLimit),
+        estimatedTotal: shares * last,
+        refId,
+        orderId: (rb as any)?.id ?? null,
+        state: (rb as any)?.state ?? null,
+        httpStatus: result.status,
       });
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 
   // 7. POST-SEND EVIDENCE (live sends only): after a 2xx, re-read the order from order history so
@@ -3710,26 +4524,34 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
       evidence = await verifyOrderEvidence(String(sentId), "equity", { getJson });
     } else {
       evidence = {
-        confirmed: false, id: sentId, state: (rb as any)?.state ?? null,
-        warning: `EVIDENCE UNCONFIRMED: live send returned ${result.status}${sentId ? "" : " with no order id"} — treat as NOT executed until it appears in order history (the only proof an order happened).`
+        confirmed: false,
+        id: sentId,
+        state: (rb as any)?.state ?? null,
+        warning: `EVIDENCE UNCONFIRMED: live send returned ${result.status}${sentId ? "" : " with no order id"} — treat as NOT executed until it appears in order history (the only proof an order happened).`,
       };
     }
   }
 
   return {
-    symbol, account: input.accountNumber, side, shares,
-    estimatedPrice: last, estimatedTotal: shares * last,
+    symbol,
+    account: input.accountNumber,
+    side,
+    shares,
+    estimatedPrice: last,
+    estimatedTotal: shares * last,
     type: isMarket ? "market" : "limit",
     otcAutoLimit,
     dollarBased,
     session,
     sessionWarning,
-    live: !result.dryRun, dryRun: result.dryRun, refId,
+    live: !result.dryRun,
+    dryRun: result.dryRun,
+    refId,
     orderId: (rb as any)?.id ?? (rb as any)?.url ?? null,
     state: (rb as any)?.state ?? null,
     httpStatus: result.status,
     result,
-    evidence
+    evidence,
   };
 }
 
@@ -3738,16 +4560,25 @@ export async function placeEquityOrder(input: EquityOrderInput, deps: EquityOrde
  * not a symbol — the lookup joins instruments/?ids= so callers see "AAPL", not a UUID.
  * Symbol resolution is best-effort; the order itself is returned regardless.
  */
-export async function getOrderStatus(idOrUrl: string, deps: { getJson?: typeof brokerageGetJson } = {}): Promise<any> {
+export async function getOrderStatus(
+  idOrUrl: string,
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<any> {
   const getJson = deps.getJson ?? brokerageGetJson;
-  const order = await getJson("https://api.robinhood.com/orders/{0}/", { "0": extractOrderId(idOrUrl) });
+  const order = await getJson("https://api.robinhood.com/orders/{0}/", {
+    "0": extractOrderId(idOrUrl),
+  });
   if (order && !order.symbol && typeof order.instrument === "string") {
     const m = /instruments\/([0-9a-f-]{8,})/i.exec(order.instrument);
     if (m) {
       try {
-        const sym = (await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: m[1] })).results?.[0]?.symbol;
+        const sym = (
+          await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: m[1] })
+        ).results?.[0]?.symbol;
         if (sym) return { ...order, symbol: sym };
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     }
   }
   return order;
@@ -3780,26 +4611,31 @@ export interface OrderEvidence {
 export async function verifyOrderEvidence(
   idOrUrl: string,
   kind: OrderKind = "equity",
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<OrderEvidence> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const id = extractOrderId(idOrUrl);
-  const url = kind === "options"
-    ? "https://api.robinhood.com/options/orders/{0}/"
-    : "https://api.robinhood.com/orders/{0}/";
+  const url =
+    kind === "options"
+      ? "https://api.robinhood.com/options/orders/{0}/"
+      : "https://api.robinhood.com/orders/{0}/";
   try {
     const order = await getJson(url, { "0": id });
     if (order && (order.id || order.state)) {
       return { confirmed: true, id: order.id ?? id, state: order.state ?? null };
     }
     return {
-      confirmed: false, id, state: null,
-      warning: `EVIDENCE UNCONFIRMED: ${kind} order ${id} re-read returned no order record — do NOT report this action as executed; brokerage order history is the only proof (failure mode #20).`
+      confirmed: false,
+      id,
+      state: null,
+      warning: `EVIDENCE UNCONFIRMED: ${kind} order ${id} re-read returned no order record — do NOT report this action as executed; brokerage order history is the only proof (failure mode #20).`,
     };
   } catch (error) {
     return {
-      confirmed: false, id, state: null,
-      warning: `EVIDENCE UNCONFIRMED: ${kind} order ${id} re-read failed (${(error as Error).message.slice(0, 100)}) — do NOT report this action as executed; check order history directly (failure mode #20).`
+      confirmed: false,
+      id,
+      state: null,
+      warning: `EVIDENCE UNCONFIRMED: ${kind} order ${id} re-read failed (${(error as Error).message.slice(0, 100)}) — do NOT report this action as executed; check order history directly (failure mode #20).`,
     };
   }
 }
@@ -3824,8 +4660,16 @@ export interface CancelOrderResult {
  * warning (it may have filled before the cancel landed).
  */
 export async function cancelOrder(
-  input: { idOrUrl: string; kind?: OrderKind; liveWrite?: boolean; dryRun?: boolean; logContext?: string; accountNumber?: string; force?: boolean },
-  deps: { write?: typeof gatedBrokerageWrite; getJson?: typeof brokerageGetJson } = {}
+  input: {
+    idOrUrl: string;
+    kind?: OrderKind;
+    liveWrite?: boolean;
+    dryRun?: boolean;
+    logContext?: string;
+    accountNumber?: string;
+    force?: boolean;
+  },
+  deps: { write?: typeof gatedBrokerageWrite; getJson?: typeof brokerageGetJson } = {},
 ): Promise<CancelOrderResult> {
   const write = deps.write ?? gatedBrokerageWrite;
   const getJson = deps.getJson ?? brokerageGetJson;
@@ -3834,7 +4678,7 @@ export async function cancelOrder(
   const execution = resolveWriteExecution({
     risk: "destructive",
     dryRun: input.dryRun,
-    liveWrite: input.liveWrite
+    liveWrite: input.liveWrite,
   });
 
   // 0. Owned-account guard (live cancels only — dry-runs are safe). Fail CLOSED: a live cancel must
@@ -3848,19 +4692,26 @@ export async function cancelOrder(
   let cancelAccount: string | undefined = input.accountNumber;
   if (execution.live) {
     if (input.accountNumber) {
-      await assertAccountOwned(input.accountNumber, { getJson, onLookupFailure: input.force ? "warn" : "block" });
+      await assertAccountOwned(input.accountNumber, {
+        getJson,
+        onLookupFailure: input.force ? "warn" : "block",
+      });
     } else {
       let unverifiable: string | undefined;
       try {
-        const preUrl = kind === "options"
-          ? "https://api.robinhood.com/options/orders/{0}/"
-          : "https://api.robinhood.com/orders/{0}/";
+        const preUrl =
+          kind === "options"
+            ? "https://api.robinhood.com/options/orders/{0}/"
+            : "https://api.robinhood.com/orders/{0}/";
         const order = await getJson(preUrl, { "0": id });
         const acctUrl = order?.account;
         const acctNum = acctUrl ? String(acctUrl).replace(/\/$/, "").split("/").pop() : undefined;
         if (acctNum) {
           cancelAccount = acctNum;
-          await assertAccountOwned(acctNum, { getJson, onLookupFailure: input.force ? "warn" : "block" });
+          await assertAccountOwned(acctNum, {
+            getJson,
+            onLookupFailure: input.force ? "warn" : "block",
+          });
         } else {
           unverifiable = "the order pre-read did not return an account";
         }
@@ -3874,26 +4725,35 @@ export async function cancelOrder(
         if (!input.force) {
           throw new Error(
             `Refusing a LIVE cancel of ${kind} order ${id}: could not verify the order's account (${unverifiable}). ` +
-            `The cancel account defense fails CLOSED — pass --force (CLI) / force:true (MCP) to cancel anyway.`
+              `The cancel account defense fails CLOSED — pass --force (CLI) / force:true (MCP) to cancel anyway.`,
           );
         }
-        process.stderr.write(`⚠️  --force: cancelling ${kind} order ${id} without verifying its account (${unverifiable}).\n`);
+        process.stderr.write(
+          `⚠️  --force: cancelling ${kind} order ${id} without verifying its account (${unverifiable}).\n`,
+        );
       }
     }
   }
 
-  const url = kind === "options"
-    ? "https://api.robinhood.com/options/orders/{0}/cancel/"
-    : "https://api.robinhood.com/orders/{0}/cancel/";
+  const url =
+    kind === "options"
+      ? "https://api.robinhood.com/options/orders/{0}/cancel/"
+      : "https://api.robinhood.com/orders/{0}/cancel/";
   const result = await write({
-    url, method: "POST", params: { "0": id },
-    dryRun: execution.dryRun, liveWrite: Boolean(input.liveWrite),
+    url,
+    method: "POST",
+    params: { "0": id },
+    dryRun: execution.dryRun,
+    liveWrite: Boolean(input.liveWrite),
     accountNumber: cancelAccount, // N1 — scope the allow-list to the order's account
-    logContext: input.logContext ?? `cancel ${kind} order ${id}`
+    logContext: input.logContext ?? `cancel ${kind} order ${id}`,
   });
   const rb = (() => {
-    try { return typeof result.body === "string" ? JSON.parse(result.body) : result.body; }
-    catch { return undefined; }
+    try {
+      return typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+    } catch {
+      return undefined;
+    }
   })();
   let evidence: OrderEvidence | undefined;
   if (!result.dryRun) {
@@ -3903,27 +4763,47 @@ export async function cancelOrder(
       if (evidence.confirmed && evidence.state && !/cancel/i.test(evidence.state)) {
         evidence = {
           ...evidence,
-          warning: `Cancel accepted (${result.status}) but the order re-reads as '${evidence.state}' — it may have filled before the cancel landed; verify in order history.`
+          warning: `Cancel accepted (${result.status}) but the order re-reads as '${evidence.state}' — it may have filled before the cancel landed; verify in order history.`,
         };
       }
     } else {
       evidence = {
-        confirmed: false, id, state: (rb as any)?.state ?? null,
-        warning: `EVIDENCE UNCONFIRMED: cancel returned ${result.status} — the order may still be open; check order history.`
+        confirmed: false,
+        id,
+        state: (rb as any)?.state ?? null,
+        warning: `EVIDENCE UNCONFIRMED: cancel returned ${result.status} — the order may still be open; check order history.`,
       };
     }
   }
   return {
-    orderId: id, kind, live: !result.dryRun, dryRun: result.dryRun,
-    httpStatus: result.status, state: (rb as any)?.state ?? null, evidence, gateReason: result.reason
+    orderId: id,
+    kind,
+    live: !result.dryRun,
+    dryRun: result.dryRun,
+    httpStatus: result.status,
+    state: (rb as any)?.state ?? null,
+    evidence,
+    gateReason: result.reason,
   };
 }
 
 // ── Open-order enumeration (orders open + panic's read half) ──────────────────────────────────
 
 /** States Robinhood reports for not-yet-terminal orders (verified live: options/orders/?states= accepts a comma list). */
-export const OPEN_ORDER_STATES = ["queued", "unconfirmed", "confirmed", "partially_filled"] as const;
-const TERMINAL_ORDER_STATES = new Set(["filled", "cancelled", "rejected", "failed", "expired", "voided"]);
+export const OPEN_ORDER_STATES = [
+  "queued",
+  "unconfirmed",
+  "confirmed",
+  "partially_filled",
+] as const;
+const TERMINAL_ORDER_STATES = new Set([
+  "filled",
+  "cancelled",
+  "rejected",
+  "failed",
+  "expired",
+  "voided",
+]);
 
 /** True when an order state is non-terminal (open/pending). Unknown states count as open — safer for panic. */
 export function isOpenOrderState(state: unknown): boolean {
@@ -3960,7 +4840,7 @@ export interface OpenOrderRow {
  */
 export async function listOpenOrders(
   opts: { accountNumber?: string } = {},
-  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {}
+  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {},
 ): Promise<{ accountsScanned: string[]; orders: OpenOrderRow[]; warnings: string[] }> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const now = deps.now ?? Date.now;
@@ -3975,57 +4855,102 @@ export async function listOpenOrders(
 
   for (const { acct, label } of accts) {
     try {
-      const eq = await getJson("https://api.robinhood.com/orders/", {}, { account_numbers: acct, is_closed: "false" });
+      const eq = await getJson(
+        "https://api.robinhood.com/orders/",
+        {},
+        { account_numbers: acct, is_closed: "false" },
+      );
       for (const o of (eq?.results ?? []).filter((r: any) => isOpenOrderState(r?.state))) {
         const qty = n(o.quantity);
         const price = o.price != null ? n(o.price) : Number.NaN;
         orders.push({
-          kind: "equity", id: String(o.id ?? ""), accountNumber: acct, accountLabel: label,
+          kind: "equity",
+          id: String(o.id ?? ""),
+          accountNumber: acct,
+          accountLabel: label,
           symbol: o.symbol ?? String(o.instrument_id ?? o.instrument ?? "?"), // resolved below if UUID
           description: `${o.side ?? "?"} ${o.quantity ?? "?"} sh ${o.type ?? "?"}${Number.isFinite(price) ? ` @ $${price.toFixed(2)}` : ""}`,
-          side: o.side ?? null, state: String(o.state ?? "?"), quantity: qty, price,
+          side: o.side ?? null,
+          state: String(o.state ?? "?"),
+          quantity: qty,
+          price,
           notionalUsd: Number.isFinite(price) && Number.isFinite(qty) ? price * qty : Number.NaN,
-          timeInForce: o.time_in_force ?? null, createdAt: o.created_at ?? null, ageHours: ageOf(o.created_at),
-          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind equity   # dry-run; add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to send`
+          timeInForce: o.time_in_force ?? null,
+          createdAt: o.created_at ?? null,
+          ageHours: ageOf(o.created_at),
+          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind equity   # dry-run; add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to send`,
         });
       }
-    } catch (e: any) { warnings.push(`equity open-orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    } catch (e: any) {
+      warnings.push(
+        `equity open-orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
+    }
     try {
-      const op = await getJson("https://api.robinhood.com/options/orders/", {}, { account_numbers: acct, states: OPEN_ORDER_STATES.join(",") });
+      const op = await getJson(
+        "https://api.robinhood.com/options/orders/",
+        {},
+        { account_numbers: acct, states: OPEN_ORDER_STATES.join(",") },
+      );
       for (const o of (op?.results ?? []).filter((r: any) => isOpenOrderState(r?.state))) {
         const qty = n(o.quantity);
         const price = o.price != null ? n(o.price) : Number.NaN;
         const strat = o.opening_strategy ?? o.closing_strategy ?? "";
         orders.push({
-          kind: "options", id: String(o.id ?? ""), accountNumber: acct, accountLabel: label,
+          kind: "options",
+          id: String(o.id ?? ""),
+          accountNumber: acct,
+          accountLabel: label,
           symbol: o.chain_symbol ?? "?",
-          description: `${strat} ${o.direction ? `(${o.direction})` : ""} ${o.quantity ?? "?"}×${Number.isFinite(price) ? ` @ $${price.toFixed(2)}` : ""}`.trim(),
-          side: o.direction ?? null, state: String(o.state ?? "?"), quantity: qty, price,
-          notionalUsd: Number.isFinite(price) && Number.isFinite(qty) ? price * qty * 100 : Number.NaN,
-          timeInForce: o.time_in_force ?? null, createdAt: o.created_at ?? null, ageHours: ageOf(o.created_at),
-          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind options   # dry-run; add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to send`
+          description:
+            `${strat} ${o.direction ? `(${o.direction})` : ""} ${o.quantity ?? "?"}×${Number.isFinite(price) ? ` @ $${price.toFixed(2)}` : ""}`.trim(),
+          side: o.direction ?? null,
+          state: String(o.state ?? "?"),
+          quantity: qty,
+          price,
+          notionalUsd:
+            Number.isFinite(price) && Number.isFinite(qty) ? price * qty * 100 : Number.NaN,
+          timeInForce: o.time_in_force ?? null,
+          createdAt: o.created_at ?? null,
+          ageHours: ageOf(o.created_at),
+          cancelCommand: `node cli/dist/index.js cancel -i ${o.id} --kind options   # dry-run; add ROBINHOOD_ALLOW_LIVE_WRITE=1 (--live optional) to send`,
         });
       }
-    } catch (e: any) { warnings.push(`options open-orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    } catch (e: any) {
+      warnings.push(
+        `options open-orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
+    }
   }
 
   // Equity orders carry instrument UUIDs, not tickers — batch-resolve any unresolved symbols.
-  const unresolved = orders.filter((o) => o.kind === "equity" && /[0-9a-f]{8}-[0-9a-f]{4}/i.test(o.symbol));
+  const unresolved = orders.filter(
+    (o) => o.kind === "equity" && /[0-9a-f]{8}-[0-9a-f]{4}/i.test(o.symbol),
+  );
   if (unresolved.length) {
     try {
-      const ids = [...new Set(unresolved.map((o) => {
-        const m = /instruments\/([0-9a-f-]{8,})/i.exec(o.symbol);
-        return m ? m[1] : o.symbol;
-      }))];
-      const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: ids.join(",") });
+      const ids = [
+        ...new Set(
+          unresolved.map((o) => {
+            const m = /instruments\/([0-9a-f-]{8,})/i.exec(o.symbol);
+            return m ? m[1] : o.symbol;
+          }),
+        ),
+      ];
+      const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", {
+        ids: ids.join(","),
+      });
       const bySym = new Map<string, string>();
-      for (const r of data?.results ?? []) if (r?.id && r?.symbol) bySym.set(String(r.id), String(r.symbol));
+      for (const r of data?.results ?? [])
+        if (r?.id && r?.symbol) bySym.set(String(r.id), String(r.symbol));
       for (const o of unresolved) {
         const m = /([0-9a-f]{8}-[0-9a-f-]{27,})/i.exec(o.symbol);
         const sym = m ? bySym.get(m[1]) : undefined;
         if (sym) o.symbol = sym;
       }
-    } catch { warnings.push("equity instrument→ticker resolution failed — some open orders show UUIDs"); }
+    } catch {
+      warnings.push("equity instrument→ticker resolution failed — some open orders show UUIDs");
+    }
   }
 
   orders.sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
@@ -4061,45 +4986,85 @@ export interface PanicResult {
  */
 export async function panicCancelAll(
   opts: { accountNumber?: string; liveWrite?: boolean; dryRun?: boolean } = {},
-  deps: { getJson?: typeof brokerageGetJson; write?: typeof gatedBrokerageWrite; now?: () => number } = {}
+  deps: {
+    getJson?: typeof brokerageGetJson;
+    write?: typeof gatedBrokerageWrite;
+    now?: () => number;
+  } = {},
 ): Promise<PanicResult> {
   const open = await listOpenOrders({ accountNumber: opts.accountNumber }, deps);
   const execution = resolveWriteExecution({
     risk: "destructive",
     dryRun: opts.dryRun,
     liveWrite: opts.liveWrite,
-    accountNumber: opts.accountNumber
+    accountNumber: opts.accountNumber,
   });
   const rows: Array<OpenOrderRow & { cancel: PanicCancelRecord }> = [];
   let cancelled = 0;
   let failed = 0;
   for (const o of open.orders) {
     try {
-      const r = await cancelOrder({
-        idOrUrl: o.id, kind: o.kind, liveWrite: opts.liveWrite,
-        dryRun: execution.dryRun,
-        // panic enumerated these orders from listOpenOrders over OWNED accounts, so the account is
-        // already verified — pass it so the live-cancel fail-closed pre-read can't wedge the sweep.
-        accountNumber: o.accountNumber,
-        logContext: `panic cancel-all: ${o.kind} ${o.symbol} ${o.description} (acct …${o.accountNumber.slice(-4)})`
-      }, deps);
+      const r = await cancelOrder(
+        {
+          idOrUrl: o.id,
+          kind: o.kind,
+          liveWrite: opts.liveWrite,
+          dryRun: execution.dryRun,
+          // panic enumerated these orders from listOpenOrders over OWNED accounts, so the account is
+          // already verified — pass it so the live-cancel fail-closed pre-read can't wedge the sweep.
+          accountNumber: o.accountNumber,
+          logContext: `panic cancel-all: ${o.kind} ${o.symbol} ${o.description} (acct …${o.accountNumber.slice(-4)})`,
+        },
+        deps,
+      );
       if (!r.dryRun) {
-        const ok = Number(r.httpStatus) >= 200 && Number(r.httpStatus) < 300 && r.evidence?.confirmed !== false;
-        if (ok) cancelled++; else failed++;
+        const ok =
+          Number(r.httpStatus) >= 200 &&
+          Number(r.httpStatus) < 300 &&
+          r.evidence?.confirmed !== false;
+        if (ok) cancelled++;
+        else failed++;
       }
-      rows.push({ ...o, cancel: { httpStatus: r.httpStatus, dryRun: r.dryRun, state: r.state, evidence: r.evidence, gateReason: r.gateReason } });
+      rows.push({
+        ...o,
+        cancel: {
+          httpStatus: r.httpStatus,
+          dryRun: r.dryRun,
+          state: r.state,
+          evidence: r.evidence,
+          gateReason: r.gateReason,
+        },
+      });
     } catch (error) {
       failed++;
-      rows.push({ ...o, cancel: { httpStatus: "error", dryRun: execution.dryRun, state: null, error: (error as Error).message } });
+      rows.push({
+        ...o,
+        cancel: {
+          httpStatus: "error",
+          dryRun: execution.dryRun,
+          state: null,
+          error: (error as Error).message,
+        },
+      });
     }
   }
   const dryRun = rows.length > 0 ? rows.every((r) => r.cancel.dryRun) : execution.dryRun;
-  const summary = rows.length === 0
-    ? `No open/pending orders found across ${open.accountsScanned.length} account(s) — nothing to cancel.`
-    : dryRun
-      ? `DRY RUN: ${rows.length} open order(s) WOULD be cancelled — nothing was sent. Re-run with ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional) to cancel for real.`
-      : `${rows.length} open order(s) found: ${cancelled} cancelled, ${failed} failed (evidence re-read per cancel; order history is the source of truth).`;
-  return { dryRun, accountsScanned: open.accountsScanned, found: rows.length, cancelled, failed, orders: rows, warnings: open.warnings, summary };
+  const summary =
+    rows.length === 0
+      ? `No open/pending orders found across ${open.accountsScanned.length} account(s) — nothing to cancel.`
+      : dryRun
+        ? `DRY RUN: ${rows.length} open order(s) WOULD be cancelled — nothing was sent. Re-run with ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; --live-write optional) to cancel for real.`
+        : `${rows.length} open order(s) found: ${cancelled} cancelled, ${failed} failed (evidence re-read per cancel; order history is the source of truth).`;
+  return {
+    dryRun,
+    accountsScanned: open.accountsScanned,
+    found: rows.length,
+    cancelled,
+    failed,
+    orders: rows,
+    warnings: open.warnings,
+    summary,
+  };
 }
 
 // ── Account capability classification (shared by `accounts`, pretrade) ───────────────────────
@@ -4113,14 +5078,18 @@ export function accountCapabilities(account: Record<string, any>): {
 } {
   const type = String(account?.type ?? "").toLowerCase();
   const brokType = String(account?.brokerage_account_type ?? "").toLowerCase();
-  const isIra = brokType.includes("ira") || brokType.includes("roth") || type.includes("ira") || type.includes("roth");
+  const isIra =
+    brokType.includes("ira") ||
+    brokType.includes("roth") ||
+    type.includes("ira") ||
+    type.includes("roth");
   const isMargin = type === "margin" && !isIra;
   if (isIra) {
     return {
       canMarginBorrow: false,
       canRollOnMargin: false,
       canNakedShort: false,
-      note: "IRA: long options, defined-risk spreads, and covered calls only — no margin borrowing and no naked/undefined-risk shorts."
+      note: "IRA: long options, defined-risk spreads, and covered calls only — no margin borrowing and no naked/undefined-risk shorts.",
     };
   }
   if (isMargin) {
@@ -4128,14 +5097,14 @@ export function accountCapabilities(account: Record<string, any>): {
       canMarginBorrow: true,
       canRollOnMargin: true,
       canNakedShort: true,
-      note: "Margin: can borrow, roll, and run spreads/shorts that need buying power. PDT lifted on RH - no $25k day-trade cap (FINRA eliminated it 2026-06-04); maintenance margin still applies."
+      note: "Margin: can borrow, roll, and run spreads/shorts that need buying power. PDT lifted on RH - no $25k day-trade cap (FINRA eliminated it 2026-06-04); maintenance margin still applies.",
     };
   }
   return {
     canMarginBorrow: false,
     canRollOnMargin: false,
     canNakedShort: false,
-    note: "Cash: buy/sell, cash-secured puts, covered calls, and debit spreads only. No margin borrowing, no naked/undefined-risk shorts, and no margin rolls — rolling is limited to closing then re-opening with SETTLED cash (T+1; watch good-faith violations)."
+    note: "Cash: buy/sell, cash-secured puts, covered calls, and debit spreads only. No margin borrowing, no naked/undefined-risk shorts, and no margin rolls — rolling is limited to closing then re-opening with SETTLED cash (T+1; watch good-faith violations).",
   };
 }
 
@@ -4147,27 +5116,54 @@ export function accountCapabilities(account: Record<string, any>): {
  */
 export async function detectAccountClass(
   accountNumber: string,
-  getJson: typeof brokerageGetJson = brokerageGetJson
-): Promise<{ accountClass: "cash" | "margin" | "ira" | "unverified"; brokerageAccountType: string; caps: ReturnType<typeof accountCapabilities> }> {
+  getJson: typeof brokerageGetJson = brokerageGetJson,
+): Promise<{
+  accountClass: "cash" | "margin" | "ira" | "unverified";
+  brokerageAccountType: string;
+  caps: ReturnType<typeof accountCapabilities>;
+}> {
   const acct = String(accountNumber);
   let isIra = false;
   try {
     const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
     const rows: any[] = Array.isArray(graph?.results) ? graph.results : [];
     const graphRow = rows.find((r) => String(r?.account_number) === acct);
-    isIra = String(graphRow?.type ?? "").toLowerCase().includes("ira") || String(graphRow?.type ?? "").toLowerCase().includes("roth");
-  } catch { /* degrade below */ }
+    isIra =
+      String(graphRow?.type ?? "")
+        .toLowerCase()
+        .includes("ira") ||
+      String(graphRow?.type ?? "")
+        .toLowerCase()
+        .includes("roth");
+  } catch {
+    /* degrade below */
+  }
   let detail: Record<string, any> = {};
-  try { detail = await getJson("https://api.robinhood.com/accounts/{account_number}/", { account_number: acct }); } catch { /* degrade */ }
+  try {
+    detail = await getJson("https://api.robinhood.com/accounts/{account_number}/", {
+      account_number: acct,
+    });
+  } catch {
+    /* degrade */
+  }
   const detailType = String(detail?.type ?? "").toLowerCase();
   const acctRecord = { ...detail, ...(isIra ? { brokerage_account_type: "ira_roth" } : {}) };
   const caps = accountCapabilities(acctRecord);
   let accountClass: "cash" | "margin" | "ira" | "unverified";
   let brokerageAccountType: string;
-  if (isIra) { accountClass = "ira"; brokerageAccountType = "ira_roth"; }
-  else if (detailType === "cash") { accountClass = "cash"; brokerageAccountType = "cash"; }
-  else if (detailType === "margin") { accountClass = "margin"; brokerageAccountType = "margin"; }
-  else { accountClass = "unverified"; brokerageAccountType = detailType || "unverified"; }
+  if (isIra) {
+    accountClass = "ira";
+    brokerageAccountType = "ira_roth";
+  } else if (detailType === "cash") {
+    accountClass = "cash";
+    brokerageAccountType = "cash";
+  } else if (detailType === "margin") {
+    accountClass = "margin";
+    brokerageAccountType = "margin";
+  } else {
+    accountClass = "unverified";
+    brokerageAccountType = detailType || "unverified";
+  }
   return { accountClass, brokerageAccountType, caps };
 }
 
@@ -4187,7 +5183,9 @@ export interface RollLegQuote {
 }
 
 /** Per-leg client quote snapshot for a roll's leg_metadata (anti-stale-fill telemetry; non-core). */
-export function rollLegQuoteMetadata(q?: RollLegQuote | null): { option_quote: Record<string, unknown> } | undefined {
+export function rollLegQuoteMetadata(
+  q?: RollLegQuote | null,
+): { option_quote: Record<string, unknown> } | undefined {
   if (!q) return undefined;
   const out: Record<string, unknown> = {};
   if (q.bid != null) out.bid_price = optionPriceString(Number(q.bid));
@@ -4229,7 +5227,10 @@ export function buildAtomicRollOrderBody(input: {
   const openCredit = input.openSide === "sell" ? input.openLimit : -input.openLimit;
   const netCredit = closeCredit + openCredit; // >0 ⇒ net credit, <0 ⇒ net debit
   const direction = netCredit >= 0 ? "credit" : "debit";
-  const idOf = (url: string) => { const m = url.match(OPTION_URL_ID_RE); return m ? m[1] : undefined; };
+  const idOf = (url: string) => {
+    const m = url.match(OPTION_URL_ID_RE);
+    return m ? m[1] : undefined;
+  };
   const closeId = idOf(input.closeOptionUrl);
   const openId = idOf(input.openOptionUrl);
   const closeMeta = rollLegQuoteMetadata(input.closeQuote);
@@ -4239,7 +5240,9 @@ export function buildAtomicRollOrderBody(input: {
     account: `https://api.robinhood.com/accounts/${input.account}/`,
     direction,
     form_source: "strategy_roll",
-    ...(input.checkOverrides && input.checkOverrides.length ? { check_overrides: input.checkOverrides } : {}),
+    ...(input.checkOverrides && input.checkOverrides.length
+      ? { check_overrides: input.checkOverrides }
+      : {}),
     ...(oq?.bid != null ? { client_bid_at_submission: optionPriceString(Number(oq.bid)) } : {}),
     ...(oq?.ask != null ? { client_ask_at_submission: optionPriceString(Number(oq.ask)) } : {}),
     legs: [
@@ -4249,7 +5252,7 @@ export function buildAtomicRollOrderBody(input: {
         ratio_quantity: 1,
         option: input.closeOptionUrl,
         ...(closeId ? { option_id: closeId } : {}),
-        ...(closeMeta ? { leg_metadata: closeMeta } : {})
+        ...(closeMeta ? { leg_metadata: closeMeta } : {}),
       },
       {
         side: input.openSide,
@@ -4257,8 +5260,8 @@ export function buildAtomicRollOrderBody(input: {
         ratio_quantity: 1,
         option: input.openOptionUrl,
         ...(openId ? { option_id: openId } : {}),
-        ...(openMeta ? { leg_metadata: openMeta } : {})
-      }
+        ...(openMeta ? { leg_metadata: openMeta } : {}),
+      },
     ],
     market_hours: input.marketHours ?? "regular_hours",
     override_day_trade_checks: false,
@@ -4270,10 +5273,14 @@ export function buildAtomicRollOrderBody(input: {
     type: "limit",
     metadata: {
       ...(input.accountType ? { brokerage_account_type: input.accountType } : {}),
-      is_direction_explicit: false
+      is_direction_explicit: false,
     },
     order_path_experiments: [] as unknown[],
-    _net: { direction, netPrice: optionMoney(netCredit), note: "NET of both legs from dry-run limits; not a fill guarantee." }
+    _net: {
+      direction,
+      netPrice: optionMoney(netCredit),
+      note: "NET of both legs from dry-run limits; not a fill guarantee.",
+    },
   };
 }
 
@@ -4281,7 +5288,7 @@ export function buildAtomicRollOrderBody(input: {
 export function resolveRollModel(
   requested: "auto" | "atomic" | "kosher",
   accountClass: "cash" | "margin" | "ira" | "unverified",
-  forceKosher = false
+  forceKosher = false,
 ): "atomic" | "kosher" {
   if (requested === "kosher" || forceKosher) return "kosher";
   if (requested === "atomic") return "atomic";
@@ -4333,7 +5340,7 @@ export interface PretradeInput {
  */
 export async function runPretradeChecks(
   opts: PretradeInput,
-  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {}
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {},
 ): Promise<PretradeReport> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const getAll = deps.getAll ?? brokerageGetAllResults;
@@ -4348,7 +5355,11 @@ export async function runPretradeChecks(
     const accts = await listOwnedTradingAccounts(getJson);
     const hit = accts.find((a) => a.acct === acct);
     if (!hit) {
-      checks.push({ id: "account", status: "BLOCK", detail: `Account ${acct} is not one of your trading accounts (${accts.map((a) => "…" + a.acct.slice(-4)).join(", ")}) — wrong-account risk; refusing to plan against it.` });
+      checks.push({
+        id: "account",
+        status: "BLOCK",
+        detail: `Account ${acct} is not one of your trading accounts (${accts.map((a) => "…" + a.acct.slice(-4)).join(", ")}) — wrong-account risk; refusing to plan against it.`,
+      });
     } else {
       // transfer graph type distinguishes IRA; cash/margin needs the per-account detail read.
       const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
@@ -4356,48 +5367,85 @@ export async function runPretradeChecks(
       const graphRow = rows.find((r) => String(r?.account_number) === acct);
       const isIra = String(graphRow?.type ?? "").includes("ira");
       let detail: Record<string, any> = {};
-      try { detail = await getJson("https://api.robinhood.com/accounts/{account_number}/", { account_number: acct }); } catch { /* degrade to graph type */ }
+      try {
+        detail = await getJson("https://api.robinhood.com/accounts/{account_number}/", {
+          account_number: acct,
+        });
+      } catch {
+        /* degrade to graph type */
+      }
       const acctRecord = { ...detail, ...(isIra ? { brokerage_account_type: "ira_roth" } : {}) };
       const caps = accountCapabilities(acctRecord);
       accountClass = isIra ? "ira" : String(detail?.type ?? "unverified").toLowerCase();
       resolved.accountClass = accountClass;
       resolved.accountLabel = hit.label;
-      checks.push({ id: "account", status: "PASS", detail: `Account …${acct.slice(-4)}${hit.label ? ` (${hit.label})` : ""} owned; class=${accountClass}. ${caps.note}` });
+      checks.push({
+        id: "account",
+        status: "PASS",
+        detail: `Account …${acct.slice(-4)}${hit.label ? ` (${hit.label})` : ""} owned; class=${accountClass}. ${caps.note}`,
+      });
     }
-  } catch (e: any) { checks.push({ id: "account", status: "WARN", detail: `account check failed: ${(e as Error).message.slice(0, 80)}` }); }
+  } catch (e: any) {
+    checks.push({
+      id: "account",
+      status: "WARN",
+      detail: `account check failed: ${(e as Error).message.slice(0, 80)}`,
+    });
+  }
 
   // (b) buying power breakdown
   try {
-    const bp = await getJson("https://api.robinhood.com/accounts/{account_number}/buying_power_breakdown", { account_number: acct });
+    const bp = await getJson(
+      "https://api.robinhood.com/accounts/{account_number}/buying_power_breakdown",
+      { account_number: acct },
+    );
     const regular = n(bp?.buying_power);
     resolved.buyingPower = regular;
     checks.push({
-      id: "buying-power", status: Number.isFinite(regular) ? "PASS" : "WARN",
-      detail: `Regular BP $${Number.isFinite(regular) ? regular.toFixed(2) : "?"}; intraday $${Number.isFinite(n(bp?.intraday_buying_power)) ? n(bp.intraday_buying_power).toFixed(2) : "?"}. NOTE: GTC option OPENS are gated by OVERNIGHT options buying power, not regular BP — regular BP looking fine does not mean a GTC open clears (see options-buying-power check).`
+      id: "buying-power",
+      status: Number.isFinite(regular) ? "PASS" : "WARN",
+      detail: `Regular BP $${Number.isFinite(regular) ? regular.toFixed(2) : "?"}; intraday $${Number.isFinite(n(bp?.intraday_buying_power)) ? n(bp.intraday_buying_power).toFixed(2) : "?"}. NOTE: GTC option OPENS are gated by OVERNIGHT options buying power, not regular BP — regular BP looking fine does not mean a GTC open clears (see options-buying-power check).`,
     });
-  } catch (e: any) { checks.push({ id: "buying-power", status: "WARN", detail: `buying_power_breakdown read failed: ${(e as Error).message.slice(0, 80)}` }); }
+  } catch (e: any) {
+    checks.push({
+      id: "buying-power",
+      status: "WARN",
+      detail: `buying_power_breakdown read failed: ${(e as Error).message.slice(0, 80)}`,
+    });
+  }
 
   // Resolve the chain when only a symbol was given (needed for collateral + min-tick).
   let chainId = opts.chainId;
   let instrument: any;
   if (opts.symbol) {
     try {
-      instrument = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: opts.symbol.toUpperCase() })).results?.[0];
-      if (instrument && !chainId && instrument.tradable_chain_id) chainId = String(instrument.tradable_chain_id);
+      instrument = (
+        await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", {
+          symbol: opts.symbol.toUpperCase(),
+        })
+      ).results?.[0];
+      if (instrument && !chainId && instrument.tradable_chain_id)
+        chainId = String(instrument.tradable_chain_id);
       if (chainId) resolved.chainId = chainId;
-    } catch { /* the dependent checks degrade below */ }
+    } catch {
+      /* the dependent checks degrade below */
+    }
   }
 
   // (c) options buying power / fees / collateral — shared pre-trade reads, each degrades inside.
   try {
     const flow = await readOptionsOrderFlow({ accountNumber: acct, chainId }, { getJson });
-    const obp = n(flow.buyingPower?.options_buying_power ?? flow.buyingPower?.buying_power ?? flow.buyingPower?.amount);
+    const obp = n(
+      flow.buyingPower?.options_buying_power ??
+        flow.buyingPower?.buying_power ??
+        flow.buyingPower?.amount,
+    );
     checks.push({
       id: "options-buying-power",
       status: flow.buyingPower ? "PASS" : "WARN",
       detail: flow.buyingPower
         ? `Options buying power read OK${Number.isFinite(obp) ? ` ($${obp.toFixed(2)})` : ""} — this (and overnight BP for GTC opens) is the real gate on option opens.`
-        : `options buying power unavailable: ${flow.warnings.join("; ").slice(0, 100)}`
+        : `options buying power unavailable: ${flow.warnings.join("; ").slice(0, 100)}`,
     });
     checks.push({
       id: "collateral",
@@ -4406,37 +5454,63 @@ export async function runPretradeChecks(
         ? `Collateral requirements read OK${chainId ? ` for chain ${chainId}` : " (account-level)"} — covered calls need 100 shares/contract in the SAME account; CSPs need the cash.`
         : chainId
           ? `collateral read failed: ${flow.warnings.join("; ").slice(0, 100)}`
-          : "no --symbol/--chain-id given; per-chain collateral skipped."
+          : "no --symbol/--chain-id given; per-chain collateral skipped.",
     });
     if (flow.fees) resolved.feesRead = true;
-  } catch (e: any) { checks.push({ id: "options-buying-power", status: "WARN", detail: `options order-flow reads failed: ${(e as Error).message.slice(0, 80)}` }); }
+  } catch (e: any) {
+    checks.push({
+      id: "options-buying-power",
+      status: "WARN",
+      detail: `options order-flow reads failed: ${(e as Error).message.slice(0, 80)}`,
+    });
+  }
 
   // (d) min-tick vs limit price (the ARKG $0.05 trap)
   if (chainId) {
     try {
-      const chain = await getJson("https://api.robinhood.com/options/chains/{id}/", { id: chainId });
+      const chain = await getJson("https://api.robinhood.com/options/chains/{id}/", {
+        id: chainId,
+      });
       const mt = chain?.min_ticks ?? {};
       const below = n(mt.below_tick);
       const above = n(mt.above_tick);
       const cutoff = n(mt.cutoff_price);
       resolved.minTicks = { belowTick: below, aboveTick: above, cutoffPrice: cutoff };
       if (opts.limitPrice == null) {
-        checks.push({ id: "min-tick", status: "SKIP", detail: `No --limit-price given. Chain min_ticks: $${below} below the $${cutoff} cutoff, $${above} above — limits must land on the tick ($0.01 on a $0.05 chain → 400).` });
+        checks.push({
+          id: "min-tick",
+          status: "SKIP",
+          detail: `No --limit-price given. Chain min_ticks: $${below} below the $${cutoff} cutoff, $${above} above — limits must land on the tick ($0.01 on a $0.05 chain → 400).`,
+        });
       } else {
         const price = Number(opts.limitPrice);
         const tick = Number.isFinite(cutoff) && price < cutoff ? below : above;
-        const onTick = Number.isFinite(tick) && tick > 0 ? Math.abs(price / tick - Math.round(price / tick)) < 1e-6 : true;
+        const onTick =
+          Number.isFinite(tick) && tick > 0
+            ? Math.abs(price / tick - Math.round(price / tick)) < 1e-6
+            : true;
         checks.push({
           id: "min-tick",
           status: onTick ? "PASS" : "BLOCK",
           detail: onTick
             ? `Limit $${price} satisfies the chain tick ($${tick} ${price < cutoff ? "below" : "at/above"} the $${cutoff} cutoff).`
-            : `Limit $${price} is NOT a multiple of the chain tick $${tick} (cutoff $${cutoff}) — Robinhood 400s with "Price does not satisfy the min tick value" (the ARKG $0.05 trap). Nearest valid: $${(Math.round(price / tick) * tick).toFixed(2)}.`
+            : `Limit $${price} is NOT a multiple of the chain tick $${tick} (cutoff $${cutoff}) — Robinhood 400s with "Price does not satisfy the min tick value" (the ARKG $0.05 trap). Nearest valid: $${(Math.round(price / tick) * tick).toFixed(2)}.`,
         });
       }
-    } catch (e: any) { checks.push({ id: "min-tick", status: "WARN", detail: `chain min_ticks read failed: ${(e as Error).message.slice(0, 80)}` }); }
+    } catch (e: any) {
+      checks.push({
+        id: "min-tick",
+        status: "WARN",
+        detail: `chain min_ticks read failed: ${(e as Error).message.slice(0, 80)}`,
+      });
+    }
   } else if (opts.limitPrice != null) {
-    checks.push({ id: "min-tick", status: "WARN", detail: "limit price given but no chain resolved (--symbol or --chain-id needed) — min-tick can't be verified; do not assume $0.01 is valid." });
+    checks.push({
+      id: "min-tick",
+      status: "WARN",
+      detail:
+        "limit price given but no chain resolved (--symbol or --chain-id needed) — min-tick can't be verified; do not assume $0.01 is valid.",
+    });
   }
 
   // (+) exact-contract existence when strike/expiration/type are given
@@ -4444,24 +5518,41 @@ export async function runPretradeChecks(
     try {
       const rows = await getAll(
         "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}",
-        { chain_id: chainId, expiration_dates: opts.expiration, type: opts.optionType }
+        { chain_id: chainId, expiration_dates: opts.expiration, type: opts.optionType },
       );
       const hit = rows.find((r: any) => Math.abs(n(r?.strike_price) - Number(opts.strike)) < 1e-6);
       if (hit) {
         resolved.optionInstrumentId = hit.id;
-        checks.push({ id: "contract", status: "PASS", detail: `${opts.symbol ?? chainId} ${opts.expiration} $${opts.strike} ${opts.optionType} exists — option_instrument_id ${hit.id}.` });
+        checks.push({
+          id: "contract",
+          status: "PASS",
+          detail: `${opts.symbol ?? chainId} ${opts.expiration} $${opts.strike} ${opts.optionType} exists — option_instrument_id ${hit.id}.`,
+        });
       } else {
-        const strikes = rows.map((r: any) => n(r?.strike_price)).filter(Number.isFinite).sort((a: number, b: number) => a - b);
-        checks.push({ id: "contract", status: "BLOCK", detail: `No active $${opts.strike} ${opts.optionType} for ${opts.expiration} on this chain. ${strikes.length} strikes listed (${strikes.slice(0, 5).join(", ")} … ${strikes.slice(-3).join(", ")}).` });
+        const strikes = rows
+          .map((r: any) => n(r?.strike_price))
+          .filter(Number.isFinite)
+          .sort((a: number, b: number) => a - b);
+        checks.push({
+          id: "contract",
+          status: "BLOCK",
+          detail: `No active $${opts.strike} ${opts.optionType} for ${opts.expiration} on this chain. ${strikes.length} strikes listed (${strikes.slice(0, 5).join(", ")} … ${strikes.slice(-3).join(", ")}).`,
+        });
       }
-    } catch (e: any) { checks.push({ id: "contract", status: "WARN", detail: `contract enumeration failed: ${(e as Error).message.slice(0, 80)}` }); }
+    } catch (e: any) {
+      checks.push({
+        id: "contract",
+        status: "WARN",
+        detail: `contract enumeration failed: ${(e as Error).message.slice(0, 80)}`,
+      });
+    }
   }
 
   // (e) marketability — POST-only; surfaced as a manual gated step, never sent from here.
   checks.push({
     id: "marketability",
     status: "MANUAL",
-    detail: `manual step (POST, gated): options/orders/marketability/ is a POST — pretrade never sends it. To probe marketability yourself, dry-run first: node cli/dist/index.js brokerage execute "https://bonfire.robinhood.com/options/orders/marketability/" --method POST --body-json '<order body>' --dry-run --json   (a live probe needs ROBINHOOD_ALLOW_LIVE_WRITE=1 — the single switch; --live-write optional).`
+    detail: `manual step (POST, gated): options/orders/marketability/ is a POST — pretrade never sends it. To probe marketability yourself, dry-run first: node cli/dist/index.js brokerage execute "https://bonfire.robinhood.com/options/orders/marketability/" --method POST --body-json '<order body>' --dry-run --json   (a live probe needs ROBINHOOD_ALLOW_LIVE_WRITE=1 — the single switch; --live-write optional).`,
   });
 
   // (f) OTC / fractional guard for the equity symbol
@@ -4473,12 +5564,17 @@ export async function runPretradeChecks(
       checks.push({
         id: "otc-fractional",
         status: frac === "tradable" && !otc ? "PASS" : "WARN",
-        detail: frac === "tradable" && !otc
-          ? `${opts.symbol.toUpperCase()} is fractional-tradable — dollar-notional orders OK.`
-          : `${opts.symbol.toUpperCase()}: fractional_tradability=${frac || "?"}${otc ? " (OTC)" : ""} — a "$X of ${opts.symbol.toUpperCase()}" dollar order is IMPOSSIBLE; use whole shares + a marketable limit (failure mode #4).`
+        detail:
+          frac === "tradable" && !otc
+            ? `${opts.symbol.toUpperCase()} is fractional-tradable — dollar-notional orders OK.`
+            : `${opts.symbol.toUpperCase()}: fractional_tradability=${frac || "?"}${otc ? " (OTC)" : ""} — a "$X of ${opts.symbol.toUpperCase()}" dollar order is IMPOSSIBLE; use whole shares + a marketable limit (failure mode #4).`,
       });
     } else {
-      checks.push({ id: "otc-fractional", status: "WARN", detail: `instrument lookup failed for ${opts.symbol.toUpperCase()} — OTC/fractional status unknown.` });
+      checks.push({
+        id: "otc-fractional",
+        status: "WARN",
+        detail: `instrument lookup failed for ${opts.symbol.toUpperCase()} — OTC/fractional status unknown.`,
+      });
     }
   }
 
@@ -4489,9 +5585,11 @@ export async function runPretradeChecks(
     accountClass,
     checks,
     clear,
-    summary: clear ? "CLEAR TO BUILD ORDER" : `BLOCKED: ${blocks.map((b) => `${b.id} — ${b.detail}`).join(" | ")}`,
+    summary: clear
+      ? "CLEAR TO BUILD ORDER"
+      : `BLOCKED: ${blocks.map((b) => `${b.id} — ${b.detail}`).join(" | ")}`,
     resolved,
-    note: "READ-ONLY preflight: nothing was sent. CLEAR means no hard blocker was found with the inputs given — it is NOT order approval; build the dry-run body next, then send only with the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch."
+    note: "READ-ONLY preflight: nothing was sent. CLEAR means no hard blocker was found with the inputs given — it is NOT order approval; build the dry-run body next, then send only with the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch.",
   };
 }
 
@@ -4502,11 +5600,17 @@ export async function runPretradeChecks(
  * `options close`: position_effect is ALWAYS "close" — long closes sell (credit), short closes
  * buy (debit). Never infers an open. Throws on an unknown direction instead of guessing.
  */
-export function closeLegOrientation(positionType: string): { side: "buy" | "sell"; positionEffect: "close"; direction: "debit" | "credit" } {
+export function closeLegOrientation(positionType: string): {
+  side: "buy" | "sell";
+  positionEffect: "close";
+  direction: "debit" | "credit";
+} {
   const p = String(positionType ?? "").toLowerCase();
   if (p === "long") return { side: "sell", positionEffect: "close", direction: "credit" };
   if (p === "short") return { side: "buy", positionEffect: "close", direction: "debit" };
-  throw new Error(`Unknown position direction "${positionType}" — cannot infer the closing side; inspect the position (options inspect) and build the order manually.`);
+  throw new Error(
+    `Unknown position direction "${positionType}" — cannot infer the closing side; inspect the position (options inspect) and build the order manually.`,
+  );
 }
 
 export interface OptionsCloseCandidate {
@@ -4533,8 +5637,15 @@ export interface OptionsCloseCandidate {
  * positions are listed but not auto-closed (use strategy-quote/roll-plan).
  */
 export async function buildOptionsClosePlan(
-  opts: { symbol: string; accountNumber?: string; strike?: number; expiration?: string; optionType?: "call" | "put"; quantity?: number },
-  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {}
+  opts: {
+    symbol: string;
+    accountNumber?: string;
+    strike?: number;
+    expiration?: string;
+    optionType?: "call" | "put";
+    quantity?: number;
+  },
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {},
 ): Promise<any> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const getAll = deps.getAll ?? brokerageGetAllResults;
@@ -4547,90 +5658,158 @@ export async function buildOptionsClosePlan(
   const candidates: OptionsCloseCandidate[] = [];
   for (const { acct, label } of accts) {
     try {
-      const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
+      const agg = await getAll(
+        "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+        {},
+        { account_numbers: acct, nonzero: "true" },
+      );
       for (const p of agg) {
         if (String(p?.symbol ?? "").toUpperCase() !== symbol || !(n(p?.quantity) > 0)) continue;
         const legs = Array.isArray(p?.legs) ? p.legs : [];
         const leg = legs[0] ?? {};
         candidates.push({
-          accountNumber: acct, accountLabel: label, symbol,
+          accountNumber: acct,
+          accountLabel: label,
+          symbol,
           strategy: String(p?.strategy ?? ""),
-          positionType: String(leg?.position_type ?? (String(p?.strategy ?? "").startsWith("short") ? "short" : String(p?.strategy ?? "").startsWith("long") ? "long" : "")),
+          positionType: String(
+            leg?.position_type ??
+              (String(p?.strategy ?? "").startsWith("short")
+                ? "short"
+                : String(p?.strategy ?? "").startsWith("long")
+                  ? "long"
+                  : ""),
+          ),
           optionType: leg?.option_type ?? null,
           strike: Number.isFinite(n(leg?.strike_price)) ? n(leg?.strike_price) : null,
           expiration: leg?.expiration_date ?? null,
           quantity: n(p?.quantity),
           averageOpenPrice: n(p?.average_open_price),
           optionId: leg?.option_id ?? null,
-          multiLeg: legs.length > 1
+          multiLeg: legs.length > 1,
         });
       }
-    } catch (e: any) { warnings.push(`option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    } catch (e: any) {
+      warnings.push(
+        `option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
+    }
   }
   if (candidates.length === 0) {
-    throw new Error(`No open ${symbol} option position found across ${accts.length} account(s)${opts.accountNumber ? ` (account …${String(opts.accountNumber).slice(-4)})` : ""}. \`options close\` only closes existing positions — it never opens.`);
+    throw new Error(
+      `No open ${symbol} option position found across ${accts.length} account(s)${opts.accountNumber ? ` (account …${String(opts.accountNumber).slice(-4)})` : ""}. \`options close\` only closes existing positions — it never opens.`,
+    );
   }
 
   // 2. Apply disambiguators.
   let matches = candidates;
-  if (opts.strike != null) matches = matches.filter((c) => c.strike != null && Math.abs(c.strike - Number(opts.strike)) < 1e-6);
+  if (opts.strike != null)
+    matches = matches.filter(
+      (c) => c.strike != null && Math.abs(c.strike - Number(opts.strike)) < 1e-6,
+    );
   if (opts.expiration) matches = matches.filter((c) => c.expiration === opts.expiration);
   if (opts.optionType) matches = matches.filter((c) => c.optionType === opts.optionType);
   if (matches.length === 0) {
-    return { symbol, needsDisambiguation: true, matched: 0, candidates, warnings, hint: "Filters matched nothing — the held contracts are listed in `candidates`; re-run with a strike/expiration/type from that list." };
+    return {
+      symbol,
+      needsDisambiguation: true,
+      matched: 0,
+      candidates,
+      warnings,
+      hint: "Filters matched nothing — the held contracts are listed in `candidates`; re-run with a strike/expiration/type from that list.",
+    };
   }
   if (matches.length > 1) {
-    return { symbol, needsDisambiguation: true, matched: matches.length, candidates: matches, warnings, hint: "Multiple open positions match — re-run with --account/--strike/--expiration (and --type) to pick exactly one." };
+    return {
+      symbol,
+      needsDisambiguation: true,
+      matched: matches.length,
+      candidates: matches,
+      warnings,
+      hint: "Multiple open positions match — re-run with --account/--strike/--expiration (and --type) to pick exactly one.",
+    };
   }
   const pos = matches[0];
   if (pos.multiLeg) {
-    return { symbol, needsDisambiguation: false, multiLeg: true, position: pos, warnings, hint: "This is a MULTI-LEG position — `options close` only automates single-leg closes. Close it as a package via `options strategy-quote` (closing legs) or `options roll-plan`." };
+    return {
+      symbol,
+      needsDisambiguation: false,
+      multiLeg: true,
+      position: pos,
+      warnings,
+      hint: "This is a MULTI-LEG position — `options close` only automates single-leg closes. Close it as a package via `options strategy-quote` (closing legs) or `options roll-plan`.",
+    };
   }
-  if (!pos.optionId) throw new Error(`Matched the ${symbol} position but it carries no option_instrument_id — inspect with \`options holdings\`.`);
+  if (!pos.optionId)
+    throw new Error(
+      `Matched the ${symbol} position but it carries no option_instrument_id — inspect with \`options holdings\`.`,
+    );
 
   // 3. Orientation from the position's direction — position_effect is ALWAYS close.
   const orientation = closeLegOrientation(pos.positionType);
 
   // 4. Live quote + tick-rounded mid limit.
-  const mark = (await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", { ids: pos.optionId })).results?.[0] ?? {};
+  const mark =
+    (
+      await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", {
+        ids: pos.optionId,
+      })
+    ).results?.[0] ?? {};
   const bid = n(mark.bid_price);
   const ask = n(mark.ask_price);
   const adj = n(mark.adjusted_mark_price ?? mark.mark_price);
-  let mid = Number.isFinite(bid) && Number.isFinite(ask) && (bid > 0 || ask > 0) ? (bid + ask) / 2 : adj;
+  let mid =
+    Number.isFinite(bid) && Number.isFinite(ask) && (bid > 0 || ask > 0) ? (bid + ask) / 2 : adj;
   let tick: number | null = null;
   try {
-    const meta = await getJson("https://api.robinhood.com/options/instruments/{0}/", { "0": pos.optionId });
+    const meta = await getJson("https://api.robinhood.com/options/instruments/{0}/", {
+      "0": pos.optionId,
+    });
     if (meta?.chain_id) {
-      const chain = await getJson("https://api.robinhood.com/options/chains/{id}/", { id: String(meta.chain_id) });
+      const chain = await getJson("https://api.robinhood.com/options/chains/{id}/", {
+        id: String(meta.chain_id),
+      });
       const mt = chain?.min_ticks ?? {};
       const cutoff = n(mt.cutoff_price);
       tick = Number.isFinite(cutoff) && mid < cutoff ? n(mt.below_tick) : n(mt.above_tick);
-      if (Number.isFinite(tick) && (tick as number) > 0) mid = Math.max(tick as number, Math.round(mid / (tick as number)) * (tick as number));
+      if (Number.isFinite(tick) && (tick as number) > 0)
+        mid = Math.max(tick as number, Math.round(mid / (tick as number)) * (tick as number));
     }
-  } catch { warnings.push("chain min_ticks read failed — mid limit not tick-rounded; check the chain before sending"); }
+  } catch {
+    warnings.push(
+      "chain min_ticks read failed — mid limit not tick-rounded; check the chain before sending",
+    );
+  }
   if (!Number.isFinite(mid) || mid <= 0) {
-    warnings.push("no usable bid/ask/mark — limit price left at 0.01 placeholder; re-quote before sending");
+    warnings.push(
+      "no usable bid/ask/mark — limit price left at 0.01 placeholder; re-quote before sending",
+    );
     mid = 0.01;
   }
 
   // 5. The exact dry-run body + gated send command (this function NEVER sends).
   const quantity = opts.quantity != null ? Number(opts.quantity) : pos.quantity;
-  if (!(quantity > 0) || quantity > pos.quantity) throw new Error(`Close quantity ${quantity} is invalid for a position of ${pos.quantity} contract(s).`);
+  if (!(quantity > 0) || quantity > pos.quantity)
+    throw new Error(
+      `Close quantity ${quantity} is invalid for a position of ${pos.quantity} contract(s).`,
+    );
   const body = {
     account: `https://api.robinhood.com/accounts/${pos.accountNumber}/`,
     direction: orientation.direction,
-    legs: [{
-      side: orientation.side,
-      option: `https://api.robinhood.com/options/instruments/${pos.optionId}/`,
-      position_effect: orientation.positionEffect,
-      ratio_quantity: 1
-    }],
+    legs: [
+      {
+        side: orientation.side,
+        option: `https://api.robinhood.com/options/instruments/${pos.optionId}/`,
+        position_effect: orientation.positionEffect,
+        ratio_quantity: 1,
+      },
+    ],
     type: "limit",
     time_in_force: "gfd",
     trigger: "immediate",
     price: (Math.round(mid * 100) / 100).toFixed(2),
     quantity: String(quantity),
-    ref_id: randomUUID()
+    ref_id: randomUUID(),
   };
   const bodyJson = JSON.stringify(body);
   return {
@@ -4644,10 +5823,10 @@ export async function buildOptionsClosePlan(
     dryRunBody: body,
     commands: {
       dryRun: `node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orders/" --method POST --body-json '${bodyJson}' --json`,
-      gatedSend: `ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orders/" --method POST --body-json '${bodyJson}' --live-write --json`
+      gatedSend: `ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js brokerage execute "https://api.robinhood.com/options/orders/" --method POST --body-json '${bodyJson}' --live-write --json`,
     },
     warnings,
-    note: "DRY-RUN plan only — nothing was sent. position_effect is always close (never infers an open). Re-quote bid/ask before a live send; after sending, verify in order history (the only proof)."
+    note: "DRY-RUN plan only — nothing was sent. position_effect is always close (never infers an open). Re-quote bid/ask before a live send; after sending, verify in order history (the only proof).",
   };
 }
 
@@ -4688,8 +5867,14 @@ export interface WheelNextLeg {
 }
 
 export interface WheelClassification {
-  stage: "not-started" | "cash-secured-put-open" | "csp-plus-shares" | "shares-uncovered"
-    | "covered-call-open" | "short-call-undercovered" | "sub-100-shares";
+  stage:
+    | "not-started"
+    | "cash-secured-put-open"
+    | "csp-plus-shares"
+    | "shares-uncovered"
+    | "covered-call-open"
+    | "short-call-undercovered"
+    | "sub-100-shares";
   summary: string;
   nextLeg: WheelNextLeg;
   blockers: string[];
@@ -4706,7 +5891,7 @@ const fmtWheelLeg = (l: WheelLeg) =>
  */
 export function classifyWheelStage(
   s: WheelStateInput,
-  ctx: { symbol?: string; accountNumber?: string } = {}
+  ctx: { symbol?: string; accountNumber?: string } = {},
 ): WheelClassification {
   const S = ctx.symbol ?? "<SYMBOL>";
   const N = ctx.accountNumber ?? "<ACCOUNT_NUMBER>";
@@ -4724,16 +5909,19 @@ export function classifyWheelStage(
     `options roll-plan --account ${N} --symbol ${S} --type ${type} --close-expiration ${leg?.expiration ?? "<old-exp>"} --close-strike ${leg?.strike ?? "<old-strike>"} --open-expiration <new-exp> --open-strike <new-strike> [--cash-account] --json`;
 
   if (ccContracts > 0 && s.sharesQty < ccContracts * 100) {
-    blockers.push(`short calls exceed share coverage: ${ccContracts} contract(s) need ${ccContracts * 100} shares, account holds ${s.sharesQty} — naked/undercovered (undefined-risk) exposure, NOT a wheel state`);
+    blockers.push(
+      `short calls exceed share coverage: ${ccContracts} contract(s) need ${ccContracts * 100} shares, account holds ${s.sharesQty} — naked/undercovered (undefined-risk) exposure, NOT a wheel state`,
+    );
     return {
       stage: "short-call-undercovered",
       summary: `Short calls (${s.shortCalls.map(fmtWheelLeg).join(", ")}) without full share coverage.${extras}`,
       nextLeg: {
         action: "review the uncovered short call exposure before anything else",
-        rationale: "The wheel's short call is COVERED by definition (100 shares per contract in the same account). Anything less is a different, undefined-risk position.",
-        command: null
+        rationale:
+          "The wheel's short call is COVERED by definition (100 shares per contract in the same account). Anything less is a different, undefined-risk position.",
+        command: null,
       },
-      blockers
+      blockers,
     };
   }
   if (ccContracts > 0) {
@@ -4742,10 +5930,11 @@ export function classifyWheelStage(
       summary: `Wheel leg 3 working: ${s.sharesQty} shares covering ${s.shortCalls.map(fmtWheelLeg).join(", ")}.${extras}`,
       nextLeg: {
         action: "manage the short call to its end state",
-        rationale: "Expires worthless → keep premium, sell the next call. Assigned (shares called away) → wheel restarts at leg 1 (CSP). Tested and you want to keep shares → roll out/up for a net credit.",
-        command: rollPlan("call", s.shortCalls[0])
+        rationale:
+          "Expires worthless → keep premium, sell the next call. Assigned (shares called away) → wheel restarts at leg 1 (CSP). Tested and you want to keep shares → roll out/up for a net credit.",
+        command: rollPlan("call", s.shortCalls[0]),
       },
-      blockers
+      blockers,
     };
   }
   if (cspContracts > 0) {
@@ -4754,11 +5943,16 @@ export function classifyWheelStage(
       stage: both ? "csp-plus-shares" : "cash-secured-put-open",
       summary: `Wheel leg 1 working: ${s.shortPuts.map(fmtWheelLeg).join(", ")}${both ? ` — plus ${s.sharesQty} shares already held (CC candidate in parallel)` : ""}.${extras}`,
       nextLeg: {
-        action: both ? "manage the short put; the existing 100+ shares can carry a covered call in parallel" : "manage the short put to its end state",
-        rationale: "Expires worthless → keep premium, sell the next put. Assigned → you own 100 shares/contract at the strike (leg 2) and the conventional next move is the covered call. Tested → roll out(/down) for a net credit.",
-        command: both ? ccQuote(s.avgCost != null ? ` — basis ~$${s.avgCost.toFixed(2)}` : "") : rollPlan("put", s.shortPuts[0])
+        action: both
+          ? "manage the short put; the existing 100+ shares can carry a covered call in parallel"
+          : "manage the short put to its end state",
+        rationale:
+          "Expires worthless → keep premium, sell the next put. Assigned → you own 100 shares/contract at the strike (leg 2) and the conventional next move is the covered call. Tested → roll out(/down) for a net credit.",
+        command: both
+          ? ccQuote(s.avgCost != null ? ` — basis ~$${s.avgCost.toFixed(2)}` : "")
+          : rollPlan("put", s.shortPuts[0]),
       },
-      blockers
+      blockers,
     };
   }
   if (s.sharesQty >= 100) {
@@ -4769,9 +5963,9 @@ export function classifyWheelStage(
       nextLeg: {
         action: "sell a covered call against the shares (leg 3)",
         rationale: `Each contract needs 100 shares in the SAME account (have ${Math.floor(s.sharesQty / 100)} contract(s) of coverage). Strike at/above cost basis keeps an assignment profitable; below basis locks a loss if called.`,
-        command: ccQuote(basisNote)
+        command: ccQuote(basisNote),
       },
-      blockers
+      blockers,
     };
   }
   if (s.sharesQty > 0) {
@@ -4779,11 +5973,13 @@ export function classifyWheelStage(
       stage: "sub-100-shares",
       summary: `${s.sharesQty} share(s) held — below the 100 needed to cover one call.${extras}`,
       nextLeg: {
-        action: "not wheelable at this size — accumulate to 100 shares, or start a fresh wheel via a cash-secured put",
-        rationale: "Covered calls need 100-share lots. A CSP (leg 1) builds the lot via assignment while collecting premium.",
-        command: cspQuote
+        action:
+          "not wheelable at this size — accumulate to 100 shares, or start a fresh wheel via a cash-secured put",
+        rationale:
+          "Covered calls need 100-share lots. A CSP (leg 1) builds the lot via assignment while collecting premium.",
+        command: cspQuote,
       },
-      blockers
+      blockers,
     };
   }
   return {
@@ -4791,10 +5987,11 @@ export function classifyWheelStage(
     summary: `No shares and no wheel legs.${extras}`,
     nextLeg: {
       action: "start the wheel at leg 1: sell a cash-secured put",
-      rationale: "Collateral = strike × 100 in settled cash per contract. Assigned → leg 2 (own the shares) → leg 3 (covered call). Pick the strike from the live chain.",
-      command: cspQuote
+      rationale:
+        "Collateral = strike × 100 in settled cash per contract. Assigned → leg 2 (own the shares) → leg 3 (covered call). Pick the strike from the live chain.",
+      command: cspQuote,
     },
-    blockers
+    blockers,
   };
 }
 
@@ -4817,7 +6014,11 @@ export interface WheelSymbolState extends WheelClassification {
  */
 export async function computeWheelState(
   opts: { symbol?: string; accountNumber?: string } = {},
-  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults; now?: () => number } = {}
+  deps: {
+    getJson?: typeof brokerageGetJson;
+    getAll?: typeof brokerageGetAllResults;
+    now?: () => number;
+  } = {},
 ): Promise<any> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const getAll = deps.getAll ?? brokerageGetAllResults;
@@ -4827,13 +6028,21 @@ export async function computeWheelState(
 
   // 1. Accounts — transfer/accounts/ is the complete graph; trading accounts only.
   const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
-  const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+  const rows: any[] = Array.isArray(graph?.results)
+    ? graph.results
+    : Array.isArray(graph)
+      ? graph
+      : [];
   let accts = rows
     .filter((a) => (a?.type === "rhs" || a?.type === "ira_roth") && a?.account_number)
-    .map((a) => ({ acct: String(a.account_number), label: String(a.account_name || a.display_title || "") }));
+    .map((a) => ({
+      acct: String(a.account_number),
+      label: String(a.account_name || a.display_title || ""),
+    }));
   if (opts.accountNumber) {
     accts = accts.filter((a) => a.acct === String(opts.accountNumber));
-    if (!accts.length) throw new Error(`Account ${opts.accountNumber} is not one of your trading accounts.`);
+    if (!accts.length)
+      throw new Error(`Account ${opts.accountNumber} is not one of your trading accounts.`);
   }
 
   const notes: string[] = [];
@@ -4846,36 +6055,70 @@ export async function computeWheelState(
     const shares = new Map<string, { qty: number; avgCost: number | null }>();
     const legsBySymbol = new Map<string, WheelLeg[]>();
     try {
-      const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
+      const eq = await getAll(
+        "https://api.robinhood.com/positions/",
+        {},
+        { nonzero: "true", account_number: acct },
+      );
       for (const p of eq) {
         const qty = n(p?.quantity);
         if (!p?.symbol || !(qty > 0)) continue;
         const avg = n(p.average_buy_price);
-        shares.set(String(p.symbol).toUpperCase(), { qty, avgCost: Number.isFinite(avg) && avg > 0 ? avg : null });
+        shares.set(String(p.symbol).toUpperCase(), {
+          qty,
+          avgCost: Number.isFinite(avg) && avg > 0 ? avg : null,
+        });
       }
-    } catch (e: any) { notes.push(`equity positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    } catch (e: any) {
+      notes.push(
+        `equity positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
+    }
     try {
-      const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
+      const agg = await getAll(
+        "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+        {},
+        { account_numbers: acct, nonzero: "true" },
+      );
       for (const pos of agg) {
         const sym = String(pos?.symbol ?? "").toUpperCase();
         const posQty = n(pos?.quantity);
         if (!sym || !(posQty > 0)) continue;
         const strategy = String(pos?.strategy ?? "");
         for (const leg of pos?.legs ?? []) {
-          const side = leg?.position_type === "short" ? "short" : leg?.position_type === "long" ? "long"
-            : strategy.startsWith("short") ? "short" : strategy.startsWith("long") ? "long" : "unknown";
-          const type = leg?.option_type === "put" ? "put" : leg?.option_type === "call" ? "call" : "unknown";
+          const side =
+            leg?.position_type === "short"
+              ? "short"
+              : leg?.position_type === "long"
+                ? "long"
+                : strategy.startsWith("short")
+                  ? "short"
+                  : strategy.startsWith("long")
+                    ? "long"
+                    : "unknown";
+          const type =
+            leg?.option_type === "put" ? "put" : leg?.option_type === "call" ? "call" : "unknown";
           const strike = Number.isFinite(n(leg?.strike_price)) ? n(leg?.strike_price) : null;
           const expiration = leg?.expiration_date ?? null;
           const list = legsBySymbol.get(sym) ?? [];
           list.push({
-            optionId: leg?.option_id ?? null, side, type, strike, expiration,
-            dte: dteOf(expiration), contracts: posQty * (n(leg?.ratio_quantity) || 1), strategy
+            optionId: leg?.option_id ?? null,
+            side,
+            type,
+            strike,
+            expiration,
+            dte: dteOf(expiration),
+            contracts: posQty * (n(leg?.ratio_quantity) || 1),
+            strategy,
           });
           legsBySymbol.set(sym, list);
         }
       }
-    } catch (e: any) { notes.push(`option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    } catch (e: any) {
+      notes.push(
+        `option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
+    }
 
     // 3. Symbols worth reporting: requested one, any with option legs, or any 100+ share lot.
     const symbols = new Set<string>();
@@ -4891,11 +6134,14 @@ export async function computeWheelState(
         avgCost: shares.get(sym)?.avgCost ?? null,
         shortPuts: legs.filter((l) => l.side === "short" && l.type === "put"),
         shortCalls: legs.filter((l) => l.side === "short" && l.type === "call"),
-        otherLegs: legs.filter((l) => !(l.side === "short" && (l.type === "put" || l.type === "call")))
+        otherLegs: legs.filter(
+          (l) => !(l.side === "short" && (l.type === "put" || l.type === "call")),
+        ),
       };
       // Per-account rows only where evidence exists; a requested symbol held nowhere falls
       // through to the single synthetic "discussion mode" row instead of N empty rows.
-      if (wantSymbol ? input.sharesQty <= 0 && !legs.length : input.sharesQty < 100 && !legs.length) continue;
+      if (wantSymbol ? input.sharesQty <= 0 && !legs.length : input.sharesQty < 100 && !legs.length)
+        continue;
       const cls = classifyWheelStage(input, { symbol: sym, accountNumber: acct });
       states.push({ account: acct, accountLabel: label, symbol: sym, ...input, ...cls });
     }
@@ -4905,9 +6151,19 @@ export async function computeWheelState(
   if (wantSymbol && !states.length) {
     const cls = classifyWheelStage(
       { sharesQty: 0, avgCost: null, shortPuts: [], shortCalls: [], otherLegs: [] },
-      { symbol: wantSymbol }
+      { symbol: wantSymbol },
     );
-    states.push({ account: null, accountLabel: "(no position in any scanned account)", symbol: wantSymbol, sharesQty: 0, avgCost: null, shortPuts: [], shortCalls: [], otherLegs: [], ...cls });
+    states.push({
+      account: null,
+      accountLabel: "(no position in any scanned account)",
+      symbol: wantSymbol,
+      sharesQty: 0,
+      avgCost: null,
+      shortPuts: [],
+      shortCalls: [],
+      otherLegs: [],
+      ...cls,
+    });
   }
 
   return {
@@ -4916,7 +6172,8 @@ export async function computeWheelState(
     states,
     notes,
     reference: WHEEL_DOC,
-    disclaimer: "Descriptive, not prescriptive — evidence + the conventional next leg. Live sends always need the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch."
+    disclaimer:
+      "Descriptive, not prescriptive — evidence + the conventional next leg. Live sends always need the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch.",
   };
 }
 
@@ -4931,25 +6188,35 @@ export async function computeWheelState(
  */
 export async function listOwnedTradingAccounts(
   getJson: typeof brokerageGetJson,
-  accountNumber?: string
+  accountNumber?: string,
 ): Promise<Array<{ acct: string; label: string }>> {
   const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
-  const rows: any[] = Array.isArray(graph?.results) ? graph.results : Array.isArray(graph) ? graph : [];
+  const rows: any[] = Array.isArray(graph?.results)
+    ? graph.results
+    : Array.isArray(graph)
+      ? graph
+      : [];
   let accts = rows
     .filter((a) => (a?.type === "rhs" || a?.type === "ira_roth") && a?.account_number)
-    .map((a) => ({ acct: String(a.account_number), label: String(a.account_name || a.display_title || "") }));
+    .map((a) => ({
+      acct: String(a.account_number),
+      label: String(a.account_name || a.display_title || ""),
+    }));
   if (accountNumber) {
     accts = accts.filter((a) => a.acct === String(accountNumber));
-    if (!accts.length) throw new Error(`Account ${accountNumber} is not one of your trading accounts.`);
+    if (!accts.length)
+      throw new Error(`Account ${accountNumber} is not one of your trading accounts.`);
   }
   return accts;
 }
 
-const round2 = (value: number): number => (Number.isFinite(value) ? Math.round(value * 100) / 100 : Number.NaN);
+const round2 = (value: number): number =>
+  Number.isFinite(value) ? Math.round(value * 100) / 100 : Number.NaN;
 
 // ── Dividends ──────────────────────────────────────────────────────────────────────────────────
 
-export type DividendCadence = "weekly" | "monthly" | "quarterly" | "semiannual" | "annual" | "irregular";
+export type DividendCadence =
+  "weekly" | "monthly" | "quarterly" | "semiannual" | "annual" | "irregular";
 
 /**
  * Detect a payout cadence from payable dates — the math is IN-ENGINE so callers can't botch it.
@@ -4969,18 +6236,34 @@ export function detectDividendCadence(payableDates: Array<string | null | undefi
     .map((d) => Date.parse(d))
     .filter((t) => Number.isFinite(t))
     .sort((a, b) => a - b);
-  if (times.length < 2) return { cadence: "irregular", periodsPerYear: 0, medianGapDays: Number.NaN };
-  const gaps = times.slice(1).map((t, i) => (t - times[i]) / 86_400_000).sort((a, b) => a - b);
+  if (times.length < 2)
+    return { cadence: "irregular", periodsPerYear: 0, medianGapDays: Number.NaN };
+  const gaps = times
+    .slice(1)
+    .map((t, i) => (t - times[i]) / 86_400_000)
+    .sort((a, b) => a - b);
   const mid = Math.floor(gaps.length / 2);
   const median = gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
   const cadence: DividendCadence =
-    median >= 5 && median <= 9 ? "weekly"
-    : median >= 25 && median <= 35 ? "monthly"
-    : median >= 80 && median <= 100 ? "quarterly"
-    : median >= 170 && median <= 190 ? "semiannual"
-    : median >= 350 && median <= 380 ? "annual"
-    : "irregular";
-  const periodsPerYear = { weekly: 52, monthly: 12, quarterly: 4, semiannual: 2, annual: 1, irregular: 0 }[cadence];
+    median >= 5 && median <= 9
+      ? "weekly"
+      : median >= 25 && median <= 35
+        ? "monthly"
+        : median >= 80 && median <= 100
+          ? "quarterly"
+          : median >= 170 && median <= 190
+            ? "semiannual"
+            : median >= 350 && median <= 380
+              ? "annual"
+              : "irregular";
+  const periodsPerYear = {
+    weekly: 52,
+    monthly: 12,
+    quarterly: 4,
+    semiannual: 2,
+    annual: 1,
+    irregular: 0,
+  }[cadence];
   return { cadence, periodsPerYear, medianGapDays: Math.round(median * 10) / 10 };
 }
 
@@ -4999,7 +6282,11 @@ export function detectDividendCadence(payableDates: Array<string | null | undefi
  */
 export async function computeDividends(
   opts: { accountNumber?: string; symbol?: string } = {},
-  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults; now?: () => number } = {}
+  deps: {
+    getJson?: typeof brokerageGetJson;
+    getAll?: typeof brokerageGetAllResults;
+    now?: () => number;
+  } = {},
 ): Promise<any> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const getAll = deps.getAll ?? brokerageGetAllResults;
@@ -5012,20 +6299,41 @@ export async function computeDividends(
   const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
 
   // Per-account dividends + held positions, in parallel; each read degrades independently.
-  const perAcct: any[] = await Promise.all(accts.map(async ({ acct, label }: any) => {
-    const out = { acct, label, dividends: [] as any[], heldSymbols: new Set<string>() };
-    try {
-      out.dividends = await getAll("https://api.robinhood.com/dividends/", {}, { account_number: acct });
-    } catch (e: any) { warnings.push(`dividends read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
-    try {
-      const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
-      for (const p of eq) if (p?.symbol && n(p.quantity) > 0) out.heldSymbols.add(String(p.symbol).toUpperCase());
-    } catch (e: any) { warnings.push(`positions read failed (…${acct.slice(-4)}) — held-symbol cross-check degraded: ${(e as Error).message.slice(0, 60)}`); }
-    return out;
-  }));
+  const perAcct: any[] = await Promise.all(
+    accts.map(async ({ acct, label }: any) => {
+      const out = { acct, label, dividends: [] as any[], heldSymbols: new Set<string>() };
+      try {
+        out.dividends = await getAll(
+          "https://api.robinhood.com/dividends/",
+          {},
+          { account_number: acct },
+        );
+      } catch (e: any) {
+        warnings.push(
+          `dividends read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+        );
+      }
+      try {
+        const eq = await getAll(
+          "https://api.robinhood.com/positions/",
+          {},
+          { nonzero: "true", account_number: acct },
+        );
+        for (const p of eq)
+          if (p?.symbol && n(p.quantity) > 0) out.heldSymbols.add(String(p.symbol).toUpperCase());
+      } catch (e: any) {
+        warnings.push(
+          `positions read failed (…${acct.slice(-4)}) — held-symbol cross-check degraded: ${(e as Error).message.slice(0, 60)}`,
+        );
+      }
+      return out;
+    }),
+  );
 
   // Resolve instrument URLs → tickers (batched; a dead/delisted instrument keeps its UUID stub).
-  const allRaw = perAcct.flatMap((a: any) => a.dividends.map((d: any) => ({ ...d, _acct: a.acct })));
+  const allRaw = perAcct.flatMap((a: any) =>
+    a.dividends.map((d: any) => ({ ...d, _acct: a.acct })),
+  );
   const instId = (d: any): string | undefined => {
     const m = String(d?.instrument ?? "").match(/\/instruments\/([^/]+)\/?/);
     return m?.[1] ?? (d?.active_instrument_id ? String(d.active_instrument_id) : undefined);
@@ -5034,10 +6342,17 @@ export async function computeDividends(
   const symbolById = new Map<string, string>();
   try {
     for (let i = 0; i < ids.length; i += 40) {
-      const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: ids.slice(i, i + 40).join(",") });
-      for (const r of data?.results ?? []) if (r?.id && r?.symbol) symbolById.set(String(r.id), String(r.symbol).toUpperCase());
+      const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", {
+        ids: ids.slice(i, i + 40).join(","),
+      });
+      for (const r of data?.results ?? [])
+        if (r?.id && r?.symbol) symbolById.set(String(r.id), String(r.symbol).toUpperCase());
     }
-  } catch (e: any) { warnings.push(`instrument resolve failed — some dividends keep an instrument UUID instead of a ticker (${(e as Error).message.slice(0, 60)})`); }
+  } catch (e: any) {
+    warnings.push(
+      `instrument resolve failed — some dividends keep an instrument UUID instead of a ticker (${(e as Error).message.slice(0, 60)})`,
+    );
+  }
 
   const records = allRaw
     .map((d) => {
@@ -5054,20 +6369,22 @@ export async function computeDividends(
         recordDate: d.record_date ?? null,
         payableDate: d.payable_date ?? null,
         paidAt: d.paid_at ?? null,
-        dripEnabled: d.drip_enabled ?? null
+        dripEnabled: d.drip_enabled ?? null,
       };
     })
     .filter((d) => !wantSymbol || d.symbol === wantSymbol);
 
   // Received = paid OR reinvested (DRIP is income too); voided never counts; pending not yet.
-  const received = records.filter((d) => (d.state === "paid" || d.state === "reinvested") && Number.isFinite(d.amountUsd));
+  const received = records.filter(
+    (d) => (d.state === "paid" || d.state === "reinvested") && Number.isFinite(d.amountUsd),
+  );
   const recvDate = (d: any): string => String(d.paidAt ?? d.payableDate ?? "").slice(0, 10);
   const sumUsd = (xs: any[]) => round2(xs.reduce((s, d) => s + d.amountUsd, 0));
   const cutoff12mo = new Date(nowMs - 365 * 86_400_000).toISOString().slice(0, 10);
   const totals = {
     allTimeUsd: sumUsd(received),
     ytdUsd: sumUsd(received.filter((d) => recvDate(d).startsWith(today.slice(0, 4)))),
-    last12moUsd: sumUsd(received.filter((d) => recvDate(d) >= cutoff12mo))
+    last12moUsd: sumUsd(received.filter((d) => recvDate(d) >= cutoff12mo)),
   };
 
   // Per-symbol: totals, cadence, annualized. Cadence reads ALL non-voided payable dates
@@ -5080,43 +6397,77 @@ export async function computeDividends(
     list.push(d);
     bySymbolMap.set(d.symbol, list);
   }
-  const bySymbol = [...bySymbolMap.entries()].map(([symbol, recs]) => {
-    const recv = recs.filter((d) => d.state === "paid" || d.state === "reinvested");
-    const dated = recs.filter((d) => d.payableDate).sort((a, b) => String(a.payableDate).localeCompare(String(b.payableDate)));
-    const lastRec = dated[dated.length - 1];
-    const { cadence, periodsPerYear, medianGapDays } = detectDividendCadence(recs.map((d) => d.payableDate));
-    const lastAmountUsd = Number.isFinite(lastRec?.amountUsd) ? lastRec.amountUsd : Number.NaN;
-    const annualizedUsd = periodsPerYear > 0 && Number.isFinite(lastAmountUsd) ? round2(lastAmountUsd * periodsPerYear) : Number.NaN;
-    return {
-      symbol,
-      totalUsd: sumUsd(recv),
-      count: recv.length,
-      lastAmountUsd,
-      lastPayableDate: lastRec?.payableDate ?? null,
-      cadence,
-      medianGapDays,
-      annualizedUsd,
-      currentlyHeld: heldSymbols.has(symbol)
-    };
-  }).sort((a, b) => (b.totalUsd || 0) - (a.totalUsd || 0));
+  const bySymbol = [...bySymbolMap.entries()]
+    .map(([symbol, recs]) => {
+      const recv = recs.filter((d) => d.state === "paid" || d.state === "reinvested");
+      const dated = recs
+        .filter((d) => d.payableDate)
+        .sort((a, b) => String(a.payableDate).localeCompare(String(b.payableDate)));
+      const lastRec = dated[dated.length - 1];
+      const { cadence, periodsPerYear, medianGapDays } = detectDividendCadence(
+        recs.map((d) => d.payableDate),
+      );
+      const lastAmountUsd = Number.isFinite(lastRec?.amountUsd) ? lastRec.amountUsd : Number.NaN;
+      const annualizedUsd =
+        periodsPerYear > 0 && Number.isFinite(lastAmountUsd)
+          ? round2(lastAmountUsd * periodsPerYear)
+          : Number.NaN;
+      return {
+        symbol,
+        totalUsd: sumUsd(recv),
+        count: recv.length,
+        lastAmountUsd,
+        lastPayableDate: lastRec?.payableDate ?? null,
+        cadence,
+        medianGapDays,
+        annualizedUsd,
+        currentlyHeld: heldSymbols.has(symbol),
+      };
+    })
+    .sort((a, b) => (b.totalUsd || 0) - (a.totalUsd || 0));
 
   // Upcoming: pending state, or a future payable date that hasn't paid out yet.
   const upcoming = records
-    .filter((d) => d.state === "pending" || (!d.paidAt && d.state !== "voided" && d.state !== "paid" && d.state !== "reinvested" && d.payableDate && String(d.payableDate) >= today))
-    .map((d) => ({ symbol: d.symbol, amountUsd: d.amountUsd, payableDate: d.payableDate, exDividendDate: d.exDividendDate, state: d.state, account: d.account }))
+    .filter(
+      (d) =>
+        d.state === "pending" ||
+        (!d.paidAt &&
+          d.state !== "voided" &&
+          d.state !== "paid" &&
+          d.state !== "reinvested" &&
+          d.payableDate &&
+          String(d.payableDate) >= today),
+    )
+    .map((d) => ({
+      symbol: d.symbol,
+      amountUsd: d.amountUsd,
+      payableDate: d.payableDate,
+      exDividendDate: d.exDividendDate,
+      state: d.state,
+      account: d.account,
+    }))
     .sort((a, b) => String(a.payableDate ?? "").localeCompare(String(b.payableDate ?? "")));
 
   // Last 12 calendar months of received income, zero-filled so a dry month is visible.
   const anchor = new Date(nowMs);
   const byMonth: Array<{ month: string; totalUsd: number }> = [];
   for (let i = 11; i >= 0; i--) {
-    const key = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - i, 1)).toISOString().slice(0, 7);
-    byMonth.push({ month: key, totalUsd: sumUsd(received.filter((d) => recvDate(d).startsWith(key))) });
+    const key = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - i, 1))
+      .toISOString()
+      .slice(0, 7);
+    byMonth.push({
+      month: key,
+      totalUsd: sumUsd(received.filter((d) => recvDate(d).startsWith(key))),
+    });
   }
 
   // Projection: regular-cadence symbols the operator STILL HOLDS. Sold payers are listed, not counted.
-  const projected = bySymbol.filter((s) => s.currentlyHeld && Number.isFinite(s.annualizedUsd) && s.annualizedUsd > 0);
-  const excludedSold = bySymbol.filter((s) => !s.currentlyHeld && Number.isFinite(s.annualizedUsd) && s.annualizedUsd > 0).map((s) => s.symbol);
+  const projected = bySymbol.filter(
+    (s) => s.currentlyHeld && Number.isFinite(s.annualizedUsd) && s.annualizedUsd > 0,
+  );
+  const excludedSold = bySymbol
+    .filter((s) => !s.currentlyHeld && Number.isFinite(s.annualizedUsd) && s.annualizedUsd > 0)
+    .map((s) => s.symbol);
   const annualUsd = round2(projected.reduce((s, x) => s + x.annualizedUsd, 0));
   const projection = {
     dailyUsd: round2(annualUsd / 365),
@@ -5130,7 +6481,7 @@ export async function computeDividends(
       "per symbol: cadence = median payable-date gap (~5-9d weekly, ~25-35d monthly, ~80-100d quarterly, ~170-190d semiannual, ~350-380d annual, else irregular); " +
       "annualizedUsd = most recent regular dividend amount × periods/year; projection sums annualizedUsd across CURRENTLY HELD symbols only " +
       "(cross-checked against nonzero positions/ so sold positions don't project income); irregular cadences excluded. " +
-      "Granularity: dailyUsd = annualUsd/365, weeklyUsd = annualUsd/52, monthlyUsd = annualUsd/12, quarterlyUsd = annualUsd/4."
+      "Granularity: dailyUsd = annualUsd/365, weeklyUsd = annualUsd/52, monthlyUsd = annualUsd/12, quarterlyUsd = annualUsd/4.",
   };
 
   return {
@@ -5142,7 +6493,7 @@ export async function computeDividends(
     upcoming,
     byMonth,
     projection,
-    warnings
+    warnings,
   };
 }
 
@@ -5167,12 +6518,24 @@ const TAX_FORM_PREFIXES = ["1099", "5498"]; // covers 1099, 1099_crypto, 1099r_r
 export function documentYear(type: string, date: string): string {
   const docYear = Number(String(date).slice(0, 4));
   if (!Number.isFinite(docYear) || docYear <= 0) return "unknown";
-  return TAX_FORM_PREFIXES.some((p) => String(type).startsWith(p)) ? String(docYear - 1) : String(docYear);
+  return TAX_FORM_PREFIXES.some((p) => String(type).startsWith(p))
+    ? String(docYear - 1)
+    : String(docYear);
 }
 
 /** Deterministic local filename with an opaque document-id hash; account tails stay out of public paths. */
-export function documentFilename(doc: { id: string; type: string; date: string; year: string; accountLast4?: string; filetype?: string | null }): string {
-  const ext = String(doc.filetype || "pdf").toLowerCase().replace(/[^a-z0-9]/g, "") || "pdf";
+export function documentFilename(doc: {
+  id: string;
+  type: string;
+  date: string;
+  year: string;
+  accountLast4?: string;
+  filetype?: string | null;
+}): string {
+  const ext =
+    String(doc.filetype || "pdf")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "") || "pdf";
   const clean = (s: unknown) => String(s).replace(/[^A-Za-z0-9._-]/g, "_");
   const opaqueId = createHash("sha256").update(String(doc.id)).digest("hex").slice(0, 12);
   return `${clean(doc.year)}-${clean(doc.type)}-${opaqueId}-${clean(doc.date)}.${ext}`;
@@ -5188,8 +6551,13 @@ export function documentFilename(doc: { id: string; type: string; date: string; 
  */
 export async function listDocuments(
   opts: { type?: string; year?: string; accountNumber?: string } = {},
-  deps: { getAll?: typeof brokerageGetAllResults } = {}
-): Promise<{ count: number; documents: DocumentRecord[]; byType: Record<string, number>; warnings: string[] }> {
+  deps: { getAll?: typeof brokerageGetAllResults } = {},
+): Promise<{
+  count: number;
+  documents: DocumentRecord[];
+  byType: Record<string, number>;
+  warnings: string[];
+}> {
   const getAll = deps.getAll ?? brokerageGetAllResults;
   const rows = await getAll("https://api.robinhood.com/documents/", {}, {});
   const documents = rows
@@ -5206,13 +6574,15 @@ export async function listDocuments(
         accountLast4: accountNumber.slice(-4),
         filetype: String(d?.filetype ?? "pdf"),
         downloadUrl: String(d?.download_url ?? ""),
-        createdAt: d?.created_at ?? null
+        createdAt: d?.created_at ?? null,
       };
     })
-    .filter((d: DocumentRecord) =>
-      (!opts.type || d.type.startsWith(opts.type)) &&
-      (!opts.year || d.year === String(opts.year)) &&
-      (!opts.accountNumber || d.accountNumber === String(opts.accountNumber)))
+    .filter(
+      (d: DocumentRecord) =>
+        (!opts.type || d.type.startsWith(opts.type)) &&
+        (!opts.year || d.year === String(opts.year)) &&
+        (!opts.accountNumber || d.accountNumber === String(opts.accountNumber)),
+    )
     .sort((a: DocumentRecord, b: DocumentRecord) => b.date.localeCompare(a.date));
   const byType: Record<string, number> = {};
   for (const d of documents) byType[d.type] = (byType[d.type] ?? 0) + 1;
@@ -5230,7 +6600,7 @@ export async function listDocuments(
  */
 export async function downloadDocuments(
   opts: { type?: string; year?: string; accountNumber?: string; limit?: number } = {},
-  deps: { getAll?: typeof brokerageGetAllResults; fetchImpl?: typeof fetch; outDir?: string } = {}
+  deps: { getAll?: typeof brokerageGetAllResults; fetchImpl?: typeof fetch; outDir?: string } = {},
 ): Promise<{
   directory: string;
   downloaded: Array<{ file: string; type: string; date: string; bytes: number }>;
@@ -5239,15 +6609,18 @@ export async function downloadDocuments(
 }> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const listing = await listDocuments(opts, deps);
-  const docs = opts.limit && opts.limit > 0 ? listing.documents.slice(0, opts.limit) : listing.documents;
+  const docs =
+    opts.limit && opts.limit > 0 ? listing.documents.slice(0, opts.limit) : listing.documents;
   const directory = deps.outDir ?? join(repoRoot(), "local", "documents");
   mkdirSync(directory, { recursive: true });
   const token = process.env.ROBINHOOD_BROKERAGE_TOKEN;
   const headers: Record<string, string> = {
     accept: "*/*",
-    "user-agent": process.env.ROBINHOOD_USER_AGENT ?? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    "user-agent":
+      process.env.ROBINHOOD_USER_AGENT ??
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
     origin: "https://robinhood.com",
-    referer: "https://robinhood.com/"
+    referer: "https://robinhood.com/",
   };
   if (token) headers.authorization = `Bearer ${token}`;
   const downloaded: Array<{ file: string; type: string; date: string; bytes: number }> = [];
@@ -5277,9 +6650,10 @@ export async function downloadDocuments(
 
 /** Unwrap a Robinhood money object ({amount, currency_code, …}) or a bare numeric string. */
 function moneyUsd(value: unknown): number {
-  const raw = value && typeof value === "object" && "amount" in (value as Record<string, unknown>)
-    ? (value as Record<string, unknown>).amount
-    : value;
+  const raw =
+    value && typeof value === "object" && "amount" in (value as Record<string, unknown>)
+      ? (value as Record<string, unknown>).amount
+      : value;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
@@ -5307,40 +6681,45 @@ export interface MarginHealth {
  */
 export async function getMarginHealth(
   accountNumber?: string,
-  deps: { getJson?: typeof brokerageGetJson } = {}
+  deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<{ accounts: MarginHealth[]; scanned: string[]; skipped: string[]; warnings: string[] }> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const accts = await listOwnedTradingAccounts(getJson, accountNumber);
   const skipped: string[] = [];
-  const results = await Promise.all(accts.map(async ({ acct, label }): Promise<MarginHealth | null> => {
-    try {
-      const m = await getJson("https://api.robinhood.com/margin/{account_number}/investing_info/", { account_number: acct });
-      if (!m || (m.amount_borrowed === undefined && m.margin_available === undefined)) {
-        skipped.push("…" + acct.slice(-4));
+  const results = await Promise.all(
+    accts.map(async ({ acct, label }): Promise<MarginHealth | null> => {
+      try {
+        const m = await getJson(
+          "https://api.robinhood.com/margin/{account_number}/investing_info/",
+          { account_number: acct },
+        );
+        if (!m || (m.amount_borrowed === undefined && m.margin_available === undefined)) {
+          skipped.push("…" + acct.slice(-4));
+          return null;
+        }
+        return {
+          accountNumber: acct,
+          label: label || "…" + acct.slice(-4),
+          borrowedUsd: moneyUsd(m.amount_borrowed),
+          marginInterestRatePct: finiteNumber(m.margin_interest_rate),
+          nextBillingDate: m.next_billing_date ?? null,
+          marginAvailableUsd: moneyUsd(m.margin_available),
+          buyingPowerWithMarginUsd: moneyUsd(m.buying_power_with_margin),
+          projectedIntradayBpUsd: moneyUsd(m.projected_intraday_buying_power),
+          marginUsedIncludingCashHeldUsd: moneyUsd(m.margin_used_including_cash_held),
+          interestExemptionUsd: moneyUsd(m.interest_exemption_amount),
+        };
+      } catch {
+        skipped.push("…" + acct.slice(-4)); // 404 / no margin product — silent per-account degrade
         return null;
       }
-      return {
-        accountNumber: acct,
-        label: label || "…" + acct.slice(-4),
-        borrowedUsd: moneyUsd(m.amount_borrowed),
-        marginInterestRatePct: finiteNumber(m.margin_interest_rate),
-        nextBillingDate: m.next_billing_date ?? null,
-        marginAvailableUsd: moneyUsd(m.margin_available),
-        buyingPowerWithMarginUsd: moneyUsd(m.buying_power_with_margin),
-        projectedIntradayBpUsd: moneyUsd(m.projected_intraday_buying_power),
-        marginUsedIncludingCashHeldUsd: moneyUsd(m.margin_used_including_cash_held),
-        interestExemptionUsd: moneyUsd(m.interest_exemption_amount)
-      };
-    } catch {
-      skipped.push("…" + acct.slice(-4)); // 404 / no margin product — silent per-account degrade
-      return null;
-    }
-  }));
+    }),
+  );
   return {
     accounts: results.filter((r): r is MarginHealth => r !== null),
     scanned: accts.map((a) => "…" + a.acct.slice(-4)),
     skipped,
-    warnings: []
+    warnings: [],
   };
 }
 
@@ -5374,10 +6753,12 @@ export function formatTradeNote(input: { ref: string; note: string; now?: Date }
  */
 export function addTradeNote(
   input: { ref: string; note: string },
-  deps: { file?: string; now?: Date } = {}
+  deps: { file?: string; now?: Date } = {},
 ): { file: string; entry: string } {
   if (!input.ref?.trim() || !input.note?.trim()) {
-    throw new Error("A trade note needs both a ref (order id / symbol / symbol+date) and the note text.");
+    throw new Error(
+      "A trade note needs both a ref (order id / symbol / symbol+date) and the note text.",
+    );
   }
   const file = deps.file ?? join(repoRoot(), TRADE_NOTES_FILE);
   const entry = formatTradeNote({ ref: input.ref, note: input.note, now: deps.now });
@@ -5403,7 +6784,10 @@ export function parseTradeNotes(content: string): TradeNote[] {
       continue;
     }
     if (current) {
-      if (/^---\s*$/.test(line)) { flush(); continue; }
+      if (/^---\s*$/.test(line)) {
+        flush();
+        continue;
+      }
       body.push(line);
     }
   }
@@ -5425,7 +6809,10 @@ export function loadTradeNotes(deps: { file?: string } = {}): TradeNote[] {
  *   - order id: substring either way (≥6 chars so a short ref can't match every UUID), or
  *   - symbol: the ref contains the symbol as a standalone token ("HPE 2026-06-10" → HPE trades).
  */
-export function noteMatchesTrade(ref: string, trade: { symbol: string; orderIds: string[] }): boolean {
+export function noteMatchesTrade(
+  ref: string,
+  trade: { symbol: string; orderIds: string[] },
+): boolean {
   const r = ref.trim().toLowerCase();
   if (!r) return false;
   for (const id of trade.orderIds) {
@@ -5433,7 +6820,10 @@ export function noteMatchesTrade(ref: string, trade: { symbol: string; orderIds:
     if (!i) continue;
     if ((r.length >= 6 && i.includes(r)) || (i.length >= 6 && r.includes(i))) return true;
   }
-  const tokens = ref.toUpperCase().split(/[^A-Z0-9.]+/).filter(Boolean);
+  const tokens = ref
+    .toUpperCase()
+    .split(/[^A-Z0-9.]+/)
+    .filter(Boolean);
   return tokens.includes(String(trade.symbol ?? "").toUpperCase());
 }
 
@@ -5486,8 +6876,18 @@ export interface TradeReviewSummary {
   /** winners / roundTrips × 100 (scratch trades count in the denominator). */
   winRatePct: number;
   totalRealizedUsd: number;
-  bestTrade: { symbol: string; contract: string | null; realizedPnlUsd: number; account: string } | null;
-  worstTrade: { symbol: string; contract: string | null; realizedPnlUsd: number; account: string } | null;
+  bestTrade: {
+    symbol: string;
+    contract: string | null;
+    realizedPnlUsd: number;
+    account: string;
+  } | null;
+  worstTrade: {
+    symbol: string;
+    contract: string | null;
+    realizedPnlUsd: number;
+    account: string;
+  } | null;
   avgHoldDays: number;
   openLegs: number;
 }
@@ -5514,7 +6914,7 @@ export async function computeTradeReview(
     getAll?: typeof brokerageGetAllResults;
     now?: () => number;
     loadNotes?: () => TradeNote[];
-  } = {}
+  } = {},
 ): Promise<{
   days: number;
   accountsScanned: string[];
@@ -5535,7 +6935,9 @@ export async function computeTradeReview(
   const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
 
   // 1. Collect fills (execution-level, so multi-fill orders FIFO correctly).
-  interface RawFill extends Omit<ReviewFill, "notes"> { instrumentKey: string; }
+  interface RawFill extends Omit<ReviewFill, "notes"> {
+    instrumentKey: string;
+  }
   const fills: RawFill[] = [];
   const equityInstrumentIds = new Set<string>();
   const optionInstrumentIds = new Set<string>();
@@ -5544,15 +6946,27 @@ export async function computeTradeReview(
 
   for (const { acct } of accts) {
     try {
-      const eq = await getAll("https://api.robinhood.com/orders/", {}, { account_numbers: acct }, { maxPages: 20 });
+      const eq = await getAll(
+        "https://api.robinhood.com/orders/",
+        {},
+        { account_numbers: acct },
+        { maxPages: 20 },
+      );
       for (const o of eq) {
         if (o?.state !== "filled") continue;
         const iid = instId(o.instrument) ?? String(o.instrument_id ?? "");
         if (!iid) continue;
         const side = o.side === "sell" ? "sell" : "buy";
-        const executions = Array.isArray(o.executions) && o.executions.length
-          ? o.executions
-          : [{ price: o.average_price ?? o.price, quantity: o.cumulative_quantity ?? o.quantity, timestamp: o.updated_at ?? o.created_at }];
+        const executions =
+          Array.isArray(o.executions) && o.executions.length
+            ? o.executions
+            : [
+                {
+                  price: o.average_price ?? o.price,
+                  quantity: o.cumulative_quantity ?? o.quantity,
+                  timestamp: o.updated_at ?? o.created_at,
+                },
+              ];
         for (const ex of executions) {
           const ts = String(ex.timestamp ?? o.updated_at ?? o.created_at ?? "");
           const t = Date.parse(ts);
@@ -5562,20 +6976,40 @@ export async function computeTradeReview(
           if (!(qty > 0) || !Number.isFinite(price)) continue;
           equityInstrumentIds.add(iid);
           fills.push({
-            kind: "equity", symbol: o.symbol ?? iid, contract: null, account: acct, side,
-            positionEffect: null, quantity: qty, priceUsd: price, notionalUsd: round2(qty * price),
-            timestamp: ts, orderId: String(o.id ?? ""), openLeg: false, unmatchedQuantity: 0,
-            instrumentKey: `equity|${iid}`
+            kind: "equity",
+            symbol: o.symbol ?? iid,
+            contract: null,
+            account: acct,
+            side,
+            positionEffect: null,
+            quantity: qty,
+            priceUsd: price,
+            notionalUsd: round2(qty * price),
+            timestamp: ts,
+            orderId: String(o.id ?? ""),
+            openLeg: false,
+            unmatchedQuantity: 0,
+            instrumentKey: `equity|${iid}`,
           });
         }
       }
-    } catch (e: any) { warnings.push(`equity orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    } catch (e: any) {
+      warnings.push(
+        `equity orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
+    }
     try {
-      const op = await getAll("https://api.robinhood.com/options/orders/", {}, { account_numbers: acct, states: "filled" }, { maxPages: 20 });
+      const op = await getAll(
+        "https://api.robinhood.com/options/orders/",
+        {},
+        { account_numbers: acct, states: "filled" },
+        { maxPages: 20 },
+      );
       for (const o of op) {
         if (o?.state !== "filled") continue;
         for (const leg of o.legs ?? []) {
-          const oid = String(leg.option ?? "").match(/\/options\/instruments\/([^/]+)\/?/)?.[1] ?? null;
+          const oid =
+            String(leg.option ?? "").match(/\/options\/instruments\/([^/]+)\/?/)?.[1] ?? null;
           if (!oid) continue;
           const side = leg.side === "sell" ? "sell" : "buy";
           const effect = leg.position_effect === "close" ? "close" : "open";
@@ -5588,15 +7022,29 @@ export async function computeTradeReview(
             if (!(qty > 0) || !Number.isFinite(price)) continue;
             optionInstrumentIds.add(oid);
             fills.push({
-              kind: "options", symbol: String(o.chain_symbol ?? "?"), contract: oid, account: acct, side,
-              positionEffect: effect, quantity: qty, priceUsd: price, notionalUsd: round2(qty * price * 100),
-              timestamp: ts, orderId: String(o.id ?? ""), openLeg: false, unmatchedQuantity: 0,
-              instrumentKey: `options|${oid}`
+              kind: "options",
+              symbol: String(o.chain_symbol ?? "?"),
+              contract: oid,
+              account: acct,
+              side,
+              positionEffect: effect,
+              quantity: qty,
+              priceUsd: price,
+              notionalUsd: round2(qty * price * 100),
+              timestamp: ts,
+              orderId: String(o.id ?? ""),
+              openLeg: false,
+              unmatchedQuantity: 0,
+              instrumentKey: `options|${oid}`,
             });
           }
         }
       }
-    } catch (e: any) { warnings.push(`options orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`); }
+    } catch (e: any) {
+      warnings.push(
+        `options orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
+    }
   }
 
   // 2. Resolve equity instrument UUIDs → tickers (orders carry instrument URLs, not symbols).
@@ -5605,15 +7053,22 @@ export async function computeTradeReview(
       const ids = [...equityInstrumentIds];
       const bySym = new Map<string, string>();
       for (let i = 0; i < ids.length; i += 40) {
-        const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", { ids: ids.slice(i, i + 40).join(",") });
-        for (const r of data?.results ?? []) if (r?.id && r?.symbol) bySym.set(String(r.id), String(r.symbol).toUpperCase());
+        const data = await getJson("https://api.robinhood.com/instruments/?ids={ids}", {
+          ids: ids.slice(i, i + 40).join(","),
+        });
+        for (const r of data?.results ?? [])
+          if (r?.id && r?.symbol) bySym.set(String(r.id), String(r.symbol).toUpperCase());
       }
       for (const f of fills) {
         if (f.kind !== "equity") continue;
         const iid = f.instrumentKey.split("|")[1];
         f.symbol = bySym.get(iid) ?? f.symbol;
       }
-    } catch (e: any) { warnings.push(`instrument→ticker resolve failed — some equity trades show UUIDs (${(e as Error).message.slice(0, 60)})`); }
+    } catch (e: any) {
+      warnings.push(
+        `instrument→ticker resolve failed — some equity trades show UUIDs (${(e as Error).message.slice(0, 60)})`,
+      );
+    }
   }
 
   // 3. Resolve option contracts → "$strike type expiration" labels (best-effort batch; UUID stub on failure).
@@ -5622,10 +7077,17 @@ export async function computeTradeReview(
       const ids = [...optionInstrumentIds];
       const byContract = new Map<string, string>();
       for (let i = 0; i < ids.length; i += 40) {
-        const data = await getJson("https://api.robinhood.com/options/instruments/", {}, { ids: ids.slice(i, i + 40).join(",") });
+        const data = await getJson(
+          "https://api.robinhood.com/options/instruments/",
+          {},
+          { ids: ids.slice(i, i + 40).join(",") },
+        );
         for (const r of data?.results ?? []) {
           if (!r?.id) continue;
-          byContract.set(String(r.id), `${r.chain_symbol ?? ""} $${Number(r.strike_price)} ${r.type ?? "?"} ${r.expiration_date ?? "?"}`.trim());
+          byContract.set(
+            String(r.id),
+            `${r.chain_symbol ?? ""} $${Number(r.strike_price)} ${r.type ?? "?"} ${r.expiration_date ?? "?"}`.trim(),
+          );
         }
       }
       for (const f of fills) {
@@ -5634,14 +7096,23 @@ export async function computeTradeReview(
       }
     } catch {
       warnings.push("option contract resolve failed — contracts shown as UUID stubs");
-      for (const f of fills) if (f.kind === "options" && f.contract) f.contract = `${f.symbol} ${f.contract.slice(0, 8)}…`;
+      for (const f of fills)
+        if (f.kind === "options" && f.contract)
+          f.contract = `${f.symbol} ${f.contract.slice(0, 8)}…`;
     }
   }
 
   // 4. Optional symbol scope, then FIFO pairing per account+instrument.
   const scoped = wantSymbol ? fills.filter((f) => f.symbol === wantSymbol) : fills;
   scoped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  interface Lot { qty: number; price: number; ts: string; orderId: string; side: "buy" | "sell"; fill: RawFill; }
+  interface Lot {
+    qty: number;
+    price: number;
+    ts: string;
+    orderId: string;
+    side: "buy" | "sell";
+    fill: RawFill;
+  }
   const lots = new Map<string, Lot[]>();
   const roundTrips: ReviewRoundTrip[] = [];
   for (const f of scoped) {
@@ -5650,7 +7121,14 @@ export async function computeTradeReview(
     const opens = f.kind === "options" ? f.positionEffect === "open" : f.side === "buy";
     if (opens) {
       const list = lots.get(key) ?? [];
-      list.push({ qty: f.quantity, price: f.priceUsd, ts: f.timestamp, orderId: f.orderId, side: f.side, fill: f });
+      list.push({
+        qty: f.quantity,
+        price: f.priceUsd,
+        ts: f.timestamp,
+        orderId: f.orderId,
+        side: f.side,
+        fill: f,
+      });
       lots.set(key, list);
       continue;
     }
@@ -5667,15 +7145,28 @@ export async function computeTradeReview(
       const long = lot.side === "buy";
       const entryUsd = round2(lot.price * matched * mult);
       const exitUsd = round2(f.priceUsd * matched * mult);
-      const realized = round2((long ? f.priceUsd - lot.price : lot.price - f.priceUsd) * matched * mult);
+      const realized = round2(
+        (long ? f.priceUsd - lot.price : lot.price - f.priceUsd) * matched * mult,
+      );
       const holdMs = Date.parse(f.timestamp) - Date.parse(lot.ts);
       roundTrips.push({
-        kind: f.kind, symbol: f.symbol, contract: f.contract, account: f.account,
-        quantity: matched, direction: long ? "long" : "short",
-        openedAt: lot.ts, closedAt: f.timestamp,
-        holdDays: Number.isFinite(holdMs) ? Math.round((holdMs / 86_400_000) * 10) / 10 : Number.NaN,
-        entryUsd, exitUsd, realizedPnlUsd: realized, win: realized > 0,
-        orderIds: [...new Set([lot.orderId, f.orderId])], notes: []
+        kind: f.kind,
+        symbol: f.symbol,
+        contract: f.contract,
+        account: f.account,
+        quantity: matched,
+        direction: long ? "long" : "short",
+        openedAt: lot.ts,
+        closedAt: f.timestamp,
+        holdDays: Number.isFinite(holdMs)
+          ? Math.round((holdMs / 86_400_000) * 10) / 10
+          : Number.NaN,
+        entryUsd,
+        exitUsd,
+        realizedPnlUsd: realized,
+        win: realized > 0,
+        orderIds: [...new Set([lot.orderId, f.orderId])],
+        notes: [],
       });
       lot.qty -= matched;
       remaining -= matched;
@@ -5690,7 +7181,8 @@ export async function computeTradeReview(
   for (const queue of lots.values()) {
     for (const lot of queue) {
       lot.fill.openLeg = true;
-      lot.fill.unmatchedQuantity = Math.round((lot.fill.unmatchedQuantity + lot.qty) * 10000) / 10000;
+      lot.fill.unmatchedQuantity =
+        Math.round((lot.fill.unmatchedQuantity + lot.qty) * 10000) / 10000;
     }
   }
 
@@ -5698,10 +7190,14 @@ export async function computeTradeReview(
   const notes = (deps.loadNotes ?? loadTradeNotes)();
   const trades: ReviewFill[] = scoped.map((f) => ({
     ...f,
-    notes: notes.filter((note) => noteMatchesTrade(note.ref, { symbol: f.symbol, orderIds: [f.orderId] }))
+    notes: notes.filter((note) =>
+      noteMatchesTrade(note.ref, { symbol: f.symbol, orderIds: [f.orderId] }),
+    ),
   }));
   for (const rt of roundTrips) {
-    rt.notes = notes.filter((note) => noteMatchesTrade(note.ref, { symbol: rt.symbol, orderIds: rt.orderIds }));
+    rt.notes = notes.filter((note) =>
+      noteMatchesTrade(note.ref, { symbol: rt.symbol, orderIds: rt.orderIds }),
+    );
   }
 
   // 6. Summary — the film-study scoreboard, all in dollars.
@@ -5709,24 +7205,55 @@ export async function computeTradeReview(
   const losers = roundTrips.filter((r) => r.realizedPnlUsd < 0).length;
   const totalRealizedUsd = round2(roundTrips.reduce((s, r) => s + r.realizedPnlUsd, 0));
   const holdVals = roundTrips.map((r) => r.holdDays).filter((x) => Number.isFinite(x));
-  const best = roundTrips.reduce<ReviewRoundTrip | null>((acc, r) => (acc === null || r.realizedPnlUsd > acc.realizedPnlUsd ? r : acc), null);
-  const worst = roundTrips.reduce<ReviewRoundTrip | null>((acc, r) => (acc === null || r.realizedPnlUsd < acc.realizedPnlUsd ? r : acc), null);
+  const best = roundTrips.reduce<ReviewRoundTrip | null>(
+    (acc, r) => (acc === null || r.realizedPnlUsd > acc.realizedPnlUsd ? r : acc),
+    null,
+  );
+  const worst = roundTrips.reduce<ReviewRoundTrip | null>(
+    (acc, r) => (acc === null || r.realizedPnlUsd < acc.realizedPnlUsd ? r : acc),
+    null,
+  );
   const summary: TradeReviewSummary = {
     trades: trades.length,
     roundTrips: roundTrips.length,
     winners,
     losers,
-    winRatePct: roundTrips.length ? Math.round((winners / roundTrips.length) * 1000) / 10 : Number.NaN,
+    winRatePct: roundTrips.length
+      ? Math.round((winners / roundTrips.length) * 1000) / 10
+      : Number.NaN,
     totalRealizedUsd,
-    bestTrade: best ? { symbol: best.symbol, contract: best.contract, realizedPnlUsd: best.realizedPnlUsd, account: best.account } : null,
-    worstTrade: worst ? { symbol: worst.symbol, contract: worst.contract, realizedPnlUsd: worst.realizedPnlUsd, account: worst.account } : null,
-    avgHoldDays: holdVals.length ? Math.round((holdVals.reduce((s, x) => s + x, 0) / holdVals.length) * 10) / 10 : Number.NaN,
-    openLegs: trades.filter((t) => t.openLeg).length
+    bestTrade: best
+      ? {
+          symbol: best.symbol,
+          contract: best.contract,
+          realizedPnlUsd: best.realizedPnlUsd,
+          account: best.account,
+        }
+      : null,
+    worstTrade: worst
+      ? {
+          symbol: worst.symbol,
+          contract: worst.contract,
+          realizedPnlUsd: worst.realizedPnlUsd,
+          account: worst.account,
+        }
+      : null,
+    avgHoldDays: holdVals.length
+      ? Math.round((holdVals.reduce((s, x) => s + x, 0) / holdVals.length) * 10) / 10
+      : Number.NaN,
+    openLegs: trades.filter((t) => t.openLeg).length,
   };
 
   // strip the internal pairing key from the public rows
   const publicTrades = trades.map(({ instrumentKey: _k, ...rest }: any) => rest as ReviewFill);
-  return { days, accountsScanned: accts.map((a) => "…" + a.acct.slice(-4)), trades: publicTrades, roundTrips, summary, warnings };
+  return {
+    days,
+    accountsScanned: accts.map((a) => "…" + a.acct.slice(-4)),
+    trades: publicTrades,
+    roundTrips,
+    summary,
+    warnings,
+  };
 }
 
 // ── Hotlist: operator-maintained ticker watchlist (hotlist.md) ──────────────────────────────────
@@ -5747,7 +7274,14 @@ export function parseHotlist(content: string): HotlistEntry[] {
   const out: HotlistEntry[] = [];
   content.split(/\r?\n/).forEach((raw, i) => {
     const line = raw.trim();
-    if (!line || line.startsWith("#") || line.startsWith("<!--") || line.startsWith("-->") || line.startsWith(">")) return;
+    if (
+      !line ||
+      line.startsWith("#") ||
+      line.startsWith("<!--") ||
+      line.startsWith("-->") ||
+      line.startsWith(">")
+    )
+      return;
     if (/\(example\)/i.test(line)) return;
     const m = /^([A-Z][A-Z0-9.\-]{0,9})\s*(?:[—–-]+\s*(.*))?$/.exec(line);
     if (!m) return;
@@ -5771,34 +7305,58 @@ export function loadHotlist(deps: { file?: string } = {}): HotlistEntry[] {
  * command and the MCP robinhood_hotlist tool. Read-only.
  */
 export async function computeHotlist(
-  deps: { getJson?: typeof brokerageGetJson; entries?: HotlistEntry[] } = {}
+  deps: { getJson?: typeof brokerageGetJson; entries?: HotlistEntry[] } = {},
 ): Promise<{
   count: number;
-  rows: Array<{ symbol: string; thesis: string | null; lastUsd: number; dayChangeUsd: number; dayChangePct: number; found: boolean }>;
+  rows: Array<{
+    symbol: string;
+    thesis: string | null;
+    lastUsd: number;
+    dayChangeUsd: number;
+    dayChangePct: number;
+    found: boolean;
+  }>;
   warnings: string[];
 }> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const entries = deps.entries ?? loadHotlist();
   const warnings: string[] = [];
   if (!entries.length) {
-    return { count: 0, rows: [], warnings: [`${HOTLIST_FILE} has no active entries — add lines like "NVDA — ai capex thesis" (example-marked lines are ignored).`] };
+    return {
+      count: 0,
+      rows: [],
+      warnings: [
+        `${HOTLIST_FILE} has no active entries — add lines like "NVDA — ai capex thesis" (example-marked lines are ignored).`,
+      ],
+    };
   }
-  const resolved = await Promise.all(entries.map(async (e) => {
-    try {
-      const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: e.symbol })).results?.[0];
-      return { ...e, instrumentId: inst?.id ? String(inst.id) : null };
-    } catch {
-      return { ...e, instrumentId: null };
-    }
-  }));
+  const resolved = await Promise.all(
+    entries.map(async (e) => {
+      try {
+        const inst = (
+          await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", {
+            symbol: e.symbol,
+          })
+        ).results?.[0];
+        return { ...e, instrumentId: inst?.id ? String(inst.id) : null };
+      } catch {
+        return { ...e, instrumentId: null };
+      }
+    }),
+  );
   const ids = resolved.map((r) => r.instrumentId).filter((x): x is string => Boolean(x));
   const quotes = new Map<string, any>();
   try {
     for (let i = 0; i < ids.length; i += 40) {
-      const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: ids.slice(i, i + 40).join(",") });
-      for (const r of data?.results ?? []) if (r?.instrument_id) quotes.set(String(r.instrument_id), r);
+      const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
+        ids: ids.slice(i, i + 40).join(","),
+      });
+      for (const r of data?.results ?? [])
+        if (r?.instrument_id) quotes.set(String(r.instrument_id), r);
     }
-  } catch (e: any) { warnings.push(`quote batch failed (${(e as Error).message.slice(0, 60)})`); }
+  } catch (e: any) {
+    warnings.push(`quote batch failed (${(e as Error).message.slice(0, 60)})`);
+  }
   const rows = resolved.map((r) => {
     const q = r.instrumentId ? quotes.get(r.instrumentId) : undefined;
     const last = Number(q?.last_trade_price ?? q?.last_extended_hours_trade_price);
@@ -5810,10 +7368,11 @@ export async function computeHotlist(
       lastUsd: ok ? last : Number.NaN,
       dayChangeUsd: ok && Number.isFinite(prev) ? round2(last - prev) : Number.NaN,
       dayChangePct: ok && prev > 0 ? Math.round(((last - prev) / prev) * 1000) / 10 : Number.NaN,
-      found: Boolean(q)
+      found: Boolean(q),
     };
   });
-  for (const r of rows) if (!r.found) warnings.push(`${r.symbol}: no quote (unknown/delisted ticker?)`);
+  for (const r of rows)
+    if (!r.found) warnings.push(`${r.symbol}: no quote (unknown/delisted ticker?)`);
   return { count: rows.length, rows, warnings };
 }
 
@@ -5854,11 +7413,13 @@ function whenToLoadBlock(content: string): string | null {
     if (!m) break;
     collected.push(m[1]);
   }
-  return collected
-    .join(" ")
-    .replace(/\*\*When to load this:\*\*\s*/i, "")
-    .replace(/\s+/g, " ")
-    .trim() || null;
+  return (
+    collected
+      .join(" ")
+      .replace(/\*\*When to load this:\*\*\s*/i, "")
+      .replace(/\s+/g, " ")
+      .trim() || null
+  );
 }
 
 /**
@@ -5873,7 +7434,9 @@ export function listKnowledge(deps: { root?: string } = {}): KnowledgeEntry[] {
   const scan = (dir: string, kind: KnowledgeEntry["kind"], withHints: boolean) => {
     let files: string[] = [];
     try {
-      files = readdirSync(join(root, dir)).filter((f) => f.toLowerCase().endsWith(".md")).sort();
+      files = readdirSync(join(root, dir))
+        .filter((f) => f.toLowerCase().endsWith(".md"))
+        .sort();
     } catch {
       return; // directory absent (e.g. partial checkout) — index still serves what exists
     }
@@ -5893,7 +7456,7 @@ export function listKnowledge(deps: { root?: string } = {}): KnowledgeEntry[] {
         path: `${dir}/${f}`,
         title: firstMarkdownHeading(content) ?? f,
         whenToLoad: withHints ? whenToLoadBlock(content) : null,
-        kind
+        kind,
       });
     }
   };
@@ -5913,7 +7476,8 @@ function closestKnowledgeIds(want: string, ids: string[]): string[] {
       let prefix = 0;
       while (prefix < Math.min(id.length, w.length) && id[prefix] === w[prefix]) prefix++;
       score += Math.min(prefix, 3);
-      const overlap = [...new Set(w)].filter((c) => id.includes(c)).length / Math.max(1, new Set(w).size);
+      const overlap =
+        [...new Set(w)].filter((c) => id.includes(c)).length / Math.max(1, new Set(w).size);
       score += overlap;
       return { id, score };
     })
@@ -5925,19 +7489,28 @@ function closestKnowledgeIds(want: string, ids: string[]): string[] {
 /** Read one knowledge module/playbook/doc in full by id (basename without .md). Did-you-mean on a miss. */
 export function readKnowledge(
   id: string,
-  deps: { root?: string } = {}
+  deps: { root?: string } = {},
 ): { id: string; path: string; title: string; kind: KnowledgeEntry["kind"]; content: string } {
   const root = deps.root ?? repoRoot();
   const entries = listKnowledge(deps);
   const want = id.trim().toLowerCase().replace(/\.md$/i, "");
   const hit = entries.find((e) => e.id === want);
   if (!hit) {
-    const close = closestKnowledgeIds(want, entries.map((e) => e.id));
+    const close = closestKnowledgeIds(
+      want,
+      entries.map((e) => e.id),
+    );
     throw new Error(
-      `No knowledge module "${id}".${close.length ? ` Did you mean: ${close.join(", ")}?` : ""} Run \`knowledge\` (or robinhood_knowledge action=index) for the full index.`
+      `No knowledge module "${id}".${close.length ? ` Did you mean: ${close.join(", ")}?` : ""} Run \`knowledge\` (or robinhood_knowledge action=index) for the full index.`,
     );
   }
-  return { id: hit.id, path: hit.path, title: hit.title, kind: hit.kind, content: readFileSync(join(root, hit.path), "utf8") };
+  return {
+    id: hit.id,
+    path: hit.path,
+    title: hit.title,
+    kind: hit.kind,
+    content: readFileSync(join(root, hit.path), "utf8"),
+  };
 }
 
 // ── Pending-roll ledger (rolls.md): cash-account kosher rolls are TWO-DAY trades ────────────────
@@ -5973,7 +7546,9 @@ export function parsePendingRolls(content: string): PendingRoll[] {
   const lines = content.split(/\r?\n/);
   let i = 0;
   while (i < lines.length) {
-    const m = /^###\s+PENDING\s*\|\s*([^|]+?)\s*\|\s*opened\s+(\d{4}-\d{2}-\d{2})\s*(.*)$/.exec(lines[i]);
+    const m = /^###\s+PENDING\s*\|\s*([^|]+?)\s*\|\s*opened\s+(\d{4}-\d{2}-\d{2})\s*(.*)$/.exec(
+      lines[i],
+    );
     if (!m) {
       i++;
       continue;
@@ -5996,7 +7571,7 @@ export function parsePendingRolls(content: string): PendingRoll[] {
       earliestOpenDate: field("earliest open date"),
       account: field("account"),
       notes: field("notes"),
-      block
+      block,
     });
   }
   return rolls;
@@ -6024,14 +7599,21 @@ export function formatPendingRoll(input: {
     `- earliest open date: ${input.earliestOpenDate?.trim() || "next business day after the close"}`,
     `- account: ${acct ? `…${acct.slice(-4)}` : "—"}`,
     `- notes: ${input.notes?.trim() || "—"}`,
-    ""
+    "",
   ].join("\n");
 }
 
 /** Append a pending kosher-roll intent to rolls.md. Local file only — never touches the account. */
 export function addPendingRoll(
-  input: { symbol: string; closedLeg?: string; openIntent?: string; earliestOpenDate?: string; account?: string; notes?: string },
-  deps: { file?: string; now?: Date } = {}
+  input: {
+    symbol: string;
+    closedLeg?: string;
+    openIntent?: string;
+    earliestOpenDate?: string;
+    account?: string;
+    notes?: string;
+  },
+  deps: { file?: string; now?: Date } = {},
 ): { file: string; entry: string } {
   if (!input.symbol?.trim()) throw new Error("A pending roll needs at least a symbol.");
   const file = deps.file ?? join(repoRoot(), ROLLS_FILE);
@@ -6057,7 +7639,7 @@ export function listPendingRolls(deps: { file?: string } = {}): PendingRoll[] {
  */
 export function completePendingRoll(
   symbolOrId: string,
-  deps: { file?: string } = {}
+  deps: { file?: string } = {},
 ): { file: string; removed: PendingRoll; remaining: number } {
   const file = deps.file ?? join(repoRoot(), ROLLS_FILE);
   let content: string;
@@ -6072,12 +7654,12 @@ export function completePendingRoll(
   const matches = rolls.filter((r) => r.symbol === sym && (!date || r.opened === date));
   if (matches.length === 0) {
     throw new Error(
-      `No pending roll matches "${symbolOrId}". Pending: ${rolls.map((r) => `${r.symbol} (opened ${r.opened})`).join(", ") || "none"}.`
+      `No pending roll matches "${symbolOrId}". Pending: ${rolls.map((r) => `${r.symbol} (opened ${r.opened})`).join(", ") || "none"}.`,
     );
   }
   if (matches.length > 1) {
     throw new Error(
-      `${matches.length} pending rolls match ${sym} — disambiguate with "SYMBOL YYYY-MM-DD": ${matches.map((r) => `${r.symbol} ${r.opened}`).join(", ")}.`
+      `${matches.length} pending rolls match ${sym} — disambiguate with "SYMBOL YYYY-MM-DD": ${matches.map((r) => `${r.symbol} ${r.opened}`).join(", ")}.`,
     );
   }
   const removed = matches[0];
@@ -6092,7 +7674,7 @@ export function completePendingRoll(
  */
 export function appendRollCompletionLog(
   removed: PendingRoll,
-  deps: { file?: string; now?: Date } = {}
+  deps: { file?: string; now?: Date } = {},
 ): { file: string; entry: string } {
   const file = deps.file ?? join(repoRoot(), "trading-log.md");
   const d = deps.now ?? new Date();
@@ -6109,7 +7691,7 @@ export function appendRollCompletionLog(
     `INTENT:  Cash-account staged roll resolved — open leg filled or the plan was dropped.`,
     `THREAD:  was: close=${removed.closedLeg ?? "?"}; open intent=${removed.openIntent ?? "?"} (staged ${removed.opened})`,
     "=== END",
-    ""
+    "",
   ].join("\n");
   appendFileSync(file, entry);
   return { file, entry };
@@ -6119,7 +7701,7 @@ export function appendRollCompletionLog(
 
 export async function executeCryptoRequest(
   plan: PlannedCryptoRequest,
-  options: ExecuteCryptoOptions = {}
+  options: ExecuteCryptoOptions = {},
 ): Promise<ExecuteCryptoResult> {
   const body = options.body ?? plan.body ?? "";
   if (options.dryRun || plan.mode === "dry_run") {
@@ -6138,12 +7720,12 @@ export async function executeCryptoRequest(
         {
           ...plan,
           body,
-          authHeaders: ["x-api-key", "x-timestamp", "x-signature"]
+          authHeaders: ["x-api-key", "x-timestamp", "x-signature"],
         },
         null,
-        2
+        2,
       ),
-      truncated: false
+      truncated: false,
     };
   }
 
@@ -6155,7 +7737,7 @@ export async function executeCryptoRequest(
   const { apiKey, privateKeyBase64 } = cryptoAuthFromEnv(options);
   if (!apiKey || !privateKeyBase64) {
     throw new Error(
-      "Missing auth: set ROBINHOOD_CRYPTO_API_KEY and ROBINHOOD_CRYPTO_PRIVATE_KEY_B64 outside the repo."
+      "Missing auth: set ROBINHOOD_CRYPTO_API_KEY and ROBINHOOD_CRYPTO_PRIVATE_KEY_B64 outside the repo.",
     );
   }
 
@@ -6166,25 +7748,25 @@ export async function executeCryptoRequest(
     timestamp,
     path: plan.path,
     method: plan.method,
-    body
+    body,
   });
   const headers: Record<string, string> = {
     accept: "application/json, text/plain, */*",
     "user-agent": "robinhood-cli/0.1",
     "x-api-key": signed["x-api-key"],
     "x-timestamp": signed["x-timestamp"],
-    "x-signature": signed["x-signature"]
+    "x-signature": signed["x-signature"],
   };
   if (body !== "") headers["content-type"] = "application/json";
 
   const response = await (options.fetchImpl ?? fetch)(plan.url, {
     method: plan.method,
     headers,
-    body: plan.method === "GET" ? undefined : body
+    body: plan.method === "GET" ? undefined : body,
   });
 
   const text = await response.text();
-  const max = options.fullBody ? Number.POSITIVE_INFINITY : options.maxBodyBytes ?? 4000;
+  const max = options.fullBody ? Number.POSITIVE_INFINITY : (options.maxBodyBytes ?? 4000);
   const truncated = text.length > max;
   return {
     ok: response.ok,
@@ -6198,7 +7780,7 @@ export async function executeCryptoRequest(
     requiresAuth: true,
     contentType: response.headers.get("content-type"),
     body: truncated ? text.slice(0, max) : text,
-    truncated
+    truncated,
   };
 }
 
@@ -6247,45 +7829,55 @@ export function summarizeApiMap(root = repoRootFromCli()): ApiMapSummary {
       routes: unifiedRoutes.length,
       openapiPaths: Object.keys(unifiedSpec.paths ?? {}).length,
       openapiOperations: Object.values<Record<string, unknown>>(unifiedSpec.paths ?? {}).reduce(
-        (total, item) => total + Object.keys(item).filter((key) => ["get", "post", "put", "patch", "delete"].includes(key)).length,
-        0
+        (total, item) =>
+          total +
+          Object.keys(item).filter((key) => ["get", "post", "put", "patch", "delete"].includes(key))
+            .length,
+        0,
       ),
       byRisk: unifiedByRisk,
       byCategory: unifiedByCategory,
-      hosts: unifiedHosts
+      hosts: unifiedHosts,
     },
     crypto: {
       title: spec.info?.title ?? "Robinhood Crypto Trading API",
       server: spec.servers?.[0]?.url ?? "https://trading.robinhood.com/",
       paths: Object.keys(spec.paths ?? {}).length,
-      operations: cryptoRoutes.reduce((total, route) => total + route.methods.length, 0)
+      operations: cryptoRoutes.reduce((total, route) => total + route.methods.length, 0),
     },
     brokerage: {
       routes: routes.length,
       browserRoutes: browserRoutes.length,
       openapiPaths: Object.keys(brokerageSpec.paths ?? {}).length,
       openapiOperations: Object.values<Record<string, unknown>>(brokerageSpec.paths ?? {}).reduce(
-        (total, item) => total + Object.keys(item).filter((key) => ["get", "post", "put", "patch", "delete"].includes(key)).length,
-        0
+        (total, item) =>
+          total +
+          Object.keys(item).filter((key) => ["get", "post", "put", "patch", "delete"].includes(key))
+            .length,
+        0,
       ),
       byRisk,
       byCategory,
-      hosts
-    }
+      hosts,
+    },
   };
 }
 
-export function privateKeyFromBase64Seed(privateKeyBase64: string): ReturnType<typeof createPrivateKey> {
+export function privateKeyFromBase64Seed(
+  privateKeyBase64: string,
+): ReturnType<typeof createPrivateKey> {
   const raw = Buffer.from(privateKeyBase64, "base64");
   const seed = raw.length === 64 ? raw.subarray(0, 32) : raw;
   if (seed.length !== 32) {
-    throw new Error(`Expected a 32-byte Ed25519 seed or 64-byte expanded key, got ${raw.length} bytes`);
+    throw new Error(
+      `Expected a 32-byte Ed25519 seed or 64-byte expanded key, got ${raw.length} bytes`,
+    );
   }
   const prefix = Buffer.from("302e020100300506032b657004220420", "hex");
   return createPrivateKey({
     key: Buffer.concat([prefix, seed]),
     format: "der",
-    type: "pkcs8"
+    type: "pkcs8",
   });
 }
 
@@ -6309,7 +7901,7 @@ export function signCryptoRequest(input: {
   return {
     "x-api-key": input.apiKey,
     "x-timestamp": timestamp,
-    "x-signature": signature
+    "x-signature": signature,
   };
 }
 
@@ -6355,10 +7947,7 @@ export interface CollarSanity {
  * aggressive price. Returns NaN deviation + stale:false when there's no usable reference,
  * so a missing quote never blocks an order on its own. Callers warn on dry-run, block live.
  */
-export function collarSanity(
-  quote: Record<string, unknown>,
-  thresholdPct = 25
-): CollarSanity {
+export function collarSanity(quote: Record<string, unknown>, thresholdPct = 25): CollarSanity {
   const num = (value: unknown) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : Number.NaN;
@@ -6368,7 +7957,8 @@ export function collarSanity(
   const last = num(quote.last_extended_hours_trade_price) || num(quote.last_trade_price);
   const mid = Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : Number.NaN;
   const ref = Number.isFinite(last) ? last : mid;
-  if (!Number.isFinite(ref) || !Number.isFinite(ask)) return { ref, ask, deviationPct: Number.NaN, stale: false };
+  if (!Number.isFinite(ref) || !Number.isFinite(ask))
+    return { ref, ask, deviationPct: Number.NaN, stale: false };
   const deviationPct = (Math.abs(ask - ref) / ref) * 100;
   return { ref, ask, deviationPct, stale: deviationPct > thresholdPct };
 }
@@ -6388,7 +7978,11 @@ export function classifyMoneyness(strike: number, spot: number, type: "call" | "
  * spot (so an ATM-centered window of up to 2*width+1 rows). Returns the input
  * untouched when spot is unknown or the ladder already fits the window.
  */
-export function selectNearStrikes<T extends { strike: number }>(rows: T[], spot: number, width: number): T[] {
+export function selectNearStrikes<T extends { strike: number }>(
+  rows: T[],
+  spot: number,
+  width: number,
+): T[] {
   const sorted = [...rows].sort((a, b) => a.strike - b.strike);
   if (!(spot > 0) || !(width >= 0) || sorted.length <= width * 2 + 1) return sorted;
   let centerIndex = 0;
@@ -6433,7 +8027,7 @@ function roundOptionMoney(value: number): number {
 function signedGreek(
   legs: OptionsStrategyPricingLegInput[],
   key: "delta" | "gamma" | "theta" | "vega" | "rho",
-  multiplier: 100
+  multiplier: 100,
 ): number {
   const total = legs.reduce((sum, leg) => {
     const value = finiteNumber(leg[key]);
@@ -6465,17 +8059,29 @@ export function buildOptionsStrategyPricingSummary(input: {
     const last = finitePrice(leg.last);
     const ratioQuantity = Math.max(1, leg.ratioQuantity ?? 1);
     const hasBidAsk = Number.isFinite(bid) && Number.isFinite(ask) && ask >= bid && ask > 0;
-    const midUnitPrice = hasBidAsk ? (bid + ask) / 2 : firstFinite(mark, last, leg.action === "sell" ? bid : ask);
+    const midUnitPrice = hasBidAsk
+      ? (bid + ask) / 2
+      : firstFinite(mark, last, leg.action === "sell" ? bid : ask);
     const naturalUnitPrice =
       leg.action === "sell" ? firstFinite(bid, mark, last, ask) : firstFinite(ask, mark, last, bid);
-    const quoteSource = hasBidAsk ? "bid_ask" : Number.isFinite(mark) ? "mark" : Number.isFinite(last) ? "last" : "missing";
-    const signedNaturalContribution = (leg.action === "sell" ? 1 : -1) * naturalUnitPrice * ratioQuantity;
+    const quoteSource = hasBidAsk
+      ? "bid_ask"
+      : Number.isFinite(mark)
+        ? "mark"
+        : Number.isFinite(last)
+          ? "last"
+          : "missing";
+    const signedNaturalContribution =
+      (leg.action === "sell" ? 1 : -1) * naturalUnitPrice * ratioQuantity;
     const signedMidContribution = (leg.action === "sell" ? 1 : -1) * midUnitPrice * ratioQuantity;
     const bidAskWidth = Number.isFinite(bid) && Number.isFinite(ask) ? ask - bid : Number.NaN;
 
-    if (!hasBidAsk) warnings.push(`${leg.id}: missing or unusable bid/ask; fell back to ${quoteSource}.`);
-    if (Number.isFinite(bidAskWidth) && bidAskWidth < 0) warnings.push(`${leg.id}: crossed bid/ask quote.`);
-    if (Number.isFinite(bidAskWidth) && bidAskWidth > 1) warnings.push(`${leg.id}: bid/ask width is wide (${bidAskWidth.toFixed(2)}).`);
+    if (!hasBidAsk)
+      warnings.push(`${leg.id}: missing or unusable bid/ask; fell back to ${quoteSource}.`);
+    if (Number.isFinite(bidAskWidth) && bidAskWidth < 0)
+      warnings.push(`${leg.id}: crossed bid/ask quote.`);
+    if (Number.isFinite(bidAskWidth) && bidAskWidth > 1)
+      warnings.push(`${leg.id}: bid/ask width is wide (${bidAskWidth.toFixed(2)}).`);
 
     return {
       id: leg.id,
@@ -6490,11 +8096,13 @@ export function buildOptionsStrategyPricingSummary(input: {
       signedNaturalContribution: roundOptionMoney(signedNaturalContribution),
       signedMidContribution: roundOptionMoney(signedMidContribution),
       bidAskWidth: roundOptionMoney(bidAskWidth),
-      quoteSource
+      quoteSource,
     };
   });
 
-  const naturalNet = roundOptionMoney(legs.reduce((sum, leg) => sum + leg.signedNaturalContribution, 0));
+  const naturalNet = roundOptionMoney(
+    legs.reduce((sum, leg) => sum + leg.signedNaturalContribution, 0),
+  );
   const midNet = roundOptionMoney(legs.reduce((sum, leg) => sum + leg.signedMidContribution, 0));
   const inferredDirection = naturalNet >= 0 ? "credit" : "debit";
   const direction = input.preferredDirection ?? inferredDirection;
@@ -6503,14 +8111,25 @@ export function buildOptionsStrategyPricingSummary(input: {
   let limitPrice = mode === "natural" ? naturalPrice : midPrice;
 
   if (mode === "safe-sell-probe") {
-    limitPrice = direction === "credit" ? naturalPrice + farLimitOffset : Math.max(0.01, naturalPrice - farLimitOffset);
-    warnings.push(`safe-sell-probe limit is intentionally $${farLimitOffset.toFixed(2)} away from the natural market; dry-run only.`);
+    limitPrice =
+      direction === "credit"
+        ? naturalPrice + farLimitOffset
+        : Math.max(0.01, naturalPrice - farLimitOffset);
+    warnings.push(
+      `safe-sell-probe limit is intentionally $${farLimitOffset.toFixed(2)} away from the natural market; dry-run only.`,
+    );
   } else if (mode === "safe-buy-probe") {
-    limitPrice = direction === "debit" ? Math.max(0.01, naturalPrice - farLimitOffset) : naturalPrice + farLimitOffset;
-    warnings.push(`safe-buy-probe limit is intentionally $${farLimitOffset.toFixed(2)} away from the natural market; dry-run only.`);
+    limitPrice =
+      direction === "debit"
+        ? Math.max(0.01, naturalPrice - farLimitOffset)
+        : naturalPrice + farLimitOffset;
+    warnings.push(
+      `safe-buy-probe limit is intentionally $${farLimitOffset.toFixed(2)} away from the natural market; dry-run only.`,
+    );
   }
 
-  if (!Number.isFinite(limitPrice)) warnings.push("limit price could not be computed from available quotes.");
+  if (!Number.isFinite(limitPrice))
+    warnings.push("limit price could not be computed from available quotes.");
 
   return {
     mode,
@@ -6528,9 +8147,9 @@ export function buildOptionsStrategyPricingSummary(input: {
       gamma: signedGreek(input.legs, "gamma", 100),
       theta: signedGreek(input.legs, "theta", 100),
       vega: signedGreek(input.legs, "vega", 100),
-      rho: signedGreek(input.legs, "rho", 100)
+      rho: signedGreek(input.legs, "rho", 100),
     },
-    warnings
+    warnings,
   };
 }
 
@@ -6539,11 +8158,17 @@ export function printJson(value: unknown): void {
 }
 
 export function printTable(rows: Array<Record<string, unknown>>, columns: string[]): void {
-  const widths = columns.map((column) => Math.max(column.length, ...rows.map((row) => String(row[column] ?? "").length)));
-  process.stdout.write(`${columns.map((column, i) => column.padEnd(widths[i] ?? column.length)).join("  ")}\n`);
+  const widths = columns.map((column) =>
+    Math.max(column.length, ...rows.map((row) => String(row[column] ?? "").length)),
+  );
+  process.stdout.write(
+    `${columns.map((column, i) => column.padEnd(widths[i] ?? column.length)).join("  ")}\n`,
+  );
   process.stdout.write(`${widths.map((width) => "-".repeat(width)).join("  ")}\n`);
   for (const row of rows) {
-    process.stdout.write(`${columns.map((column, i) => String(row[column] ?? "").padEnd(widths[i] ?? column.length)).join("  ")}\n`);
+    process.stdout.write(
+      `${columns.map((column, i) => String(row[column] ?? "").padEnd(widths[i] ?? column.length)).join("  ")}\n`,
+    );
   }
 }
 
@@ -6564,178 +8189,225 @@ export function printTable(rows: Array<Record<string, unknown>>, columns: string
  * not resolved here). Counting the long wing of a credit spread is what makes this "premium NET of debits"
  * rather than the gross short credit (which overstates spread income).
  */
-export function optionOrderNetPremiumUsd(order: any): { netUsd: number; included: boolean; reason: string } {
-    const num = (v: unknown) => Number(v);
-    let net = 0;
-    let hasSTO = false, hasBTC = false, hasBTO = false, hasSTC = false;
-    for (const leg of order?.legs ?? []) {
-        const side = String(leg?.side ?? "");
-        const effect = String(leg?.position_effect ?? "");
-        if (side === "sell" && effect === "open") hasSTO = true;
-        else if (side === "buy" && effect === "close") hasBTC = true;
-        else if (side === "buy" && effect === "open") hasBTO = true;
-        else if (side === "sell" && effect === "close") hasSTC = true;
-        const sign = side === "sell" ? 1 : side === "buy" ? -1 : 0;
-        if (sign === 0) continue;
-        for (const ex of leg?.executions ?? []) {
-            const qty = num(ex?.quantity);
-            const price = num(ex?.price);
-            if (!(qty > 0) || !Number.isFinite(price)) continue;
-            net += sign * price * qty * 100;
-        }
+export function optionOrderNetPremiumUsd(order: any): {
+  netUsd: number;
+  included: boolean;
+  reason: string;
+} {
+  const num = (v: unknown) => Number(v);
+  let net = 0;
+  let hasSTO = false,
+    hasBTC = false,
+    hasBTO = false,
+    hasSTC = false;
+  for (const leg of order?.legs ?? []) {
+    const side = String(leg?.side ?? "");
+    const effect = String(leg?.position_effect ?? "");
+    if (side === "sell" && effect === "open") hasSTO = true;
+    else if (side === "buy" && effect === "close") hasBTC = true;
+    else if (side === "buy" && effect === "open") hasBTO = true;
+    else if (side === "sell" && effect === "close") hasSTC = true;
+    const sign = side === "sell" ? 1 : side === "buy" ? -1 : 0;
+    if (sign === 0) continue;
+    for (const ex of leg?.executions ?? []) {
+      const qty = num(ex?.quantity);
+      const price = num(ex?.price);
+      if (!(qty > 0) || !Number.isFinite(price)) continue;
+      net += sign * price * qty * 100;
     }
-    let included = false;
-    let reason = "excluded: directional (long open/close or debit spread)";
-    if (hasSTO && !hasBTO) { included = true; reason = "short-premium open"; }
-    else if (hasSTO && hasBTO && net > 0) { included = true; reason = "net-credit spread/condor open"; }
-    else if (hasBTC) { included = true; reason = "short close / roll"; }
-    return { netUsd: included ? net : 0, included, reason };
+  }
+  let included = false;
+  let reason = "excluded: directional (long open/close or debit spread)";
+  if (hasSTO && !hasBTO) {
+    included = true;
+    reason = "short-premium open";
+  } else if (hasSTO && hasBTO && net > 0) {
+    included = true;
+    reason = "net-credit spread/condor open";
+  } else if (hasBTC) {
+    included = true;
+    reason = "short close / roll";
+  }
+  return { netUsd: included ? net : 0, included, reason };
 }
 
 export async function computeIncome(opts: any = {}, deps: any = {}) {
-    const getJson = deps.getJson ?? brokerageGetJson;
-    const getAll = deps.getAll ?? brokerageGetAllResults;
-    const nowMs = (deps.now ?? Date.now)();
-    const warnings = [];
-    const targetYear = opts.year != null && Number.isFinite(Number(opts.year)) ? Number(opts.year) : null;
-    const anchor = new Date(nowMs);
-    const year = targetYear ?? anchor.getUTCFullYear();
-    const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
-    // 1. Dividends — reuse the existing engine
-    let divResult;
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const nowMs = (deps.now ?? Date.now)();
+  const warnings = [];
+  const targetYear =
+    opts.year != null && Number.isFinite(Number(opts.year)) ? Number(opts.year) : null;
+  const anchor = new Date(nowMs);
+  const year = targetYear ?? anchor.getUTCFullYear();
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  // 1. Dividends — reuse the existing engine
+  let divResult;
+  try {
+    divResult = await computeDividends(
+      { accountNumber: opts.accountNumber },
+      { getJson, getAll, now: () => nowMs },
+    );
+  } catch (e: any) {
+    warnings.push(`dividends engine failed: ${(e as Error).message.slice(0, 60)}`);
+    divResult = {
+      byMonth: [],
+      totals: { last12moUsd: 0 },
+      projection: { annualUsd: 0 },
+      warnings: [],
+    };
+  }
+  warnings.push(...(divResult.warnings ?? []));
+  // 2. Option premium from filled orders, classified per ORDER (see optionOrderNetPremiumUsd):
+  //    net credit from premium-selling structures (CSP/CC, short calls/puts, credit spreads, condors)
+  //    and net cost to close/roll shorts. Long-option speculation and debit spreads are excluded —
+  //    this is INCOME, not directional P&L. The window is the SAME 12 calendar months as the dividend
+  //    breakdown (default: trailing 12 ending this month; with --year: Jan–Dec of that year) so the
+  //    monthly table reconciles to the TTM headline instead of mixing a calendar window with a 365-day one.
+  const n = (v: unknown) => Number(v);
+  const monthKeys: string[] =
+    targetYear != null
+      ? Array.from({ length: 12 }, (_, i) => `${targetYear}-${String(i + 1).padStart(2, "0")}`)
+      : Array.from({ length: 12 }, (_, i) =>
+          new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - (11 - i), 1))
+            .toISOString()
+            .slice(0, 7),
+        );
+  const inWindow = new Set(monthKeys);
+  const premiumByMonth = new Map<string, number>();
+  for (const { acct } of accts) {
     try {
-        divResult = await computeDividends({ accountNumber: opts.accountNumber }, { getJson, getAll, now: () => nowMs });
+      const orders = await getAll(
+        "https://api.robinhood.com/options/orders/",
+        {},
+        { account_number: acct, state: "filled" },
+      );
+      for (const o of orders ?? []) {
+        const monthKey = String(o.created_at ?? "").slice(0, 7);
+        if (!inWindow.has(monthKey)) continue;
+        const { netUsd } = optionOrderNetPremiumUsd(o);
+        if (netUsd === 0) continue;
+        premiumByMonth.set(monthKey, (premiumByMonth.get(monthKey) ?? 0) + netUsd);
+      }
+    } catch (e: any) {
+      warnings.push(
+        `option orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
     }
-    catch (e: any) {
-        warnings.push(`dividends engine failed: ${(e as Error).message.slice(0, 60)}`);
-        divResult = { byMonth: [], totals: { last12moUsd: 0 }, projection: { annualUsd: 0 }, warnings: [] };
-    }
-    warnings.push(...(divResult.warnings ?? []));
-    // 2. Option premium from filled orders, classified per ORDER (see optionOrderNetPremiumUsd):
-    //    net credit from premium-selling structures (CSP/CC, short calls/puts, credit spreads, condors)
-    //    and net cost to close/roll shorts. Long-option speculation and debit spreads are excluded —
-    //    this is INCOME, not directional P&L. The window is the SAME 12 calendar months as the dividend
-    //    breakdown (default: trailing 12 ending this month; with --year: Jan–Dec of that year) so the
-    //    monthly table reconciles to the TTM headline instead of mixing a calendar window with a 365-day one.
-    const n = (v: unknown) => Number(v);
-    const monthKeys: string[] = targetYear != null
-        ? Array.from({ length: 12 }, (_, i) => `${targetYear}-${String(i + 1).padStart(2, "0")}`)
-        : Array.from({ length: 12 }, (_, i) =>
-            new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - (11 - i), 1)).toISOString().slice(0, 7));
-    const inWindow = new Set(monthKeys);
-    const premiumByMonth = new Map<string, number>();
-    for (const { acct } of accts) {
-        try {
-            const orders = await getAll("https://api.robinhood.com/options/orders/", {}, { account_number: acct, state: "filled" });
-            for (const o of orders ?? []) {
-                const monthKey = String(o.created_at ?? "").slice(0, 7);
-                if (!inWindow.has(monthKey)) continue;
-                const { netUsd } = optionOrderNetPremiumUsd(o);
-                if (netUsd === 0) continue;
-                premiumByMonth.set(monthKey, (premiumByMonth.get(monthKey) ?? 0) + netUsd);
-            }
-        }
-        catch (e: any) {
-            warnings.push(`option orders read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`);
-        }
-    }
+  }
 
-    // 3. Monthly breakdown over the canonical 12-month window — dividends + premium, zero-filled so dry
-    //    months stay visible AND Σ(rows) == the TTM headline (no window drift between the two halves).
-    const divByMonth = new Map<string, number>();
-    for (const m of divResult.byMonth ?? []) {
-        if (typeof m?.month === "string" && m.month.length === 7) divByMonth.set(m.month, n(m.totalUsd));
-    }
-    const monthlyBreakdown = monthKeys.map((month) => {
-        const dividendsUsd = round2(divByMonth.get(month) ?? 0);
-        const optionPremiumUsd = round2(premiumByMonth.get(month) ?? 0);
-        return { month, dividendsUsd, optionPremiumUsd, totalUsd: round2(dividendsUsd + optionPremiumUsd) };
-    });
-
-    // TTM = exact sum of the window's monthly rows, so the headline always equals Σ(table).
-    const dividendsTtm = round2(monthlyBreakdown.reduce((s, m) => s + m.dividendsUsd, 0));
-    const premiumTtm = round2(monthlyBreakdown.reduce((s, m) => s + m.optionPremiumUsd, 0));
-    const ttmTotal = round2(dividendsTtm + premiumTtm);
-
-    // Monthly average over months actually COVERED (first activity → window end), not a blind /12 —
-    // a 3-month-old account shouldn't divide its income by 12 and read 4× smaller than it earns.
-    const firstActive = monthlyBreakdown.findIndex((m) => m.totalUsd !== 0);
-    const monthsCovered = firstActive < 0 ? monthKeys.length : monthKeys.length - firstActive;
-    const monthlyAverage = round2(ttmTotal / Math.max(1, monthsCovered));
-
-    // Forward run-rate (NOT a re-label of TTM): dividend side from CURRENT holdings × cadence (sold
-    // payers already excluded by the dividends engine) + trailing-12-month net option premium (already
-    // an annual figure). Granularity ($/day → $/yr) is derived from this annual run-rate.
-    const dividendForwardUsd = round2(Number(divResult.projection?.annualUsd ?? 0));
-    const optionPremiumTrailingUsd = premiumTtm;
-    const annualRunRate = round2(dividendForwardUsd + optionPremiumTrailingUsd);
-    const projection = {
-        dailyUsd: round2(annualRunRate / 365),
-        weeklyUsd: round2(annualRunRate / 52),
-        monthlyUsd: round2(annualRunRate / 12),
-        quarterlyUsd: round2(annualRunRate / 4),
-        annualUsd: annualRunRate,
-        dividendForwardUsd,
-        optionPremiumTrailingUsd,
-        method:
-            "annual run-rate = dividend forward projection (current holdings × cadence, sold payers excluded) " +
-            "+ trailing-12-month net option premium; daily=/365, weekly=/52, monthly=/12, quarterly=/4. " +
-            "Forward-looking — distinct from ttmTotalUsd, which is realized trailing income."
-    };
-
-    // --year honesty: dividend history beyond the trailing 12 months isn't available from the dividends
-    // feed, so flag any requested-year months that fall outside it (option premium IS full-history).
-    if (targetYear != null) {
-        const missingDiv = monthKeys.filter((k) => !divByMonth.has(k));
-        if (missingDiv.length) {
-            warnings.push(
-                `--year ${targetYear}: dividend data is only available for the trailing 12 months; ` +
-                `${missingDiv.length} month(s) of ${targetYear} fall outside that window and show $0 dividends ` +
-                `(option premium IS computed from full order history).`
-            );
-        }
-    }
-
-    const assignmentNote = "Option premium includes sell-to-open credits that may have resulted in assignment. Assignment events are not directly detectable via the API — premium from assigned positions may represent a cost-basis adjustment rather than standalone income. Cross-check against position history for any stock acquired near option expiration dates.";
-    const scopeNote = "Premium is net cash flow of premium-SELLING activity only (short puts/calls, covered calls, credit spreads/condors, and short closes/rolls). Long-option buys/sells and debit spreads are excluded as directional trades, not income. Cash-basis by fill month: a position opened one month and closed the next splits across both rows; the TTM total still nets correctly.";
-    warnings.push(assignmentNote);
-    const notes = [assignmentNote, scopeNote];
+  // 3. Monthly breakdown over the canonical 12-month window — dividends + premium, zero-filled so dry
+  //    months stay visible AND Σ(rows) == the TTM headline (no window drift between the two halves).
+  const divByMonth = new Map<string, number>();
+  for (const m of divResult.byMonth ?? []) {
+    if (typeof m?.month === "string" && m.month.length === 7)
+      divByMonth.set(m.month, n(m.totalUsd));
+  }
+  const monthlyBreakdown = monthKeys.map((month) => {
+    const dividendsUsd = round2(divByMonth.get(month) ?? 0);
+    const optionPremiumUsd = round2(premiumByMonth.get(month) ?? 0);
     return {
-        accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
-        year,
-        window: { start: monthKeys[0], end: monthKeys[monthKeys.length - 1] },
-        monthlyBreakdown,
-        ttmTotalUsd: ttmTotal,
-        monthlyAverageUsd: monthlyAverage,
-        monthsCovered,
-        projectedAnnualRunRateUsd: annualRunRate,
-        dividendsTtmUsd: dividendsTtm,
-        optionPremiumTtmUsd: premiumTtm,
-        projection,
-        warnings,
-        notes
+      month,
+      dividendsUsd,
+      optionPremiumUsd,
+      totalUsd: round2(dividendsUsd + optionPremiumUsd),
     };
+  });
+
+  // TTM = exact sum of the window's monthly rows, so the headline always equals Σ(table).
+  const dividendsTtm = round2(monthlyBreakdown.reduce((s, m) => s + m.dividendsUsd, 0));
+  const premiumTtm = round2(monthlyBreakdown.reduce((s, m) => s + m.optionPremiumUsd, 0));
+  const ttmTotal = round2(dividendsTtm + premiumTtm);
+
+  // Monthly average over months actually COVERED (first activity → window end), not a blind /12 —
+  // a 3-month-old account shouldn't divide its income by 12 and read 4× smaller than it earns.
+  const firstActive = monthlyBreakdown.findIndex((m) => m.totalUsd !== 0);
+  const monthsCovered = firstActive < 0 ? monthKeys.length : monthKeys.length - firstActive;
+  const monthlyAverage = round2(ttmTotal / Math.max(1, monthsCovered));
+
+  // Forward run-rate (NOT a re-label of TTM): dividend side from CURRENT holdings × cadence (sold
+  // payers already excluded by the dividends engine) + trailing-12-month net option premium (already
+  // an annual figure). Granularity ($/day → $/yr) is derived from this annual run-rate.
+  const dividendForwardUsd = round2(Number(divResult.projection?.annualUsd ?? 0));
+  const optionPremiumTrailingUsd = premiumTtm;
+  const annualRunRate = round2(dividendForwardUsd + optionPremiumTrailingUsd);
+  const projection = {
+    dailyUsd: round2(annualRunRate / 365),
+    weeklyUsd: round2(annualRunRate / 52),
+    monthlyUsd: round2(annualRunRate / 12),
+    quarterlyUsd: round2(annualRunRate / 4),
+    annualUsd: annualRunRate,
+    dividendForwardUsd,
+    optionPremiumTrailingUsd,
+    method:
+      "annual run-rate = dividend forward projection (current holdings × cadence, sold payers excluded) " +
+      "+ trailing-12-month net option premium; daily=/365, weekly=/52, monthly=/12, quarterly=/4. " +
+      "Forward-looking — distinct from ttmTotalUsd, which is realized trailing income.",
+  };
+
+  // --year honesty: dividend history beyond the trailing 12 months isn't available from the dividends
+  // feed, so flag any requested-year months that fall outside it (option premium IS full-history).
+  if (targetYear != null) {
+    const missingDiv = monthKeys.filter((k) => !divByMonth.has(k));
+    if (missingDiv.length) {
+      warnings.push(
+        `--year ${targetYear}: dividend data is only available for the trailing 12 months; ` +
+          `${missingDiv.length} month(s) of ${targetYear} fall outside that window and show $0 dividends ` +
+          `(option premium IS computed from full order history).`,
+      );
+    }
+  }
+
+  const assignmentNote =
+    "Option premium includes sell-to-open credits that may have resulted in assignment. Assignment events are not directly detectable via the API — premium from assigned positions may represent a cost-basis adjustment rather than standalone income. Cross-check against position history for any stock acquired near option expiration dates.";
+  const scopeNote =
+    "Premium is net cash flow of premium-SELLING activity only (short puts/calls, covered calls, credit spreads/condors, and short closes/rolls). Long-option buys/sells and debit spreads are excluded as directional trades, not income. Cash-basis by fill month: a position opened one month and closed the next splits across both rows; the TTM total still nets correctly.";
+  warnings.push(assignmentNote);
+  const notes = [assignmentNote, scopeNote];
+  return {
+    accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
+    year,
+    window: { start: monthKeys[0], end: monthKeys[monthKeys.length - 1] },
+    monthlyBreakdown,
+    ttmTotalUsd: ttmTotal,
+    monthlyAverageUsd: monthlyAverage,
+    monthsCovered,
+    projectedAnnualRunRateUsd: annualRunRate,
+    dividendsTtmUsd: dividendsTtm,
+    optionPremiumTtmUsd: premiumTtm,
+    projection,
+    warnings,
+    notes,
+  };
 }
 // Friendly span aliases → the API's `display_span` values. The endpoint self-documents these in
 // spans.available_spans[]; we accept both the API value and common shorthands.
 const PERFORMANCE_SPANS: Record<string, string> = {
-    day: "day", "1d": "day", today: "day",
-    week: "week", "1w": "week",
-    month: "month", "1m": "month",
-    "3month": "3month", "3m": "3month", quarter: "3month",
-    ytd: "ytd",
-    year: "year", "1y": "year",
-    all: "all", max: "all",
+  day: "day",
+  "1d": "day",
+  today: "day",
+  week: "week",
+  "1w": "week",
+  month: "month",
+  "1m": "month",
+  "3month": "3month",
+  "3m": "3month",
+  quarter: "3month",
+  ytd: "ytd",
+  year: "year",
+  "1y": "year",
+  all: "all",
+  max: "all",
 };
 // RH chart dollar values arrive as formatted strings ("$1,234.56", "-$12.30", "($12.30)").
 function parseMoneyUsd(v: unknown): number {
-    if (typeof v === "number") return v;
-    const s = String(v ?? "").trim();
-    if (!s) return Number.NaN;
-    const negative = s.startsWith("-") || s.startsWith("(");
-    const magnitude = Number(s.replace(/[^0-9.]/g, ""));
-    if (!Number.isFinite(magnitude)) return Number.NaN;
-    return negative ? -magnitude : magnitude;
+  if (typeof v === "number") return v;
+  const s = String(v ?? "").trim();
+  if (!s) return Number.NaN;
+  const negative = s.startsWith("-") || s.startsWith("(");
+  const magnitude = Number(s.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(magnitude)) return Number.NaN;
+  return negative ? -magnitude : magnitude;
 }
 /**
  * Portfolio historical performance — the equity curve over time (the data behind a `performance`
@@ -6754,642 +8426,971 @@ function parseMoneyUsd(v: unknown): number {
  * the timestamp is cursor_data.label.value.
  */
 export async function computePerformance(opts: any = {}, deps: any = {}) {
-    const getJson = deps.getJson ?? brokerageGetJson;
-    const n = (v: unknown) => Number(v);
-    const warnings: string[] = [];
-    const spanInput = String(opts.span ?? "day").toLowerCase();
-    const span = PERFORMANCE_SPANS[spanInput] ?? "day";
-    if (!PERFORMANCE_SPANS[spanInput]) {
-        warnings.push(`Unknown span "${opts.span}" — defaulting to "day". Valid: day/week/month/3month/ytd/year/all.`);
-    }
-    const includeAllHours = opts.includeAllHours !== false; // default true
-    const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
-    const accounts = [];
-    for (const { acct, label } of accts) {
-        try {
-            const body = await getJson(
-                "https://bonfire.robinhood.com/portfolio/performance/{id}/",
-                { id: acct },
-                { display_span: span, include_all_hours: String(includeAllHours), chart_type: "historical_portfolio" }
-            );
-            const lines = Array.isArray(body?.lines) ? body.lines : [];
-            const returnsLine = lines.find((l: any) => l?.identifier === "returns") ?? lines[0] ?? {};
-            const points = [];
-            for (const seg of returnsLine.segments ?? []) {
-                for (const p of seg.points ?? []) {
-                    const cd = p?.cursor_data ?? {};
-                    points.push({
-                        at: cd.label?.value ?? null,
-                        valueUsd: round2(parseMoneyUsd(cd.primary_value?.value)),
-                        returnPct: round2(n(p?.y) * 100),
-                        returnLabel: cd.secondary_value?.main?.value ?? null,
-                        session: cd.secondary_value?.description?.value ?? null,
-                    });
-                }
-            }
-            const first = points[0] ?? null;
-            const last = points[points.length - 1] ?? null;
-            const baselineUsd = round2(parseMoneyUsd(body?.performance_baseline?.amount));
-            const currentValueUsd = last ? last.valueUsd : Number.NaN;
-            const periodReturnUsd = Number.isFinite(currentValueUsd) && Number.isFinite(baselineUsd)
-                ? round2(currentValueUsd - baselineUsd) : null;
-            accounts.push({
-                accountNumber: acct,
-                account: "…" + acct.slice(-4),
-                nickname: label,
-                span,
-                summary: {
-                    currentValueUsd: Number.isFinite(currentValueUsd) ? currentValueUsd : null,
-                    baselineUsd: Number.isFinite(baselineUsd) ? baselineUsd : null,
-                    periodReturnUsd,
-                    periodReturnPct: last ? last.returnPct : null,
-                    pointCount: points.length,
-                    first,
-                    last,
-                },
-                points,
-            });
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const n = (v: unknown) => Number(v);
+  const warnings: string[] = [];
+  const spanInput = String(opts.span ?? "day").toLowerCase();
+  const span = PERFORMANCE_SPANS[spanInput] ?? "day";
+  if (!PERFORMANCE_SPANS[spanInput]) {
+    warnings.push(
+      `Unknown span "${opts.span}" — defaulting to "day". Valid: day/week/month/3month/ytd/year/all.`,
+    );
+  }
+  const includeAllHours = opts.includeAllHours !== false; // default true
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const accounts = [];
+  for (const { acct, label } of accts) {
+    try {
+      const body = await getJson(
+        "https://bonfire.robinhood.com/portfolio/performance/{id}/",
+        { id: acct },
+        {
+          display_span: span,
+          include_all_hours: String(includeAllHours),
+          chart_type: "historical_portfolio",
+        },
+      );
+      const lines = Array.isArray(body?.lines) ? body.lines : [];
+      const returnsLine = lines.find((l: any) => l?.identifier === "returns") ?? lines[0] ?? {};
+      const points = [];
+      for (const seg of returnsLine.segments ?? []) {
+        for (const p of seg.points ?? []) {
+          const cd = p?.cursor_data ?? {};
+          points.push({
+            at: cd.label?.value ?? null,
+            valueUsd: round2(parseMoneyUsd(cd.primary_value?.value)),
+            returnPct: round2(n(p?.y) * 100),
+            returnLabel: cd.secondary_value?.main?.value ?? null,
+            session: cd.secondary_value?.description?.value ?? null,
+          });
         }
-        catch (e: any) {
-            warnings.push(`performance read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 80)}`);
-        }
-    }
-    return {
+      }
+      const first = points[0] ?? null;
+      const last = points[points.length - 1] ?? null;
+      const baselineUsd = round2(parseMoneyUsd(body?.performance_baseline?.amount));
+      const currentValueUsd = last ? last.valueUsd : Number.NaN;
+      const periodReturnUsd =
+        Number.isFinite(currentValueUsd) && Number.isFinite(baselineUsd)
+          ? round2(currentValueUsd - baselineUsd)
+          : null;
+      accounts.push({
+        accountNumber: acct,
+        account: "…" + acct.slice(-4),
+        nickname: label,
         span,
-        accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
-        accounts,
-        warnings,
-    };
+        summary: {
+          currentValueUsd: Number.isFinite(currentValueUsd) ? currentValueUsd : null,
+          baselineUsd: Number.isFinite(baselineUsd) ? baselineUsd : null,
+          periodReturnUsd,
+          periodReturnPct: last ? last.returnPct : null,
+          pointCount: points.length,
+          first,
+          last,
+        },
+        points,
+      });
+    } catch (e: any) {
+      warnings.push(
+        `performance read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 80)}`,
+      );
+    }
+  }
+  return {
+    span,
+    accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
+    accounts,
+    warnings,
+  };
 }
 /**
  * Portfolio risk scanner: max loss across open positions, assignment exposure (ITM shorts),
  * undercovered short legs, margin utilization (borrowed/equity), and concentration warnings (>20% in one symbol).
  */
 export async function computeRisk(opts: any = {}, deps: any = {}) {
-    const getJson = deps.getJson ?? brokerageGetJson;
-    const getAll = deps.getAll ?? brokerageGetAllResults;
-    const n = (v: unknown) => Number(v);
-    const warnings = [];
-    const positions = [];
-    const concentrationWarnings = [];
-    const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
-    const perAcct: any[] = await Promise.all(accts.map(async ({ acct, label }: any) => {
-        const out = { acct, label, equityPositions: [], optionPositions: [], equity: Number.NaN, borrowed: 0 };
-        try {
-            const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
-            out.equityPositions = eq.filter((p: any) => n(p.quantity) > 0).map((p: any) => ({ symbol: p.symbol, iid: p.instrument_id, qty: n(p.quantity), avgCost: n(p.average_buy_price) }));
-        }
-        catch (e: any) {
-            warnings.push(`equity positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`);
-        }
-        try {
-            const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
-            out.optionPositions = agg.map((p: any) => ({
-                symbol: p.symbol, strategy: p.strategy, qty: n(p.quantity), avgOpenPrice: n(p.average_open_price),
-                legs: (p.legs ?? []).map((l: any) => ({ optionId: l.option_id, side: l.position_type === "short" ? "short" : "long", type: l.option_type, strike: n(l.strike_price), expiration: l.expiration_date, ratioQuantity: n(l.ratio_quantity) || 1 })),
-                underlyingType: p.underlying_type ?? "equity"
-            }));
-        }
-        catch (e: any) {
-            warnings.push(`option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`);
-        }
-        try {
-            const p = await getJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
-            out.equity = n(p.equity);
-        }
-        catch { /* degrade */ }
-        try {
-            const m = await getJson("https://api.robinhood.com/margin/{account_number}/investing_info/", { account_number: acct });
-            out.borrowed = n(m?.amount_borrowed) ?? 0;
-        }
-        catch { /* no margin */ }
-        return out;
-    }));
-    const allEqIds = [...new Set(perAcct.flatMap((a: any) => a.equityPositions.map((p: any) => p.iid).filter(Boolean)))];
-    const eqQuotes = new Map();
-    try {
-        for (let i = 0; i < allEqIds.length; i += 40) {
-            const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: allEqIds.slice(i, i + 40).join(",") });
-            for (const r of data?.results ?? [])
-                if (r?.instrument_id)
-                    eqQuotes.set(r.instrument_id, r);
-        }
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const n = (v: unknown) => Number(v);
+  const warnings = [];
+  const positions = [];
+  const concentrationWarnings = [];
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const perAcct: any[] = await Promise.all(
+    accts.map(async ({ acct, label }: any) => {
+      const out = {
+        acct,
+        label,
+        equityPositions: [],
+        optionPositions: [],
+        equity: Number.NaN,
+        borrowed: 0,
+      };
+      try {
+        const eq = await getAll(
+          "https://api.robinhood.com/positions/",
+          {},
+          { nonzero: "true", account_number: acct },
+        );
+        out.equityPositions = eq
+          .filter((p: any) => n(p.quantity) > 0)
+          .map((p: any) => ({
+            symbol: p.symbol,
+            iid: p.instrument_id,
+            qty: n(p.quantity),
+            avgCost: n(p.average_buy_price),
+          }));
+      } catch (e: any) {
+        warnings.push(
+          `equity positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+        );
+      }
+      try {
+        const agg = await getAll(
+          "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+          {},
+          { account_numbers: acct, nonzero: "true" },
+        );
+        out.optionPositions = agg.map((p: any) => ({
+          symbol: p.symbol,
+          strategy: p.strategy,
+          qty: n(p.quantity),
+          avgOpenPrice: n(p.average_open_price),
+          legs: (p.legs ?? []).map((l: any) => ({
+            optionId: l.option_id,
+            side: l.position_type === "short" ? "short" : "long",
+            type: l.option_type,
+            strike: n(l.strike_price),
+            expiration: l.expiration_date,
+            ratioQuantity: n(l.ratio_quantity) || 1,
+          })),
+          underlyingType: p.underlying_type ?? "equity",
+        }));
+      } catch (e: any) {
+        warnings.push(
+          `option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+        );
+      }
+      try {
+        const p = await getJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
+        out.equity = n(p.equity);
+      } catch {
+        /* degrade */
+      }
+      try {
+        const m = await getJson(
+          "https://api.robinhood.com/margin/{account_number}/investing_info/",
+          { account_number: acct },
+        );
+        out.borrowed = n(m?.amount_borrowed) ?? 0;
+      } catch {
+        /* no margin */
+      }
+      return out;
+    }),
+  );
+  const allEqIds = [
+    ...new Set(
+      perAcct.flatMap((a: any) => a.equityPositions.map((p: any) => p.iid).filter(Boolean)),
+    ),
+  ];
+  const eqQuotes = new Map();
+  try {
+    for (let i = 0; i < allEqIds.length; i += 40) {
+      const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
+        ids: allEqIds.slice(i, i + 40).join(","),
+      });
+      for (const r of data?.results ?? []) if (r?.instrument_id) eqQuotes.set(r.instrument_id, r);
     }
-    catch (e: any) {
-        warnings.push(`equity quotes batch failed: ${(e as Error).message.slice(0, 60)}`);
+  } catch (e: any) {
+    warnings.push(`equity quotes batch failed: ${(e as Error).message.slice(0, 60)}`);
+  }
+  const allOptIds = [
+    ...new Set(
+      perAcct.flatMap((a: any) =>
+        a.optionPositions.flatMap((p: any) => p.legs.map((l: any) => l.optionId).filter(Boolean)),
+      ),
+    ),
+  ];
+  const optMarks = new Map();
+  try {
+    for (let i = 0; i < allOptIds.length; i += 40) {
+      const data = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", {
+        ids: allOptIds.slice(i, i + 40).join(","),
+      });
+      for (const r of data?.results ?? []) if (r?.instrument_id) optMarks.set(r.instrument_id, r);
     }
-    const allOptIds = [...new Set(perAcct.flatMap((a: any) => a.optionPositions.flatMap((p: any) => p.legs.map((l: any) => l.optionId).filter(Boolean))))];
-    const optMarks = new Map();
-    try {
-        for (let i = 0; i < allOptIds.length; i += 40) {
-            const data = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", { ids: allOptIds.slice(i, i + 40).join(",") });
-            for (const r of data?.results ?? [])
-                if (r?.instrument_id)
-                    optMarks.set(r.instrument_id, r);
+  } catch (e: any) {
+    warnings.push(`option marks batch failed: ${(e as Error).message.slice(0, 60)}`);
+  }
+  let totalEquity = 0,
+    totalBorrowed = 0;
+  const symbolValues = new Map();
+  for (const a of perAcct) {
+    totalEquity += Number.isFinite(a.equity) ? a.equity : 0;
+    totalBorrowed += a.borrowed;
+    for (const p of a.equityPositions) {
+      const q = eqQuotes.get(p.iid) ?? {};
+      const last = n(q.last_trade_price);
+      const mktVal = Number.isFinite(last) ? p.qty * last : Number.NaN;
+      positions.push({
+        kind: "equity",
+        symbol: p.symbol,
+        description: p.symbol,
+        side: "long",
+        quantity: p.qty,
+        marketValueUsd: round2(mktVal),
+        maxLossUsd: round2(mktVal),
+        itmExpirationRisk: false,
+        undercoveredShortLegs: 0,
+        account: a.acct,
+      });
+      symbolValues.set(
+        p.symbol,
+        (symbolValues.get(p.symbol) ?? 0) + (Number.isFinite(mktVal) ? mktVal : 0),
+      );
+    }
+    for (const p of a.optionPositions) {
+      let totalPosMktVal = 0,
+        maxLoss: number | null = 0,
+        itmRisk = false,
+        undercovered = 0;
+      let shortCallRatio = 0,
+        longCallRatio = 0,
+        shortPutRatio = 0,
+        longPutRatio = 0;
+      for (const leg of p.legs) {
+        const mark = optMarks.get(leg.optionId) ?? {};
+        const markPrice = n(mark.adjusted_mark_price ?? mark.mark_price);
+        const legVal = Number.isFinite(markPrice)
+          ? markPrice * 100 * p.qty * leg.ratioQuantity
+          : Number.NaN;
+        const isShort = leg.side === "short";
+        const sign = isShort ? -1 : 1;
+        totalPosMktVal += (Number.isFinite(legVal) ? legVal : 0) * sign;
+        const rq = Number.isFinite(Number(leg.ratioQuantity)) ? Number(leg.ratioQuantity) : 1;
+        if (leg.type === "call") {
+          if (isShort) shortCallRatio += rq;
+          else longCallRatio += rq;
+        } else if (leg.type === "put") {
+          if (isShort) shortPutRatio += rq;
+          else longPutRatio += rq;
         }
-    }
-    catch (e: any) {
-        warnings.push(`option marks batch failed: ${(e as Error).message.slice(0, 60)}`);
-    }
-    let totalEquity = 0, totalBorrowed = 0;
-    const symbolValues = new Map();
-    for (const a of perAcct) {
-        totalEquity += Number.isFinite(a.equity) ? a.equity : 0;
-        totalBorrowed += a.borrowed;
-        for (const p of a.equityPositions) {
-            const q = eqQuotes.get(p.iid) ?? {};
-            const last = n(q.last_trade_price);
-            const mktVal = Number.isFinite(last) ? p.qty * last : Number.NaN;
-            positions.push({ kind: "equity", symbol: p.symbol, description: p.symbol, side: "long", quantity: p.qty, marketValueUsd: round2(mktVal), maxLossUsd: round2(mktVal), itmExpirationRisk: false, undercoveredShortLegs: 0, account: a.acct });
-            symbolValues.set(p.symbol, (symbolValues.get(p.symbol) ?? 0) + (Number.isFinite(mktVal) ? mktVal : 0));
+        if (isShort) {
+          const spotRef = a.equityPositions.find((ep: any) => ep.symbol === p.symbol);
+          const spot = spotRef
+            ? n((eqQuotes.get(spotRef.iid) ?? {})?.last_trade_price)
+            : Number.NaN;
+          if (Number.isFinite(spot) && Number.isFinite(leg.strike)) {
+            const moneyness = classifyMoneyness(leg.strike, spot, leg.type);
+            itmRisk = itmRisk || moneyness === "ITM";
+          }
+          if (leg.type === "call") {
+            const shares = a.equityPositions.find((ep: any) => ep.symbol === p.symbol);
+            const needed = p.qty * leg.ratioQuantity * 100;
+            if (!shares || shares.qty < needed) undercovered += needed - (shares?.qty ?? 0);
+          }
+          maxLoss = null;
         }
-        for (const p of a.optionPositions) {
-            let totalPosMktVal = 0, maxLoss: number | null = 0, itmRisk = false, undercovered = 0;
-            let shortCallRatio = 0, longCallRatio = 0, shortPutRatio = 0, longPutRatio = 0;
-            for (const leg of p.legs) {
-                const mark = optMarks.get(leg.optionId) ?? {};
-                const markPrice = n(mark.adjusted_mark_price ?? mark.mark_price);
-                const legVal = Number.isFinite(markPrice) ? markPrice * 100 * p.qty * leg.ratioQuantity : Number.NaN;
-                const isShort = leg.side === "short";
-                const sign = isShort ? -1 : 1;
-                totalPosMktVal += (Number.isFinite(legVal) ? legVal : 0) * sign;
-                const rq = Number.isFinite(Number(leg.ratioQuantity)) ? Number(leg.ratioQuantity) : 1;
-                if (leg.type === "call") { if (isShort) shortCallRatio += rq; else longCallRatio += rq; }
-                else if (leg.type === "put") { if (isShort) shortPutRatio += rq; else longPutRatio += rq; }
-                if (isShort) {
-                    const spotRef = a.equityPositions.find((ep: any) => ep.symbol === p.symbol);
-                    const spot = spotRef ? n((eqQuotes.get(spotRef.iid) ?? {})?.last_trade_price) : Number.NaN;
-                    if (Number.isFinite(spot) && Number.isFinite(leg.strike)) {
-                        const moneyness = classifyMoneyness(leg.strike, spot, leg.type);
-                        itmRisk = itmRisk || moneyness === "ITM";
-                    }
-                    if (leg.type === "call") {
-                        const shares = a.equityPositions.find((ep: any) => ep.symbol === p.symbol);
-                        const needed = p.qty * leg.ratioQuantity * 100;
-                        if (!shares || shares.qty < needed)
-                            undercovered += needed - (shares?.qty ?? 0);
-                    }
-                    maxLoss = null;
-                }
-            }
-            // Max loss for a purely-long position = total debit paid, computed ONCE from the
-            // position-level cost basis. average_open_price is ALREADY per-contract dollars
-            // (premium × 100; see optionReturnPct), so it is multiplied by the contract count
-            // ONLY — never by another 100 — and only after the leg loop, so a multi-leg long
-            // (e.g. a long straddle) is not counted once per leg. Any short leg already set
-            // maxLoss = null (spread defined-risk is intentionally left unmodeled here).
-            if (maxLoss !== null) {
-                const debit = n(p.avgOpenPrice) * p.qty;
-                maxLoss = Number.isFinite(debit) ? debit : null;
-            }
-            // Honest loss-shape classification for labeling — we do NOT model spread/naked payoff here.
-            // Uses net leg RATIOS (not mere presence) so a ratio spread (e.g. short 2 / long 1 call) is
-            // recognized as net-naked, never mislabeled bounded:
-            //  • number maxLoss                             → "defined" (long-only debit, modeled)
-            //  • long ratio ≥ short ratio for BOTH types    → "defined-spread" (bounded, not modeled)
-            //  • net-excess short CALLS, not share-covered  → "unlimited" (truly unbounded upside)
-            //  • else (naked short put = bounded-but-large, covered call, unclassifiable) → "not-modeled"
-            const hasShort = shortCallRatio > 0 || shortPutRatio > 0;
-            const fullyWinged = longCallRatio >= shortCallRatio && longPutRatio >= shortPutRatio;
-            const netShortCalls = shortCallRatio - longCallRatio;
-            const nakedUnlimitedCall = netShortCalls > 0 && undercovered > 0;
-            const riskClass: "defined" | "defined-spread" | "unlimited" | "not-modeled" =
-                maxLoss !== null ? "defined"
-                : !hasShort ? "not-modeled"
-                : fullyWinged ? "defined-spread"
-                : nakedUnlimitedCall ? "unlimited"
+      }
+      // Max loss for a purely-long position = total debit paid, computed ONCE from the
+      // position-level cost basis. average_open_price is ALREADY per-contract dollars
+      // (premium × 100; see optionReturnPct), so it is multiplied by the contract count
+      // ONLY — never by another 100 — and only after the leg loop, so a multi-leg long
+      // (e.g. a long straddle) is not counted once per leg. Any short leg already set
+      // maxLoss = null (spread defined-risk is intentionally left unmodeled here).
+      if (maxLoss !== null) {
+        const debit = n(p.avgOpenPrice) * p.qty;
+        maxLoss = Number.isFinite(debit) ? debit : null;
+      }
+      // Honest loss-shape classification for labeling — we do NOT model spread/naked payoff here.
+      // Uses net leg RATIOS (not mere presence) so a ratio spread (e.g. short 2 / long 1 call) is
+      // recognized as net-naked, never mislabeled bounded:
+      //  • number maxLoss                             → "defined" (long-only debit, modeled)
+      //  • long ratio ≥ short ratio for BOTH types    → "defined-spread" (bounded, not modeled)
+      //  • net-excess short CALLS, not share-covered  → "unlimited" (truly unbounded upside)
+      //  • else (naked short put = bounded-but-large, covered call, unclassifiable) → "not-modeled"
+      const hasShort = shortCallRatio > 0 || shortPutRatio > 0;
+      const fullyWinged = longCallRatio >= shortCallRatio && longPutRatio >= shortPutRatio;
+      const netShortCalls = shortCallRatio - longCallRatio;
+      const nakedUnlimitedCall = netShortCalls > 0 && undercovered > 0;
+      const riskClass: "defined" | "defined-spread" | "unlimited" | "not-modeled" =
+        maxLoss !== null
+          ? "defined"
+          : !hasShort
+            ? "not-modeled"
+            : fullyWinged
+              ? "defined-spread"
+              : nakedUnlimitedCall
+                ? "unlimited"
                 : "not-modeled";
-            positions.push({ kind: "option", symbol: p.symbol, description: `${p.symbol} ${p.strategy ?? ""}`.trim(), side: p.strategy?.startsWith("short") ? "short" : "long", quantity: p.qty, marketValueUsd: round2(totalPosMktVal), maxLossUsd: maxLoss !== null ? round2(maxLoss) : null, riskClass, itmExpirationRisk: itmRisk, undercoveredShortLegs: undercovered, account: a.acct });
-            symbolValues.set(p.symbol, (symbolValues.get(p.symbol) ?? 0) + (Number.isFinite(totalPosMktVal) ? Math.abs(totalPosMktVal) : 0));
-        }
+      positions.push({
+        kind: "option",
+        symbol: p.symbol,
+        description: `${p.symbol} ${p.strategy ?? ""}`.trim(),
+        side: p.strategy?.startsWith("short") ? "short" : "long",
+        quantity: p.qty,
+        marketValueUsd: round2(totalPosMktVal),
+        maxLossUsd: maxLoss !== null ? round2(maxLoss) : null,
+        riskClass,
+        itmExpirationRisk: itmRisk,
+        undercoveredShortLegs: undercovered,
+        account: a.acct,
+      });
+      symbolValues.set(
+        p.symbol,
+        (symbolValues.get(p.symbol) ?? 0) +
+          (Number.isFinite(totalPosMktVal) ? Math.abs(totalPosMktVal) : 0),
+      );
     }
-    const totalPortfolio = [...symbolValues.values()].reduce((s, v) => s + v, 0);
-    for (const [symbol, value] of symbolValues) {
-        if (totalPortfolio <= 0)
-            break;
-        const pct = (value / totalPortfolio) * 100;
-        if (pct > 20)
-            concentrationWarnings.push({ symbol, weightPct: round2(pct), message: `${symbol} is ${pct.toFixed(1)}% of portfolio (>20% concentration).` });
-    }
-    // borrowed/equity is MARGIN UTILIZATION, not a margin-call distance (a true call buffer needs the
-    // broker maintenance requirement + per-asset haircuts, which this endpoint set does not expose).
-    const marginUtilization = totalEquity > 0 ? round2((totalBorrowed / totalEquity) * 100) : null;
-    return { accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)), totalEquityUsd: round2(totalEquity), totalBorrowedUsd: round2(totalBorrowed), marginUtilizationPct: marginUtilization, marginCallDistancePct: marginUtilization, positions, concentrationWarnings, warnings };
+  }
+  const totalPortfolio = [...symbolValues.values()].reduce((s, v) => s + v, 0);
+  for (const [symbol, value] of symbolValues) {
+    if (totalPortfolio <= 0) break;
+    const pct = (value / totalPortfolio) * 100;
+    if (pct > 20)
+      concentrationWarnings.push({
+        symbol,
+        weightPct: round2(pct),
+        message: `${symbol} is ${pct.toFixed(1)}% of portfolio (>20% concentration).`,
+      });
+  }
+  // borrowed/equity is MARGIN UTILIZATION, not a margin-call distance (a true call buffer needs the
+  // broker maintenance requirement + per-asset haircuts, which this endpoint set does not expose).
+  const marginUtilization = totalEquity > 0 ? round2((totalBorrowed / totalEquity) * 100) : null;
+  return {
+    accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
+    totalEquityUsd: round2(totalEquity),
+    totalBorrowedUsd: round2(totalBorrowed),
+    marginUtilizationPct: marginUtilization,
+    marginCallDistancePct: marginUtilization,
+    positions,
+    concentrationWarnings,
+    warnings,
+  };
 }
 /**
  * Greeks scenario calculator: takes current portfolio Greeks, applies spot ±X%, IV ±N%,
  * T - N days, and computes estimated P&L per position and total.
  */
 export async function computeWhatIf(opts: any = {}, deps: any = {}) {
-    const getJson = deps.getJson ?? brokerageGetJson;
-    const getAll = deps.getAll ?? brokerageGetAllResults;
-    const n = (v: unknown) => Number(v);
-    const warnings = [];
-    const spotPct = opts.spotPct ?? 0;
-    const ivPct = opts.ivPct ?? 0;
-    const days = opts.days ?? 0;
-    const rateChangePct = opts.rateChangePct ?? 0;
-    const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
-    const allPositions = [];
-    for (const { acct } of accts) {
-        try {
-            const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
-            for (const p of agg) {
-                allPositions.push({ symbol: p.symbol, description: `${p.symbol} ${p.strategy ?? ""}`.trim(), qty: n(p.quantity), legs: (p.legs ?? []).map((l: any) => ({ optionId: l.option_id, side: l.position_type === "short" ? "short" : "long", ratioQuantity: n(l.ratio_quantity) || 1 })) });
-            }
-        }
-        catch (e: any) {
-            warnings.push(`option positions read failed: ${(e as Error).message.slice(0, 60)}`);
-        }
-    }
-    const allOptIds = [...new Set(allPositions.flatMap((p: any) => p.legs.map((l: any) => l.optionId).filter(Boolean)))];
-    const optMarks = new Map();
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const n = (v: unknown) => Number(v);
+  const warnings = [];
+  const spotPct = opts.spotPct ?? 0;
+  const ivPct = opts.ivPct ?? 0;
+  const days = opts.days ?? 0;
+  const rateChangePct = opts.rateChangePct ?? 0;
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const allPositions = [];
+  for (const { acct } of accts) {
     try {
-        for (let i = 0; i < allOptIds.length; i += 40) {
-            const data = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", { ids: allOptIds.slice(i, i + 40).join(",") });
-            for (const r of data?.results ?? [])
-                if (r?.instrument_id)
-                    optMarks.set(r.instrument_id, r);
-        }
+      const agg = await getAll(
+        "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+        {},
+        { account_numbers: acct, nonzero: "true" },
+      );
+      for (const p of agg) {
+        allPositions.push({
+          symbol: p.symbol,
+          description: `${p.symbol} ${p.strategy ?? ""}`.trim(),
+          qty: n(p.quantity),
+          legs: (p.legs ?? []).map((l: any) => ({
+            optionId: l.option_id,
+            side: l.position_type === "short" ? "short" : "long",
+            ratioQuantity: n(l.ratio_quantity) || 1,
+          })),
+        });
+      }
+    } catch (e: any) {
+      warnings.push(`option positions read failed: ${(e as Error).message.slice(0, 60)}`);
     }
-    catch (e: any) {
-        warnings.push(`option marks batch failed: ${(e as Error).message.slice(0, 60)}`);
+  }
+  const allOptIds = [
+    ...new Set(
+      allPositions.flatMap((p: any) => p.legs.map((l: any) => l.optionId).filter(Boolean)),
+    ),
+  ];
+  const optMarks = new Map();
+  try {
+    for (let i = 0; i < allOptIds.length; i += 40) {
+      const data = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", {
+        ids: allOptIds.slice(i, i + 40).join(","),
+      });
+      for (const r of data?.results ?? []) if (r?.instrument_id) optMarks.set(r.instrument_id, r);
     }
-    // ── resolve underlyings → spot prices for delta/gamma dollar P&L ──
-    const uniqueSymbols = [...new Set(allPositions.map((p: any) => p.symbol).filter(Boolean))];
-    const spotPrices = new Map();
-    try {
-        for (const sym of uniqueSymbols) {
-            try {
-                const iid = await resolveInstrumentId(sym, { getJson });
-                if (!iid)
-                    continue;
-                const q = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: iid });
-                const last = n(q?.results?.[0]?.last_trade_price);
-                if (Number.isFinite(last) && last > 0)
-                    spotPrices.set(sym, last);
-            }
-            catch { /* individual symbol lookup can fail */ }
-        }
+  } catch (e: any) {
+    warnings.push(`option marks batch failed: ${(e as Error).message.slice(0, 60)}`);
+  }
+  // ── resolve underlyings → spot prices for delta/gamma dollar P&L ──
+  const uniqueSymbols = [...new Set(allPositions.map((p: any) => p.symbol).filter(Boolean))];
+  const spotPrices = new Map();
+  try {
+    for (const sym of uniqueSymbols) {
+      try {
+        const iid = await resolveInstrumentId(sym, { getJson });
+        if (!iid) continue;
+        const q = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
+          ids: iid,
+        });
+        const last = n(q?.results?.[0]?.last_trade_price);
+        if (Number.isFinite(last) && last > 0) spotPrices.set(sym, last);
+      } catch {
+        /* individual symbol lookup can fail */
+      }
     }
-    catch (e: any) {
-        warnings.push(`spot price resolution failed: ${(e as Error).message.slice(0, 60)}`);
+  } catch (e: any) {
+    warnings.push(`spot price resolution failed: ${(e as Error).message.slice(0, 60)}`);
+  }
+  const perPosition = [];
+  let totalPnl = 0,
+    totalDelta = 0,
+    totalGamma = 0,
+    totalTheta = 0,
+    totalVega = 0,
+    totalRho = 0;
+  let totalDeltaPnl = 0,
+    totalGammaPnl = 0,
+    totalThetaPnl = 0,
+    totalVegaPnl = 0,
+    totalRhoPnl = 0;
+  for (const pos of allPositions) {
+    let netDelta = 0,
+      netGamma = 0,
+      netTheta = 0,
+      netVega = 0,
+      netRho = 0,
+      mktVal = 0;
+    for (const leg of pos.legs) {
+      const mark = optMarks.get(leg.optionId) ?? {};
+      const sign = leg.side === "short" ? -1 : 1;
+      const ratio = leg.ratioQuantity * pos.qty;
+      const delta = n(mark.delta) * sign * ratio * 100;
+      const gamma = n(mark.gamma) * sign * ratio * 100;
+      const theta = n(mark.theta) * sign * ratio * 100;
+      const vega = n(mark.vega) * sign * ratio * 100;
+      const rawRho = n(mark.rho);
+      const rho = Number.isFinite(rawRho) ? rawRho * sign * ratio * 100 : 0;
+      netDelta += delta;
+      netGamma += gamma;
+      netTheta += theta;
+      netVega += vega;
+      netRho += rho;
+      const markPrice = n(mark.adjusted_mark_price ?? mark.mark_price);
+      if (Number.isFinite(markPrice)) mktVal += Math.abs(markPrice * 100 * ratio);
     }
-    const perPosition = [];
-    let totalPnl = 0, totalDelta = 0, totalGamma = 0, totalTheta = 0, totalVega = 0, totalRho = 0;
-    let totalDeltaPnl = 0, totalGammaPnl = 0, totalThetaPnl = 0, totalVegaPnl = 0, totalRhoPnl = 0;
-    for (const pos of allPositions) {
-        let netDelta = 0, netGamma = 0, netTheta = 0, netVega = 0, netRho = 0, mktVal = 0;
-        for (const leg of pos.legs) {
-            const mark = optMarks.get(leg.optionId) ?? {};
-            const sign = leg.side === "short" ? -1 : 1;
-            const ratio = leg.ratioQuantity * pos.qty;
-            const delta = n(mark.delta) * sign * ratio * 100;
-            const gamma = n(mark.gamma) * sign * ratio * 100;
-            const theta = n(mark.theta) * sign * ratio * 100;
-            const vega = n(mark.vega) * sign * ratio * 100;
-            const rawRho = n(mark.rho);
-            const rho = Number.isFinite(rawRho) ? rawRho * sign * ratio * 100 : 0;
-            netDelta += delta;
-            netGamma += gamma;
-            netTheta += theta;
-            netVega += vega;
-            netRho += rho;
-            const markPrice = n(mark.adjusted_mark_price ?? mark.mark_price);
-            if (Number.isFinite(markPrice))
-                mktVal += Math.abs(markPrice * 100 * ratio);
-        }
-        const spotPrice = spotPrices.get(pos.symbol) ?? 0;
-        const spotChg = spotPct / 100; // e.g. 0.05 for +5%
-        const spotDollarMove = Number.isFinite(spotPrice) && spotPrice > 0 ? spotPrice * spotChg : 0;
-        // netDelta is already delta × contracts × 100 → dollar P&L per $1 underlying move
-        const deltaPnl = netDelta * spotDollarMove;
-        // netGamma is already gamma × contracts × 100 → change in delta per $1 underlying move
-        const gammaPnl = 0.5 * netGamma * spotDollarMove * spotDollarMove;
-        const thetaPnl = netTheta * days; // netTheta is daily $ decay × contracts × 100
-        // netVega is $ per 1 percentage-point IV change × contracts × 100 — multiply by IV points directly
-        const vegaPnl = netVega * ivPct;
-        // netRho is $ per 1 percentage-point rate change × contracts × 100 — multiply by rate change points directly
-        const rhoPnl = Number.isFinite(netRho) ? netRho * rateChangePct : 0;
-        const estPnl = deltaPnl + gammaPnl + thetaPnl + vegaPnl + rhoPnl;
-        perPosition.push({ symbol: pos.symbol, description: pos.description, estimatedPnlUsd: round2(estPnl), marketValueUsd: round2(mktVal), netDelta: round2(netDelta), netGamma: round2(netGamma), netTheta: round2(netTheta), netVega: round2(netVega), netRho: round2(netRho) });
-        totalPnl += estPnl;
-        totalDelta += netDelta;
-        totalGamma += netGamma;
-        totalTheta += netTheta;
-        totalVega += netVega;
-        totalRho += netRho;
-        totalDeltaPnl += deltaPnl;
-        totalGammaPnl += gammaPnl;
-        totalThetaPnl += thetaPnl;
-        totalVegaPnl += vegaPnl;
-        if (Number.isFinite(rhoPnl)) totalRhoPnl += rhoPnl;
-    }
-    return { accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)), scenario: { spotChangePct: spotPct, ivChangePct: ivPct, daysPassed: days, rateChangePct }, totalEstimatedPnlUsd: round2(totalPnl), totalRho: round2(totalRho), greekDecomposition: { deltaUsd: round2(totalDeltaPnl), gammaUsd: round2(totalGammaPnl), thetaUsd: round2(totalThetaPnl), vegaUsd: round2(totalVegaPnl), rhoUsd: round2(totalRhoPnl) }, perPosition, warnings };
+    const spotPrice = spotPrices.get(pos.symbol) ?? 0;
+    const spotChg = spotPct / 100; // e.g. 0.05 for +5%
+    const spotDollarMove = Number.isFinite(spotPrice) && spotPrice > 0 ? spotPrice * spotChg : 0;
+    // netDelta is already delta × contracts × 100 → dollar P&L per $1 underlying move
+    const deltaPnl = netDelta * spotDollarMove;
+    // netGamma is already gamma × contracts × 100 → change in delta per $1 underlying move
+    const gammaPnl = 0.5 * netGamma * spotDollarMove * spotDollarMove;
+    const thetaPnl = netTheta * days; // netTheta is daily $ decay × contracts × 100
+    // netVega is $ per 1 percentage-point IV change × contracts × 100 — multiply by IV points directly
+    const vegaPnl = netVega * ivPct;
+    // netRho is $ per 1 percentage-point rate change × contracts × 100 — multiply by rate change points directly
+    const rhoPnl = Number.isFinite(netRho) ? netRho * rateChangePct : 0;
+    const estPnl = deltaPnl + gammaPnl + thetaPnl + vegaPnl + rhoPnl;
+    perPosition.push({
+      symbol: pos.symbol,
+      description: pos.description,
+      estimatedPnlUsd: round2(estPnl),
+      marketValueUsd: round2(mktVal),
+      netDelta: round2(netDelta),
+      netGamma: round2(netGamma),
+      netTheta: round2(netTheta),
+      netVega: round2(netVega),
+      netRho: round2(netRho),
+    });
+    totalPnl += estPnl;
+    totalDelta += netDelta;
+    totalGamma += netGamma;
+    totalTheta += netTheta;
+    totalVega += netVega;
+    totalRho += netRho;
+    totalDeltaPnl += deltaPnl;
+    totalGammaPnl += gammaPnl;
+    totalThetaPnl += thetaPnl;
+    totalVegaPnl += vegaPnl;
+    if (Number.isFinite(rhoPnl)) totalRhoPnl += rhoPnl;
+  }
+  return {
+    accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
+    scenario: { spotChangePct: spotPct, ivChangePct: ivPct, daysPassed: days, rateChangePct },
+    totalEstimatedPnlUsd: round2(totalPnl),
+    totalRho: round2(totalRho),
+    greekDecomposition: {
+      deltaUsd: round2(totalDeltaPnl),
+      gammaUsd: round2(totalGammaPnl),
+      thetaUsd: round2(totalThetaPnl),
+      vegaUsd: round2(totalVegaPnl),
+      rhoUsd: round2(totalRhoPnl),
+    },
+    perPosition,
+    warnings,
+  };
 }
 /**
  * Event calendar: upcoming option expirations, ex-dividend dates, earnings dates.
  * Sorted by date; assignment-risk flag for ITM short calls near ex-div.
  */
 export async function computeCalendar(opts: any = {}, deps: any = {}) {
-    const getJson = deps.getJson ?? brokerageGetJson;
-    const getAll = deps.getAll ?? brokerageGetAllResults;
-    const nowMs = (deps.now ?? Date.now)();
-    const n = (v: unknown) => Number(v);
-    const warnings = [];
-    const days = opts.days ?? 30;
-    const today = new Date(nowMs).toISOString().slice(0, 10);
-    const cutoff = new Date(nowMs + days * 86_400_000).toISOString().slice(0, 10);
-    const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
-    const events = [];
-    const allLegs = [];
-    for (const { acct } of accts) {
-        try {
-            const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
-            for (const p of agg) {
-                for (const leg of p.legs ?? []) {
-                    if (leg.expiration_date && leg.expiration_date >= today && leg.expiration_date <= cutoff) {
-                        allLegs.push({ symbol: p.symbol, type: leg.option_type ?? "unknown", strike: n(leg.strike_price), expiration: leg.expiration_date, side: leg.position_type === "short" ? "short" : "long" });
-                    }
-                }
-            }
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const nowMs = (deps.now ?? Date.now)();
+  const n = (v: unknown) => Number(v);
+  const warnings = [];
+  const days = opts.days ?? 30;
+  const today = new Date(nowMs).toISOString().slice(0, 10);
+  const cutoff = new Date(nowMs + days * 86_400_000).toISOString().slice(0, 10);
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const events = [];
+  const allLegs = [];
+  for (const { acct } of accts) {
+    try {
+      const agg = await getAll(
+        "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+        {},
+        { account_numbers: acct, nonzero: "true" },
+      );
+      for (const p of agg) {
+        for (const leg of p.legs ?? []) {
+          if (
+            leg.expiration_date &&
+            leg.expiration_date >= today &&
+            leg.expiration_date <= cutoff
+          ) {
+            allLegs.push({
+              symbol: p.symbol,
+              type: leg.option_type ?? "unknown",
+              strike: n(leg.strike_price),
+              expiration: leg.expiration_date,
+              side: leg.position_type === "short" ? "short" : "long",
+            });
+          }
         }
-        catch (e: any) {
-            warnings.push(`option positions read failed: ${(e as Error).message.slice(0, 60)}`);
-        }
+      }
+    } catch (e: any) {
+      warnings.push(`option positions read failed: ${(e as Error).message.slice(0, 60)}`);
     }
-    const expByKey = new Map();
-    for (const leg of allLegs) {
-        const key = `${leg.expiration}|${leg.symbol}`;
-        const list = expByKey.get(key) ?? [];
-        list.push(`${leg.side} ${leg.type}${leg.strike ? ` $${leg.strike}` : ""}`);
-        expByKey.set(key, list);
+  }
+  const expByKey = new Map();
+  for (const leg of allLegs) {
+    const key = `${leg.expiration}|${leg.symbol}`;
+    const list = expByKey.get(key) ?? [];
+    list.push(`${leg.side} ${leg.type}${leg.strike ? ` $${leg.strike}` : ""}`);
+    expByKey.set(key, list);
+  }
+  for (const [key, descs] of expByKey) {
+    const [date, symbol] = key.split("|");
+    const isShortCall = descs.some((d: any) => d.includes("short") && d.includes("call"));
+    events.push({
+      date,
+      type: "expiration",
+      symbol,
+      detail: `${descs.length} contract(s): ${descs.join(", ")}`,
+      assignmentRisk: isShortCall,
+    });
+  }
+  for (const { acct } of accts) {
+    try {
+      const divs = await getAll(
+        "https://api.robinhood.com/dividends/",
+        {},
+        { account_number: acct },
+      );
+      for (const d of divs) {
+        const exDate = d.ex_dividend_date ?? d.record_date;
+        if (!exDate || exDate < today || exDate > cutoff) continue;
+        const sym = String(d.symbol ?? d._symbol ?? "").toUpperCase();
+        if (!sym) continue;
+        const shortCallNearby = allLegs.some(
+          (l: any) =>
+            l.symbol === sym &&
+            l.side === "short" &&
+            l.type === "call" &&
+            Math.abs(new Date(l.expiration).getTime() - new Date(exDate).getTime()) <
+              5 * 86_400_000,
+        );
+        events.push({
+          date: exDate,
+          type: "ex-dividend",
+          symbol: sym,
+          detail: `$${n(d.amount).toFixed(2)} dividend${d.state ? ` (${d.state})` : ""}`,
+          assignmentRisk: shortCallNearby,
+        });
+      }
+    } catch {
+      /* degrade */
     }
-    for (const [key, descs] of expByKey) {
-        const [date, symbol] = key.split("|");
-        const isShortCall = descs.some((d: any) => d.includes("short") && d.includes("call"));
-        events.push({ date, type: "expiration", symbol, detail: `${descs.length} contract(s): ${descs.join(", ")}`, assignmentRisk: isShortCall });
-    }
-    for (const { acct } of accts) {
-        try {
-            const divs = await getAll("https://api.robinhood.com/dividends/", {}, { account_number: acct });
-            for (const d of divs) {
-                const exDate = d.ex_dividend_date ?? d.record_date;
-                if (!exDate || exDate < today || exDate > cutoff)
-                    continue;
-                const sym = String((d.symbol ?? d._symbol ?? "")).toUpperCase();
-                if (!sym)
-                    continue;
-                const shortCallNearby = allLegs.some((l: any) => l.symbol === sym && l.side === "short" && l.type === "call" && Math.abs(new Date(l.expiration).getTime() - new Date(exDate).getTime()) < 5 * 86_400_000);
-                events.push({ date: exDate, type: "ex-dividend", symbol: sym, detail: `$${n(d.amount).toFixed(2)} dividend${d.state ? ` (${d.state})` : ""}`, assignmentRisk: shortCallNearby });
-            }
-        }
-        catch { /* degrade */ }
-    }
-    events.sort((a, b) => a.date.localeCompare(b.date));
-    return { accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)), days, events, warnings: warnings.length ? warnings : ["Earnings dates not directly available via brokerage API; expirations and ex-dividend dates from position evidence."] };
+  }
+  events.sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
+    days,
+    events,
+    warnings: warnings.length
+      ? warnings
+      : [
+          "Earnings dates not directly available via brokerage API; expirations and ex-dividend dates from position evidence.",
+        ],
+  };
 }
 /**
  * Concentration & Net Greeks: concentration by underlying (% of portfolio per symbol),
  * flag >20%, plus portfolio-wide net Greeks summed across all positions.
  */
 export async function computeExposure(opts: any = {}, deps: any = {}) {
-    const getJson = deps.getJson ?? brokerageGetJson;
-    const getAll = deps.getAll ?? brokerageGetAllResults;
-    const n = (v: unknown) => Number(v);
-    const warnings = [];
-    const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
-    const symbolValues = new Map();
-    const greeks = { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 };
-    let totalEquity = 0;
-    for (const { acct } of accts) {
-        try {
-            const p = await getJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
-            totalEquity += n(p.equity);
-        }
-        catch { /* degrade */ }
-        try {
-            const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
-            const eqIds = eq.filter((p: any) => n(p.quantity) > 0 && p.instrument_id).map((p: any) => p.instrument_id);
-            if (eqIds.length) {
-                const quotesMap = new Map();
-                for (let i = 0; i < eqIds.length; i += 40) {
-                    const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: eqIds.slice(i, i + 40).join(",") });
-                    for (const r of data?.results ?? [])
-                        if (r?.instrument_id)
-                            quotesMap.set(r.instrument_id, r);
-                }
-                for (const p of eq) {
-                    const qty = n(p.quantity);
-                    if (!(qty > 0))
-                        continue;
-                    const q = quotesMap.get(p.instrument_id) ?? {};
-                    const last = n(q.last_trade_price);
-                    const mktVal = Number.isFinite(last) ? qty * last : 0;
-                    symbolValues.set(p.symbol, (symbolValues.get(p.symbol) ?? 0) + mktVal);
-                    greeks.delta += qty;
-                }
-            }
-        }
-        catch (e: any) {
-            warnings.push(`equity positions read failed: ${(e as Error).message.slice(0, 60)}`);
-        }
-        try {
-            const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
-            const optIds = agg.flatMap((p: any) => (p.legs ?? []).map((l: any) => l.option_id).filter(Boolean));
-            const marksMap = new Map();
-            if (optIds.length) {
-                for (let i = 0; i < optIds.length; i += 40) {
-                    const data = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", { ids: optIds.slice(i, i + 40).join(",") });
-                    for (const r of data?.results ?? [])
-                        if (r?.instrument_id)
-                            marksMap.set(r.instrument_id, r);
-                }
-            }
-            for (const p of agg) {
-                let posMktVal = 0;
-                for (const leg of p.legs ?? []) {
-                    const mark = marksMap.get(leg.option_id) ?? {};
-                    const sign = leg.position_type === "short" ? -1 : 1;
-                    const ratio = n(leg.ratio_quantity) || 1;
-                    const qty = n(p.quantity);
-                    const markPrice = n(mark.adjusted_mark_price ?? mark.mark_price);
-                    if (Number.isFinite(markPrice))
-                        posMktVal += Math.abs(markPrice * 100 * qty * ratio);
-                    greeks.delta += n(mark.delta) * sign * qty * ratio * 100;
-                    greeks.gamma += n(mark.gamma) * sign * qty * ratio * 100;
-                    greeks.theta += n(mark.theta) * sign * qty * ratio * 100;
-                    greeks.vega += n(mark.vega) * sign * qty * ratio * 100;
-                    greeks.rho += n(mark.rho) * sign * qty * ratio * 100;
-                }
-                symbolValues.set(p.symbol, (symbolValues.get(p.symbol) ?? 0) + posMktVal);
-            }
-        }
-        catch (e: any) {
-            warnings.push(`option positions read failed: ${(e as Error).message.slice(0, 60)}`);
-        }
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const n = (v: unknown) => Number(v);
+  const warnings = [];
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const symbolValues = new Map();
+  const greeks = { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 };
+  let totalEquity = 0;
+  for (const { acct } of accts) {
+    try {
+      const p = await getJson("https://api.robinhood.com/portfolios/{num}/", { num: acct });
+      totalEquity += n(p.equity);
+    } catch {
+      /* degrade */
     }
-    const totalPortfolio = [...symbolValues.values()].reduce((s, v) => s + v, 0);
-    const concentration = [...symbolValues.entries()]
-        .map(([symbol, value]) => ({ symbol, marketValueUsd: round2(value), weightPct: totalPortfolio > 0 ? round2((value / totalPortfolio) * 100) : 0, flag: totalPortfolio > 0 && (value / totalPortfolio) > 0.2 }))
-        .sort((a, b) => b.weightPct - a.weightPct);
-    return { accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)), totalEquityUsd: round2(totalEquity), concentration, netGreeks: { contractMultiplier: 100, delta: round2(greeks.delta), gamma: round2(greeks.gamma), theta: round2(greeks.theta), vega: round2(greeks.vega), rho: round2(greeks.rho) }, warnings };
+    try {
+      const eq = await getAll(
+        "https://api.robinhood.com/positions/",
+        {},
+        { nonzero: "true", account_number: acct },
+      );
+      const eqIds = eq
+        .filter((p: any) => n(p.quantity) > 0 && p.instrument_id)
+        .map((p: any) => p.instrument_id);
+      if (eqIds.length) {
+        const quotesMap = new Map();
+        for (let i = 0; i < eqIds.length; i += 40) {
+          const data = await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
+            ids: eqIds.slice(i, i + 40).join(","),
+          });
+          for (const r of data?.results ?? [])
+            if (r?.instrument_id) quotesMap.set(r.instrument_id, r);
+        }
+        for (const p of eq) {
+          const qty = n(p.quantity);
+          if (!(qty > 0)) continue;
+          const q = quotesMap.get(p.instrument_id) ?? {};
+          const last = n(q.last_trade_price);
+          const mktVal = Number.isFinite(last) ? qty * last : 0;
+          symbolValues.set(p.symbol, (symbolValues.get(p.symbol) ?? 0) + mktVal);
+          greeks.delta += qty;
+        }
+      }
+    } catch (e: any) {
+      warnings.push(`equity positions read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
+    try {
+      const agg = await getAll(
+        "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+        {},
+        { account_numbers: acct, nonzero: "true" },
+      );
+      const optIds = agg.flatMap((p: any) =>
+        (p.legs ?? []).map((l: any) => l.option_id).filter(Boolean),
+      );
+      const marksMap = new Map();
+      if (optIds.length) {
+        for (let i = 0; i < optIds.length; i += 40) {
+          const data = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", {
+            ids: optIds.slice(i, i + 40).join(","),
+          });
+          for (const r of data?.results ?? [])
+            if (r?.instrument_id) marksMap.set(r.instrument_id, r);
+        }
+      }
+      for (const p of agg) {
+        let posMktVal = 0;
+        for (const leg of p.legs ?? []) {
+          const mark = marksMap.get(leg.option_id) ?? {};
+          const sign = leg.position_type === "short" ? -1 : 1;
+          const ratio = n(leg.ratio_quantity) || 1;
+          const qty = n(p.quantity);
+          const markPrice = n(mark.adjusted_mark_price ?? mark.mark_price);
+          if (Number.isFinite(markPrice)) posMktVal += Math.abs(markPrice * 100 * qty * ratio);
+          greeks.delta += n(mark.delta) * sign * qty * ratio * 100;
+          greeks.gamma += n(mark.gamma) * sign * qty * ratio * 100;
+          greeks.theta += n(mark.theta) * sign * qty * ratio * 100;
+          greeks.vega += n(mark.vega) * sign * qty * ratio * 100;
+          greeks.rho += n(mark.rho) * sign * qty * ratio * 100;
+        }
+        symbolValues.set(p.symbol, (symbolValues.get(p.symbol) ?? 0) + posMktVal);
+      }
+    } catch (e: any) {
+      warnings.push(`option positions read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
+  }
+  const totalPortfolio = [...symbolValues.values()].reduce((s, v) => s + v, 0);
+  const concentration = [...symbolValues.entries()]
+    .map(([symbol, value]) => ({
+      symbol,
+      marketValueUsd: round2(value),
+      weightPct: totalPortfolio > 0 ? round2((value / totalPortfolio) * 100) : 0,
+      flag: totalPortfolio > 0 && value / totalPortfolio > 0.2,
+    }))
+    .sort((a, b) => b.weightPct - a.weightPct);
+  return {
+    accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
+    totalEquityUsd: round2(totalEquity),
+    concentration,
+    netGreeks: {
+      contractMultiplier: 100,
+      delta: round2(greeks.delta),
+      gamma: round2(greeks.gamma),
+      theta: round2(greeks.theta),
+      vega: round2(greeks.vega),
+      rho: round2(greeks.rho),
+    },
+    warnings,
+  };
 }
 /**
  * Autopilot: scan all open short options approaching expiration (within N days, default 7),
  * compute potential roll candidates, emit dry-run order bodies. Read-only.
  */
 export async function computeAutopilot(opts: any = {}, deps: any = {}) {
-    const getJson = deps.getJson ?? brokerageGetJson;
-    const getAll = deps.getAll ?? brokerageGetAllResults;
-    const nowMs = (deps.now ?? Date.now)();
-    const n = (v: unknown) => Number(v);
-    const warnings = [];
-    const lookahead = opts.days ?? 7;
-    const today = new Date(nowMs).toISOString().slice(0, 10);
-    const cutoff = new Date(nowMs + lookahead * 86_400_000).toISOString().slice(0, 10);
-    const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
-    const candidates = [];
-    for (const { acct } of accts) {
-        try {
-            const agg = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
-            const symbols = [...new Set(agg.map((p: any) => p.symbol))];
-            const spotBySymbol = new Map();
-            const chainIdBySymbol = new Map();
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const nowMs = (deps.now ?? Date.now)();
+  const n = (v: unknown) => Number(v);
+  const warnings = [];
+  const lookahead = opts.days ?? 7;
+  const today = new Date(nowMs).toISOString().slice(0, 10);
+  const cutoff = new Date(nowMs + lookahead * 86_400_000).toISOString().slice(0, 10);
+  const accts = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const candidates = [];
+  for (const { acct } of accts) {
+    try {
+      const agg = await getAll(
+        "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+        {},
+        { account_numbers: acct, nonzero: "true" },
+      );
+      const symbols = [...new Set(agg.map((p: any) => p.symbol))];
+      const spotBySymbol = new Map();
+      const chainIdBySymbol = new Map();
+      try {
+        for (const sym of symbols) {
+          const inst = (
+            await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: sym })
+          ).results?.[0];
+          if (inst?.id) {
+            const q = (
+              await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
+                ids: inst.id,
+              })
+            ).results?.[0];
+            const last = n(q?.last_trade_price);
+            if (Number.isFinite(last)) spotBySymbol.set(sym, last);
+            if (inst.tradable_chain_id) chainIdBySymbol.set(sym, String(inst.tradable_chain_id));
+          }
+        }
+      } catch (e: any) {
+        warnings.push(`spot quotes failed: ${(e as Error).message.slice(0, 60)}`);
+      }
+      for (const p of agg) {
+        for (const leg of p.legs ?? []) {
+          if (leg.position_type !== "short") continue;
+          if (!leg.expiration_date || leg.expiration_date > cutoff || leg.expiration_date < today)
+            continue;
+          const optType = leg.option_type;
+          const strike = n(leg.strike_price);
+          const dte = Math.max(
+            0,
+            Math.ceil((Date.parse(leg.expiration_date) - nowMs) / 86_400_000),
+          );
+          const spot = spotBySymbol.get(p.symbol) ?? Number.NaN;
+          const itmBy =
+            Number.isFinite(spot) && Number.isFinite(strike)
+              ? optType === "call"
+                ? spot - strike
+                : strike - spot
+              : null;
+          const betterStrike = strike;
+          const expDateParts = leg.expiration_date.split("-").map(Number);
+          const expDate = new Date(expDateParts[0], expDateParts[1] - 1, expDateParts[2]);
+          const nextFriday = new Date(expDate.getTime() + 7 * 86_400_000);
+          nextFriday.setDate(nextFriday.getDate() + ((5 + 7 - nextFriday.getDay()) % 7));
+          const targetExp = nextFriday.toISOString().slice(0, 10);
+          const itmDesc =
+            itmBy !== null && itmBy > 0
+              ? `ITM by $${itmBy.toFixed(2)}`
+              : itmBy !== null
+                ? `OTM by $${Math.abs(itmBy).toFixed(2)}`
+                : "unknown";
+          const closeLegId = leg.option_id;
+          const chainId = chainIdBySymbol.get(p.symbol);
+          // Try to fetch live pricing for the roll
+          let estimatedNetCredit = null;
+          let netCreditMessage = `${p.symbol} $${strike} ${optType} expires ${leg.expiration_date} (${dte}d, ${itmDesc}). Consider rolling to ${targetExp} $${betterStrike} ${optType}. Run options strategy-quote to price.`;
+          let netCreditCanBeNegative;
+          if (chainId) {
             try {
-                for (const sym of symbols) {
-                    const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol: sym })).results?.[0];
-                    if (inst?.id) {
-                        const q = (await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: inst.id })).results?.[0];
-                        const last = n(q?.last_trade_price);
-                        if (Number.isFinite(last))
-                            spotBySymbol.set(sym, last);
-                        if (inst.tradable_chain_id)
-                            chainIdBySymbol.set(sym, String(inst.tradable_chain_id));
-                    }
+              // Look up the open leg option instrument
+              const targetStrikeFormatted = betterStrike.toFixed(4);
+              const openLegUrl =
+                "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}";
+              const openLegInstruments = await getAll(
+                openLegUrl,
+                { chain_id: chainId, expiration_dates: targetExp, type: optType },
+                { strike_price: targetStrikeFormatted },
+              );
+              const openLegId = openLegInstruments?.find(
+                (i: any) => Math.abs(n(i.strike_price) - betterStrike) < 0.01,
+              )?.id;
+              if (openLegId && closeLegId) {
+                // Fetch market data for both legs
+                const marketData = await getJson(
+                  "https://api.robinhood.com/marketdata/options/?ids={ids}",
+                  { ids: `${closeLegId},${openLegId}` },
+                );
+                const results = marketData?.results ?? [];
+                const closeLegQuote =
+                  results.find((r: any) => r.instrument_id === closeLegId) ?? {};
+                const openLegQuote = results.find((r: any) => r.instrument_id === openLegId) ?? {};
+                const closeAsk = n(closeLegQuote.ask_price);
+                const openBid = n(openLegQuote.bid_price);
+                if (Number.isFinite(closeAsk) && Number.isFinite(openBid)) {
+                  estimatedNetCredit = round2(openBid - closeAsk);
+                  netCreditMessage = `${p.symbol} $${strike} ${optType} expires ${leg.expiration_date} (${dte}d, ${itmDesc}). Roll to ${targetExp} $${betterStrike} ${optType}: estimated net ${estimatedNetCredit >= 0 ? "credit" : "debit"} $${Math.abs(estimatedNetCredit).toFixed(2)} per contract (open bid $${openBid.toFixed(2)} - close ask $${closeAsk.toFixed(2)}).`;
+                  netCreditCanBeNegative = estimatedNetCredit < 0 ? true : undefined;
                 }
+              }
+            } catch (e: any) {
+              // Graceful degradation: estimatedNetCredit stays null
+              warnings.push(`pricing failed for ${p.symbol}: ${(e as Error).message.slice(0, 80)}`);
             }
-            catch (e: any) {
-                warnings.push(`spot quotes failed: ${(e as Error).message.slice(0, 60)}`);
-            }
-            for (const p of agg) {
-                for (const leg of p.legs ?? []) {
-                    if (leg.position_type !== "short")
-                        continue;
-                    if (!leg.expiration_date || leg.expiration_date > cutoff || leg.expiration_date < today)
-                        continue;
-                    const optType = leg.option_type;
-                    const strike = n(leg.strike_price);
-                    const dte = Math.max(0, Math.ceil((Date.parse(leg.expiration_date) - nowMs) / 86_400_000));
-                    const spot = spotBySymbol.get(p.symbol) ?? Number.NaN;
-                    const itmBy = Number.isFinite(spot) && Number.isFinite(strike) ? (optType === "call" ? spot - strike : strike - spot) : null;
-                    const betterStrike = strike;
-                    const expDateParts = leg.expiration_date.split('-').map(Number);
-                    const expDate = new Date(expDateParts[0], expDateParts[1] - 1, expDateParts[2]);
-                    const nextFriday = new Date(expDate.getTime() + 7 * 86_400_000);
-                    nextFriday.setDate(nextFriday.getDate() + ((5 + 7 - nextFriday.getDay()) % 7));
-                    const targetExp = nextFriday.toISOString().slice(0, 10);
-                    const itmDesc = itmBy !== null && itmBy > 0 ? `ITM by $${itmBy.toFixed(2)}` : itmBy !== null ? `OTM by $${Math.abs(itmBy).toFixed(2)}` : "unknown";
-                    const closeLegId = leg.option_id;
-                    const chainId = chainIdBySymbol.get(p.symbol);
-                    // Try to fetch live pricing for the roll
-                    let estimatedNetCredit = null;
-                    let netCreditMessage = `${p.symbol} $${strike} ${optType} expires ${leg.expiration_date} (${dte}d, ${itmDesc}). Consider rolling to ${targetExp} $${betterStrike} ${optType}. Run options strategy-quote to price.`;
-                    let netCreditCanBeNegative;
-                    if (chainId) {
-                        try {
-                            // Look up the open leg option instrument
-                            const targetStrikeFormatted = betterStrike.toFixed(4);
-                            const openLegUrl = "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}";
-                            const openLegInstruments = await getAll(openLegUrl, { chain_id: chainId, expiration_dates: targetExp, type: optType }, { strike_price: targetStrikeFormatted });
-                            const openLegId = openLegInstruments?.find((i: any) => Math.abs(n(i.strike_price) - betterStrike) < 0.01)?.id;
-                            if (openLegId && closeLegId) {
-                                // Fetch market data for both legs
-                                const marketData = await getJson("https://api.robinhood.com/marketdata/options/?ids={ids}", { ids: `${closeLegId},${openLegId}` });
-                                const results = marketData?.results ?? [];
-                                const closeLegQuote = results.find((r: any) => r.instrument_id === closeLegId) ?? {};
-                                const openLegQuote = results.find((r: any) => r.instrument_id === openLegId) ?? {};
-                                const closeAsk = n(closeLegQuote.ask_price);
-                                const openBid = n(openLegQuote.bid_price);
-                                if (Number.isFinite(closeAsk) && Number.isFinite(openBid)) {
-                                    estimatedNetCredit = round2(openBid - closeAsk);
-                                    netCreditMessage = `${p.symbol} $${strike} ${optType} expires ${leg.expiration_date} (${dte}d, ${itmDesc}). Roll to ${targetExp} $${betterStrike} ${optType}: estimated net ${estimatedNetCredit >= 0 ? "credit" : "debit"} $${Math.abs(estimatedNetCredit).toFixed(2)} per contract (open bid $${openBid.toFixed(2)} - close ask $${closeAsk.toFixed(2)}).`;
-                                    netCreditCanBeNegative = estimatedNetCredit < 0 ? true : undefined;
-                                }
-                            }
-                        }
-                        catch (e: any) {
-                            // Graceful degradation: estimatedNetCredit stays null
-                            warnings.push(`pricing failed for ${p.symbol}: ${(e as Error).message.slice(0, 80)}`);
-                        }
-                    }
-                    candidates.push({
-                        symbol: p.symbol, currentPosition: `${p.symbol} ${optType} $${strike} ${leg.expiration_date}`,
-                        expiration: leg.expiration_date, dte, itmBy: itmBy !== null ? round2(itmBy) : null, strike, type: optType, side: "short",
-                        rollCandidate: { targetExpiration: targetExp, targetStrike: betterStrike, estimatedNetCredit, message: netCreditMessage, netCreditCanBeNegative },
-                        dryRunOrder: { close: { action: "buy to close", leg: `${p.symbol} $${strike} ${optType} ${leg.expiration_date}` }, open: { action: "sell to open", leg: `${p.symbol} $${betterStrike} ${optType} ${targetExp}` } }
-                    });
-                }
-            }
+          }
+          candidates.push({
+            symbol: p.symbol,
+            currentPosition: `${p.symbol} ${optType} $${strike} ${leg.expiration_date}`,
+            expiration: leg.expiration_date,
+            dte,
+            itmBy: itmBy !== null ? round2(itmBy) : null,
+            strike,
+            type: optType,
+            side: "short",
+            rollCandidate: {
+              targetExpiration: targetExp,
+              targetStrike: betterStrike,
+              estimatedNetCredit,
+              message: netCreditMessage,
+              netCreditCanBeNegative,
+            },
+            dryRunOrder: {
+              close: {
+                action: "buy to close",
+                leg: `${p.symbol} $${strike} ${optType} ${leg.expiration_date}`,
+              },
+              open: {
+                action: "sell to open",
+                leg: `${p.symbol} $${betterStrike} ${optType} ${targetExp}`,
+              },
+            },
+          });
         }
-        catch (e: any) {
-            warnings.push(`option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`);
-        }
+      }
+    } catch (e: any) {
+      warnings.push(
+        `option positions read failed (…${acct.slice(-4)}): ${(e as Error).message.slice(0, 60)}`,
+      );
     }
-    candidates.sort((a, b) => a.dte - b.dte);
-    return { accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)), lookaheadDays: lookahead, candidates, warnings };
-    }
+  }
+  candidates.sort((a, b) => a.dte - b.dte);
+  return {
+    accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
+    lookaheadDays: lookahead,
+    candidates,
+    warnings,
+  };
+}
 
-    /** Unified transaction history: equity + options + crypto orders + ACH transfers, newest first. */
-    export async function getUnifiedHistory(
-    opts: { days?: number; accountNumber?: string },
-    deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {}
-    ): Promise<Array<{ time: string; kind: string; summary: string; state: string }>> {
-    const getJson = deps.getJson ?? brokerageGetJson;
-    const now = deps.now ?? Date.now;
-    const days = Math.max(1, opts.days ?? 3);
-    const cutoffMs = now() - days * 86400000;
-    const inWindow = (ts: unknown): boolean => {
-      const t = Date.parse(String(ts ?? ""));
-      return Number.isFinite(t) && t >= cutoffMs;
-    };
-    const events: Array<{ time: string; kind: string; summary: string; state: string }> = [];
+/** Unified transaction history: equity + options + crypto orders + ACH transfers, newest first. */
+export async function getUnifiedHistory(
+  opts: { days?: number; accountNumber?: string },
+  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {},
+): Promise<Array<{ time: string; kind: string; summary: string; state: string }>> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const now = deps.now ?? Date.now;
+  const days = Math.max(1, opts.days ?? 3);
+  const cutoffMs = now() - days * 86400000;
+  const inWindow = (ts: unknown): boolean => {
+    const t = Date.parse(String(ts ?? ""));
+    return Number.isFinite(t) && t >= cutoffMs;
+  };
+  const events: Array<{ time: string; kind: string; summary: string; state: string }> = [];
 
-    // Equity orders
-    const eq = await tryBrokerageGetJson(
-      `https://api.robinhood.com/orders/${opts.accountNumber ? `?account_number=${encodeURIComponent(opts.accountNumber)}` : ""}`
-    );
-    if (eq.ok) for (const r of ((eq.data as any)?.results ?? [])) {
+  // Equity orders
+  const eq = await tryBrokerageGetJson(
+    `https://api.robinhood.com/orders/${opts.accountNumber ? `?account_number=${encodeURIComponent(opts.accountNumber)}` : ""}`,
+  );
+  if (eq.ok)
+    for (const r of (eq.data as any)?.results ?? []) {
       const t = r.updated_at ?? r.created_at;
-      if (inWindow(t)) events.push({ time: String(t), kind: "equity", summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`, state: String(r.state ?? "?") });
+      if (inWindow(t))
+        events.push({
+          time: String(t),
+          kind: "equity",
+          summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`,
+          state: String(r.state ?? "?"),
+        });
     }
 
-    // Options orders
-    const op = await tryBrokerageGetJson(
-      `https://api.robinhood.com/options/orders/${opts.accountNumber ? `?account_numbers=${encodeURIComponent(opts.accountNumber)}` : ""}`
-    );
-    if (op.ok) for (const r of ((op.data as any)?.results ?? [])) {
+  // Options orders
+  const op = await tryBrokerageGetJson(
+    `https://api.robinhood.com/options/orders/${opts.accountNumber ? `?account_numbers=${encodeURIComponent(opts.accountNumber)}` : ""}`,
+  );
+  if (op.ok)
+    for (const r of (op.data as any)?.results ?? []) {
       const t = r.updated_at ?? r.created_at;
-      if (inWindow(t)) events.push({ time: String(t), kind: "option", summary: `${r.chain_symbol ?? "?"} ${r.opening_strategy ?? r.closing_strategy ?? ""} ${r.direction ? `(${r.direction})` : ""} ${r.quantity ?? ""} @ ${r.price ?? "?"}`.trim(), state: String(r.state ?? "?") });
+      if (inWindow(t))
+        events.push({
+          time: String(t),
+          kind: "option",
+          summary:
+            `${r.chain_symbol ?? "?"} ${r.opening_strategy ?? r.closing_strategy ?? ""} ${r.direction ? `(${r.direction})` : ""} ${r.quantity ?? ""} @ ${r.price ?? "?"}`.trim(),
+          state: String(r.state ?? "?"),
+        });
     }
 
-    // Crypto orders
-    const cx = await tryBrokerageGetJson("https://nummus.robinhood.com/orders/");
-    if (cx.ok) for (const r of ((cx.data as any)?.results ?? [])) {
+  // Crypto orders
+  const cx = await tryBrokerageGetJson("https://nummus.robinhood.com/orders/");
+  if (cx.ok)
+    for (const r of (cx.data as any)?.results ?? []) {
       const t = r.updated_at ?? r.created_at;
-      if (inWindow(t)) events.push({ time: String(t), kind: "crypto", summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`, state: String(r.state ?? "?") });
+      if (inWindow(t))
+        events.push({
+          time: String(t),
+          kind: "crypto",
+          summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`,
+          state: String(r.state ?? "?"),
+        });
     }
 
-    // ACH transfers
-    const ach = await tryBrokerageGetJson("https://api.robinhood.com/ach/transfers/");
-    if (ach.ok) for (const r of ((ach.data as any)?.results ?? [])) {
+  // ACH transfers
+  const ach = await tryBrokerageGetJson("https://api.robinhood.com/ach/transfers/");
+  if (ach.ok)
+    for (const r of (ach.data as any)?.results ?? []) {
       const t = r.updated_at ?? r.created_at;
-      if (inWindow(t)) events.push({ time: String(t), kind: "transfer", summary: `${r.direction ?? "?"} ${r.amount ?? "?"}`, state: String(r.state ?? "?") });
+      if (inWindow(t))
+        events.push({
+          time: String(t),
+          kind: "transfer",
+          summary: `${r.direction ?? "?"} ${r.amount ?? "?"}`,
+          state: String(r.state ?? "?"),
+        });
     }
 
-    events.sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
-    return events;
-    }
+  events.sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
+  return events;
+}
 
 // ───────────────────── Signal & event reads (Phase 3 — the "financial-freedom" tier) ─────────────────────
 // Mapped, CDP-verified reads that were previously reachable ONLY via raw `brokerage execute` (which
@@ -7400,51 +9401,95 @@ export async function computeAutopilot(opts: any = {}, deps: any = {}) {
 /** Per-ticker news (midlands/news/?symbol=). Latest articles with source + clickable link. */
 export async function computeNews(
   opts: { symbol: string; limit?: number },
-  deps: { getJson?: typeof brokerageGetJson } = {}
-): Promise<{ symbol: string; count: number; articles: Array<{ title: string; source: string; url: string; summary: string; publishedAt: string }> }> {
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{
+  symbol: string;
+  count: number;
+  articles: Array<{
+    title: string;
+    source: string;
+    url: string;
+    summary: string;
+    publishedAt: string;
+  }>;
+}> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const symbol = opts.symbol.toUpperCase();
-  const data = await getJson("https://api.robinhood.com/midlands/news/?symbol={symbol}", { symbol });
+  const data = await getJson("https://api.robinhood.com/midlands/news/?symbol={symbol}", {
+    symbol,
+  });
   const rows: any[] = Array.isArray(data?.results) ? data.results : [];
-  const articles = rows
-    .slice(0, Math.max(1, opts.limit ?? 15))
-    .map((r) => ({
-      title: String(r.title ?? ""),
-      source: String(r.source ?? ""),
-      url: String(r.relay_url ?? r.url ?? ""),
-      summary: String(r.summary ?? ""),
-      publishedAt: String(r.published_at ?? "")
-    }));
+  const articles = rows.slice(0, Math.max(1, opts.limit ?? 15)).map((r) => ({
+    title: String(r.title ?? ""),
+    source: String(r.source ?? ""),
+    url: String(r.relay_url ?? r.url ?? ""),
+    summary: String(r.summary ?? ""),
+    publishedAt: String(r.published_at ?? ""),
+  }));
   return { symbol, count: articles.length, articles };
 }
 
 /** Analyst ratings (midlands/ratings/{instrument_id}/): buy/hold/sell counts + a consensus + texts. */
 export async function computeRatings(
   opts: { symbol: string; limit?: number },
-  deps: { getJson?: typeof brokerageGetJson } = {}
-): Promise<{ symbol: string; summary: { buy: number; hold: number; sell: number }; consensus: string; ratings: Array<{ type: string; text: string; publishedAt: string }> }> {
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{
+  symbol: string;
+  summary: { buy: number; hold: number; sell: number };
+  consensus: string;
+  ratings: Array<{ type: string; text: string; publishedAt: string }>;
+}> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const symbol = opts.symbol.toUpperCase();
-  const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })).results?.[0];
+  const inst = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol }))
+    .results?.[0];
   if (!inst?.id) throw new Error(`No instrument found for ${symbol}`);
-  const data = await getJson("https://api.robinhood.com/midlands/ratings/{0}/", { "0": String(inst.id) });
+  const data = await getJson("https://api.robinhood.com/midlands/ratings/{0}/", {
+    "0": String(inst.id),
+  });
   const s = data?.summary ?? {};
   const buy = Number(s.num_buy_ratings ?? 0);
   const hold = Number(s.num_hold_ratings ?? 0);
   const sell = Number(s.num_sell_ratings ?? 0);
   // Consensus = the dominant bucket (buy/hold/sell), or "none" when there are no ratings.
-  const consensus = buy + hold + sell === 0 ? "none" : buy >= hold && buy >= sell ? "buy" : sell >= hold && sell >= buy ? "sell" : "hold";
+  const consensus =
+    buy + hold + sell === 0
+      ? "none"
+      : buy >= hold && buy >= sell
+        ? "buy"
+        : sell >= hold && sell >= buy
+          ? "sell"
+          : "hold";
   const ratings = (Array.isArray(data?.ratings) ? data.ratings : [])
     .slice(0, Math.max(1, opts.limit ?? 12))
-    .map((r: any) => ({ type: String(r.type ?? ""), text: String(r.text ?? ""), publishedAt: String(r.published_at ?? "") }));
+    .map((r: any) => ({
+      type: String(r.type ?? ""),
+      text: String(r.text ?? ""),
+      publishedAt: String(r.published_at ?? ""),
+    }));
   return { symbol, summary: { buy, hold, sell }, consensus, ratings };
 }
 
 /** Earnings calendar + EPS (marketdata/earnings/?symbol=): per-quarter estimate vs actual + call info. */
 export async function computeEarnings(
   opts: { symbol: string; limit?: number },
-  deps: { getJson?: typeof brokerageGetJson } = {}
-): Promise<{ symbol: string; reports: Array<{ year: number; quarter: number; epsEstimate: number; epsActual: number; reported: boolean; surprise: number | null; reportDate: string; timing: string; verified: boolean; callDatetime: string; replayUrl: string }> }> {
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{
+  symbol: string;
+  reports: Array<{
+    year: number;
+    quarter: number;
+    epsEstimate: number;
+    epsActual: number;
+    reported: boolean;
+    surprise: number | null;
+    reportDate: string;
+    timing: string;
+    verified: boolean;
+    callDatetime: string;
+    replayUrl: string;
+  }>;
+}> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const symbol = opts.symbol.toUpperCase();
   // The earnings route is the bare path; the symbol rides as a query param (NOT in the URL template).
@@ -7470,7 +9515,7 @@ export async function computeEarnings(
         timing: String(r.report?.timing ?? ""),
         verified: Boolean(r.report?.verified),
         callDatetime: String(r.call?.datetime ?? ""),
-        replayUrl: String(r.call?.replay_url ?? "")
+        replayUrl: String(r.call?.replay_url ?? ""),
       };
     })
     .sort((a, b) => (b.reportDate || "").localeCompare(a.reportDate || ""))
@@ -7481,20 +9526,23 @@ export async function computeEarnings(
 /** S&P 500 top movers (midlands/movers/sp500/): symbol + day move% + price, inline. direction up|down. */
 export async function computeMovers(
   opts: { direction?: "up" | "down"; limit?: number },
-  deps: { getJson?: typeof brokerageGetJson } = {}
-): Promise<{ index: string; direction: string; count: number; movers: Array<{ symbol: string; movementPct: number; price: number; description: string }> }> {
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{
+  index: string;
+  direction: string;
+  count: number;
+  movers: Array<{ symbol: string; movementPct: number; price: number; description: string }>;
+}> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const direction = opts.direction ?? "up";
   const data = await getJson("https://api.robinhood.com/midlands/movers/sp500/", {}, { direction });
   const rows: any[] = Array.isArray(data?.results) ? data.results : [];
-  const movers = rows
-    .slice(0, Math.max(1, opts.limit ?? 10))
-    .map((r) => ({
-      symbol: String(r.symbol ?? ""),
-      movementPct: Number(r.price_movement?.market_hours_last_movement_pct ?? Number.NaN),
-      price: Number(r.price_movement?.market_hours_last_price ?? Number.NaN),
-      description: String(r.description ?? "")
-    }));
+  const movers = rows.slice(0, Math.max(1, opts.limit ?? 10)).map((r) => ({
+    symbol: String(r.symbol ?? ""),
+    movementPct: Number(r.price_movement?.market_hours_last_movement_pct ?? Number.NaN),
+    price: Number(r.price_movement?.market_hours_last_price ?? Number.NaN),
+    description: String(r.description ?? ""),
+  }));
   return { index: "sp500", direction, count: movers.length, movers };
 }
 
@@ -7502,20 +9550,38 @@ export async function computeMovers(
  *  the web UI uses for per-position options P&L + assignment tracking. Best-effort symbol enrichment. */
 export async function computeOptionsEvents(
   opts: { accountNumber?: string; limit?: number },
-  deps: { getJson?: typeof brokerageGetJson } = {}
-): Promise<{ count: number; events: Array<{ date: string; type: string; direction: string; quantity: number; cash: number; state: string; account: string; symbol: string; optionId: string }> }> {
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{
+  count: number;
+  events: Array<{
+    date: string;
+    type: string;
+    direction: string;
+    quantity: number;
+    cash: number;
+    state: string;
+    account: string;
+    symbol: string;
+    optionId: string;
+  }>;
+}> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const data = await getJson("https://api.robinhood.com/options/events/");
   let rows: any[] = Array.isArray(data?.results) ? data.results : [];
-  if (opts.accountNumber) rows = rows.filter((r) => String(r.account_number ?? "") === String(opts.accountNumber));
-  rows = rows.sort((a, b) => String(b.event_date ?? "").localeCompare(String(a.event_date ?? ""))).slice(0, Math.max(1, opts.limit ?? 25));
+  if (opts.accountNumber)
+    rows = rows.filter((r) => String(r.account_number ?? "") === String(opts.accountNumber));
+  rows = rows
+    .sort((a, b) => String(b.event_date ?? "").localeCompare(String(a.event_date ?? "")))
+    .slice(0, Math.max(1, opts.limit ?? 25));
   // Best-effort: resolve each UNIQUE option instrument to its chain symbol (bounded — events are few).
   const symbolByOptionId = new Map<string, string>();
   for (const id of [...new Set(rows.map((r) => String(r.option_id ?? "")).filter(Boolean))]) {
     try {
       const meta = await getJson("https://api.robinhood.com/options/instruments/{0}/", { "0": id });
       symbolByOptionId.set(id, String(meta?.chain_symbol ?? ""));
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
   const events = rows.map((r) => {
     const optionId = String(r.option_id ?? "");
@@ -7528,7 +9594,7 @@ export async function computeOptionsEvents(
       state: String(r.state ?? ""),
       account: String(r.account_number ?? ""),
       symbol: symbolByOptionId.get(optionId) ?? "",
-      optionId
+      optionId,
     };
   });
   return { count: events.length, events };
@@ -7541,7 +9607,7 @@ export async function computeOptionsEvents(
  */
 export async function computeSentinel(
   opts: { accountNumber?: string; eventLookaheadDays?: number } = {},
-  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {}
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {},
 ): Promise<{
   generatedAt: string;
   accountsScanned: string[];
@@ -7553,7 +9619,7 @@ export async function computeSentinel(
   const risk = await computeRisk({ accountNumber: opts.accountNumber }, deps as any);
   const events = await computeOptionsEvents(
     { accountNumber: opts.accountNumber, limit: 50 },
-    { getJson: deps.getJson }
+    { getJson: deps.getJson },
   );
   // Collect risk warnings
   if (risk.warnings?.length) warnings.push(...risk.warnings);
@@ -7565,7 +9631,9 @@ export async function computeSentinel(
     const assignmentEvents = upcoming.filter((e) => e.type === "assignment");
     const expirationEvents = upcoming.filter((e) => e.type === "expiration");
     if (assignmentEvents.length > 0) {
-      warnings.push(`${assignmentEvents.length} assignment event(s) in the next ${lookaheadDays} days — review short positions.`);
+      warnings.push(
+        `${assignmentEvents.length} assignment event(s) in the next ${lookaheadDays} days — review short positions.`,
+      );
     }
     if (expirationEvents.length > 0) {
       warnings.push(`${expirationEvents.length} expiration(s) in the next ${lookaheadDays} days.`);
@@ -7576,7 +9644,7 @@ export async function computeSentinel(
     accountsScanned: risk.accountsScanned ?? [],
     risk,
     events,
-    warnings
+    warnings,
   };
 }
 
@@ -7592,7 +9660,8 @@ export function recurringSymbol(s: any): string {
 export async function fetchRecurringSchedules(): Promise<any[]> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: RECURRING_LIST_URL });
   const route = selectRouteByQueryAndMethod(matches, RECURRING_LIST_URL, "GET");
-  if (!route) throw new Error("recurring_schedules GET route missing from map — rebuild (AGENTS.md §3).");
+  if (!route)
+    throw new Error("recurring_schedules GET route missing from map — rebuild (AGENTS.md §3).");
   const plan = planBrokerageRequest({ route, method: "GET", params: {}, dryRun: false });
   const result = await executeBrokerageRequest(plan, { dryRun: false, fullBody: true });
   const parsed = JSON.parse(result.body ?? "{}");
@@ -7602,16 +9671,34 @@ export async function fetchRecurringSchedules(): Promise<any[]> {
 export async function setRecurringState(
   id: string,
   state: "active" | "paused",
-  options: { dryRun?: boolean; liveWrite?: boolean }
+  options: { dryRun?: boolean; liveWrite?: boolean },
 ): Promise<{ status: number | string; dryRun: boolean; reason?: string }> {
   const matches = filterBrokerageRoutes(loadBrokerageRoutes(), { query: RECURRING_ITEM_URL });
   const route = selectRouteByQueryAndMethod(matches, RECURRING_ITEM_URL, "PATCH");
-  if (!route) throw new Error("recurring_schedules/{0}/ PATCH route missing from map — rebuild (AGENTS.md §3).");
-  const gate = resolveLiveWriteGate({ risk: route.risk, method: "PATCH", dryRun: Boolean(options.dryRun), liveWrite: Boolean(options.liveWrite) });
+  if (!route)
+    throw new Error(
+      "recurring_schedules/{0}/ PATCH route missing from map — rebuild (AGENTS.md §3).",
+    );
+  const gate = resolveLiveWriteGate({
+    risk: route.risk,
+    method: "PATCH",
+    dryRun: Boolean(options.dryRun),
+    liveWrite: Boolean(options.liveWrite),
+  });
   const effectiveDryRun = Boolean(options.dryRun) || gate.forcedDryRun;
   const body = { state };
-  const plan = planBrokerageRequest({ route, method: "PATCH", params: { "0": id }, body, dryRun: effectiveDryRun });
-  const result = await executeBrokerageRequest(plan, { dryRun: effectiveDryRun, body, fullBody: false });
+  const plan = planBrokerageRequest({
+    route,
+    method: "PATCH",
+    params: { "0": id },
+    body,
+    dryRun: effectiveDryRun,
+  });
+  const result = await executeBrokerageRequest(plan, {
+    dryRun: effectiveDryRun,
+    body,
+    fullBody: false,
+  });
   return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason };
 }
 

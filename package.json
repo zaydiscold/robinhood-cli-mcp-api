@@ -1,38 +1,53 @@
 {
   "name": "robinhood-cli-workspace",
+  "version": "1.0.0",
   "private": true,
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20.19"
+  },
   "type": "module",
   "author": "Zayd Khan // cold (www.zayd.wtf)",
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "build": "corepack pnpm --filter @zaydiscold/robinhood-cli build && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp build",
+    "sanitize:cdp": "node scripts/sanitize-cdp-capture.mjs",
     "merge:cdp": "node scripts/merge-cdp-capture.mjs",
+    "test:api-map": "node scripts/test-cdp-capture.mjs",
+    "test:skill": "python3 scripts/check-skill-integrity.py",
     "generate:api-map": "node scripts/generate-brokerage-openapi.mjs && node scripts/generate-unified-api-map.mjs && node scripts/generate-brokerage-markdown.mjs && node scripts/generate-brokerage-curl.mjs && node scripts/generate-endpoint-markdown.mjs",
-    "test": "corepack pnpm --filter @zaydiscold/robinhood-cli test && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp test",
-    "typecheck": "corepack pnpm --filter @zaydiscold/robinhood-cli typecheck && corepack pnpm --filter @zaydiscold/robinhood-cli build && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp typecheck",
+    "test": "corepack pnpm build && corepack pnpm test:built",
+    "test:built": "corepack pnpm --filter @zaydiscold/robinhood-cli exec vitest run && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp exec vitest run",
+    "coverage": "corepack pnpm build && corepack pnpm coverage:built",
+    "coverage:built": "corepack pnpm --filter @zaydiscold/robinhood-cli test:coverage && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp test:coverage",
+    "typecheck": "corepack pnpm --filter @zaydiscold/robinhood-cli build && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp typecheck",
     "cli": "corepack pnpm --filter @zaydiscold/robinhood-cli cli",
     "auth:refresh": "bash scripts/refresh-auth.sh",
     "version:refresh": "node scripts/scrape-web-app-version.mjs",
-    "lint": "eslint cli/src mcp/src",
+    "quality": "corepack pnpm lint && corepack pnpm format:check && corepack pnpm deadcode && corepack pnpm test:api-map && corepack pnpm test:skill",
+    "lint": "node scripts/check-eslint-ratchet.mjs",
+    "lint:report": "eslint cli/src mcp/src",
     "lint:fix": "eslint cli/src mcp/src --fix",
-    "format": "prettier --write cli/src mcp/src"
+    "format": "prettier --write cli/src mcp/src",
+    "format:check": "node scripts/check-format-ratchet.mjs",
+    "deadcode": "knip --dependencies --reporter compact --no-progress"
   },
   "pnpm": {
     "overrides": {
-      "vite": "8.0.16",
+      "esbuild": "0.28.1",
+      "vite": "8.1.4",
       "hono": "4.12.25"
     }
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "@typescript-eslint/eslint-plugin": "^8.61.1",
-    "@typescript-eslint/parser": "^8.61.1",
-    "@vitest/coverage-v8": "^4.1.9",
-    "eslint": "^10.5.0",
-    "prettier": "^3.8.4",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.7.0",
+    "knip": "^6.26.0",
+    "prettier": "^3.9.5",
     "typescript": "^5.8.0",
-    "vite": "8.0.16",
-    "vitest": "^4.1.9"
+    "vite": "8.1.4",
+    "vitest": "^4.1.10"
   }
 }

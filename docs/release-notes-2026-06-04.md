@@ -2,19 +2,20 @@
 
 ## Added
 
-- **Signal-sourcing doctrine** (neutral, descriptive — not risk guidance). Encoded in `SKILL.md`
-  ("Signal sourcing" + re-weighted "Sentiment / discovery" + deep-link sections), `AGENTS.md` §13, and
+- **Signal-sourcing doctrine** (neutral, descriptive — not risk guidance). Originally encoded in
+  `SKILL.md` and now canonical in `knowledge/signals.md`, with `AGENTS.md` §13 and
   the boot KB §1. Core: news = slow but authoritative for key/binary events; Twitter/X + Reddit = best
   signal-to-noise; X = fastest pulse; RH `midlands/news|ratings|tags` = the **slow, broker-native
   confirmer** that trails the off-platform pulse.
 - **Ball Knowledge** (`ball-knowledge.md`, repo root) — a living, committed, append-only
-  investing-memory ledger (themes, tickers, sources, hunches, preferences). Full rules in `SKILL.md`
-  "Ball Knowledge"; short pointer in `AGENTS.md` §14; wired into the KB §0 boot checklist (step 7).
+  investing-memory ledger (themes, tickers, sources, hunches, preferences). Full rules are now in
+  `knowledge/signals.md`; short pointer in `AGENTS.md` §14; wired into the KB §0 boot checklist (step 7).
   Ledger stays messy; the skill carries interpretation (classify by type, minor recency bias, context
   not permission). Seeded generic-only.
 - **Order-execution-evidence rule** — brokerage order history is the source of truth; no
   filled/pending/rejected/cancelled record (or position/cash/BP change) ⇒ treat as **non-executed**;
-  screenshots/UI/logs are not proof. Lives in `SKILL.md` failure mode #20 + boot KB §1 + a §4 row.
+  screenshots/UI/logs are not proof. Now lives in the `SKILL.md` operating contract and
+  `knowledge/execution-safety.md`, plus boot KB §1 and a §4 row.
 - **`agent-operating-intelligence-2026-06-04.md`** — boot-smart KB (cardinal rule, account/order/
   signal decision frameworks, failure→fix tree, roadmap). `SKILL.md` points to it as boot step 0.
 - **Index-options correction** (`index-options-1256-conclusion-2026-06-04.md`) — RH **does** offer
@@ -23,7 +24,7 @@
   read-only (ceres TLS-walled), no spot FX, commodities via ETF proxies only.
 - **Trading log** (`trading-log.md`, repo root) — append-only execution + **intent** history; logs what
   the agent executes with the *why* and the strategy thread ("what we're rolling from"), so wheel/roll
-  state survives beyond raw order history. Instruction-driven (SKILL.md "Trading log" + AGENTS §15 +
+  state survives beyond raw order history. Instruction-driven (`knowledge/signals.md` + AGENTS §15 +
   KB §0 step 7); status `executed` only if order history confirms (ties to failure-mode #20). Seeded
   with masked `[EXAMPLE]` entries. (Code auto-logger parked as a future idea.)
 - **Strategy deep-dives** (`strategy-deep-dive-the-wheel-2026-06-04.md`,

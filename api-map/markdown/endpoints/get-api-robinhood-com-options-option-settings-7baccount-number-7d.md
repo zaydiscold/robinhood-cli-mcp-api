@@ -4,8 +4,8 @@ Mutation: no
 Risk: sensitive-read
 
 Host: api.robinhood.com
-Categories: options, settings, account
-Source: web-ui-capture-2026-06-03 (account/settings/investing)
+Categories: account, options, settings
+Source: cdp-2026-07-14-authenticated-sanitized-v2; web-ui-capture-2026-06-03 (account/settings/investing)
 Operation ID: n/a
 
 Route template:

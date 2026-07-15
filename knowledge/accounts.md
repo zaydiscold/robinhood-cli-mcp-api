@@ -101,6 +101,7 @@ Rules that follow:
 ## Deep dives
 
 - `docs/agent-operating-intelligence-2026-06-04.md` §2 — the account model, wrong-account trap, and the live buying-power walkthrough.
-- `SKILL.md` — "Account-Aware Capabilities", "`?account_number=` universal selector", failure modes #1/#9/#16.
+- `SKILL.md` — the binding account-discovery and account-echo contract; this module is the canonical
+  capability, selector, buying-power, and settlement reference.
 - `TODO.md` (carried-over notes) — margin/settings endpoints pending live verification; the masked portfolio snapshot.
 - `knowledge/execution-safety.md` — the account-echo contract before any send.

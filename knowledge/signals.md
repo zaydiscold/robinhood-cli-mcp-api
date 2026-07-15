@@ -95,7 +95,8 @@ never do: skip the dry-run, the confirmation contract, or the write gates
 
 ## Deep dives
 
-- `SKILL.md` — "Signal sourcing", "Ball Knowledge", "Trading log" (the canonical rules).
+- `SKILL.md` — compact research-and-maintenance routing and the binding real-money contract;
+  this module is the canonical signal, Ball Knowledge, and trading-log operating reference.
 - `docs/institutional-outlook-2026-06-04.md` — per-firm table, consensus vs divergence, mega forces, refresh cadence.
 - `docs/agent-operating-intelligence-2026-06-04.md` §1 — "Signal is a surface too".
 - `ball-knowledge.md`, `trading-log.md` — the live ledgers themselves (repo root).

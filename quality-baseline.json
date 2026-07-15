@@ -1,0 +1,20 @@
+{
+  "eslint": {
+    "totalWarnings": 363,
+    "rules": {
+      "@typescript-eslint/no-explicit-any": 349,
+      "@typescript-eslint/no-unused-vars": 12,
+      "prefer-const": 2
+    }
+  },
+  "prettier": {
+    "unformattedFiles": [
+      "cli/src/index.ts",
+      "cli/src/lib.ts",
+      "cli/src/options-workbench.ts",
+      "cli/src/order-lifecycle.ts",
+      "cli/src/share-safe.ts",
+      "cli/src/time-machine.ts"
+    ]
+  }
+}

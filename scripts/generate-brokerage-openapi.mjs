@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mergeSchemas } from "./lib/cdp-capture.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -13,7 +14,7 @@ const riskRank = {
   "write-safe": 2,
   "write-mutate": 3,
   "write-or-sensitive": 4,
-  destructive: 5
+  destructive: 5,
 };
 
 const routes = JSON.parse(await readFile(routesPath, "utf8"));
@@ -27,7 +28,13 @@ function normalizePath(pathname) {
 
 function operationMethods(route) {
   if (route.methods?.length) return route.methods.map((method) => method.toLowerCase());
-  if (route.risk === "destructive" || route.risk === "write-or-sensitive" || route.risk === "write-mutate" || route.risk === "write-safe") return ["post"];
+  if (
+    route.risk === "destructive" ||
+    route.risk === "write-or-sensitive" ||
+    route.risk === "write-mutate" ||
+    route.risk === "write-safe"
+  )
+    return ["post"];
   return ["get"];
 }
 
@@ -60,7 +67,7 @@ function pathParams(pathname) {
       in: "path",
       required: true,
       schema: { type: "string" },
-      description: `Route placeholder ${name}. Mapped route name; live verification should replace with a semantic parameter name when known.`
+      description: `Route placeholder ${name}. Mapped route name; live verification should replace with a semantic parameter name when known.`,
     });
   }
   return params;
@@ -77,8 +84,52 @@ function queryParams(templates, queryKeys) {
     in: "query",
     required: false,
     schema: { type: "string" },
-    description: "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+    description:
+      "Observed query key from route templates or sanitized browser capture; values are intentionally not stored.",
   }));
+}
+
+function responseObjects(group) {
+  const schemas = group.responseBodySchemas;
+  const statusCodes = new Set([...group.statusCodes, ...Object.keys(schemas)]);
+  if (statusCodes.size === 0) statusCodes.add("200");
+  const contentTypes = group.responseContentTypes.size
+    ? [...group.responseContentTypes].sort()
+    : ["application/json"];
+  return Object.fromEntries(
+    [...statusCodes]
+      .map(String)
+      .sort()
+      .map((status) => {
+        const schema = schemas[status] ?? schemas.default ?? {};
+        return [
+          status,
+          {
+            description: Object.keys(schema).length
+              ? "Sanitized response shape observed in authenticated browser traffic."
+              : "Response shape not yet live-verified.",
+            content: Object.fromEntries(
+              contentTypes.map((contentType) => [contentType, { schema }]),
+            ),
+          },
+        ];
+      }),
+  );
+}
+
+function requestBody(group) {
+  if (!group.requestBodySchema) return undefined;
+  const contentTypes = group.requestContentTypes.size
+    ? [...group.requestContentTypes].sort()
+    : ["application/json"];
+  return {
+    required: false,
+    description:
+      "Shape-only schema from sanitized authenticated browser traffic; no captured values are stored.",
+    content: Object.fromEntries(
+      contentTypes.map((contentType) => [contentType, { schema: group.requestBodySchema }]),
+    ),
+  };
 }
 
 const grouped = new Map();
@@ -87,19 +138,24 @@ for (const route of routes) {
   const path = normalizePath(decodeURIComponent(parsed.pathname));
   for (const method of operationMethods(route)) {
     const key = `${method} ${path}`;
-    const existing =
-      grouped.get(key) ??
-      {
-        method,
-        path,
-        hosts: new Set(),
-        categories: new Set(),
-        risk: route.risk,
-        templates: [],
-        queryKeys: new Set(),
-        sources: new Set(),
-        seenOn: new Set()
-      };
+    const existing = grouped.get(key) ?? {
+      method,
+      path,
+      hosts: new Set(),
+      categories: new Set(),
+      risk: route.risk,
+      templates: [],
+      queryKeys: new Set(),
+      sources: new Set(),
+      seenOn: new Set(),
+      statusCodes: new Set(),
+      requestContentTypes: new Set(),
+      responseContentTypes: new Set(),
+      requestBodySchema: undefined,
+      responseBodySchemas: {},
+      requiresAuth: false,
+      observationCount: 0,
+    };
     existing.hosts.add(route.host);
     for (const category of route.categories ?? []) {
       existing.categories.add(category);
@@ -107,12 +163,29 @@ for (const route of routes) {
     for (const queryKey of route.queryKeys ?? []) {
       existing.queryKeys.add(queryKey);
     }
-    for (const source of String(route.source ?? "community-seed").split(";").map((value) => value.trim()).filter(Boolean)) {
+    for (const source of String(route.source ?? "community-seed")
+      .split(";")
+      .map((value) => value.trim())
+      .filter(Boolean)) {
       existing.sources.add(source);
     }
     for (const label of route.seenOn ?? []) {
       existing.seenOn.add(label);
     }
+    for (const status of route.statusCodes ?? []) existing.statusCodes.add(status);
+    for (const contentType of route.requestContentTypes ?? [])
+      existing.requestContentTypes.add(contentType);
+    for (const contentType of route.responseContentTypes ?? [])
+      existing.responseContentTypes.add(contentType);
+    existing.requestBodySchema = mergeSchemas(existing.requestBodySchema, route.requestBodySchema);
+    for (const [status, schema] of Object.entries(route.responseBodySchemas ?? {})) {
+      existing.responseBodySchemas[status] = mergeSchemas(
+        existing.responseBodySchemas[status],
+        schema,
+      );
+    }
+    existing.requiresAuth ||= route.requiresAuth === true;
+    existing.observationCount += route.observationCount ?? 0;
     if ((riskRank[route.risk] ?? 0) > (riskRank[existing.risk] ?? 0)) {
       existing.risk = route.risk;
     }
@@ -125,30 +198,52 @@ const spec = {
   openapi: "3.1.0",
   info: {
     title: "Robinhood Brokerage API Map",
-    version: "0.1.0",
+    version: "1.0.0",
     description:
-      "Personal Robinhood brokerage/account API map from reverse-engineered routes and sanitized authenticated browser capture. This repo can execute live with caller-owned auth; pass dryRun/--dry-run for non-sending tests. Made with love by Zayd Khan / cold."
+      "Personal Robinhood brokerage/account API map from reverse-engineered routes and sanitized authenticated browser capture. This repo can execute live with caller-owned auth; pass dryRun/--dry-run for non-sending tests. Made with love by Zayd Khan / cold.",
   },
   servers: [
     { url: "https://api.robinhood.com" },
     { url: "https://nummus.robinhood.com" },
     { url: "https://bonfire.robinhood.com" },
     { url: "https://minerva.robinhood.com" },
-    { url: "https://phoenix.robinhood.com" }
+    { url: "https://phoenix.robinhood.com" },
   ],
   tags: [
-    ...new Set(routes.flatMap((route) => (route.categories?.length ? route.categories : ["uncategorized"])))
+    ...new Set(
+      routes.flatMap((route) => (route.categories?.length ? route.categories : ["uncategorized"])),
+    ),
   ]
     .sort()
-    .map((name) => ({ name, description: `${titleCase(name)} routes from the brokerage route map.` })),
-  paths: {}
+    .map((name) => ({
+      name,
+      description: `${titleCase(name)} routes from the brokerage route map.`,
+    })),
+  paths: {},
+  components: {
+    securitySchemes: {
+      brokerageToken: {
+        type: "http",
+        scheme: "bearer",
+        description: "Caller-owned Robinhood brokerage bearer token.",
+      },
+      browserCookie: {
+        type: "apiKey",
+        in: "header",
+        name: "Cookie",
+        description: "Caller-owned Robinhood browser cookie header.",
+      },
+    },
+  },
 };
 
-for (const group of [...grouped.values()].sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))) {
+for (const group of [...grouped.values()].sort(
+  (a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method),
+)) {
   const categories = [...group.categories].sort();
   const params = [...pathParams(group.path), ...queryParams(group.templates, group.queryKeys)];
   spec.paths[group.path] ??= {};
-  spec.paths[group.path][group.method] = {
+  const operation = {
     operationId: operationId(group.path, group.method),
     summary: `${titleCase(categories[0] ?? "uncategorized")} brokerage route`,
     description:
@@ -156,27 +251,29 @@ for (const group of [...grouped.values()].sort((a, b) => a.path.localeCompare(b.
       "Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
     tags: categories.length ? categories : ["uncategorized"],
     parameters: params,
-    responses: {
-      "200": {
-        description: "Response shape not yet live-verified.",
-        content: {
-          "application/json": {
-            schema: {}
-          }
-        }
-      }
-    },
+    responses: responseObjects(group),
     "x-robinhood-risk": group.risk,
     "x-robinhood-hosts": [...group.hosts].sort(),
     "x-robinhood-route-templates": group.templates,
     "x-robinhood-sources": [...group.sources].sort(),
-    "x-robinhood-seen-on": [...group.seenOn].sort()
+    "x-robinhood-seen-on": [...group.seenOn].sort(),
   };
+  const body = requestBody(group);
+  if (body) operation.requestBody = body;
+  if (group.observationCount > 0)
+    operation["x-robinhood-observation-count"] = group.observationCount;
+  if (group.requiresAuth) {
+    operation["x-robinhood-auth-observed"] = true;
+    operation.security = [{ brokerageToken: [] }, { browserCookie: [] }];
+  }
+  spec.paths[group.path][group.method] = operation;
 }
 
 await mkdir(dirname(outPath), { recursive: true });
 await writeFile(outPath, `${JSON.stringify(spec, null, 2)}\n`);
 console.error(`wrote ${outPath}`);
-console.error(`brokerage routes=${routes.length} openapi paths=${Object.keys(spec.paths).length} operations=${grouped.size}`);
+console.error(
+  `brokerage routes=${routes.length} openapi paths=${Object.keys(spec.paths).length} operations=${grouped.size}`,
+);
 
 // Zayd Khan // cold // www.zayd.wtf

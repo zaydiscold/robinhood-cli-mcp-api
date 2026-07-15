@@ -257,4 +257,5 @@ whether to chase. Say the word to cancel — `options/orders/{0}/cancel/` is one
 - `knowledge/execution-safety.md` — the 20-point checklist behind steps 6–8.
 - `knowledge/multi-leg.md` — leg ids and payoff math; `knowledge/greeks.md` — the exposure block.
 - `knowledge/accounts.md` — account gating; `knowledge/signals.md` — research tiers and logging.
-- `SKILL.md` — "Live Write & Order Lifecycle", "Options Review Contract"; `AGENTS.md` §7 — the raw worked order example.
+- `SKILL.md` — the binding live-write lifecycle and confirmation contract;
+  `knowledge/execution-safety.md` — the complete review checklist; `AGENTS.md` §7 — the raw worked order example.

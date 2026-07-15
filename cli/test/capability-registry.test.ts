@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITIES, capabilityEnabled } from "../src/lib.js";
+import {
+  CAPABILITIES,
+  DEFAULT_MCP_PROFILE,
+  MCP_PROFILE_NAMES,
+  capabilitiesForProfile,
+  capabilityEnabled,
+  parseCapabilityProfile,
+} from "../src/lib.js";
 
 describe("typed capability registry", () => {
   it("uses unique ids, CLI commands, and MCP names", () => {
@@ -20,6 +27,34 @@ describe("typed capability registry", () => {
 
   it("keeps full backward-compatible and filters narrower profiles", () => {
     expect(CAPABILITIES.every((entry) => capabilityEnabled(entry, "full"))).toBe(true);
-    expect(CAPABILITIES.find((entry) => entry.id === "options-workbench") && capabilityEnabled(CAPABILITIES.find((entry) => entry.id === "options-workbench")!, "admin")).toBe(false);
+    expect(
+      CAPABILITIES.find((entry) => entry.id === "options-workbench") &&
+        capabilityEnabled(
+          CAPABILITIES.find((entry) => entry.id === "options-workbench")!,
+          "admin",
+        ),
+    ).toBe(false);
+  });
+
+  it("uses the complete full profile by default while retaining explicit lean mode", () => {
+    expect(DEFAULT_MCP_PROFILE).toBe("full");
+    expect(parseCapabilityProfile(undefined)).toBe("full");
+    expect(capabilitiesForProfile(DEFAULT_MCP_PROFILE)).toHaveLength(CAPABILITIES.length);
+    expect(
+      capabilitiesForProfile(DEFAULT_MCP_PROFILE).some((entry) => entry.access === "write"),
+    ).toBe(true);
+    expect(capabilitiesForProfile("lean")).toHaveLength(15);
+    expect(capabilitiesForProfile("lean").every((entry) => entry.access === "read")).toBe(true);
+  });
+
+  it("validates every named profile and rejects typos instead of advertising zero tools", () => {
+    for (const profile of MCP_PROFILE_NAMES) {
+      expect(parseCapabilityProfile(profile)).toBe(profile);
+      expect(capabilitiesForProfile(profile).length).toBeGreaterThan(0);
+    }
+    expect(() => parseCapabilityProfile("typo")).toThrow(
+      /Invalid ROBINHOOD_MCP_PROFILE.*lean.*full/,
+    );
+    expect(() => capabilitiesForProfile("typo")).toThrow(/Invalid ROBINHOOD_MCP_PROFILE/);
   });
 });

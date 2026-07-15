@@ -175,7 +175,8 @@ no atomic-roll body existed in the code. `roll-plan` therefore always produced t
       DEFAULT auto-detect account type (atomic for margin/IRA, kosher for cash); keep `--cash-account`
       as an explicit override.
 - [ ] MCP `robinhood_options_roll_plan`: surface the atomic body + the account-type dispatch.
-- [ ] Docs: SKILL.md + AGENTS.md "Rolling" sections updated with the atomic-default rule and the body.
+- [ ] Docs: `SKILL.md` router, `knowledge/rolling.md`, and AGENTS.md rolling sections updated with
+      the atomic-default rule and the body.
 
 ## Reproduction
 

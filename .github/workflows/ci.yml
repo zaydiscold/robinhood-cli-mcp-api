@@ -12,6 +12,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  quality:
+    name: quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The supported pnpm 11 bulk-advisory audit client requires Node >=22.13. Node 20 remains
+          # fully covered by the build/test/coverage matrix below.
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # pnpm 10's audit client calls npm's retired legacy endpoint (HTTP 410). Pin a current audit
+      # client that uses the supported bulk-advisory endpoint without changing the build/install line.
+      # HIGH/CRITICAL advisories still stop the merge.
+      - run: npx --yes pnpm@11.13.0 --pm-on-fail=ignore audit --audit-level high
+      - run: pnpm quality
+
   test:
     name: test (node ${{ matrix.node }} · ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -32,18 +51,14 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Fail CI only on HIGH/CRITICAL advisories. The known LOW findings are dev-only transitive
-      # build-tool deps (e.g. esbuild via vite/vitest) with no production/runtime exposure — gating on
-      # them would block every PR on noise. HIGH+ are the ones that warrant stopping a merge.
-      - run: pnpm audit --audit-level high
-      - name: Typecheck (cli + mcp)
-        run: pnpm typecheck
-      - name: Lint (eslint flat config)
-        run: pnpm lint
-      - name: Test (vitest — incl. cross-platform .env, resolveBash, gate/cap guards)
-        run: pnpm test
-      - name: Build (cli + mcp — emits dist the runtime reads)
+      # TypeScript compilation is the type gate and emits the exact dist files exercised below.
+      - name: Build + typecheck (cli + mcp)
         run: pnpm build
+      - name: Test built workspace (vitest — incl. cross-platform .env, resolveBash, gate/cap guards)
+        run: pnpm test:built
+      - name: Coverage ratchet (canonical Linux/Node 20 job)
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 20
+        run: pnpm coverage:built
       - name: Generated API map is committed and current
         if: matrix.os == 'ubuntu-latest' && matrix.node == 20
         run: |

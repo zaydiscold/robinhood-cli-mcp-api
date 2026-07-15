@@ -1,11 +1,11 @@
 # GET /currency_pairs/
 
 Mutation: no
-Risk: read
+Risk: sensitive-read
 
 Host: nummus.robinhood.com
-Categories: marketdata, unknown
-Source: cdp-2026-05-27-stock-account-sanitized
+Categories: marketdata
+Source: cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2
 Operation ID: n/a
 
 Route template:

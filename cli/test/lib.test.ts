@@ -29,13 +29,13 @@ import {
   resolveLiveWriteGate,
   selectNearStrikes,
   signCryptoRequest,
-  summarizeApiMap
+  summarizeApiMap,
 } from "../src/lib.js";
 
 const robinhoodPublishedExamplePrivateKeyBase64 = () =>
   Buffer.from([
-    197, 9, 211, 37, 87, 144, 46, 108, 53, 252, 200, 54, 98, 41, 132, 86,
-    36, 169, 195, 244, 157, 37, 200, 13, 93, 158, 100, 66, 64, 23, 52, 245
+    197, 9, 211, 37, 87, 144, 46, 108, 53, 252, 200, 54, 98, 41, 132, 86, 36, 169, 195, 244, 157,
+    37, 200, 13, 93, 158, 100, 66, 64, 23, 52, 245,
   ]).toString("base64");
 
 const robinhoodPublishedExampleApiKey = () =>
@@ -53,10 +53,16 @@ describe("Robinhood API map", () => {
     // Verify by auditing the destructive list before changing this number, never just bump it.
     expect(filterBrokerageRoutes(routes, { risk: "destructive" })).toHaveLength(9);
     expect(filterBrokerageRoutes(routes, { risk: "write-safe" }).length).toBeGreaterThanOrEqual(4);
-    expect(filterBrokerageRoutes(routes, { category: "options" }).length).toBeGreaterThanOrEqual(11);
+    expect(filterBrokerageRoutes(routes, { category: "options" }).length).toBeGreaterThanOrEqual(
+      11,
+    );
     expect(filterBrokerageRoutes(routes, { query: "ach/relationships" }).length).toBeGreaterThan(0);
-    expect(filterBrokerageRoutes(routes, { query: "marketdata/equities/summary/robinhood" }).length).toBeGreaterThan(0);
-    expect(filterBrokerageRoutes(routes, { host: "bonfire.robinhood.com" }).length).toBeGreaterThanOrEqual(80);
+    expect(
+      filterBrokerageRoutes(routes, { query: "marketdata/equities/summary/robinhood" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      filterBrokerageRoutes(routes, { host: "bonfire.robinhood.com" }).length,
+    ).toBeGreaterThanOrEqual(80);
   });
 
   it("keeps read and write methods split so writes cannot inherit read-level risk", () => {
@@ -88,7 +94,7 @@ describe("Robinhood API map", () => {
     expect(summary.crypto.paths).toBe(14);
     expect(summary.crypto.operations).toBe(16);
     expect(summary.brokerage.routes).toBeGreaterThanOrEqual(285);
-    expect(summary.brokerage.browserRoutes).toBeGreaterThanOrEqual(217);
+    expect(summary.brokerage.browserRoutes).toBeGreaterThanOrEqual(200);
     expect(summary.brokerage.openapiPaths).toBeGreaterThanOrEqual(253);
     expect(summary.brokerage.openapiOperations).toBeGreaterThanOrEqual(266);
     expect(summary.brokerage.byRisk["sensitive-read"]).toBeGreaterThanOrEqual(71);
@@ -99,73 +105,103 @@ describe("Robinhood API map", () => {
     expect(routes.length).toBeGreaterThanOrEqual(301);
     expect(filterRobinhoodRoutes(routes, { host: "trading.robinhood.com" })).toHaveLength(16);
     expect(filterRobinhoodRoutes(routes, { category: "crypto" })).toHaveLength(16);
-    expect(filterRobinhoodRoutes(routes, { query: "https://trading.robinhood.com/api/v2/crypto/trading/orders/" })).toHaveLength(3);
     expect(
-      filterRobinhoodRoutes(routes, { query: "https://trading.robinhood.com/api/v2/crypto/trading/orders/{id}/cancel/" })[0]?.risk
+      filterRobinhoodRoutes(routes, {
+        query: "https://trading.robinhood.com/api/v2/crypto/trading/orders/",
+      }),
+    ).toHaveLength(3);
+    expect(
+      filterRobinhoodRoutes(routes, {
+        query: "https://trading.robinhood.com/api/v2/crypto/trading/orders/{id}/cancel/",
+      })[0]?.risk,
     ).toBe("destructive");
     expect(filterRobinhoodRoutes(routes, { risk: "destructive" }).length).toBeGreaterThanOrEqual(6);
   });
 
   it("loads the latest sanitized CDP browser route slice", () => {
     const routes = loadBrowserRoutes();
-    expect(routes.length).toBeGreaterThanOrEqual(250);
-    expect(routes.some((route) => route.seenOn.includes("stock-nvda"))).toBe(true);
+    expect(routes.length).toBeGreaterThanOrEqual(200);
+    expect(routes.some((route) => route.seenOn.includes("stock-aapl"))).toBe(true);
     expect(routes.some((route) => route.seenOn.includes("account-transfers"))).toBe(true);
-    expect(routes.some((route) => route.seenOn.includes("options-chain-symbol-account-context"))).toBe(true);
+    expect(routes.some((route) => route.seenOn.includes("options-chain-xbi"))).toBe(true);
     expect(routes.some((route) => route.host === "bonfire.robinhood.com")).toBe(true);
-    expect(JSON.stringify(routes)).not.toMatch(/Cookie|Authorization|Bearer|localStorage|sessionStorage/i);
+    expect(JSON.stringify(routes)).not.toMatch(
+      /Cookie|Authorization|Bearer|localStorage|sessionStorage/i,
+    );
   });
 
   it("loads account-context workflow findings and builds sanitized web URLs", () => {
     const workflows = loadAccountContextWorkflows();
     expect(workflows.length).toBeGreaterThanOrEqual(8);
-    expect(filterAccountContextWorkflows(workflows, { behavior: "propagates" }).map((workflow) => workflow.id)).toContain(
-      "stock-detail-order-ticket"
-    );
+    expect(
+      filterAccountContextWorkflows(workflows, { behavior: "propagates" }).map(
+        (workflow) => workflow.id,
+      ),
+    ).toContain("stock-detail-order-ticket");
     const stockTicket = workflows.find((workflow) => workflow.id === "stock-detail-order-ticket");
     expect(stockTicket).toBeTruthy();
     const built = buildAccountContextUrl(stockTicket!, {
       account_number: "ACCOUNT_TEST",
       symbol: "XBI",
-      instrument_uuid: "00000000-0000-4000-8000-000000000000"
+      instrument_uuid: "00000000-0000-4000-8000-000000000000",
     });
     expect(built.url).toBe(
-      "https://robinhood.com/stocks/XBI(00000000-0000-4000-8000-000000000000)?account_number=ACCOUNT_TEST&source=lists_section_position"
+      "https://robinhood.com/stocks/XBI(00000000-0000-4000-8000-000000000000)?account_number=ACCOUNT_TEST&source=lists_section_position",
     );
     expect(built.missingParams).toEqual([]);
-    const optionsChain = workflows.find((workflow) => workflow.id === "options-chain-symbol-builder");
+    const optionsChain = workflows.find(
+      (workflow) => workflow.id === "options-chain-symbol-builder",
+    );
     expect(optionsChain).toBeTruthy();
     const chainUrl = buildAccountContextUrl(optionsChain!, {
       account_number: "ACCOUNT_TEST",
-      symbol: "XBI"
+      symbol: "XBI",
     });
-    expect(chainUrl.url).toBe("https://robinhood.com/options/chains/XBI?account_number=ACCOUNT_TEST");
-    expect(chainUrl.warnings.some((warning) => warning.includes("Mixed account-context behavior"))).toBe(true);
+    expect(chainUrl.url).toBe(
+      "https://robinhood.com/options/chains/XBI?account_number=ACCOUNT_TEST",
+    );
+    expect(
+      chainUrl.warnings.some((warning) => warning.includes("Mixed account-context behavior")),
+    ).toBe(true);
     expect(JSON.stringify(workflows)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
 
   it("loads options strategy workflows and dry-run order templates", () => {
     const workflows = loadOptionsStrategyWorkflows();
     expect(workflows.length).toBeGreaterThanOrEqual(10);
-    expect(filterOptionsStrategyWorkflows(workflows, { definedRisk: true }).map((workflow) => workflow.id)).toContain("iron-condor");
-    expect(filterOptionsStrategyWorkflows(workflows, { aggressiveness: "aggressive" }).map((workflow) => workflow.id)).toContain(
-      "naked-short-call"
-    );
-    expect(filterOptionsStrategyWorkflows(workflows, { aggressiveness: "aggressive" }).map((workflow) => workflow.id)).toContain(
-      "naked-short-put"
-    );
-    expect(filterOptionsStrategyWorkflows(workflows, { query: "debit spread" }).map((workflow) => workflow.id)).toContain(
-      "call-debit-spread"
-    );
-    expect(filterOptionsStrategyWorkflows(workflows, { query: "strangle" }).map((workflow) => workflow.id)).toContain(
-      "short-strangle"
-    );
-    expect(filterOptionsStrategyWorkflows(workflows, { query: "roll" }).map((workflow) => workflow.id)).toEqual(
-      expect.arrayContaining(["call-calendar-roll", "put-calendar-roll"])
-    );
-    expect(filterOptionsStrategyWorkflows(workflows, { query: "covered short put" }).map((workflow) => workflow.id)).toEqual(
-      expect.arrayContaining(["cash-secured-short-put", "covered-put"])
-    );
+    expect(
+      filterOptionsStrategyWorkflows(workflows, { definedRisk: true }).map(
+        (workflow) => workflow.id,
+      ),
+    ).toContain("iron-condor");
+    expect(
+      filterOptionsStrategyWorkflows(workflows, { aggressiveness: "aggressive" }).map(
+        (workflow) => workflow.id,
+      ),
+    ).toContain("naked-short-call");
+    expect(
+      filterOptionsStrategyWorkflows(workflows, { aggressiveness: "aggressive" }).map(
+        (workflow) => workflow.id,
+      ),
+    ).toContain("naked-short-put");
+    expect(
+      filterOptionsStrategyWorkflows(workflows, { query: "debit spread" }).map(
+        (workflow) => workflow.id,
+      ),
+    ).toContain("call-debit-spread");
+    expect(
+      filterOptionsStrategyWorkflows(workflows, { query: "strangle" }).map(
+        (workflow) => workflow.id,
+      ),
+    ).toContain("short-strangle");
+    expect(
+      filterOptionsStrategyWorkflows(workflows, { query: "roll" }).map((workflow) => workflow.id),
+    ).toEqual(expect.arrayContaining(["call-calendar-roll", "put-calendar-roll"]));
+    expect(
+      filterOptionsStrategyWorkflows(workflows, { query: "covered short put" }).map(
+        (workflow) => workflow.id,
+      ),
+    ).toEqual(expect.arrayContaining(["cash-secured-short-put", "covered-put"]));
     const spread = workflows.find((workflow) => workflow.id === "call-credit-spread");
     expect(spread).toBeTruthy();
     const plan = buildOptionsStrategyOrderPlan(spread!, {
@@ -182,17 +218,19 @@ describe("Robinhood API map", () => {
       limit_price: "4.00",
       quantity: "1",
       time_in_force: "gfd",
-      ref_id: "00000000-0000-4000-8000-000000000001"
+      ref_id: "00000000-0000-4000-8000-000000000001",
     });
     expect(plan.mode).toBe("dry_run");
     expect(plan.risk).toBe("write-mutate");
     expect(plan.missingParams).toEqual([]);
-    expect(JSON.stringify(plan.order)).toContain("https://api.robinhood.com/options/instruments/short-call-id/");
+    expect(JSON.stringify(plan.order)).toContain(
+      "https://api.robinhood.com/options/instruments/short-call-id/",
+    );
     expect(plan.reviewContract.greekMath.netDelta).toContain("contracts * 100");
     expect(plan.reviewContract.scenarioRows.map((row) => row.id)).toContain("spot-plus-minus-1pct");
-    expect(plan.reviewContract.variantResolution.find((row) => row.phrase === "covered short put")?.rule).toContain(
-      "require the user to choose"
-    );
+    expect(
+      plan.reviewContract.variantResolution.find((row) => row.phrase === "covered short put")?.rule,
+    ).toContain("require the user to choose");
     expect(plan.reviewContract.hardBlockers).toContain("missing option instrument id for any leg");
     expect(JSON.stringify(workflows)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
@@ -219,13 +257,17 @@ describe("Robinhood API map", () => {
       limit_price: "1.25",
       quantity: "1",
       time_in_force: "gfd",
-      ref_id: "00000000-0000-4000-8000-000000000002"
+      ref_id: "00000000-0000-4000-8000-000000000002",
     });
     expect(plan.mode).toBe("dry_run");
     expect(plan.missingParams).toEqual([]);
     expect((plan.order as any).direction).toBe("debit");
-    expect(JSON.stringify(plan.order)).toContain("https://api.robinhood.com/options/instruments/close-call-id/");
-    expect(JSON.stringify(plan.order)).toContain("https://api.robinhood.com/options/instruments/open-call-id/");
+    expect(JSON.stringify(plan.order)).toContain(
+      "https://api.robinhood.com/options/instruments/close-call-id/",
+    );
+    expect(JSON.stringify(plan.order)).toContain(
+      "https://api.robinhood.com/options/instruments/open-call-id/",
+    );
     expect(plan.warnings.join("\n")).toContain("cash accounts");
   });
 
@@ -242,7 +284,7 @@ describe("Robinhood API map", () => {
           ask: "1.30",
           mark: "1.25",
           delta: "0.40",
-          theta: "-0.03"
+          theta: "-0.03",
         },
         {
           id: "long_call",
@@ -252,9 +294,9 @@ describe("Robinhood API map", () => {
           ask: "0.50",
           mark: "0.45",
           delta: "0.20",
-          theta: "-0.01"
-        }
-      ]
+          theta: "-0.01",
+        },
+      ],
     });
 
     expect(pricing.direction).toBe("credit");
@@ -272,9 +314,25 @@ describe("Robinhood API map", () => {
       mode: "mid",
       preferredDirection: "debit",
       legs: [
-        { id: "long_call", action: "buy", ratioQuantity: 1, bid: "1.80", ask: "2.00", mark: "1.90", delta: "0.55" },
-        { id: "short_call", action: "sell", ratioQuantity: 1, bid: "0.75", ask: "0.85", mark: "0.80", delta: "0.35" }
-      ]
+        {
+          id: "long_call",
+          action: "buy",
+          ratioQuantity: 1,
+          bid: "1.80",
+          ask: "2.00",
+          mark: "1.90",
+          delta: "0.55",
+        },
+        {
+          id: "short_call",
+          action: "sell",
+          ratioQuantity: 1,
+          bid: "0.75",
+          ask: "0.85",
+          mark: "0.80",
+          delta: "0.35",
+        },
+      ],
     });
 
     expect(pricing.direction).toBe("debit");
@@ -296,35 +354,48 @@ describe("Robinhood API map", () => {
       chainId: "CHAIN_TEST",
       optionInstrumentId: "OPTION_TEST",
       aggregatePositionId: "AGGREGATE_TEST",
-      optionOrderId: "ORDER_TEST"
+      optionOrderId: "ORDER_TEST",
     });
     expect(plan.mode).toBe("dry_run");
     expect(plan.risk).toBe("write-mutate");
     expect(plan.selector.symbol).toBe("XBI");
     expect(plan.selector.positionEffect).toBe("open");
     expect(plan.webNavigation.find((link) => link.id === "options-chain-account-shell")?.url).toBe(
-      "https://robinhood.com/options/chains/XBI?account_number=ACCOUNT_TEST"
+      "https://robinhood.com/options/chains/XBI?account_number=ACCOUNT_TEST",
     );
-    const candidate = plan.webNavigation.find((link) => link.id === "options-chain-contract-query-candidate");
+    const candidate = plan.webNavigation.find(
+      (link) => link.id === "options-chain-contract-query-candidate",
+    );
     expect(candidate?.confidence).toBe("candidate");
     expect(candidate?.url).toContain("expiration_dates=2026-06-26");
     expect(candidate?.url).toContain("strike_price=127");
     expect(candidate?.url).toContain("side=buy");
     expect(candidate?.url).toContain("type=call");
     expect(candidate?.url).toContain("source=robinhood-cli-contract-plan");
-    expect(plan.queryParamCandidates.expiration).toEqual(["expiration", "expiration_date", "expiration_dates"]);
+    expect(plan.queryParamCandidates.expiration).toEqual([
+      "expiration",
+      "expiration_date",
+      "expiration_dates",
+    ]);
     expect(Object.keys(plan.queryParamCandidates)).not.toContain("appOnlyOptionChainTarget");
-    expect(plan.apiResolutionSteps.map((step) => step.id)).toContain("resolve-contracts-for-expiration-type");
-    expect(plan.apiResolutionSteps.find((step) => step.id === "resolve-contracts-for-expiration-type")?.url).toBe(
-      "https://api.robinhood.com/options/instruments/?account_number=ACCOUNT_TEST&chain_id=CHAIN_TEST&expiration_dates=2026-06-26&state=active&type=call"
+    expect(plan.apiResolutionSteps.map((step) => step.id)).toContain(
+      "resolve-contracts-for-expiration-type",
+    );
+    expect(
+      plan.apiResolutionSteps.find((step) => step.id === "resolve-contracts-for-expiration-type")
+        ?.url,
+    ).toBe(
+      "https://api.robinhood.com/options/instruments/?account_number=ACCOUNT_TEST&chain_id=CHAIN_TEST&expiration_dates=2026-06-26&state=active&type=call",
     );
     expect(plan.apiResolutionSteps.find((step) => step.id === "quote-single-contract")?.url).toBe(
-      "https://api.robinhood.com/marketdata/options/?ids=OPTION_TEST&include_all_sessions=true"
+      "https://api.robinhood.com/marketdata/options/?ids=OPTION_TEST&include_all_sessions=true",
     );
     expect(plan.orderHandoff.strategyQuoteUrl).toBe(
-      "https://api.robinhood.com/marketdata/options/strategy/quotes/?ids=OPTION_TEST&ratios=1&types=long&include_all_sessions=true"
+      "https://api.robinhood.com/marketdata/options/strategy/quotes/?ids=OPTION_TEST&ratios=1&types=long&include_all_sessions=true",
     );
-    expect(JSON.stringify(plan.orderHandoff.orderTemplate)).toContain("https://api.robinhood.com/options/instruments/OPTION_TEST/");
+    expect(JSON.stringify(plan.orderHandoff.orderTemplate)).toContain(
+      "https://api.robinhood.com/options/instruments/OPTION_TEST/",
+    );
     expect(plan.warnings.join("\n")).toContain("candidate probe keys");
     expect(JSON.stringify(plan)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
@@ -347,16 +418,20 @@ describe("Robinhood API map", () => {
         ask: "14.50",
         mark: "13.93",
         last: "13.90",
-        delta: "0.5472"
+        delta: "0.5472",
       },
       strategyQuoteUrl:
-        "https://api.robinhood.com/marketdata/options/strategy/quotes/?ids=OPTION_TEST&ratios=1&types=long&include_all_sessions=true"
+        "https://api.robinhood.com/marketdata/options/strategy/quotes/?ids=OPTION_TEST&ratios=1&types=long&include_all_sessions=true",
     });
     expect(bundle.mode).toBe("dry_run");
     expect(bundle.exactApiResolutionProven).toBe(true);
     expect(bundle.exactUiSelectionProven).toBe(false);
-    expect(bundle.links.accountScopedWebShell).toBe("https://robinhood.com/options/chains/DRAM?account_number=ACCOUNT_TEST");
-    expect(bundle.links.appChainById).toBe("robinhood://option_chain?chain_id=CHAIN_TEST&source=robinhood-cli-contract-plan");
+    expect(bundle.links.accountScopedWebShell).toBe(
+      "https://robinhood.com/options/chains/DRAM?account_number=ACCOUNT_TEST",
+    );
+    expect(bundle.links.appChainById).toBe(
+      "robinhood://option_chain?chain_id=CHAIN_TEST&source=robinhood-cli-contract-plan",
+    );
     expect(bundle.webhookHandoff.copyPastePrimary).toBe(bundle.links.appChainById);
     expect(bundle.resolvedContract?.optionInstrumentId).toBe("OPTION_TEST");
     expect(bundle.quote?.naturalPrice).toBeCloseTo(14.5);
@@ -364,14 +439,18 @@ describe("Robinhood API map", () => {
     expect(bundle.pricingControls.safeSellProbeLimit).toBeCloseTo(214.5);
     expect(bundle.pricingControls.safeBuyProbeLimit).toBeCloseTo(0.01);
     expect(bundle.warnings.join("\n")).toContain("No single URL preselects side+account");
-    expect(bundle.links.webContractPageDesktop).toBe("https://robinhood.com/options/instruments/OPTION_TEST/");
+    expect(bundle.links.webContractPageDesktop).toBe(
+      "https://robinhood.com/options/instruments/OPTION_TEST/",
+    );
     expect(JSON.stringify(bundle)).not.toMatch(/(?:account_number|rhsAccountNumber)=[0-9]{6,}/i);
   });
 
   it("lists official Crypto routes without counting OpenAPI metadata keys as methods", () => {
     const routes = listCryptoRoutes();
     expect(routes).toHaveLength(14);
-    expect(routes.find((route) => route.path === "/api/v1/crypto/trading/orders/")?.methods.sort()).toEqual(["get", "post"]);
+    expect(
+      routes.find((route) => route.path === "/api/v1/crypto/trading/orders/")?.methods.sort(),
+    ).toEqual(["get", "post"]);
   });
 
   it("builds brokerage request plans with live execution as the default mode", () => {
@@ -380,7 +459,7 @@ describe("Robinhood API map", () => {
     expect(route).toBeTruthy();
     const plan = planBrokerageRequest({
       route: route!,
-      params: parseParamAssignments(["0=ABC123"])
+      params: parseParamAssignments(["0=ABC123"]),
     });
     expect(plan.method).toBe("GET");
     expect(plan.mode).toBe("execute");
@@ -391,20 +470,24 @@ describe("Robinhood API map", () => {
   });
 
   it("dry-runs brokerage execution without auth or fetch", async () => {
-    const route = loadBrokerageRoutes().find((candidate) => candidate.url === "https://api.robinhood.com/accounts/");
+    const route = loadBrokerageRoutes().find(
+      (candidate) => candidate.url === "https://api.robinhood.com/accounts/",
+    );
     expect(route).toBeTruthy();
     const plan = planBrokerageRequest({ route: route!, dryRun: true });
     const result = await executeBrokerageRequest(plan, {
       fetchImpl: async () => {
         throw new Error("fetch should not run during dry-run");
-      }
+      },
     });
     expect(result.statusText).toBe("DRY_RUN");
     expect(result.body).toContain("https://api.robinhood.com/accounts/");
   });
 
   it("executes brokerage requests with caller-owned auth", async () => {
-    const route = loadBrokerageRoutes().find((candidate) => candidate.url === "https://api.robinhood.com/accounts/");
+    const route = loadBrokerageRoutes().find(
+      (candidate) => candidate.url === "https://api.robinhood.com/accounts/",
+    );
     expect(route).toBeTruthy();
     const plan = planBrokerageRequest({ route: route! });
     let calledUrl = "";
@@ -415,9 +498,9 @@ describe("Robinhood API map", () => {
         expect(init?.headers).toMatchObject({ authorization: "Bearer test-token" });
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
-          headers: { "content-type": "application/json" }
+          headers: { "content-type": "application/json" },
         });
-      }
+      },
     });
     expect(calledUrl).toBe("https://api.robinhood.com/accounts/");
     expect(result.ok).toBe(true);
@@ -439,8 +522,8 @@ describe("Robinhood API map", () => {
         fetchImpl: async () =>
           new Response("{}", {
             status: 202,
-            headers: { "content-type": "application/json" }
-          })
+            headers: { "content-type": "application/json" },
+          }),
       });
     } finally {
       console.error = originalError;
@@ -450,30 +533,34 @@ describe("Robinhood API map", () => {
 
   it("builds official Crypto request plans with path/query signing context", () => {
     const route = filterRobinhoodRoutes(loadRobinhoodRoutes(), {
-      query: "https://trading.robinhood.com/api/v2/crypto/trading/estimated_price/"
+      query: "https://trading.robinhood.com/api/v2/crypto/trading/estimated_price/",
     })[0];
     expect(route).toBeTruthy();
     const plan = planCryptoRequest({
       route: route!,
       query: parseParamAssignments(["symbol=BTC-USD", "side=ask", "quantity=0.1"]),
-      dryRun: true
+      dryRun: true,
     });
-    expect(plan.url).toBe("https://trading.robinhood.com/api/v2/crypto/trading/estimated_price/?symbol=BTC-USD&side=ask&quantity=0.1");
-    expect(plan.path).toBe("/api/v2/crypto/trading/estimated_price/?symbol=BTC-USD&side=ask&quantity=0.1");
+    expect(plan.url).toBe(
+      "https://trading.robinhood.com/api/v2/crypto/trading/estimated_price/?symbol=BTC-USD&side=ask&quantity=0.1",
+    );
+    expect(plan.path).toBe(
+      "/api/v2/crypto/trading/estimated_price/?symbol=BTC-USD&side=ask&quantity=0.1",
+    );
     expect(plan.mode).toBe("dry_run");
     expect(plan.command).toContain("x-signature");
   });
 
   it("dry-runs official Crypto execution without auth or fetch", async () => {
     const route = filterRobinhoodRoutes(loadRobinhoodRoutes(), {
-      query: "https://trading.robinhood.com/api/v1/crypto/trading/accounts/"
+      query: "https://trading.robinhood.com/api/v1/crypto/trading/accounts/",
     })[0];
     expect(route).toBeTruthy();
     const plan = planCryptoRequest({ route: route!, dryRun: true });
     const result = await executeCryptoRequest(plan, {
       fetchImpl: async () => {
         throw new Error("fetch should not run during crypto dry-run");
-      }
+      },
     });
     expect(result.statusText).toBe("DRY_RUN");
     expect(result.body).toContain("x-signature");
@@ -481,7 +568,7 @@ describe("Robinhood API map", () => {
 
   it("executes official Crypto requests with signed caller-owned API credentials", async () => {
     const route = filterRobinhoodRoutes(loadRobinhoodRoutes(), {
-      query: "https://trading.robinhood.com/api/v2/crypto/trading/orders/"
+      query: "https://trading.robinhood.com/api/v2/crypto/trading/orders/",
     }).find((candidate) => candidate.methods?.includes("POST"));
     expect(route).toBeTruthy();
     const body = JSON.stringify({
@@ -489,7 +576,7 @@ describe("Robinhood API map", () => {
       side: "buy",
       symbol: "BTC-USD",
       type: "market",
-      market_order_config: { asset_quantity: "0.1" }
+      market_order_config: { asset_quantity: "0.1" },
     });
     const plan = planCryptoRequest({ route: route!, method: "POST", body });
     const originalError = console.error;
@@ -507,15 +594,15 @@ describe("Robinhood API map", () => {
           expect(init?.headers).toMatchObject({
             "x-api-key": "rh-api-test",
             "x-timestamp": "1698708981",
-            "content-type": "application/json"
+            "content-type": "application/json",
           });
           expect((init?.headers as Record<string, string>)["x-signature"]).toBeTruthy();
           expect(init?.body).toBe(body);
           return new Response(JSON.stringify({ id: "order-id" }), {
             status: 201,
-            headers: { "content-type": "application/json" }
+            headers: { "content-type": "application/json" },
           });
-        }
+        },
       });
       expect(result.ok).toBe(true);
       expect(result.body).toContain("order-id");
@@ -534,10 +621,10 @@ describe("Robinhood API map", () => {
       timestamp: "1698708981",
       path: "/api/v1/crypto/trading/orders/",
       method: "POST",
-      body
+      body,
     });
     expect(headers["x-signature"]).toBe(
-      "q/nEtxp/P2Or3hph3KejBqnw5o9qeuQ+hYRnB56FaHbjDsNUY9KhB1asMxohDnzdVFSD7StaTqjSd9U9HvaRAw=="
+      "q/nEtxp/P2Or3hph3KejBqnw5o9qeuQ+hYRnB56FaHbjDsNUY9KhB1asMxohDnzdVFSD7StaTqjSd9U9HvaRAw==",
     );
   });
 
@@ -545,7 +632,7 @@ describe("Robinhood API map", () => {
     // Read routes always run live.
     expect(resolveLiveWriteGate({ risk: "read", dryRun: false, env: {} })).toEqual({
       allowed: true,
-      forcedDryRun: false
+      forcedDryRun: false,
     });
 
     // Write with the switch OFF is forced to dry-run (the safe published default).
@@ -556,12 +643,17 @@ describe("Robinhood API map", () => {
     // The legacy --live-write / liveWrite flag is no longer the gate: switch OFF stays dry-run
     // even when it's passed.
     expect(
-      resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, liveWrite: true, env: {} }).forcedDryRun
+      resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, liveWrite: true, env: {} })
+        .forcedDryRun,
     ).toBe(true);
 
     // Switch ON → live write allowed with NO per-call flag (the single-switch model that unblocks MCP).
     expect(
-      resolveLiveWriteGate({ risk: "write-mutate", dryRun: false, env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" } })
+      resolveLiveWriteGate({
+        risk: "write-mutate",
+        dryRun: false,
+        env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" },
+      }),
     ).toEqual({ allowed: true, forcedDryRun: false });
 
     // Switch ON + the legacy flag is identical — the flag is an accepted no-op.
@@ -570,37 +662,67 @@ describe("Robinhood API map", () => {
         risk: "destructive",
         dryRun: false,
         liveWrite: true,
-        env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" }
-      })
+        env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" },
+      }),
     ).toEqual({ allowed: true, forcedDryRun: false });
 
     // dryRun:true always previews — never blocked, never auto-sent — even with the switch ON.
     expect(
-      resolveLiveWriteGate({ risk: "write-mutate", dryRun: true, env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" } })
+      resolveLiveWriteGate({
+        risk: "write-mutate",
+        dryRun: true,
+        env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" },
+      }),
     ).toEqual({ allowed: true, forcedDryRun: false });
   });
 
   it("VERB FLOOR: a write method gates even when the route risk is mis-classified as read", () => {
     // Route says "read" but we call it with POST → must still be gated (not run live).
-    const gated = resolveLiveWriteGate({ risk: "read", method: "POST", dryRun: false, liveWrite: false, env: {} });
+    const gated = resolveLiveWriteGate({
+      risk: "read",
+      method: "POST",
+      dryRun: false,
+      liveWrite: false,
+      env: {},
+    });
     expect(gated.allowed).toBe(false);
     expect(gated.forcedDryRun).toBe(true);
     // GET on a read route still runs live.
-    expect(resolveLiveWriteGate({ risk: "read", method: "GET", dryRun: false, liveWrite: false, env: {} }).allowed).toBe(true);
+    expect(
+      resolveLiveWriteGate({
+        risk: "read",
+        method: "GET",
+        dryRun: false,
+        liveWrite: false,
+        env: {},
+      }).allowed,
+    ).toBe(true);
     // Write verb + the switch on → live allowed (no per-call flag required).
-    expect(resolveLiveWriteGate({ risk: "read", method: "POST", dryRun: false, env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" } }).allowed).toBe(true);
+    expect(
+      resolveLiveWriteGate({
+        risk: "read",
+        method: "POST",
+        dryRun: false,
+        env: { ROBINHOOD_ALLOW_LIVE_WRITE: "1" },
+      }).allowed,
+    ).toBe(true);
   });
 
   it("MAP INTEGRITY: every write-only route carries a write-class risk", () => {
     const writeRisks = new Set(["write-safe", "write-mutate", "write-or-sensitive", "destructive"]);
     const readVerbs = new Set(["GET", "HEAD"]);
-    const offenders = loadBrokerageRoutes().filter((r) => {
-      const methods = (r.methods ?? []).map((m) => m.toUpperCase());
-      if (methods.length === 0) return false; // legacy method-less entries are exempt
-      const allWrite = methods.every((m) => !readVerbs.has(m));
-      return allWrite && !writeRisks.has(r.risk);
-    }).map((r) => `${r.methods?.join("/")} ${r.url} [risk=${r.risk}]`);
-    expect(offenders, `write-verb routes mis-classified as non-write:\n${offenders.join("\n")}`).toEqual([]);
+    const offenders = loadBrokerageRoutes()
+      .filter((r) => {
+        const methods = (r.methods ?? []).map((m) => m.toUpperCase());
+        if (methods.length === 0) return false; // legacy method-less entries are exempt
+        const allWrite = methods.every((m) => !readVerbs.has(m));
+        return allWrite && !writeRisks.has(r.risk);
+      })
+      .map((r) => `${r.methods?.join("/")} ${r.url} [risk=${r.risk}]`);
+    expect(
+      offenders,
+      `write-verb routes mis-classified as non-write:\n${offenders.join("\n")}`,
+    ).toEqual([]);
   });
 });
 
@@ -642,20 +764,32 @@ describe("Options analytics helpers", () => {
 
   it("flags a stale/after-hours ask-collar but passes a tight live quote", () => {
     // The real ARKG after-hours capture: ask $92.80 against a ~$33.82 reference -> stale.
-    const stale = collarSanity({ ask_price: "92.800000", bid_price: "0.010000", last_trade_price: "33.820000" });
+    const stale = collarSanity({
+      ask_price: "92.800000",
+      bid_price: "0.010000",
+      last_trade_price: "33.820000",
+    });
     expect(stale.stale).toBe(true);
     expect(stale.ref).toBeCloseTo(33.82, 2);
     expect(stale.deviationPct).toBeCloseTo(174.4, 0);
 
     // A normal tight market quote (ask ~0.1% over last) is NOT stale.
-    const tight = collarSanity({ ask_price: "34.02", bid_price: "33.98", last_trade_price: "34.00" });
+    const tight = collarSanity({
+      ask_price: "34.02",
+      bid_price: "33.98",
+      last_trade_price: "34.00",
+    });
     expect(tight.stale).toBe(false);
     expect(tight.deviationPct).toBeLessThan(1);
   });
 
   it("prefers extended-hours last, falls back to mid, and never blocks on a missing quote", () => {
     // Extended-hours last beats the (older) regular last as the reference.
-    const eh = collarSanity({ ask_price: "40", last_extended_hours_trade_price: "39", last_trade_price: "10" });
+    const eh = collarSanity({
+      ask_price: "40",
+      last_extended_hours_trade_price: "39",
+      last_trade_price: "10",
+    });
     expect(eh.ref).toBe(39);
     expect(eh.stale).toBe(false);
 
@@ -679,48 +813,91 @@ describe("Options analytics helpers", () => {
     const pool = [ordersGet, ordersPost];
 
     // Exact method match wins regardless of order in the pool.
-    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "POST")).toBe(ordersPost);
-    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "GET")).toBe(ordersGet);
+    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "POST")).toBe(
+      ordersPost,
+    );
+    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "GET")).toBe(
+      ordersGet,
+    );
 
     // Forced WRITE verb with only a GET route in a method-aware pool -> undefined (NOT the GET route).
     // This is the regression guard for the CLI/MCP resolver divergence that mis-routed writes to reads.
-    expect(selectRouteByQueryAndMethod([ordersGet], "https://api.robinhood.com/orders/", "POST")).toBeUndefined();
-    expect(selectRouteByQueryAndMethod([ordersGet], "https://api.robinhood.com/orders/", "DELETE")).toBeUndefined();
+    expect(
+      selectRouteByQueryAndMethod([ordersGet], "https://api.robinhood.com/orders/", "POST"),
+    ).toBeUndefined();
+    expect(
+      selectRouteByQueryAndMethod([ordersGet], "https://api.robinhood.com/orders/", "DELETE"),
+    ).toBeUndefined();
 
     // GET stays permissive against a method-aware pool (reads must not break).
-    expect(selectRouteByQueryAndMethod([ordersPost], "https://api.robinhood.com/orders/", "GET")).toBe(ordersPost);
+    expect(
+      selectRouteByQueryAndMethod([ordersPost], "https://api.robinhood.com/orders/", "GET"),
+    ).toBe(ordersPost);
 
     // Legacy entries without `methods` keep the permissive fallback even for a write verb.
     const legacy = [{ url: "https://api.robinhood.com/legacy/" }];
-    expect(selectRouteByQueryAndMethod(legacy, "https://api.robinhood.com/legacy/", "POST")).toBe(legacy[0]);
+    expect(selectRouteByQueryAndMethod(legacy, "https://api.robinhood.com/legacy/", "POST")).toBe(
+      legacy[0],
+    );
   });
 
   it("classifies Robinhood error bodies into the retry/remedy taxonomy", () => {
     expect(classifyRobinhoodError(200, "{}").kind).toBe("ok");
-    const rl = classifyRobinhoodError(429, JSON.stringify({ detail: "Too many requests. Try again in 48 seconds." }));
+    const rl = classifyRobinhoodError(
+      429,
+      JSON.stringify({ detail: "Too many requests. Try again in 48 seconds." }),
+    );
     expect(rl.kind).toBe("rate_limited");
     expect(rl.retryable).toBe(true);
     expect(rl.retryAfterMs).toBe(50000); // 48 + 2s, in ms
-    expect(classifyRobinhoodError(400, JSON.stringify({ detail: "You do not have enough overnight buying power to place this order." })).kind).toBe("overnight_buying_power");
-    expect(classifyRobinhoodError(400, JSON.stringify({ detail: "Price does not satisfy the min tick value." })).kind).toBe("below_min_tick");
-    expect(classifyRobinhoodError(400, JSON.stringify({ detail: "Your app version is missing important stock trading updates." })).kind).toBe("app_version_gate");
+    expect(
+      classifyRobinhoodError(
+        400,
+        JSON.stringify({
+          detail: "You do not have enough overnight buying power to place this order.",
+        }),
+      ).kind,
+    ).toBe("overnight_buying_power");
+    expect(
+      classifyRobinhoodError(
+        400,
+        JSON.stringify({ detail: "Price does not satisfy the min tick value." }),
+      ).kind,
+    ).toBe("below_min_tick");
+    expect(
+      classifyRobinhoodError(
+        400,
+        JSON.stringify({ detail: "Your app version is missing important stock trading updates." }),
+      ).kind,
+    ).toBe("app_version_gate");
     expect(classifyRobinhoodError(401, "{}").kind).toBe("unauthorized");
     expect(classifyRobinhoodError(401, "{}").retryable).toBe(true);
   });
 
   it("retries a 429 with the server-directed cooldown, then succeeds (same request)", async () => {
-    const route = loadBrokerageRoutes().find((candidate) => candidate.url === "https://api.robinhood.com/accounts/");
+    const route = loadBrokerageRoutes().find(
+      (candidate) => candidate.url === "https://api.robinhood.com/accounts/",
+    );
     const plan = planBrokerageRequest({ route: route! });
     let calls = 0;
     const slept: number[] = [];
     const result = await executeBrokerageRequest(plan, {
       token: "t",
-      sleepImpl: async (ms) => { slept.push(ms); },
+      sleepImpl: async (ms) => {
+        slept.push(ms);
+      },
       fetchImpl: async () => {
         calls++;
-        if (calls < 3) return new Response(JSON.stringify({ detail: "Too many requests. Try again in 10 seconds." }), { status: 429 });
-        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
-      }
+        if (calls < 3)
+          return new Response(
+            JSON.stringify({ detail: "Too many requests. Try again in 10 seconds." }),
+            { status: 429 },
+          );
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
     });
     expect(calls).toBe(3); // 429, 429, then 200
     expect(slept).toEqual([12000, 12000]); // 10 + 2s each, in ms — no real waiting
@@ -728,19 +905,30 @@ describe("Options analytics helpers", () => {
   });
 
   it("does not apply the per-request timeout to a server-directed 429 cooldown wait", async () => {
-    const route = loadBrokerageRoutes().find((candidate) => candidate.url === "https://api.robinhood.com/accounts/");
+    const route = loadBrokerageRoutes().find(
+      (candidate) => candidate.url === "https://api.robinhood.com/accounts/",
+    );
     const plan = planBrokerageRequest({ route: route! });
     let calls = 0;
     const slept: number[] = [];
     const result = await executeBrokerageRequest(plan, {
       token: "t",
       timeoutMs: 30_000,
-      sleepImpl: async (ms) => { slept.push(ms); },
+      sleepImpl: async (ms) => {
+        slept.push(ms);
+      },
       fetchImpl: async () => {
         calls++;
-        if (calls === 1) return new Response(JSON.stringify({ detail: "Too many requests. Try again in 48 seconds." }), { status: 429 });
-        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
-      }
+        if (calls === 1)
+          return new Response(
+            JSON.stringify({ detail: "Too many requests. Try again in 48 seconds." }),
+            { status: 429 },
+          );
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
     });
     expect(calls).toBe(2);
     expect(slept).toEqual([50000]); // 48 + 2s grace; longer than the default 30s request timeout.
@@ -752,18 +940,22 @@ describe("Options analytics helpers", () => {
     const pool = [
       { url: "https://api.robinhood.com/orders/", methods: ["GET", "POST"] },
       { url: "https://api.robinhood.com/options/orders/", methods: ["GET", "POST"] },
-      { url: "https://nummus.robinhood.com/orders/", methods: ["GET"] }
+      { url: "https://nummus.robinhood.com/orders/", methods: ["GET"] },
     ];
     // A substring query (no exact URL match) that resolves to >1 distinct URL must throw, not guess.
     expect(() => selectRouteByQueryAndMethod(pool, "orders/", "GET")).toThrow(/Ambiguous route/);
     // An EXACT URL match disambiguates even though the substring would have been ambiguous.
-    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "POST").url).toBe("https://api.robinhood.com/orders/");
+    expect(selectRouteByQueryAndMethod(pool, "https://api.robinhood.com/orders/", "POST").url).toBe(
+      "https://api.robinhood.com/orders/",
+    );
     // Method filtering can also disambiguate: only one route advertises POST here.
     const pool2 = [
       { url: "https://api.robinhood.com/orders/", methods: ["POST"] },
-      { url: "https://api.robinhood.com/orders/reads/", methods: ["GET"] }
+      { url: "https://api.robinhood.com/orders/reads/", methods: ["GET"] },
     ];
-    expect(selectRouteByQueryAndMethod(pool2, "orders", "POST").url).toBe("https://api.robinhood.com/orders/");
+    expect(selectRouteByQueryAndMethod(pool2, "orders", "POST").url).toBe(
+      "https://api.robinhood.com/orders/",
+    );
   });
 });
 

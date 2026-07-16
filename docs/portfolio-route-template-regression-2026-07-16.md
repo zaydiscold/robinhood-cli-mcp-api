@@ -87,7 +87,7 @@ loss headline when fully priced holdings show the opposite direction.
 - Repaired route count: 368
 - Broken live portfolio: 168 mispriced positions
 - Repaired live portfolio: 168 priced positions, 86 underlyings, zero mispriced
-- Verification: 434 CLI tests + 16 MCP tests passed; quality and API-map contracts passed
+- Verification: 437 CLI tests + 18 MCP tests passed; quality and API-map contracts passed
 
 No account numbers, credentials, cookies, order identifiers, or raw private brokerage
 responses are stored in this document.
@@ -99,6 +99,10 @@ responses are stored in this document.
 - API-map tests assert that the seven first-class query-template routes survive.
 - Portfolio tests pin priced-position P&L, after-hours account deltas, missing-mark
   degradation, and the diagnostic-only account-equity delta.
+- New portfolio snapshots use schema version 2. Snapshot diffs understand both the
+  legacy account-delta schema and the priced-position schema, and compare a v1/v2
+  pair on the regular-close equity basis so after-hours movement is not counted as
+  a false portfolio-value change.
 - `SKILL.md` documents the query-template invariant and live portfolio acceptance
   check.
 
@@ -108,7 +112,7 @@ responses are stored in this document.
 node scripts/test-cdp-capture.mjs
 corepack pnpm test
 corepack pnpm quality
-python3 scripts/check-skill-token-budget.py
+python3 scripts/check-skill-integrity.py
 node scripts/equity-buy.mjs --preflight
 robinhood-cli portfolio --top 0 --json
 hermes mcp test robinhood-cli

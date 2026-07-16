@@ -6,6 +6,7 @@ import {
   appendPortfolioSnapshot,
   buildOptionsWorkbench,
   diffPortfolioSnapshots,
+  type PortfolioSnapshot,
   redactShareSafe,
   readPortfolioSnapshots,
   repositoryRoot,
@@ -76,31 +77,58 @@ describe("portfolio time machine", () => {
 
   it("persists private JSONL snapshots and reports position drift", () => {
     const path = join(mkdtempSync(join(tmpdir(), "rh-snap-")), "snapshots.jsonl");
-    const before: any = {
+    const before: PortfolioSnapshot = {
       version: 1,
       id: "a",
       capturedAt: "2026-01-01T00:00:00Z",
       source: "portfolio",
       data: {
-        totals: { equity: 100, day: 1, afterHours: 0 },
-        drivers: [{ kind: "equity", symbol: "AAPL", value: 50, dayUsd: 1, qty: 1 }],
+        totals: { equityUsd: 100, dayChangeUsd: 50, afterHoursChangeUsd: 0 },
+        reconciliation: { driverDayChangeUsd: 1 },
+        byPosition: [
+          {
+            accountNumber: "111",
+            kind: "equity",
+            symbol: "AAPL",
+            name: "AAPL",
+            marketValueUsd: 50,
+            dayChangeUsd: 1,
+            qty: 1,
+          },
+        ],
       },
     };
-    const after: any = {
-      version: 1,
+    const after: PortfolioSnapshot = {
+      version: 2,
       id: "b",
       capturedAt: "2026-01-02T00:00:00Z",
       source: "portfolio",
       data: {
-        totals: { equity: 110, day: 3, afterHours: 1 },
-        drivers: [{ kind: "equity", symbol: "AAPL", value: 60, dayUsd: 2, qty: 1 }],
+        totals: {
+          equityUsd: 108,
+          regularCloseEquityUsd: 110,
+          dayChangeUsd: 3,
+          afterHoursChangeUsd: -2,
+        },
+        byPosition: [
+          {
+            accountNumber: "111",
+            kind: "equity",
+            symbol: "AAPL",
+            name: "AAPL",
+            marketValueUsd: 60,
+            dayChangeUsd: 2,
+            qty: 1,
+          },
+        ],
       },
     };
     appendPortfolioSnapshot(path, before);
     appendPortfolioSnapshot(path, after);
     expect(readPortfolioSnapshots(path)).toHaveLength(2);
     expect(diffPortfolioSnapshots(before, after)).toMatchObject({
-      totals: { equityDelta: 10, dayDelta: 2, afterHoursDelta: 1 },
+      comparison: { crossVersion: true, equityBasis: "regular-close", dayBasis: "priced-position" },
+      totals: { equityDelta: 10, dayDelta: 2, afterHoursDelta: -2 },
       positions: [{ valueDelta: 10 }],
     });
   });

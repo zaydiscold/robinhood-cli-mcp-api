@@ -299,6 +299,12 @@
 # read GET https://api.robinhood.com/instruments/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/instruments/'
 
+# read GET https://api.robinhood.com/instruments/?ids={ids}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/instruments/?ids={ids}'
+
+# read GET https://api.robinhood.com/instruments/?symbol={symbol}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/instruments/?symbol={symbol}'
+
 # read GET https://api.robinhood.com/instruments/{0}/popularity/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/instruments/{0}/popularity/'
 
@@ -371,6 +377,9 @@
 # read GET https://api.robinhood.com/marketdata/historicals/{id}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/historicals/{id}/'
 
+# read GET https://api.robinhood.com/marketdata/historicals/{symbol}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/historicals/{symbol}/'
+
 # read GET https://api.robinhood.com/marketdata/insiders/summary/{id}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/insiders/summary/{id}/'
 
@@ -379,6 +388,9 @@
 
 # read GET https://api.robinhood.com/marketdata/options/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/options/'
+
+# read GET https://api.robinhood.com/marketdata/options/?ids={ids}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/options/?ids={ids}'
 
 # read GET https://api.robinhood.com/marketdata/options/chains/stats/v1/{uuid}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/options/chains/stats/v1/{uuid}/'
@@ -394,6 +406,9 @@
 
 # read GET https://api.robinhood.com/marketdata/quotes/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/quotes/'
+
+# read GET https://api.robinhood.com/marketdata/quotes/?ids={ids}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/quotes/?ids={ids}'
 
 # read GET https://api.robinhood.com/marketdata/quotes/{id}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/marketdata/quotes/{id}/'
@@ -515,6 +530,9 @@
 # read GET https://api.robinhood.com/options/instruments/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/instruments/'
 
+# read GET https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}'
+
 # read GET https://api.robinhood.com/options/instruments/{0}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/instruments/{0}/'
 
@@ -601,6 +619,9 @@
 
 # sensitive-read GET https://api.robinhood.com/positions/?account_number=
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/positions/?account_number='
+
+# sensitive-read GET https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true'
 
 # read GET https://api.robinhood.com/quotes/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/quotes/'

@@ -9263,6 +9263,156 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/instruments/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
+    "queryKeys": [
+      "ids"
+    ],
+    "fields": [
+      "account_type_tradabilities",
+      "affiliate",
+      "affiliate_tradability",
+      "all_day_tradability",
+      "bloomberg_unique",
+      "car_required",
+      "country",
+      "day_trade_ratio",
+      "default_collar_fraction",
+      "default_preset_percent_limit",
+      "extended_hours_fractional_tradability",
+      "fractional_tradability",
+      "fundamentals",
+      "high_risk_maintenance_ratio",
+      "id",
+      "internal_halt_details",
+      "internal_halt_end_time",
+      "internal_halt_reason",
+      "internal_halt_sessions",
+      "internal_halt_source",
+      "internal_halt_start_time",
+      "ipo_access_cob_deadline",
+      "ipo_access_status",
+      "ipo_access_supports_dsp",
+      "ipo_roadshow_url",
+      "ipo_s1_url",
+      "ipoa_start_date",
+      "is_high_investment_risk",
+      "is_spac",
+      "is_test",
+      "issuer_type",
+      "list_date",
+      "low_risk_maintenance_ratio",
+      "maintenance_ratio",
+      "margin_initial_ratio",
+      "market",
+      "min_tick_size",
+      "name",
+      "notional_estimated_quantity_decimals",
+      "otc_market_tier",
+      "quote",
+      "reserved_buying_power_percent_immediate",
+      "reserved_buying_power_percent_queued",
+      "rhs_tradability",
+      "short_selling_tradability",
+      "simple_name",
+      "splits",
+      "state",
+      "symbol",
+      "tax_security_type",
+      "tradability",
+      "tradable_chain_id",
+      "tradeable",
+      "type",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
+  },
+  {
+    "url": "https://api.robinhood.com/instruments/?symbol={symbol}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution",
+    "queryKeys": [
+      "symbol"
+    ],
+    "fields": [
+      "account_type_tradabilities",
+      "affiliate",
+      "affiliate_tradability",
+      "all_day_tradability",
+      "bloomberg_unique",
+      "car_required",
+      "country",
+      "day_trade_ratio",
+      "default_collar_fraction",
+      "default_preset_percent_limit",
+      "extended_hours_fractional_tradability",
+      "fractional_tradability",
+      "fundamentals",
+      "high_risk_maintenance_ratio",
+      "id",
+      "internal_halt_details",
+      "internal_halt_end_time",
+      "internal_halt_reason",
+      "internal_halt_sessions",
+      "internal_halt_source",
+      "internal_halt_start_time",
+      "ipo_access_cob_deadline",
+      "ipo_access_status",
+      "ipo_access_supports_dsp",
+      "ipo_roadshow_url",
+      "ipo_s1_url",
+      "ipoa_start_date",
+      "is_high_investment_risk",
+      "is_spac",
+      "is_test",
+      "issuer_type",
+      "list_date",
+      "low_risk_maintenance_ratio",
+      "maintenance_ratio",
+      "margin_initial_ratio",
+      "market",
+      "min_tick_size",
+      "name",
+      "notional_estimated_quantity_decimals",
+      "otc_market_tier",
+      "quote",
+      "reserved_buying_power_percent_immediate",
+      "reserved_buying_power_percent_queued",
+      "rhs_tradability",
+      "short_selling_tradability",
+      "simple_name",
+      "splits",
+      "state",
+      "symbol",
+      "tax_security_type",
+      "tradability",
+      "tradable_chain_id",
+      "tradeable",
+      "type",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
+  },
+  {
     "url": "https://api.robinhood.com/instruments/{0}/popularity/",
     "host": "api.robinhood.com",
     "categories": [
@@ -11138,6 +11288,31 @@
     "fieldsShape": "object"
   },
   {
+    "url": "https://api.robinhood.com/marketdata/historicals/{symbol}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "cdp-2026-06-04-injected-capture (observed; price historicals per symbol)",
+    "seenOn": [
+      "option-ticket"
+    ],
+    "queryKeys": [
+      "bounds",
+      "interval",
+      "span"
+    ],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [],
+    "fieldsSource": "undocumented"
+  },
+  {
     "url": "https://api.robinhood.com/marketdata/insiders/summary/{id}/",
     "host": "api.robinhood.com",
     "categories": [
@@ -11624,6 +11799,66 @@
     "requestTypes": [
       "FETCH"
     ]
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/options/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "options"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: templated ids= form of marketdata/options for single/batch option mark (adjusted_mark_price) lookup; ids key from captured queryKeys",
+    "seenOn": [
+      "portfolio-options"
+    ],
+    "queryKeys": [
+      "ids"
+    ],
+    "fields": [
+      "adjusted_mark_price",
+      "adjusted_mark_price_round_down",
+      "ask_price",
+      "ask_size",
+      "bid_price",
+      "bid_size",
+      "break_even_price",
+      "chance_of_profit_long",
+      "chance_of_profit_short",
+      "delta",
+      "gamma",
+      "high_fill_rate_buy_price",
+      "high_fill_rate_sell_price",
+      "high_price",
+      "implied_volatility",
+      "instrument",
+      "instrument_id",
+      "last_trade_price",
+      "last_trade_size",
+      "latest_quote_session",
+      "low_fill_rate_buy_price",
+      "low_fill_rate_sell_price",
+      "low_price",
+      "mark_price",
+      "occ_symbol",
+      "open_interest",
+      "previous_close_date",
+      "previous_close_price",
+      "pricing_model",
+      "reg_session",
+      "rho",
+      "state",
+      "symbol",
+      "theta",
+      "updated_at",
+      "vega",
+      "volume"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/marketdata/options/chains/stats/v1/{uuid}/",
@@ -12276,6 +12511,53 @@
       "schemaVersion": 2
     },
     "verificationStatus": "captured"
+  },
+  {
+    "url": "https://api.robinhood.com/marketdata/quotes/?ids={ids}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "marketdata",
+      "quotes"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes",
+    "queryKeys": [
+      "ids"
+    ],
+    "fields": [
+      "adjusted_previous_close",
+      "ask_mic",
+      "ask_price",
+      "ask_size",
+      "ask_source",
+      "bid_mic",
+      "bid_price",
+      "bid_size",
+      "bid_source",
+      "has_traded",
+      "instrument",
+      "instrument_id",
+      "last_extended_hours_trade_price",
+      "last_non_reg_trade_price",
+      "last_non_reg_trade_price_source",
+      "last_trade_price",
+      "last_trade_price_source",
+      "previous_close",
+      "previous_close_date",
+      "state",
+      "symbol",
+      "trading_halted",
+      "updated_at",
+      "venue_ask_time",
+      "venue_bid_time",
+      "venue_last_non_reg_trade_time",
+      "venue_last_trade_time"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
   },
   {
     "url": "https://api.robinhood.com/marketdata/quotes/{id}/",
@@ -15749,6 +16031,47 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "instruments",
+      "reference"
+    ],
+    "risk": "read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id",
+    "queryKeys": [
+      "chain_id",
+      "expiration_dates",
+      "type"
+    ],
+    "fields": [
+      "chain_id",
+      "chain_symbol",
+      "created_at",
+      "expiration_date",
+      "id",
+      "issue_date",
+      "long_strategy_code",
+      "min_ticks",
+      "rhs_tradability",
+      "sellout_datetime",
+      "short_strategy_code",
+      "state",
+      "strike_price",
+      "tradability",
+      "type",
+      "underlying_type",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "verified",
+    "fieldsShape": "list"
+  },
+  {
     "url": "https://api.robinhood.com/options/instruments/{0}/",
     "host": "api.robinhood.com",
     "categories": [
@@ -18228,6 +18551,40 @@
       "FETCH",
       "XHR"
     ]
+  },
+  {
+    "url": "https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true",
+    "host": "api.robinhood.com",
+    "categories": [
+      "account"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "self-extension 2026-05-28: templated account_number form so any account (individual, Roth/IRA, etc.) can be queried, not just primary; placeholder filled via --param",
+    "queryKeys": [
+      "account_number",
+      "nonzero"
+    ],
+    "fields": [
+      "account",
+      "account_number",
+      "average_buy_price",
+      "instrument",
+      "instrument_id",
+      "intraday_average_buy_price",
+      "intraday_quantity",
+      "pending_average_buy_price",
+      "quantity",
+      "shares_held_for_buys",
+      "shares_held_for_options_collateral",
+      "shares_held_for_sells",
+      "updated_at",
+      "url"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object"
   },
   {
     "url": "https://api.robinhood.com/quotes/",

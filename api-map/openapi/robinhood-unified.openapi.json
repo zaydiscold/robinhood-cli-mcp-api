@@ -17692,7 +17692,9 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
-          "https://api.robinhood.com/instruments/"
+          "https://api.robinhood.com/instruments/",
+          "https://api.robinhood.com/instruments/?ids={ids}",
+          "https://api.robinhood.com/instruments/?symbol={symbol}"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
@@ -21861,6 +21863,79 @@
         "x-robinhood-source": "brokerage-browser-map"
       }
     },
+    "/marketdata/historicals/{symbol}/": {
+      "get": {
+        "operationId": "brokerage_get_marketdata_historicals_symbol",
+        "summary": "Marketdata brokerage route",
+        "description": "Personal route map entry. Risk: read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "marketdata"
+        ],
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder symbol. Mapped route name; live verification should replace with a semantic parameter name when known."
+          },
+          {
+            "name": "bounds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "span",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/marketdata/historicals/{symbol}/"
+        ],
+        "x-robinhood-sources": [
+          "cdp-2026-06-04-injected-capture (observed",
+          "price historicals per symbol)"
+        ],
+        "x-robinhood-seen-on": [
+          "option-ticket"
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
     "/marketdata/insiders/summary/{id}/": {
       "get": {
         "operationId": "brokerage_get_marketdata_insiders_summary_id",
@@ -22338,7 +22413,8 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
-          "https://api.robinhood.com/marketdata/options/"
+          "https://api.robinhood.com/marketdata/options/",
+          "https://api.robinhood.com/marketdata/options/?ids={ids}"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
@@ -23068,7 +23144,8 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
-          "https://api.robinhood.com/marketdata/quotes/"
+          "https://api.robinhood.com/marketdata/quotes/",
+          "https://api.robinhood.com/marketdata/quotes/?ids={ids}"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
@@ -27423,7 +27500,8 @@
           "api.robinhood.com"
         ],
         "x-robinhood-route-templates": [
-          "https://api.robinhood.com/options/instruments/"
+          "https://api.robinhood.com/options/instruments/",
+          "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",
@@ -31977,7 +32055,8 @@
         ],
         "x-robinhood-route-templates": [
           "https://api.robinhood.com/positions/",
-          "https://api.robinhood.com/positions/?account_number="
+          "https://api.robinhood.com/positions/?account_number=",
+          "https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true"
         ],
         "x-robinhood-sources": [
           "cdp-2026-05-26-stock-account-sanitized",

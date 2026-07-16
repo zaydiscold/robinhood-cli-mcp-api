@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   assertSanitizedCapture,
+  canonicalOperationKey,
   capturePolicy,
   mergeSchemas,
   normalizePath,
@@ -18,22 +19,26 @@ if (!captureArg) {
 const capturePath = resolve(captureArg);
 const captureDate =
   capturePath.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? new Date().toISOString().slice(0, 10);
-const routesPath = resolve(root, "api-map/brokerage-routes.json");
-const browserRoutesPath = resolve(root, `api-map/browser-cdp-routes-${captureDate}.json`);
+const routesPath = process.env.ROBINHOOD_ROUTES_PATH
+  ? resolve(process.env.ROBINHOOD_ROUTES_PATH)
+  : resolve(root, "api-map/brokerage-routes.json");
+const browserRoutesPath = process.env.ROBINHOOD_BROWSER_ROUTES_PATH
+  ? resolve(process.env.ROBINHOOD_BROWSER_ROUTES_PATH)
+  : resolve(root, `api-map/browser-cdp-routes-${captureDate}.json`);
 
 const capture = assertSanitizedCapture(JSON.parse(await readFile(capturePath, "utf8")));
 let existingRoutes = JSON.parse(await readFile(routesPath, "utf8"));
 
-function routeUrl(origin, pathname) {
-  return `${origin}${normalizePath(pathname)}`;
-}
-
-function canonicalUrl(url) {
-  const parsed = new URL(url);
-  const path = decodeURIComponent(parsed.pathname)
-    .replace(/\{[^}]*\}/g, "{param}")
-    .replace(/\/+$/, "/");
-  return `${parsed.origin}${path}`;
+function routeUrl(origin, pathname, queryKeys = []) {
+  const base = `${origin}${normalizePath(pathname)}`;
+  const query = [...new Set(queryKeys)]
+    .sort()
+    .map((key) => {
+      const token = String(key).replace(/[^a-zA-Z0-9_-]/g, "_");
+      return `${encodeURIComponent(key)}={${token}}`;
+    })
+    .join("&");
+  return query ? `${base}?${query}` : base;
 }
 
 function categoriesFor(pathname) {
@@ -126,7 +131,8 @@ for (const item of capture.routeIndex ?? []) {
   const requestType = String(item.type ?? "").toUpperCase();
   if (requestType && !requestType.includes("XHR") && !requestType.includes("FETCH")) continue;
   const normalizedPath = normalizePath(item.url.path);
-  const key = `${item.method} ${item.url.origin}${normalizedPath}`;
+  const queryKeys = [...new Set(item.url.queryKeys ?? [])].sort();
+  const key = canonicalOperationKey(item.method, routeUrl(item.url.origin, normalizedPath, queryKeys));
   const group = grouped.get(key) ?? {
     methodSet: new Set(),
     typeSet: new Set(),
@@ -139,7 +145,7 @@ for (const item of capture.routeIndex ?? []) {
     responseBodySchemas: {},
     requiresAuth: false,
     observationCount: 0,
-    url: { ...item.url, path: normalizedPath },
+    url: { ...item.url, path: normalizedPath, queryKeys },
   };
   group.methodSet.add(item.method);
   if (item.type) group.typeSet.add(item.type);
@@ -169,7 +175,7 @@ const browserRoutes = [...grouped.values()]
     const categories = categoriesFor(group.url.path);
     const fieldEvidence = fieldSummary(group.responseBodySchemas);
     return {
-      url: routeUrl(group.url.origin, group.url.path),
+      url: routeUrl(group.url.origin, group.url.path, queryKeys),
       host: new URL(group.url.origin).hostname,
       categories,
       risk: riskFor({ url: group.url, methods }, categories),
@@ -264,10 +270,10 @@ const byOperation = new Map();
 for (const existing of existingRoutes) {
   const methods = existing.methods?.length ? existing.methods : ["GET"];
   if (methods.length !== 1) continue;
-  byOperation.set(`${methods[0]} ${canonicalUrl(existing.url)}`, existing);
+  byOperation.set(canonicalOperationKey(methods[0], existing.url), existing);
 }
 for (const route of browserRoutes) {
-  const key = `${route.methods[0]} ${canonicalUrl(route.url)}`;
+  const key = canonicalOperationKey(route.methods[0], route.url);
   const existing = byOperation.get(key);
   if (existing) {
     mergeRouteEvidence(existing, route);
@@ -284,7 +290,7 @@ for (const route of existingRoutes) {
     dedupedRoutes.push(route);
     continue;
   }
-  const key = `${route.methods[0]} ${canonicalUrl(route.url)}`;
+  const key = canonicalOperationKey(route.methods[0], route.url);
   const existing = exactOperations.get(key);
   if (existing) mergeRouteEvidence(existing, route);
   else {

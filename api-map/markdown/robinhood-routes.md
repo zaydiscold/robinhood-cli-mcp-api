@@ -4,10 +4,10 @@ Source: official Robinhood Crypto Trading OpenAPI plus sanitized authenticated C
 
 Crypto operations are official Robinhood-published endpoints and should use Ed25519 signing. Brokerage/account operations are browser-backed route-map entries and use caller-owned brokerage token or browser cookie auth.
 
-Current count: 377 route entries.
+Current count: 384 route entries.
 Official Crypto route entries: 16.
-Brokerage/account route entries: 361.
-Risk counts: destructive=11, read=99, sensitive-read=236, write-mutate=13, write-or-sensitive=7, write-safe=11.
+Brokerage/account route entries: 368.
+Risk counts: destructive=11, read=105, sensitive-read=237, write-mutate=13, write-or-sensitive=7, write-safe=11.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -111,6 +111,8 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/inbox/threads/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/indexes/` |
 | no | read | GET | instruments, marketdata, reference | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes; self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution | `https://api.robinhood.com/instruments/` |
+| no | read | GET | instruments, reference | api.robinhood.com | self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes | `https://api.robinhood.com/instruments/?ids={ids}` |
+| no | read | GET | instruments, reference | api.robinhood.com | self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution | `https://api.robinhood.com/instruments/?symbol={symbol}` |
 | no | read | inferred | marketdata | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/instruments/{0}/popularity/` |
 | no | read | inferred | marketdata | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/instruments/{0}/splits/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/instruments/{id}/shorting/` |
@@ -135,14 +137,17 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/marketdata/hedgefunds/transactions/{id}/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/marketdata/historicals/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-06-04-injected-capture (observed; cdp-2026-07-14-authenticated-sanitized-v2; price historicals per symbol) | `https://api.robinhood.com/marketdata/historicals/{id}/` |
+| no | read | GET | marketdata | api.robinhood.com | cdp-2026-06-04-injected-capture (observed; price historicals per symbol) | `https://api.robinhood.com/marketdata/historicals/{symbol}/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/marketdata/insiders/summary/{id}/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/marketdata/insiders/transactions/{id}/` |
 | no | read | GET | marketdata, options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; ids key from captured queryKeys; self-extension 2026-05-28: templated ids= form of marketdata/options for single/batch option mark (adjusted_mark_price) lookup | `https://api.robinhood.com/marketdata/options/` |
+| no | read | GET | marketdata, options | api.robinhood.com | self-extension 2026-05-28: templated ids= form of marketdata/options for single/batch option mark (adjusted_mark_price) lookup; ids key from captured queryKeys | `https://api.robinhood.com/marketdata/options/?ids={ids}` |
 | no | read | GET | marketdata, options | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/marketdata/options/chains/stats/v1/{uuid}/` |
 | no | read | inferred | marketdata, options | api.robinhood.com | live-verified-2026-06-11 (batch daily closes for held contracts; powers pre-open day attribution in computePortfolioPnl) | `https://api.robinhood.com/marketdata/options/historicals/?ids={ids}&interval={interval}&span={span}` |
 | no | read | inferred | marketdata, options | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/marketdata/options/historicals/{0}/` |
 | no | read | GET | marketdata, options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/marketdata/options/strategy/quotes/` |
 | no | read | GET | marketdata, quotes | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes | `https://api.robinhood.com/marketdata/quotes/` |
+| no | read | GET | marketdata, quotes | api.robinhood.com | self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes | `https://api.robinhood.com/marketdata/quotes/?ids={ids}` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/marketdata/quotes/{id}/` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/marketdata/token/v1/` |
 | no | read | inferred | marketdata | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/markets/` |
@@ -183,6 +188,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | sensitive-read | GET | options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/options/events/` |
 | no | read | GET | options, trading | api.robinhood.com | cdp-2026-06-04-dram-option-order-flow (observed; per-order fee schedule) | `https://api.robinhood.com/options/fees/` |
 | no | read | GET | instruments, marketdata, options, reference | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id | `https://api.robinhood.com/options/instruments/` |
+| no | read | GET | options, instruments, reference | api.robinhood.com | self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id | `https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}` |
 | no | read | inferred | marketdata, options | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/options/instruments/{0}/` |
 | no | read | GET | options, roll | api.robinhood.com | cdp-2026-06-23-googl-native-roll (observed + live-verified response) | `https://api.robinhood.com/options/maximum_rollable_quantity/{strategy_code}/` |
 | no | sensitive-read | GET | account, options, settings | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2; web-ui-capture-2026-06-03 (account/settings/investing) | `https://api.robinhood.com/options/option_settings/{account_number}/` |
@@ -212,6 +218,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | sensitive-read | GET | account | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/portfolios/v2/performance/summary` |
 | no | sensitive-read | inferred | account | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/positions/` |
 | no | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; placeholder filled via --param; self-extension 2026-05-28: templated account_number form so any account (individual, Roth/IRA, etc.) can be queried, not just primary | `https://api.robinhood.com/positions/?account_number=` |
+| no | sensitive-read | GET | account | api.robinhood.com | self-extension 2026-05-28: templated account_number form so any account (individual, Roth/IRA, etc.) can be queried, not just primary; placeholder filled via --param | `https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true` |
 | no | read | inferred | marketdata | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/quotes/` |
 | no | read | inferred | marketdata | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/quotes/historicals/` |
 | no | sensitive-read | GET | unknown | api.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/settings/education_state/{id}/` |

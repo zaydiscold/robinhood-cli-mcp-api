@@ -3517,7 +3517,7 @@ registerCapabilityTool(
       return jsonResponse(diffPortfolioSnapshots(snapshots.at(-2)!, snapshots.at(-1)!));
     }
     const snapshot = {
-      version: 1 as const,
+      version: 2 as const,
       id: randomUUID(),
       capturedAt: new Date().toISOString(),
       source: "portfolio" as const,

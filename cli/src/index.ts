@@ -4210,7 +4210,7 @@ program
       return printJson(diffPortfolioSnapshots(snapshots.at(-2)!, snapshots.at(-1)!));
     }
     if (action !== "capture") throw new Error("action must be capture|list|diff");
-    const snapshot = { version: 1 as const, id: randomUUID(), capturedAt: new Date().toISOString(), source: "portfolio" as const, data: await computePortfolioPnl({ accountNumber: opts.account, top: 0 }) };
+    const snapshot = { version: 2 as const, id: randomUUID(), capturedAt: new Date().toISOString(), source: "portfolio" as const, data: await computePortfolioPnl({ accountNumber: opts.account, top: 0 }) };
     appendPortfolioSnapshot(opts.path, snapshot);
     printJson({ path: opts.path, snapshot });
   });

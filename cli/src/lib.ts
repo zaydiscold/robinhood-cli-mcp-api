@@ -3018,8 +3018,10 @@ export interface PortfolioPnlOptions {
  * command and the MCP `robinhood_portfolio` tool (single source per the alignment invariant; the CLI
  * just renders this object, MCP returns it as JSON). Metrics agents get wrong, pinned here:
  *   after-hours Δ = extended_hours_equity − equity        (NOT − previous_close; that's the full day)
- *   day Δ         = equity − adjusted_equity_previous_close (equity_previous_close is "0" per-account)
- * Per-position $ drivers: equity day = qty×(last − adjusted_previous_close), AH = qty×(ext − last);
+ *   regular-session P&L = sum of priced position moves. Do NOT label
+ *     equity − adjusted_equity_previous_close as P&L: that account field can be cash-flow adjusted and
+ *     live-verified to disagree with both Robinhood's chart and the fully priced position book.
+ * Per-position $ P&L: equity day = qty×(last − adjusted_previous_close), AH = qty×(ext − last);
  * option day = (adjusted_mark − previous_close)×100×qty, AH = 0 (options don't print after-hours —
  * mark−last is mid-drift; the account-level extended_hours_equity already captures real index-option AH).
  * Returns a unit-explicit object; never throws on a per-account read failure (degrades + flags).
@@ -3078,82 +3080,34 @@ export async function computePortfolioPnl(
   };
 
   // 2. Per-account top-line + raw positions + buying power, in parallel; a failure degrades to a warning.
-  const perAccount = await Promise.all(
-    accts.map(async (acct) => {
-      const a: any = {
-        acct,
-        label: labelFor(acct),
-        equity: Number.NaN,
-        day: Number.NaN,
-        afterHours: Number.NaN,
-        buyingPower: Number.NaN,
-        equityPositions: [],
-        optionPositions: [],
-        warnings: [] as string[],
-      };
-      try {
-        const p = await getJson("https://api.robinhood.com/portfolios/{account_number}/", {
-          account_number: acct,
-        });
-        const equity = n(p.equity),
-          ext = n(p.extended_hours_equity);
-        const adjPrev = n(p.adjusted_equity_previous_close),
-          rawPrev = n(p.equity_previous_close);
-        const prevClose =
-          Number.isFinite(adjPrev) && adjPrev !== 0
-            ? adjPrev
-            : Number.isFinite(rawPrev) && rawPrev !== 0
-              ? rawPrev
-              : Number.NaN;
-        a.equity = equity;
-        a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
-        a.day =
-          Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
-      } catch (e: any) {
-        a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`);
-      }
-      try {
-        const bp = await getJson(
-          "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
-          { num: acct },
-        );
-        a.buyingPower = n(bp.buying_power);
-      } catch {
-        /* buying power is best-effort; degrade silently */
-      }
-      try {
-        const eq = await getAll(
-          "https://api.robinhood.com/positions/",
-          {},
-          { nonzero: "true", account_number: acct },
-        );
-        a.equityPositions = eq
-          .filter((x: any) => n(x.quantity) > 0)
-          .map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
-      } catch {
-        a.warnings.push(`equity positions read failed (${acct})`);
-      }
-      try {
-        const od = await getAll(
-          "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
-          {},
-          { account_numbers: acct, nonzero: "true" },
-        );
-        a.optionPositions = od
-          .filter((x: any) => n(x.quantity) > 0)
-          .map((x: any) => ({
-            symbol: x.symbol,
-            name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(),
-            oid: x.legs?.[0]?.option_id,
-            qty: n(x.quantity),
-            underlyingType: x.underlying_type ?? null,
-          }));
-      } catch {
-        a.warnings.push(`option positions read failed (${acct})`);
-      }
-      return a;
-    }),
-  );
+  const perAccount = await Promise.all(accts.map(async (acct) => {
+    const a: any = { acct, label: labelFor(acct), equity: Number.NaN, currentEquity: Number.NaN, reportedDay: Number.NaN, day: Number.NaN, afterHours: Number.NaN, buyingPower: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
+    try {
+      const p = await getJson("https://api.robinhood.com/portfolios/{account_number}/", { account_number: acct });
+      const equity = n(p.equity), ext = n(p.extended_hours_equity);
+      const adjPrev = n(p.adjusted_equity_previous_close), rawPrev = n(p.equity_previous_close);
+      const prevClose = Number.isFinite(adjPrev) && (adjPrev !== 0 || equity === 0)
+        ? adjPrev
+        : (Number.isFinite(rawPrev) && (rawPrev !== 0 || equity === 0) ? rawPrev : Number.NaN);
+      a.equity = equity;
+      a.currentEquity = Number.isFinite(ext) ? ext : equity;
+      a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
+      a.reportedDay = Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
+    } catch (e: any) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
+    try {
+      const bp = await getJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", { num: acct });
+      a.buyingPower = n(bp.buying_power);
+    } catch { a.warnings.push(`buying power read failed (${acct})`); }
+    try {
+      const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
+      a.equityPositions = eq.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
+    } catch { a.warnings.push(`equity positions read failed (${acct})`); }
+    try {
+      const od = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
+      a.optionPositions = od.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: n(x.quantity), underlyingType: x.underlying_type ?? null }));
+    } catch { a.warnings.push(`option positions read failed (${acct})`); }
+    return a;
+  }));
 
   // 3. Batch quotes + option marks across all accounts (one ticker quoted once).
   const allEqIds = [
@@ -3170,27 +3124,15 @@ export async function computePortfolioPnl(
     }
     return map;
   };
-  // The batch quote/marks fetch must NOT take down the whole command — the account top-line is fully
-  // computable from portfolios/{num}/ alone. Degrade per-name drivers to a warning on any failure.
+  // The batch quote/marks fetch must NOT take down the whole command. Account value and after-hours
+  // top-lines remain available, but regular-session P&L must degrade rather than falling back to the
+  // cash-flow-adjusted account-equity delta (which is not a market P&L measure).
   const globalWarnings: string[] = [];
-  let quotes = new Map<string, any>(),
-    marks = new Map<string, any>();
-  try {
-    if (allEqIds.length)
-      quotes = await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds);
-  } catch (e: any) {
-    globalWarnings.push(
-      `equity quotes batch failed — per-name drivers degraded; account top-line is authoritative (${(e as Error).message.slice(0, 50)})`,
-    );
-  }
-  try {
-    if (allOptIds.length)
-      marks = await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds);
-  } catch (e: any) {
-    globalWarnings.push(
-      `option marks batch failed — option drivers degraded (${(e as Error).message.slice(0, 50)})`,
-    );
-  }
+  let quotes = new Map<string, any>(), marks = new Map<string, any>();
+  try { if (allEqIds.length) quotes = await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds); }
+  catch (e: any) { globalWarnings.push(`equity quotes batch failed — regular-session P&L and per-name drivers degraded (${(e as Error).message.slice(0, 50)})`); }
+  try { if (allOptIds.length) marks = await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds); }
+  catch (e: any) { globalWarnings.push(`option marks batch failed — option drivers degraded (${(e as Error).message.slice(0, 50)})`); }
 
   // 3b. WINDOW COHERENCE (the pre-open $0-options bug). Between a session close and the next open,
   // marketdata/options/ rolls previous_close_price to the JUST-COMPLETED session while equity quotes
@@ -3256,12 +3198,16 @@ export async function computePortfolioPnl(
     ? {
         phase: "between-sessions",
         sessionDate: optPrevDate,
-        note: `Market not in regular session — 'day' figures are the LAST COMPLETED session (${optPrevDate}); option drivers re-anchored to the ${eqPrevDate} close so they attribute that session instead of $0.`,
+        baselineCloseDate: eqPrevDate,
+        note: `Market not in regular session — option drivers were re-anchored to the ${eqPrevDate} close so they measure the same completed session as equities. The report generation timestamp remains the as-of time.`,
       }
     : {
         phase: "session",
-        sessionDate: eqPrevDate ? `after ${eqPrevDate} close` : null,
-        note: null,
+        sessionDate: null,
+        baselineCloseDate: eqPrevDate,
+        note: eqPrevDate
+          ? `Regular-session position P&L uses the broker's ${eqPrevDate} previous-close baseline. Use generatedAt—not this baseline date—as the report as-of time.`
+          : null,
       };
 
   // 4. Per-position dollar drivers.
@@ -3275,17 +3221,12 @@ export async function computePortfolioPnl(
           ? n(q.last_extended_hours_trade_price)
           : Number.NaN;
       const prev = n(q.adjusted_previous_close ?? q.previous_close);
-      drivers.push({
-        acct: a.acct,
-        label: a.label,
-        kind: "equity",
-        symbol: p.symbol,
-        name: p.symbol,
-        qty: p.qty,
-        value: Number.isFinite(last) ? p.qty * last : Number.NaN,
+      drivers.push({ acct: a.acct, label: a.label, kind: "equity", symbol: p.symbol, name: p.symbol, qty: p.qty,
+        value: Number.isFinite(ext) ? p.qty * ext : (Number.isFinite(last) ? p.qty * last : Number.NaN),
         dayUsd: Number.isFinite(last) && Number.isFinite(prev) ? p.qty * (last - prev) : Number.NaN,
-        ahUsd: Number.isFinite(ext) && Number.isFinite(last) ? p.qty * (ext - last) : Number.NaN,
-      });
+        // No extended-hours print means no observed per-name AH move, not a failed quote. The account-level
+        // extended equity remains authoritative and any unattributed amount is surfaced as AH residual.
+        ahUsd: Number.isFinite(last) ? (Number.isFinite(ext) ? p.qty * (ext - last) : 0) : Number.NaN });
     }
     for (const p of a.optionPositions) {
       const m = marks.get(p.oid) ?? {};
@@ -3317,22 +3258,48 @@ export async function computePortfolioPnl(
 
   // 5. Totals, reconciliation, rollups.
   const sum = (xs: number[]) => xs.filter((x) => Number.isFinite(x)).reduce((s, x) => s + x, 0);
-  const totals = {
-    equity: sum(perAccount.map((a) => a.equity)),
-    day: sum(perAccount.map((a) => a.day)),
-    afterHours: sum(perAccount.map((a) => a.afterHours)),
-  };
-  const failedReads = perAccount.filter((a) => !Number.isFinite(a.equity)).length;
+  const accountNeedsDay = window !== "after-hours";
+  const accountNeedsAfterHours = window !== "day";
+  const mispricedDayPositions = drivers.filter((d) => !Number.isFinite(d.dayUsd)).length;
+  const mispricedAfterHoursPositions = drivers.filter((d) => !Number.isFinite(d.ahUsd)).length;
+  const mispricedPositions = window === "day"
+    ? mispricedDayPositions
+    : window === "after-hours"
+      ? mispricedAfterHoursPositions
+      : drivers.filter((d) => !Number.isFinite(d.dayUsd) || !Number.isFinite(d.ahUsd)).length;
+  for (const a of perAccount) {
+    const accountDrivers = drivers.filter((d) => d.acct === a.acct);
+    a.day = accountDrivers.some((d) => !Number.isFinite(d.dayUsd))
+      ? Number.NaN
+      : sum(accountDrivers.map((d) => d.dayUsd));
+  }
+  const failedReads = perAccount.filter((a) =>
+    !Number.isFinite(a.currentEquity) ||
+    (accountNeedsDay && !Number.isFinite(a.day)) ||
+    (accountNeedsAfterHours && !Number.isFinite(a.afterHours)),
+  ).length;
   const driverDaySum = drivers.reduce((s, d) => s + (Number.isFinite(d.dayUsd) ? d.dayUsd : 0), 0);
-  const residual = Number.isFinite(totals.day) ? totals.day - driverDaySum : Number.NaN;
-  // Distinguish legitimate unattributed flow (cash/dividends) from failed pricing: count positions we
-  // couldn't price, so an operator can tell a $X dividend residual from a "$X of positions weren't priced".
-  const mispricedPositions = drivers.filter((d) => !Number.isFinite(d.dayUsd)).length;
+  const driverAfterHoursSum = drivers.reduce((s, d) => s + (Number.isFinite(d.ahUsd) ? d.ahUsd : 0), 0);
+  const reportedAccountDayDelta = perAccount.every((a) => Number.isFinite(a.reportedDay))
+    ? sum(perAccount.map((a) => a.reportedDay))
+    : Number.NaN;
+  const totals = {
+    equity: sum(perAccount.map((a) => a.currentEquity)),
+    regularCloseEquity: sum(perAccount.map((a) => a.equity)),
+    day: mispricedDayPositions === 0 ? driverDaySum : Number.NaN,
+    afterHours: perAccount.every((a) => Number.isFinite(a.afterHours))
+      ? sum(perAccount.map((a) => a.afterHours))
+      : Number.NaN,
+  };
+  const residual = Number.isFinite(reportedAccountDayDelta) && mispricedDayPositions === 0
+    ? reportedAccountDayDelta - driverDaySum
+    : Number.NaN;
   // After-hours is meaningful only in an extended session; intraday/closed it's ~0. Flag so callers don't
   // read a regular-session "$0 after-hours / no AH losers" as a failed or flat session.
-  const afterHoursActive = perAccount.some(
-    (a) => Number.isFinite(a.afterHours) && Math.abs(a.afterHours) > 0.005,
-  );
+  const afterHoursActive = perAccount.some((a) => Number.isFinite(a.afterHours) && Math.abs(a.afterHours) > 0.005);
+  const hasDegradingWarning =
+    perAccount.some((account) => account.warnings.length > 0) ||
+    globalWarnings.some((warning) => !warning.startsWith("index options held"));
 
   const byU = new Map<string, any>();
   for (const d of drivers) {
@@ -3388,29 +3355,36 @@ export async function computePortfolioPnl(
 
   return {
     window,
-    complete: failedReads === 0 && globalWarnings.length === 0,
+    complete: failedReads === 0 && mispricedPositions === 0 && !hasDegradingWarning,
     afterHoursActive,
     dayWindow,
-    totals: {
-      equityUsd: totals.equity,
-      dayChangeUsd: totals.day,
-      afterHoursChangeUsd: totals.afterHours,
-    },
+    totals: { equityUsd: totals.equity, regularCloseEquityUsd: totals.regularCloseEquity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
     reconciliation: {
       driverDayChangeUsd: driverDaySum,
       totalsDayChangeUsd: totals.day,
+      reportedAccountEquityDeltaUsd: reportedAccountDayDelta,
       residualUsd: residual,
+      driverAfterHoursChangeUsd: driverAfterHoursSum,
+      afterHoursResidualUsd: Number.isFinite(totals.afterHours) && mispricedAfterHoursPositions === 0
+        ? totals.afterHours - driverAfterHoursSum
+        : Number.NaN,
       mispricedPositions,
-      note: "residual = cash/dividends/transfers/option-vs-equity timing (NOT failed pricing — see mispricedPositions); after-hours is EQUITY-only (options don't print after-hours)",
+      mispricedDayPositions,
+      mispricedAfterHoursPositions,
+      note: "regular-session P&L is the fully priced position sum. reportedAccountEquityDeltaUsd is diagnostic only; its residual can reflect transfers, deposits, cash, dividends, and broker baseline adjustments. after-hours is account-level because index options can trade extended sessions.",
     },
     accounts: perAccount.map((a) => ({
       accountNumber: a.acct,
       label: a.label,
-      equityUsd: a.equity,
+      equityUsd: a.currentEquity,
+      regularCloseEquityUsd: a.equity,
       dayChangeUsd: a.day,
       afterHoursChangeUsd: a.afterHours,
+      reportedAccountEquityDeltaUsd: a.reportedDay,
       buyingPower: a.buyingPower,
-      partial: !Number.isFinite(a.equity),
+      partial: !Number.isFinite(a.currentEquity) ||
+        (accountNeedsDay && !Number.isFinite(a.day)) ||
+        (accountNeedsAfterHours && !Number.isFinite(a.afterHours)),
       warnings: a.warnings,
     })),
     byUnderlying: top ? byUnderlying.slice(0, top) : byUnderlying,

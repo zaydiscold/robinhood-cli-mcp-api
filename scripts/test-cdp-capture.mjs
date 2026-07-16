@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { assertSanitizedCapture, sanitizeCapture } from "./lib/cdp-capture.mjs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import {
+  assertSanitizedCapture,
+  canonicalOperationKey,
+  sanitizeCapture,
+} from "./lib/cdp-capture.mjs";
 
 const secret = "secret-value-that-must-not-survive";
 const output = sanitizeCapture({
@@ -74,5 +82,73 @@ assert.throws(
     }),
   /forbidden raw field requestHeaders/,
 );
+
+assert.notEqual(
+  canonicalOperationKey("GET", "https://api.robinhood.com/instruments/"),
+  canonicalOperationKey("GET", "https://api.robinhood.com/instruments/?symbol={symbol}"),
+  "route-map merging must preserve query-template variants used by first-class tools",
+);
+assert.notEqual(
+  canonicalOperationKey("GET", "https://api.robinhood.com/instruments/?ids={ids}"),
+  canonicalOperationKey("GET", "https://api.robinhood.com/instruments/?symbol={symbol}"),
+  "different query shapes on the same path must not collapse into one route",
+);
+
+const mergeDir = await mkdtemp(join(tmpdir(), "robinhood-cdp-merge-"));
+try {
+  const routesPath = join(mergeDir, "routes.json");
+  const browserRoutesPath = join(mergeDir, "browser-routes.json");
+  const capturePath = join(mergeDir, "capture-2026-07-16.json");
+  const baseRoute = {
+    host: "api.robinhood.com",
+    categories: ["instruments"],
+    risk: "read",
+    methods: ["GET"],
+    source: "fixture",
+    fields: [],
+    fieldsSource: "undocumented",
+  };
+  await writeFile(
+    routesPath,
+    JSON.stringify([
+      { ...baseRoute, url: "https://api.robinhood.com/instruments/" },
+    ]),
+  );
+  await writeFile(
+    capturePath,
+    JSON.stringify({
+      schemaVersion: 2,
+      sanitized: true,
+      capturedAt: "2026-07-16T00:00:00.000Z",
+      routeIndex: [
+        { method: "GET", type: "XHR", url: { origin: "https://api.robinhood.com", path: "/instruments/", queryKeys: [] } },
+        { method: "GET", type: "XHR", url: { origin: "https://api.robinhood.com", path: "/instruments/", queryKeys: ["ids"] } },
+        { method: "GET", type: "XHR", url: { origin: "https://api.robinhood.com", path: "/instruments/", queryKeys: ["symbol"] } },
+      ],
+    }),
+  );
+  const merged = spawnSync(process.execPath, ["scripts/merge-cdp-capture.mjs", capturePath], {
+    cwd: new URL("..", import.meta.url),
+    env: {
+      ...process.env,
+      ROBINHOOD_ROUTES_PATH: routesPath,
+      ROBINHOOD_BROWSER_ROUTES_PATH: browserRoutesPath,
+    },
+    encoding: "utf8",
+  });
+  assert.equal(merged.status, 0, merged.stderr || merged.stdout);
+  const urls = JSON.parse(await readFile(routesPath, "utf8")).map((route) => route.url);
+  assert.deepEqual(
+    urls.sort(),
+    [
+      "https://api.robinhood.com/instruments/",
+      "https://api.robinhood.com/instruments/?ids={ids}",
+      "https://api.robinhood.com/instruments/?symbol={symbol}",
+    ].sort(),
+    "the actual merge path must preserve base, ids, and symbol route variants",
+  );
+} finally {
+  await rm(mergeDir, { recursive: true, force: true });
+}
 
 console.log("CDP capture sanitizer contract passed");

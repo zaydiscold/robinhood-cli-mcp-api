@@ -2780,8 +2780,8 @@ program
 // ── portfolio: one-call P&L across ALL accounts — DOLLARS, day vs after-hours, by underlying ──
 // The composed answer to "how am I down?". The compute lives in lib.computePortfolioPnl (shared with
 // the MCP robinhood_portfolio tool); this command is a thin renderer over its structured result.
-//   after-hours Δ = extended_hours_equity − equity         (NOT − previous_close; that's the full day)
-//   day Δ         = equity − adjusted_equity_previous_close (equity_previous_close is "0" per-account)
+//   after-hours Δ = extended_hours_equity − equity
+//   regular-session P&L = sum of fully priced equity + option position moves
 program
   .command("portfolio")
   .aliases(["pnl", "snapshot"])
@@ -2799,7 +2799,7 @@ program
     if (!["day", "after-hours", "both"].includes(window)) throw new Error(`--window must be day|after-hours|both (got "${window}")`);
     const top = Number.isFinite(Number(opts.top)) ? Number(opts.top) : 0;
     // Shared engine — identical code path to the MCP robinhood_portfolio tool (alignment invariant).
-    const r = await computePortfolioPnl({ by: opts.by, window: window as any, accountNumber: opts.account, top: 0 });
+    const r = await computePortfolioPnl({ by: opts.by, window: window as any, accountNumber: opts.account, top });
 
     if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
 
@@ -2834,7 +2834,7 @@ program
       }
     }
     const mp = r.reconciliation.mispricedPositions;
-    process.stdout.write(`\nDrivers explain ${usd(r.reconciliation.driverDayChangeUsd)} of the ${usd(r.totals.dayChangeUsd)} day move; residual ${usd(r.reconciliation.residualUsd)} = cash / dividends / transfers / option-vs-equity timing${mp ? ` (${mp} position(s) could not be priced)` : ""}. After-hours shown is EQUITY only (options don't print after-hours).\n`);
+    process.stdout.write(`\nPriced-position regular-session P&L: ${usd(r.totals.dayChangeUsd)}${mp ? ` (${mp} position(s) could not be priced)` : ""}. Broker adjusted account-equity delta: ${usd(r.reconciliation.reportedAccountEquityDeltaUsd)}; diagnostic difference ${usd(r.reconciliation.residualUsd)} can reflect cash flows and broker baseline adjustments. After-hours uses account equity because index options can trade extended sessions.\n`);
     const warns = [...(r.warnings ?? []), ...r.accounts.flatMap((a: any) => a.warnings)];
     if (warns.length) process.stdout.write(`${warns.map((w: string) => "⚠️  " + w).join("\n")}\n`);
   });

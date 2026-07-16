@@ -989,11 +989,14 @@ also the MCP tool `robinhood_portfolio`:
 - `portfolio --day` · `--by position|account|underlying` · `--account <n>` · `--json`.
 One call returns the per-account top-line, the by-underlying dollar drivers, and a reconciliation line.
 The manual composition below is only a FALLBACK if the command is unavailable: `portfolios/{account_number}/`
-(equity / extended_hours_equity / **adjusted_equity_previous_close** — note: per-account
-`equity_previous_close` is "0", use the adjusted field) + `positions/?account_number={account_number}` +
-`options aggregate_positions/` + `marketdata/{quotes,options}/`. The deliverable is one ranked,
-dollar-weighted, by-underlying answer across accounts, with the **after-hours number kept separate from
-the full-day number** — not a per-account percent dump.
+(current/extended equity and the broker-adjusted account delta) +
+`positions/?account_number={account_number}&nonzero=true` + `options aggregate_positions/` +
+`marketdata/{quotes,options}/`. Regular-session market P&L comes from the fully priced position set;
+`equity − adjusted_equity_previous_close` is retained only as a diagnostic because deposits, transfers,
+cash, dividends, and broker baseline adjustments can make it disagree with market P&L. After-hours remains
+the account-level `extended_hours_equity − equity` delta so extended index-option value is not lost. The
+deliverable is one ranked, dollar-weighted, by-underlying answer across accounts, with the **after-hours
+number kept separate from the regular-session number** — not a per-account percent dump.
 
 ## Worked Build — Iron Condor, End to End
 
@@ -1576,6 +1579,14 @@ Full details: `AGENTS.md` §9.
 4. Verify: `node cli/dist/index.js brokerage execute "<new-route>" --json --full`.
 5. Document the discovery method in `docs/undocumented-surface.md`.
 
+**Query-template invariant:** route-map merge and dedup keys must preserve the query shape, not just
+HTTP method + origin + pathname. `instruments/?symbol={symbol}`, `instruments/?ids={ids}`,
+`marketdata/quotes/?ids={ids}`, `marketdata/options/?ids={ids}`, and
+`positions/?account_number={account_number}&nonzero=true` are distinct executable operations. A
+pathname-only merge silently deletes the first-class quote/option/portfolio routes. After changing capture
+or merge code, run `node scripts/test-cdp-capture.mjs`, rebuild both packages, and live-verify one quote plus
+`portfolio --top 0 --json` with `reconciliation.mispricedPositions === 0`.
+
 ### 📊 Day / After-Hours P&L — use the `portfolio` command (don't hand-compute)
 
 "What am I down today / after hours / which names?" is **one command** — no manual quote math:
@@ -1586,13 +1597,16 @@ node cli/dist/index.js portfolio --after-hours  # rank by the after-hours move
 node cli/dist/index.js portfolio --day          # rank by the full-day move
 node cli/dist/index.js portfolio --by position --top 10 --json
 ```
-It composes accounts → `portfolios/{account_number}/` (day Δ = `equity − adjusted_equity_previous_close`;
-after-hours Δ = `extended_hours_equity − equity`) → positions + quotes + option marks, attributes in
-DOLLARS, rolls up by underlying across accounts, and prints a reconciliation line (drivers vs top-line).
+It composes accounts → `portfolios/{account_number}/` (current equity and after-hours Δ =
+`extended_hours_equity − equity`) → positions + quotes + option marks. Regular-session P&L is the fully
+priced position sum; the broker's `equity − adjusted_equity_previous_close` value is reported separately as
+`reportedAccountEquityDeltaUsd` for reconciliation and must not override the market-P&L headline. The result
+is attributed in DOLLARS, rolled up by underlying across accounts, and accompanied by day and after-hours
+residuals plus separate missing-price counts.
 After-hours is PRIMARILY equity-driven, but index/ETF options (SPX, SPXW, SPY, NDX, …) trade ~15 min past the bell and can move after-hours — always check extended marks for those underlyings. Same engine as the MCP tool
 `robinhood_portfolio`. **Don't** rebuild this by hand from `positions`+`quote` (percent math is size-blind
-and gets the metric wrong), and **don't** use `equity_previous_close` (it's "0" per-account — the command
-uses `adjusted_equity_previous_close`).
+and gets the metric wrong), and **don't** present either raw `equity_previous_close` (often `"0"`) or the
+adjusted account-equity delta as market P&L when the priced holdings disagree.
 
 **Common mistake:** `brokerage execute "positions/?nonzero=true"` FAILS (`brokerage execute` doesn't take
 query params) — use the `positions` command, or just `portfolio`.

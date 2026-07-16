@@ -1255,7 +1255,7 @@ server.registerTool(
   {
     title: "Robinhood Portfolio P&L",
     description:
-      "One-call portfolio P&L across ALL owned accounts (or one) in DOLLARS. Per-account day change (equity − adjusted_equity_previous_close) AND after-hours change (extended_hours_equity − equity), then dollar-weighted drivers rolled up by underlying (or position) across accounts — equities AND options. Answers 'how am I down today / after hours and which names'. Ranks by DOLLARS not percent. Discloses a reconciliation residual (cash/dividends/transfers) so the drivers vs top-line gap is explicit. After-hours is EQUITY-only (options don't print after-hours). Live read; no gate.",
+      "One-call portfolio P&L across ALL owned accounts (or one) in DOLLARS. Regular-session P&L is the sum of fully priced equity and option position moves; it does not mislabel the broker's cash-flow-adjusted account-equity delta as market P&L. After-hours change uses extended account equity so index options are included. Returns current equity, regular-close equity, dollar-weighted drivers, pricing completeness, and the broker account-equity delta as a diagnostic only. Answers 'how am I down today / after hours and which names'. Live read; no gate.",
     inputSchema: z.object({
       by: z.enum(["underlying", "account", "position"]).default("underlying"),
       window: z.enum(["day", "after-hours", "both"]).default("both"),

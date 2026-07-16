@@ -29,6 +29,21 @@ export function normalizePath(pathname) {
   return value;
 }
 
+export function canonicalOperationKey(method, url) {
+  const parsed = new URL(url);
+  const path = decodeURIComponent(parsed.pathname)
+    .replace(/\{[^}]*\}/g, "{param}")
+    .replace(/\/+$/, "/");
+  const query = [...parsed.searchParams.entries()]
+    .map(([key, value]) => [key, decodeURIComponent(value).replace(/\{[^}]*\}/g, "{param}")])
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+      leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue),
+    )
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+  return `${String(method).toUpperCase()} ${parsed.origin}${path}${query ? `?${query}` : ""}`;
+}
+
 function headerValue(headers, name) {
   if (!headers || typeof headers !== "object") return undefined;
   const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name);

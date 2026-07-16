@@ -63,6 +63,17 @@ describe("Robinhood API map", () => {
     expect(
       filterBrokerageRoutes(routes, { host: "bonfire.robinhood.com" }).length,
     ).toBeGreaterThanOrEqual(80);
+    expect(routes.map((route) => route.url)).toEqual(
+      expect.arrayContaining([
+        "https://api.robinhood.com/instruments/?symbol={symbol}",
+        "https://api.robinhood.com/instruments/?ids={ids}",
+        "https://api.robinhood.com/marketdata/quotes/?ids={ids}",
+        "https://api.robinhood.com/marketdata/options/?ids={ids}",
+        "https://api.robinhood.com/marketdata/historicals/{symbol}/",
+        "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}",
+        "https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true",
+      ]),
+    );
   });
 
   it("keeps read and write methods split so writes cannot inherit read-level risk", () => {

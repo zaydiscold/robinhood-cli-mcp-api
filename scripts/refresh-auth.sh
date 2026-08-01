@@ -86,11 +86,43 @@ export EDGE_BASE
 # Opt out with ROBINHOOD_NO_CDP=1.
 cdp_try() {
     [ -n "${ROBINHOOD_NO_CDP:-}" ] && return 1
-    local port="${ROBINHOOD_CDP_PORT:-9222}"
     local helper="$REPO_DIR/scripts/extract-auth-cdp.py"
     [ -f "$helper" ] || return 1
-    "$PYTHON_BIN" -c 'import websockets' >/dev/null 2>&1 || return 1
-    "$PYTHON_BIN" "$helper" --port "$port" --env "$ROBINHOOD_ENV_PATH"
+    "$PYTHON_BIN" -c 'import websockets' >/dev/null 2>&1 || {
+        echo "[refresh-auth] CDP support unavailable: install with '$PYTHON_BIN -m pip install websockets'; trying disk fallback" >&2
+        return 1
+    }
+
+    local configured="${ROBINHOOD_CDP_PORTS:-${ROBINHOOD_CDP_PORT:-}}"
+    local discovered
+    discovered=$(CHROMIUM_BASES="${ROBINHOOD_CHROMIUM_BASES:-}" "$PYTHON_BIN" <<'PYPORTS'
+import os
+roots = [os.environ.get(k) for k in ("CHROME_BASE", "BRAVE_BASE", "EDGE_BASE")]
+roots += [p for p in os.environ.get("CHROMIUM_BASES", "").split(os.pathsep) if p]
+seen = set()
+for root in filter(None, roots):
+    for path in (os.path.join(root, "DevToolsActivePort"),):
+        try:
+            port = int(open(path, encoding="utf-8").readline().strip())
+        except (OSError, ValueError):
+            continue
+        if port not in seen:
+            seen.add(port)
+            print(port)
+PYPORTS
+)
+
+    local ports="$configured $discovered 9222"
+    local tried=" " port
+    for port in $ports; do
+        case "$port" in *[!0-9]*|'') continue ;; esac
+        case "$tried" in *" $port "*) continue ;; esac
+        tried="$tried$port "
+        if "$PYTHON_BIN" "$helper" --port "$port" --env "$ROBINHOOD_ENV_PATH"; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Direct CDP is authoritative and already writes the protected .env. Stop here

@@ -22,15 +22,16 @@ The command discovers available auth sources, updates the repo `.env`, and exits
    - updates `.env` in-process and closes the target
    - does not depend on an already-open Robinhood tab, Node, browser-harness, an agent, or a GUI interaction
    - Python requirement: `python -m pip install websockets`; if unavailable, the command explains the dependency and continues to disk fallback
-2. **On-disk Chromium LevelDB**
+2. **Safari WebKit LocalStorage** (macOS, stdlib-only)
+   - `scripts/extract-auth-safari.py` scans Safari's sandboxed WebKit `WebsiteDataStore` directories
+   - requires origin metadata containing both `https` and `robinhood.com`
+   - reads only `ItemTable['web:auth_state']` from `LocalStorage/localstorage.sqlite3`
+   - updates `.env` in-process at mode `0600`; the value never appears on stdout or argv
+   - generic NetworkCache strings such as `access_token` are never treated as credentials
+3. **On-disk Chromium LevelDB fallback**
    - Chrome, Brave, and Edge standard profile roots
    - useful when a browser has flushed a complete auth object to disk
    - custom roots can be supplied through `ROBINHOOD_CHROMIUM_BASES`
-3. **Safari capability detection**
-   - Safari stores origin data under sandboxed WebKit `WebsiteDataStore` directories
-   - cache strings such as `access_token` are not proof of Robinhood auth
-   - only use Safari when the `robinhood.com` origin can be mapped to an actual `web:auth_state` record or Safari remote automation provides origin-scoped JavaScript execution
-   - never treat generic NetworkCache matches as credentials
 
 
 ## Verification contract
@@ -43,7 +44,7 @@ A refresh is successful only when all three are true:
 
 Exit status or file existence alone is not success.
 
-## Frostbyte services discovered
+## Browser services and custom profiles
 
 The generic pattern is process-derived, not hostname-specific:
 

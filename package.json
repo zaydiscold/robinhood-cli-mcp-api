@@ -15,7 +15,7 @@
     "test:api-map": "node scripts/test-cdp-capture.mjs",
     "test:skill": "python3 scripts/check-skill-integrity.py",
     "generate:api-map": "node scripts/generate-brokerage-openapi.mjs && node scripts/generate-unified-api-map.mjs && node scripts/generate-brokerage-markdown.mjs && node scripts/generate-brokerage-curl.mjs && node scripts/generate-endpoint-markdown.mjs",
-    "test": "corepack pnpm build && corepack pnpm test:built",
+    "test": "corepack pnpm build && corepack pnpm test:built && node scripts/test-auth-session.mjs",
     "test:built": "corepack pnpm --filter @zaydiscold/robinhood-cli exec vitest run && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp exec vitest run",
     "coverage": "corepack pnpm build && corepack pnpm coverage:built",
     "coverage:built": "corepack pnpm --filter @zaydiscold/robinhood-cli test:coverage && corepack pnpm --filter @zaydiscold/robinhood-cli-mcp test:coverage",

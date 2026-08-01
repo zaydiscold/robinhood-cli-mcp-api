@@ -15,6 +15,8 @@ from pathlib import Path
 
 import websockets
 
+from auth_session import describe_session_token
+
 
 async def extract(port: int, env_path: Path) -> None:
     version = json.load(
@@ -97,7 +99,12 @@ async def extract(port: int, env_path: Path) -> None:
                 + ("\n" if keep else "")
             )
             os.chmod(env_path, 0o600)
-            print(f"source=cdp:{port} auth_state=yes token_written=yes")
+            metadata = describe_session_token(token)
+            suffix = " ".join(f"{key}={value}" for key, value in metadata.items())
+            print(
+                f"source=cdp:{port} auth_state=yes token_written=yes"
+                + (f" {suffix}" if suffix else "")
+            )
         finally:
             await call("Target.closeTarget", {"targetId": target})
 

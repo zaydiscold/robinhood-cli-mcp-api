@@ -2,23 +2,36 @@
 
 Robinhood's web client stores the primary bearer in the origin-scoped localStorage key `web:auth_state`. The token must never be printed, passed in argv, committed, or inferred from cookies.
 
+This is a normal CLI capability, not an agent-only workflow. Humans, cron jobs, CLI self-heal, MCP servers, and agents all invoke the same public entrypoint:
+
+```bash
+pnpm auth:refresh
+```
+
+The command discovers available auth sources, updates the repo `.env`, and exits nonzero when no valid source exists. Callers must then verify with a lightweight authenticated command such as `node cli/dist/index.js accounts --json`.
+
 ## Resolution order
 
-1. **Live Chromium CDP** (`ROBINHOOD_CDP_PORT`, default `9222`)
+1. **Live Chromium CDP**
+   - explicit ports: `ROBINHOOD_CDP_PORTS="9222 9333"` (or singular `ROBINHOOD_CDP_PORT`)
+   - discovered ports: `DevToolsActivePort` in standard Chrome/Brave/Edge roots and optional `ROBINHOOD_CHROMIUM_BASES` (`os.pathsep`-delimited)
+   - conventional fallback: `9222`
    - `scripts/extract-auth-cdp.py` connects directly to the browser WebSocket
    - creates a background `https://robinhood.com/` target
    - reads `localStorage.web:auth_state` from the correct origin
    - updates `.env` in-process and closes the target
-   - does not depend on an already-open Robinhood tab, Node, browser-harness, or a GUI interaction
+   - does not depend on an already-open Robinhood tab, Node, browser-harness, an agent, or a GUI interaction
+   - Python requirement: `python -m pip install websockets`; if unavailable, the command explains the dependency and continues to disk fallback
 2. **On-disk Chromium LevelDB**
    - Chrome, Brave, and Edge standard profile roots
    - useful when a browser has flushed a complete auth object to disk
-   - custom `--user-data-dir` profiles should use CDP or be supplied as an additional root
+   - custom roots can be supplied through `ROBINHOOD_CHROMIUM_BASES`
 3. **Safari capability detection**
    - Safari stores origin data under sandboxed WebKit `WebsiteDataStore` directories
    - cache strings such as `access_token` are not proof of Robinhood auth
    - only use Safari when the `robinhood.com` origin can be mapped to an actual `web:auth_state` record or Safari remote automation provides origin-scoped JavaScript execution
    - never treat generic NetworkCache matches as credentials
+
 
 ## Verification contract
 

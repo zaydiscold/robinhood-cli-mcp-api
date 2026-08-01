@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -106,7 +107,11 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--env", type=Path, required=True)
     args = parser.parse_args()
-    asyncio.run(extract(args.port, args.env))
+    try:
+        asyncio.run(extract(args.port, args.env))
+    except Exception as exc:
+        print(f"source=cdp:{args.port} unavailable={type(exc).__name__}", file=sys.stderr)
+        raise SystemExit(2) from None
 
 
 if __name__ == "__main__":

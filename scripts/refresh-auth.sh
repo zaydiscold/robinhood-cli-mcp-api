@@ -126,10 +126,18 @@ PYPORTS
 }
 
 # Direct CDP is authoritative and already writes the protected .env. Stop here
-# on success; otherwise fall through to generic on-disk Chromium discovery.
+# on success. Safari is a macOS-only, stdlib fallback that validates the
+# robinhood.com WebKit origin before reading the exact web:auth_state key.
 if cdp_try; then
     exit 0
 fi
+if [ "$(uname -s)" = "Darwin" ] && [ -f "$REPO_DIR/scripts/extract-auth-safari.py" ]; then
+    if "$PYTHON_BIN" "$REPO_DIR/scripts/extract-auth-safari.py" --env "$ROBINHOOD_ENV_PATH"; then
+        exit 0
+    fi
+fi
+
+# Final fallback: generic on-disk Chromium discovery.
 
 # Python prefers RH_CDP_JSON (live) when present; else does the disk scan. It
 # writes .env, chmods it, and prints the status — so the token value never

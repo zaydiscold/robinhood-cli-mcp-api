@@ -1,10 +1,12 @@
 """
-Token injection script — reads ROBINHOOD_BROKERAGE_TOKEN from a frostbyte
-.env copy and injects it into the local .env + MCP config.
+Session-token import helper — reads ROBINHOOD_BROKERAGE_TOKEN from an
+independently captured environment file and injects it into the local .env
+plus the optional Hermes MCP configuration.
 
-Usage: python inject-token.py [--frostbyte-env PATH]
+Usage: python inject-token.py [--source-env PATH] [--keep-source]
 
-Default reads .env.frostbyte from the repo root (scp'd from frostbyte).
+The source can come from any authenticated browser/profile or trusted runtime.
+The default is .env.session-source in the repository root.
 """
 import argparse, os, re, shutil, sys, yaml
 
@@ -22,18 +24,20 @@ def find_hermes_config():
     raise FileNotFoundError(f"Hermes config not found at {path}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Inject Robinhood token from frostbyte .env")
-    parser.add_argument('--frostbyte-env', default=os.path.join(REPO_ROOT, '.env.frostbyte'),
-                        help='Path to frostbyte .env file')
+    parser = argparse.ArgumentParser(description="Import a Robinhood token from a captured session env")
+    parser.add_argument('--source-env', default=os.path.join(REPO_ROOT, '.env.session-source'),
+                        help='Path to an env file containing ROBINHOOD_BROKERAGE_TOKEN')
+    parser.add_argument('--keep-source', action='store_true',
+                        help='Do not remove the source env after a successful import')
     args = parser.parse_args()
 
     # Extract token
-    if not os.path.exists(args.frostbyte_env):
-        print(f"FAIL: {args.frostbyte_env} not found")
+    if not os.path.exists(args.source_env):
+        print(f"FAIL: {args.source_env} not found")
         sys.exit(1)
 
     token = None
-    with open(args.frostbyte_env) as f:
+    with open(args.source_env) as f:
         for line in f:
             if 'ROBINHOOD_BROKERAGE_TOKEN' in line and '=' in line:
                 token = line.strip().split('=', 1)[1]
@@ -64,8 +68,9 @@ def main():
         with open(config_path, 'w') as f:
             yaml.safe_dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
-    # Clean up the frostbyte env copy
-    os.remove(args.frostbyte_env)
+    # Captured session files are secret-bearing; remove by default.
+    if not args.keep_source:
+        os.remove(args.source_env)
     print(f"OK: token injected into .env + MCP config")
 
 if __name__ == '__main__':

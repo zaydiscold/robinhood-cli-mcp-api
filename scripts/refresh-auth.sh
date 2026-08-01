@@ -85,43 +85,19 @@ export EDGE_BASE
 # below; on any failure we fall through to the disk scan (headless/offline path).
 # Opt out with ROBINHOOD_NO_CDP=1.
 cdp_try() {
-    [ -n "${ROBINHOOD_NO_CDP:-}" ] && return 0
-    command -v curl >/dev/null || return 0
+    [ -n "${ROBINHOOD_NO_CDP:-}" ] && return 1
     local port="${ROBINHOOD_CDP_PORT:-9222}"
-    curl -fsS --max-time 2 "http://127.0.0.1:${port}/json/version" >/dev/null 2>&1 || return 0
-    command -v browser-harness-js >/dev/null || return 0
-    browser-harness-js --start >/dev/null 2>&1 || return 0
+    local helper="$REPO_DIR/scripts/extract-auth-cdp.py"
+    [ -f "$helper" ] || return 1
+    "$PYTHON_BIN" -c 'import websockets' >/dev/null 2>&1 || return 1
+    "$PYTHON_BIN" "$helper" --port "$port" --env "$ROBINHOOD_ENV_PATH"
+}
 
-    local payload repl_url log b64
-    repl_url="http://127.0.0.1:${CDP_REPL_PORT:-9876}"
-    log="${CDP_REPL_LOG:-/tmp/browser-harness-js.log}"
-    payload='
-try { await session.Target.getTargets(); } catch (e) {
-  const ws = (await (await fetch("http://127.0.0.1:'"${port}"'/json/version")).json()).webSocketDebuggerUrl;
-  await session.connect({wsUrl: ws, timeoutMs: 30000});
-}
-let ts = await session.Target.getTargets();
-let rh = ts.targetInfos.find(t => t.type === "page" && t.url.includes("robinhood.com"));
-let made = false;
-if (!rh) {
-  const {targetId} = await session.Target.createTarget({url: "https://robinhood.com/", background: true});
-  made = true; await new Promise(r => setTimeout(r, 6000));
-  ts = await session.Target.getTargets();
-  rh = ts.targetInfos.find(t => t.targetId === targetId);
-}
-await session.use(rh.targetId);
-const res = await session.Runtime.evaluate({expression: "localStorage.getItem(\"web:auth_state\") || \"\"", returnByValue: true});
-if (made) { try { await session.Target.closeTarget({targetId: rh.targetId}); } catch (e) {} }
-console.log("RHCDP_OUT:" + (res.result.value ? Buffer.from(res.result.value).toString("base64") : "MISSING"));
-"done"'
-    curl -fsS --max-time 60 --data-binary "$payload" "$repl_url/eval" >/dev/null 2>&1 || return 0
-    b64=$(grep 'RHCDP_OUT:' "$log" 2>/dev/null | tail -1 | sed 's/.*RHCDP_OUT://')
-    [ -z "$b64" ] || [ "$b64" = "MISSING" ] && return 0
-    RH_CDP_JSON=$(printf '%s' "$b64" | base64 -d 2>/dev/null) || return 0
-    export RH_CDP_JSON
-    echo "[refresh-auth] token read live via CDP (port ${port})"
-}
-cdp_try || true
+# Direct CDP is authoritative and already writes the protected .env. Stop here
+# on success; otherwise fall through to generic on-disk Chromium discovery.
+if cdp_try; then
+    exit 0
+fi
 
 # Python prefers RH_CDP_JSON (live) when present; else does the disk scan. It
 # writes .env, chmods it, and prints the status — so the token value never

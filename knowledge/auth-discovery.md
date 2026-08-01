@@ -44,6 +44,17 @@ A refresh is successful only when all three are true:
 
 Exit status or file existence alone is not success.
 
+## Thirty-day session control
+
+Robinhood's login UI can mint a durable 30-day session when the user selects **stay logged in for 30 days**. A live Safari session verified on 2026-08-01 contained:
+
+- `web:auth_state.access_token` and `read_only_secondary_access_token` with matching 30-day JWT expiry
+- an opaque `refresh_token` in the same origin-scoped auth object
+- long-lived `device_id` and `logged_in` cookies
+- a short-lived `session_id` cookie that is not the durable bearer
+
+`pnpm auth:refresh` does not click or emulate this consent control. It preserves the user's choice by extracting the server-minted `web:auth_state` from the selected browser. Successful extractors report `session_remaining_days` and `token_expires_utc` without printing token contents. If the reported remaining duration is substantially shorter than 30 days immediately after login, the user must select the 30-day option during Robinhood login; the CLI must not silently extend consent or manufacture a longer session.
+
 ## Browser services and custom profiles
 
 The generic pattern is process-derived, not hostname-specific:

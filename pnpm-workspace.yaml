@@ -2,5 +2,12 @@ packages:
   - cli
   - mcp
 
+overrides:
+  esbuild: 0.28.1
+  vite: 8.1.4
+  hono: 4.12.25
+  fast-uri: 3.1.4
+  brace-expansion: 5.0.8
+
 ignoredBuiltDependencies:
   - esbuild

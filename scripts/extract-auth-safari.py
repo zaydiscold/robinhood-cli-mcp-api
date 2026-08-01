@@ -10,6 +10,9 @@ import json
 import os
 import sqlite3
 from pathlib import Path
+from typing import Optional
+
+from auth_session import describe_session_token
 
 
 def is_robinhood_origin(db_path: Path) -> bool:
@@ -40,7 +43,7 @@ def candidate_databases() -> list[Path]:
     )
 
 
-def read_auth_state(db_path: Path) -> dict | None:
+def read_auth_state(db_path: Path) -> Optional[dict]:
     if not is_robinhood_origin(db_path):
         return None
     connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -99,7 +102,12 @@ def main() -> None:
         token = state.get("access_token") if state else None
         if token:
             write_token(args.env, str(token))
-            print("source=safari auth_state=yes token_written=yes")
+            metadata = describe_session_token(str(token))
+            suffix = " ".join(f"{key}={value}" for key, value in metadata.items())
+            print(
+                "source=safari auth_state=yes token_written=yes"
+                + (f" {suffix}" if suffix else "")
+            )
             return
     print("source=safari unavailable=no_origin_scoped_auth_state", file=os.sys.stderr)
     raise SystemExit(2)

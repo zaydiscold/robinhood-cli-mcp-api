@@ -22,10 +22,10 @@ _local-backups-*/
 local/portfolio-snapshots.jsonl
 local/legacy-reports/
 
-# private/working notes — never publish (research sweeps, proofs, machine-setup notes)
+# private/working notes — never publish (research sweeps, proofs, local setup notes)
 research/
 proofs/
-MOTHERSHIP-SETUP.md
+*-SETUP.md
 
 # raw per-account CDP captures hold real account last-4s + types — never commit (keep local copies)
 api-map/cdp-capture-*-per-account.json

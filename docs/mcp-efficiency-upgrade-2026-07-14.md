@@ -313,4 +313,4 @@ The upgrade is complete only when:
 6. Typecheck, lint ratchet, format check, dead-code check, coverage, tests, build,
    Doctor, protocol probes, and installed PATH launches pass.
 7. The branch is documented, clean, reviewable, and can be reconciled with GitHub
-   and the Mothership without guessing which artifact is current.
+   and installed runtimes without guessing which artifact is current.

@@ -1,7 +1,7 @@
 """
 Quick token injection (shorthand version of inject-token.py).
-Assumes .env.frostbyte is in the repo root.
-Usage: python inject.py
+Uses .env.session-source in the repo root, or ROBINHOOD_SOURCE_ENV.
+Usage: ROBINHOOD_SOURCE_ENV=/path/to/captured.env python inject.py
 """
 import os, re, sys, yaml
 
@@ -14,9 +14,9 @@ def find_hermes_config():
         base = os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
     return os.path.join(base, 'hermes', 'config.yaml')
 
-src = os.path.join(REPO, '.env.frostbyte')
+src = os.environ.get('ROBINHOOD_SOURCE_ENV', os.path.join(REPO, '.env.session-source'))
 if not os.path.exists(src):
-    print(f"FAIL: {src} not found — scp it from frostbyte first")
+    print(f"FAIL: {src} not found — capture or import an authenticated session env first")
     sys.exit(1)
 
 token = None

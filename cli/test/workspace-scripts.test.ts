@@ -16,4 +16,18 @@ describe("workspace package scripts", () => {
     expect(manifest.bin?.["robinhood-cli-mcp"]).toBe("dist/server.js");
     expect(manifest.scripts?.build).toContain("ensure-bin-mode.mjs");
   });
+
+  it("normalizes Windows path separators before comparing the Prettier debt baseline", () => {
+    const script = readFileSync(
+      new URL("../../scripts/check-format-ratchet.mjs", import.meta.url),
+      "utf8",
+    );
+    expect(script).toContain('replaceAll("\\\\", "/")');
+  });
+
+  it("uses the cross-platform Python command for skill integrity checks", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    expect(manifest.scripts?.["test:skill"]).toMatch(/^python\s/);
+    expect(manifest.scripts?.["test:skill"]).not.toMatch(/^python3\s/);
+  });
 });

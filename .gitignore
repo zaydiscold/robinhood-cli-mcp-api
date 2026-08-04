@@ -10,6 +10,8 @@ info/
 *.tgz
 capture-extension/
 coverage/
+__pycache__/
+*.py[cod]
 
 # git-crypt keys must stay outside Git history.
 git-crypt-key

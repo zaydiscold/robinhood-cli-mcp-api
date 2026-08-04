@@ -25,6 +25,27 @@ describe("typed capability registry", () => {
     expect(CAPABILITIES.filter((entry) => entry.cli).every((entry) => entry.mcp)).toBe(true);
   });
 
+  it("keeps options events, history, and per-expiration chain stats on public surfaces", () => {
+    const events = CAPABILITIES.find((entry) => entry.mcp === "robinhood_options_events");
+    expect(events).toEqual(expect.objectContaining({ id: "options_events", access: "read" }));
+    expect(capabilityEnabled(events!, "core")).toBe(true);
+    expect(capabilityEnabled(events!, "trading")).toBe(true);
+
+    const expected = [
+      ["options-history", "options history", "robinhood_options_history"],
+      ["options-chain-stats", "options chain-stats", "robinhood_options_chain_stats"],
+    ] as const;
+
+    for (const [id, cli, mcp] of expected) {
+      expect(CAPABILITIES).toContainEqual(
+        expect.objectContaining({ id, cli, mcp, access: "read" }),
+      );
+      const capability = CAPABILITIES.find((entry) => entry.id === id)!;
+      expect(capabilityEnabled(capability, "core")).toBe(true);
+      expect(capabilityEnabled(capability, "research")).toBe(true);
+    }
+  });
+
   it("keeps full backward-compatible and filters narrower profiles", () => {
     expect(CAPABILITIES.every((entry) => capabilityEnabled(entry, "full"))).toBe(true);
     expect(

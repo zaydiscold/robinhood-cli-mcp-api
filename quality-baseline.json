@@ -11,6 +11,7 @@
     "unformattedFiles": [
       "cli/src/index.ts",
       "cli/src/lib.ts",
+      "cli/src/doctor.ts",
       "cli/src/options-workbench.ts",
       "cli/src/order-lifecycle.ts",
       "cli/src/share-safe.ts",

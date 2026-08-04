@@ -62,7 +62,7 @@ After changing the build, profile, or registration:
 
 1. Restart or reload the MCP server.
 2. Inspect `tools/list` from that client.
-3. With no profile override, confirm the complete 78-tool registry is present.
+3. With no profile override, confirm the complete registry is present; derive its count from `tools/list` rather than prose.
 4. Run a harmless read such as `robinhood_quote` and one account-aware read.
 5. Run `robinhood_doctor` if the active profile exposes it.
 
@@ -81,6 +81,9 @@ debug source files while trusting a stale process.
 | Order lifecycle | `robinhood_orders_open`, `_order_status`, order-watch tool if advertised |
 | Risk/research | `robinhood_risk`, `_whatif`, `_calendar`, `_exposure`, `_news`, `_ratings`, `_earnings` |
 | Intent lookup | `robinhood_recipes` |
+| Rewards / inbox / IPO | `robinhood_rewards`, `robinhood_inbox_summary`, `robinhood_ipo_access` (privacy-safe, read-only) |
+| Current cash-sweep APY + evidence source/fallback | `robinhood_sweep_interest` (read-only; no enrollment change) |
+| Gold subscription charges | `robinhood_gold_fees` (read-only fee history; no plan change) |
 | Route maintenance | `robinhood_brokerage_describe`, `_routes`, `_plan`; execute only when necessary |
 | Focused docs | `robinhood_knowledge` or one local `knowledge/*.md` module |
 

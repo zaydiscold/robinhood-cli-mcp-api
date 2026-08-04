@@ -552,6 +552,52 @@
       "risk": "read",
       "notes": "Appends to repo-root trade-notes.md (LOCAL file — never touches the account, no live-write gate). `review` joins notes onto matching trades by ref."
     },
+
+    {
+      "id": "sweep-interest",
+      "intent": "What cash-sweep APY applies now, and which live surface supplied it?",
+      "triggers": ["sweep interest", "cash interest", "cash sweep rate", "sweep apy", "apy on cash"],
+      "command": "sweep-interest [--account N] [--json]",
+      "mcpTool": "robinhood_sweep_interest",
+      "risk": "sensitive-read",
+      "notes": "Read-only. Prefers the authenticated Gold sweep product surface, labels the evidence source, and falls back to account sweep context. It never changes enrollment or fabricates a missing base rate."
+    },
+    {
+      "id": "gold-fees",
+      "intent": "Show my Robinhood Gold subscription fee history",
+      "triggers": ["gold fees", "gold subscription", "gold billing", "subscription charges", "gold charge history"],
+      "command": "gold-fees [--account N] [--offset N --limit N] [--json]",
+      "mcpTool": "robinhood_gold_fees",
+      "risk": "sensitive-read",
+      "notes": "Read-only Gold fee history with charge type, status, amount, billing date, and billing period; no subscription changes."
+    },
+    {
+      "id": "rewards",
+      "intent": "Summarize pending and claimed stock rewards without exposing referral identities",
+      "triggers": ["stock rewards", "referral rewards", "pending rewards", "claimed rewards"],
+      "command": "rewards [--json]",
+      "mcpTool": "robinhood_rewards",
+      "risk": "sensitive-read",
+      "notes": "Read-only section/type counts and normalized reward metadata. Never emits referred-person identity or contact data."
+    },
+    {
+      "id": "inbox-summary",
+      "intent": "Summarize inbox notification volume without exposing messages",
+      "triggers": ["inbox summary", "unread notifications", "critical inbox", "notification count"],
+      "command": "inbox-summary [--json]",
+      "mcpTool": "robinhood_inbox_summary",
+      "risk": "sensitive-read",
+      "notes": "Read-only aggregate: total, unread, critical, muted, latest activity, and pagination. Never returns names, preview text, messages, or raw threads."
+    },
+    {
+      "id": "ipo-access",
+      "intent": "Read IPO Access offerings and aggregate account eligibility",
+      "triggers": ["ipo access", "upcoming IPO", "IPO eligibility", "JMKE IPO"],
+      "command": "ipo-access list [--json] | ipo-access show <SYMBOL> [--json]",
+      "mcpTool": "robinhood_ipo_access",
+      "risk": "sensitive-read",
+      "notes": "Read-only IPO list/show joined through the instrument resolver. Reports public/open status, dates, price, participation, S-1/roadshow links, and aggregate eligibility; never submits interest."
+    },
     {
       "id": "hotlist",
       "intent": "How's my watchlist/hotlist doing right now?",

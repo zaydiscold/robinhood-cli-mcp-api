@@ -16,7 +16,7 @@ families are:
 | Options | `options positions`, `holdings`, `inspect`, `expirations`, `enumerate`, `chain`, `strategy-quote`, `roll-plan`, `close`, `workbench` |
 | Portfolio intelligence | `risk`, `whatif`, `calendar`, `exposure`, `autopilot`, `sentinel`, `income`, `dividends` |
 | Discovery | `brokerage search`, `quote`, `news`, `ratings`, `earnings`, `movers`, `stock profile`, `hotlist` |
-| Account services | `watchlist`, `recurring`, `settings`, `documents`, `review`, `roll-ledger` |
+| Account services | `watchlist`, `recurring`, `settings`, `rewards` (privacy-safe stock metadata), `inbox-summary` (aggregate only), `ipo-access`, `sweep-interest` (current APY + labeled fallback), `gold-fees` (billing history), `documents`, `review`, `roll-ledger` |
 | Route research | `recipes`, `api-map`, `brokerage describe`, `brokerage routes`, `brokerage plan`, `brokerage execute` |
 | Official Crypto API | `crypto routes`, `crypto sign`, `crypto plan`, `crypto execute` |
 

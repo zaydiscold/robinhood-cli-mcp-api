@@ -113,6 +113,11 @@ import {
   runDoctor,
   routeVerificationStatus,
   watchOrderLifecycle,
+  getSweepInterest,
+  listGoldFees,
+  getStockRewardsSummary,
+  getInboxSummary,
+  getIpoAccess,
   type BrokerageRoute,
 } from "@zaydiscold/robinhood-cli/lib";
 
@@ -3592,6 +3597,88 @@ registerCapabilityTool(
   },
   async ({ value }: any) =>
     jsonResponse({ result: maybeShareSafe(value, { ...process.env, ROBINHOOD_SHARE_SAFE: "1" }) }),
+);
+
+// ── Cash-sweep APY with labeled fallback ──
+registerCapabilityTool(
+  "sweep_interest",
+  {
+    title: "Robinhood Cash-Sweep APY",
+    description:
+      "Current cash-sweep APY from the authenticated Gold product surface, with an account-scoped fallback and explicit evidence source. A base rate appears only when Robinhood supplies one. Read-only; no enrollment changes.",
+    inputSchema: z.object({
+      account_number: accountNumberOptionalSchema,
+    }),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async ({ account_number }: { account_number?: string }) =>
+    jsonResponse(await getSweepInterest({ accountNumber: account_number })),
+);
+
+// ── Gold subscription fee history ──
+registerCapabilityTool(
+  "gold_fees",
+  {
+    title: "Robinhood Gold Subscription Fees",
+    description:
+      "Gold subscription fee history with pagination and optional account scope. Lists every Gold subscription charge: type, status, dollar amount, billing date, and period. Read-only; no subscription changes. Live read.",
+    inputSchema: z.object({
+      account_number: accountNumberOptionalSchema,
+      offset: z.number().int().nonnegative().default(0),
+      limit: z.number().int().positive().max(500).default(100),
+    }),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async ({
+    account_number,
+    offset,
+    limit,
+  }: {
+    account_number?: string;
+    offset?: number;
+    limit?: number;
+  }) => jsonResponse(await listGoldFees({ accountNumber: account_number, offset, limit })),
+);
+
+registerCapabilityTool(
+  "rewards",
+  {
+    title: "Robinhood Stock Rewards",
+    description:
+      "Privacy-safe stock reward summary. Returns section/type counts and normalized reward metadata only; never referral identities or contact data.",
+    inputSchema: z.object({}),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async () => jsonResponse(await getStockRewardsSummary()),
+);
+
+registerCapabilityTool(
+  "inbox_summary",
+  {
+    title: "Robinhood Inbox Summary",
+    description:
+      "Inbox aggregate only: total, unread, critical, muted, latest activity, and pagination. Never returns message text, names, or raw threads.",
+    inputSchema: z.object({}),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async () => jsonResponse(await getInboxSummary()),
+);
+
+registerCapabilityTool(
+  "ipo_access",
+  {
+    title: "Robinhood IPO Access",
+    description:
+      "List IPO Access offerings or show one symbol with public dates, price, participation, prospectus/roadshow links, and aggregate account eligibility. Read-only; never submits interest.",
+    inputSchema: z.object({ symbol: symbolOptionalSchema }),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async ({ symbol }: { symbol?: string }) => jsonResponse(await getIpoAccess({ symbol })),
 );
 
 // ── MCP Prompts: reusable operating templates ────────────────────────────────────────────────────

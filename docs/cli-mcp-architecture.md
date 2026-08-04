@@ -108,7 +108,7 @@ maintain and safer for agents:
    complete MCP surface, access class, profiles, and output-schema class. Protocol tests require
    exact registry/server parity; existing CLI handler bodies will migrate incrementally.
 2. **Complete personal default plus opt-in compact profiles — shipped.** With
-   `ROBINHOOD_MCP_PROFILE` unset, all 78 tools are available. Set it to `lean`, `core`, `trading`,
+   `ROBINHOOD_MCP_PROFILE` unset, the complete registered tool surface is available. Set it to `lean`, `core`, `trading`,
    `research`, or `admin` only for an intentionally constrained agent.
 3. **Structured output schemas — shipped.** Every tool declares an object contract; new workflows
    use field-specific schemas while legacy contracts are narrowed incrementally.

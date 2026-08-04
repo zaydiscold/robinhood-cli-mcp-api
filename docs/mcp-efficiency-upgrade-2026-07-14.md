@@ -8,7 +8,7 @@ Baseline: `178b2100a909f2c6d0873f0295f832441be0b7db`
 
 The CLI and MCP are functionally healthy, but agents pay too much context and
 runtime overhead before they do useful work. The current `full` MCP profile
-advertises 78 tools at roughly 20,500 `o200k` tokens. The portable `SKILL.md`
+advertises a tool roster whose live count must be read from `tools/list` at roughly 20,500 `o200k` tokens. The portable `SKILL.md`
 is another roughly 30,500 tokens, and the required knowledge-index call can add
 roughly 7,300 more. A repo-local trading session can therefore spend close to
 65,000 tokens on instructions and discovery before answering the operator.

@@ -3498,11 +3498,19 @@ export interface OptionsOrderFlow {
   accountNumber?: string;
   buyingPower?: any;
   fees?: any;
+  /** Order-specific collateral derived from a complete prospective order draft. */
   collateral?: any;
+  /** Supplemental chain-level context; never a substitute for order-specific collateral. */
+  chainCollateral?: unknown;
   warnings: string[];
 }
 export async function readOptionsOrderFlow(
-  opts: { accountNumber?: string; chainId?: string } = {},
+  opts: {
+    accountNumber?: string;
+    chainId?: string;
+    legs?: Array<Record<string, unknown>>;
+    order?: Record<string, unknown>;
+  } = {},
   deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<OptionsOrderFlow> {
   const getJson = deps.getJson ?? brokerageGetJson;
@@ -3519,19 +3527,41 @@ export async function readOptionsOrderFlow(
   } else {
     out.warnings.push("no --account given: options buying power is per-account and was skipped.");
   }
-  try {
-    out.fees = await getJson("https://api.robinhood.com/options/fees/");
-  } catch (e: any) {
-    out.warnings.push(`options fees read failed: ${(e as Error).message.slice(0, 60)}`);
+  if (opts.legs) {
+    try {
+      out.fees = await getJson(
+        "https://api.robinhood.com/options/fees/",
+        {},
+        { legs: JSON.stringify(opts.legs) },
+      );
+    } catch (e: unknown) {
+      out.warnings.push(`options fees read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
+  } else {
+    out.warnings.push("no prospective legs given: order-specific options fees were skipped.");
   }
-  try {
-    out.collateral = opts.chainId
-      ? await getJson("https://api.robinhood.com/options/chains/{id}/collateral/", {
-          id: opts.chainId,
-        })
-      : await getJson("https://api.robinhood.com/options/orders/collateral/");
-  } catch (e: any) {
-    out.warnings.push(`options collateral read failed: ${(e as Error).message.slice(0, 60)}`);
+  if (opts.order) {
+    try {
+      out.collateral = await getJson(
+        "https://api.robinhood.com/options/orders/collateral/",
+        {},
+        { order: JSON.stringify(opts.order) },
+      );
+    } catch (e: unknown) {
+      out.warnings.push(`options collateral read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
+  } else {
+    out.warnings.push("no prospective order given: order-specific options collateral was skipped.");
+  }
+  if (opts.chainId) {
+    try {
+      out.chainCollateral = await getJson(
+        "https://api.robinhood.com/options/chains/{id}/collateral/",
+        { id: opts.chainId },
+      );
+    } catch (e: unknown) {
+      out.warnings.push(`chain collateral context read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
   }
   return out;
 }
@@ -5500,7 +5530,8 @@ export async function runPretradeChecks(
     }
   }
 
-  // (c) options buying power / fees / collateral — shared pre-trade reads, each degrades inside.
+  // (c) options buying power + supplemental chain collateral. Order-specific fee/collateral
+  // reads require prospective legs/full order inputs and are therefore performed by options order-flow.
   try {
     const flow = await readOptionsOrderFlow({ accountNumber: acct, chainId }, { getJson });
     const obp = n(
@@ -5517,14 +5548,13 @@ export async function runPretradeChecks(
     });
     checks.push({
       id: "collateral",
-      status: flow.collateral ? "PASS" : chainId ? "WARN" : "SKIP",
-      detail: flow.collateral
-        ? `Collateral requirements read OK${chainId ? ` for chain ${chainId}` : " (account-level)"} — covered calls need 100 shares/contract in the SAME account; CSPs need the cash.`
+      status: flow.chainCollateral ? "PASS" : chainId ? "WARN" : "SKIP",
+      detail: flow.chainCollateral
+        ? `Supplemental chain collateral read OK for chain ${chainId}. Exact collateral still requires the complete prospective order; covered calls need 100 shares/contract in the SAME account and CSPs need the cash.`
         : chainId
-          ? `collateral read failed: ${flow.warnings.join("; ").slice(0, 100)}`
-          : "no --symbol/--chain-id given; per-chain collateral skipped.",
+          ? `supplemental chain collateral read failed: ${flow.warnings.join("; ").slice(0, 100)}`
+          : "no --symbol/--chain-id given; supplemental chain collateral skipped.",
     });
-    if (flow.fees) resolved.feesRead = true;
   } catch (e: any) {
     checks.push({
       id: "options-buying-power",
@@ -6618,10 +6648,12 @@ export function documentFilename(doc: {
  *   - accountNumber is exact.
  */
 export async function listDocuments(
-  opts: { type?: string; year?: string; accountNumber?: string } = {},
+  opts: { type?: string; year?: string; accountNumber?: string; limit?: number } = {},
   deps: { getAll?: typeof brokerageGetAllResults } = {},
 ): Promise<{
+  total: number;
   count: number;
+  hasMore: boolean;
   documents: DocumentRecord[];
   byType: Record<string, number>;
   warnings: string[];
@@ -6652,9 +6684,19 @@ export async function listDocuments(
         (!opts.accountNumber || d.accountNumber === String(opts.accountNumber)),
     )
     .sort((a: DocumentRecord, b: DocumentRecord) => b.date.localeCompare(a.date));
+  const total = documents.length;
+  const limit = Number.isFinite(opts.limit) && Number(opts.limit) > 0 ? Math.floor(Number(opts.limit)) : total;
+  const boundedDocuments = documents.slice(0, limit);
   const byType: Record<string, number> = {};
-  for (const d of documents) byType[d.type] = (byType[d.type] ?? 0) + 1;
-  return { count: documents.length, documents, byType, warnings: [] };
+  for (const d of boundedDocuments) byType[d.type] = (byType[d.type] ?? 0) + 1;
+  return {
+    total,
+    count: boundedDocuments.length,
+    hasMore: boundedDocuments.length < total,
+    documents: boundedDocuments,
+    byType,
+    warnings: [],
+  };
 }
 
 /**
@@ -6676,7 +6718,10 @@ export async function downloadDocuments(
   skipped: number;
 }> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const listing = await listDocuments(opts, deps);
+  const listing = await listDocuments(
+    { type: opts.type, year: opts.year, accountNumber: opts.accountNumber },
+    deps,
+  );
   const docs =
     opts.limit && opts.limit > 0 ? listing.documents.slice(0, opts.limit) : listing.documents;
   const directory = deps.outDir ?? join(repoRoot(), "local", "documents");

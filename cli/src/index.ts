@@ -1572,12 +1572,24 @@ options
 
 options
   .command("order-flow")
-  .description("Pre-trade options context (live reads): options buying power (per account), the fee schedule, and collateral requirements")
+  .description("Read-only pre-trade options context: account buying power plus order-specific fees/collateral when prospective legs/order JSON are supplied")
   .option("--account <account_number>", "account for options buying power (per-account)")
-  .option("--chain-id <chain_id>", "chain id for chain-level collateral (else order-level collateral)")
+  .option("--chain-id <chain_id>", "optional supplemental chain-level collateral context")
+  .option("--legs-json <json>", "prospective option legs JSON array for an order-specific fee quote")
+  .option("--order-json <json>", "complete prospective options order JSON object for order-specific collateral")
   .option("--json", "emit JSON")
-  .action(async (opts: { account?: string; chainId?: string; json?: boolean }) => {
-    const flow = await readOptionsOrderFlow({ accountNumber: opts.account, chainId: opts.chainId });
+  .action(async (opts: { account?: string; chainId?: string; legsJson?: string; orderJson?: string; json?: boolean }) => {
+    const legs = opts.legsJson ? JSON.parse(opts.legsJson) : undefined;
+    const order = opts.orderJson ? JSON.parse(opts.orderJson) : undefined;
+    if (legs != null && !Array.isArray(legs)) throw new Error("--legs-json must decode to an array.");
+    if (order != null && (Array.isArray(order) || typeof order !== "object"))
+      throw new Error("--order-json must decode to an object.");
+    const flow = await readOptionsOrderFlow({
+      accountNumber: opts.account,
+      chainId: opts.chainId,
+      legs,
+      order,
+    });
     if (opts.json) {
       printJson(flow);
       return;
@@ -1586,15 +1598,13 @@ options
       const bp = flow.buyingPower;
       process.stdout.write(`Options buying power (…${String(opts.account).slice(-4)}): ${usd(num(bp.options_buying_power ?? bp.buying_power ?? bp.amount))}\n`);
     }
-    if (flow.fees) {
-      const f = flow.fees;
-      process.stdout.write(`Options fees: ${JSON.stringify(f).slice(0, 200)}\n`);
-    }
-    if (flow.collateral) {
-      process.stdout.write(`Collateral: ${JSON.stringify(flow.collateral).slice(0, 200)}\n`);
-    }
+    if (flow.fees) process.stdout.write(`Order-specific options fees: ${JSON.stringify(flow.fees).slice(0, 200)}\n`);
+    if (flow.collateral)
+      process.stdout.write(`Order-specific collateral: ${JSON.stringify(flow.collateral).slice(0, 200)}\n`);
+    if (flow.chainCollateral)
+      process.stdout.write(`Supplemental chain collateral: ${JSON.stringify(flow.chainCollateral).slice(0, 200)}\n`);
     for (const w of flow.warnings) process.stderr.write(`warning: ${w}\n`);
-    process.stdout.write(`\nNote: the options/orders/review PREVIEW is a POST — run it via \`brokerage execute "options/orders/review" --method POST\` (gated) until a live pass confirms it is non-mutating.\n`);
+    process.stdout.write(`\nRead-only context only: this command never reviews or submits the prospective order.\n`);
   });
 
 options
@@ -3087,20 +3097,26 @@ const documents = new Command("documents").description(
 
 documents
   .command("list")
-  .description("List documents (newest first) with type, date, tax/statement year, account, and download URL. --type is prefix-matched (1099 catches 1099_crypto + 1099r_roth); --year is the tax year for tax forms, calendar year otherwise.")
+  .description("List documents (newest first) with type, date, tax/statement year, account, and download URL. --type is prefix-matched (1099 catches 1099_crypto + 1099r_roth); --year is the tax year for tax forms, calendar year otherwise. Use --limit for a bounded newest-first page.")
   .option("--type <type>", "1099 | 1099_crypto | 1099r_roth | 5498_roth | account_statement | trade_confirm (prefix match)")
   .option("--year <yyyy>", "tax year for tax forms; calendar year for statements/confirms")
   .option("--account <number>", "scope to one account")
+  .option("--limit <n>", "return at most N matching documents (newest first)", "100")
   .option("--json", "emit JSON")
-  .action(async (opts: { type?: string; year?: string; account?: string; json?: boolean }) => {
-    const r = await listDocuments({ type: opts.type, year: opts.year, accountNumber: opts.account });
+  .action(async (opts: { type?: string; year?: string; account?: string; limit?: string; json?: boolean }) => {
+    const r = await listDocuments({
+      type: opts.type,
+      year: opts.year,
+      accountNumber: opts.account,
+      limit: Number(opts.limit ?? "100"),
+    });
     if (opts.json) { printJson(r); return; }
     if (!r.count) { process.stdout.write("No documents match those filters.\n"); return; }
     printTable(
       r.documents.map((d) => ({ date: d.date, year: d.year, type: d.type, acct: `…${d.accountLast4}`, file: d.filetype })),
       ["date", "year", "type", "acct", "file"]
     );
-    process.stdout.write(`\n${r.count} document(s): ${Object.entries(r.byType).map(([t, c]) => `${t}×${c}`).join(", ")}.\n`);
+    process.stdout.write(`\nShowing ${r.count} of ${r.total} matching document(s): ${Object.entries(r.byType).map(([t, c]) => `${t}×${c}`).join(", ")}${r.hasMore ? " — raise --limit for more" : ""}.\n`);
     process.stdout.write("Download with: documents download [--type T] [--year YYYY] [--account N] [--limit N]\n");
   });
 

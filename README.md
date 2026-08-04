@@ -245,6 +245,7 @@ One line per question. All reads are live and free; the order/settings commands 
 | `options events [--account N]` | "What expirations, assignments, or exercises happened?" — canonical nested path; legacy `options-events` stays supported |
 | `options history <CONTRACT_UUID>` | "What were this contract's historical OHLC, volume, and session points?" — interval `5minute|10minute|hour`, span `day|week`, bounded to 1–500 points |
 | `options chain-stats <SYM>` | "What are ATM IV and expected move for each expiration?" — each row is expiration-specific and expected move is dollars |
+| `options order-flow --account N [--legs-json A] [--order-json O]` | Read-only buying power plus order-specific fee/collateral quote; JSON request models are query-serialized exactly like the web app, missing drafts are skipped, and optional chain collateral is labeled supplemental |
 | `options strategy-quote <id> ...` | "Price this spread/condor/CSP and build the exact dry-run order body" |
 | `wheel [SYM]` | "Where am I in the Wheel, and what's the next leg?" — evidence-based stage + the literal next command |
 | `dividends [--upcoming]` | "How much dividend income am I making — $/day · $/wk · $/mo · $/qtr · $/yr — and what's about to pay?" |

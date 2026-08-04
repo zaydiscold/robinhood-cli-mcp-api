@@ -1,0 +1,2186 @@
+{
+  "capturedAt": "2026-08-04",
+  "source": "Chrome DevTools Export HAR (sanitized), authenticated Robinhood Legend; raw deleted after derivation",
+  "privacy": {
+    "urlValuesRetained": false,
+    "headersRetained": false,
+    "cookiesRetained": false,
+    "payloadsRetained": false,
+    "responseBodiesRetained": false
+  },
+  "summary": {
+    "entryCount": 8770,
+    "uniqueContractShapes": 207,
+    "originCount": 16,
+    "sensitiveHeaderNameOccurrencesInRaw": 0,
+    "cookieObjectCountInRaw": 0,
+    "postDataEntryCountInRaw": 291,
+    "responseTextEntryCountInRaw": 2105
+  },
+  "origins": [
+    "https://aggregator.service.usercentrics.eu",
+    "https://api.robinhood.com",
+    "https://api.usercentrics.eu",
+    "https://app.usercentrics.eu",
+    "https://bonfire.robinhood.com",
+    "https://cdn.robinhood.com",
+    "https://googleads.g.doubleclick.net",
+    "https://identi.robinhood.com",
+    "https://nummus.robinhood.com",
+    "https://o62437.ingest.us.sentry.io",
+    "https://robinhood.com",
+    "https://www.google-analytics.com",
+    "https://www.google.com",
+    "https://www.googletagmanager.com",
+    "wss://api-streaming.robinhood.com",
+    "wss://api.robinhood.com"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "host": "aggregator.service.usercentrics.eu",
+      "path": "/aggregate/en",
+      "queryKeys": [
+        "templates"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "aggregator.service.usercentrics.eu",
+      "path": "/aggregate/en",
+      "queryKeys": [
+        "templates"
+      ],
+      "status": 204,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api-streaming.robinhood.com",
+      "path": "/wss/connect",
+      "queryKeys": [
+        "topic"
+      ],
+      "status": 101,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/accounts/",
+      "queryKeys": [
+        "default_to_all_accounts",
+        "include_managed",
+        "include_multiple_individual"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/accounts/",
+      "queryKeys": [
+        "default_to_all_accounts",
+        "include_managed",
+        "include_multiple_individual"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/accounts/:id/buying_power_breakdown",
+      "queryKeys": [],
+      "status": 200,
+      "count": 23
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/accounts/:id/buying_power_breakdown",
+      "queryKeys": [],
+      "status": 200,
+      "count": 23
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/accounts/sweeps/interest/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/accounts/sweeps/interest/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/arsenal/v1/futures/products",
+      "queryKeys": [
+        "productIds"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/arsenal/v1/futures/products",
+      "queryKeys": [
+        "productIds"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/beacon/base-indicators",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/beacon/base-indicators",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/beacon/indicator-groups",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/beacon/indicator-groups",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/beacon/scans",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/beacon/scans",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/bw/account/futures",
+      "queryKeys": [
+        "rhsAccountNumber"
+      ],
+      "status": 200,
+      "count": 23
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/bw/account/futures",
+      "queryKeys": [
+        "rhsAccountNumber"
+      ],
+      "status": 200,
+      "count": 23
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/bw/config",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/bw/config",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/bw/performance/config",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/bw/performance/config",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/bw/refresh",
+      "queryKeys": [
+        "appChannel",
+        "downloadedDate",
+        "version"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/bw/refresh",
+      "queryKeys": [
+        "appChannel",
+        "downloadedDate",
+        "version"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/ceres/v1/accounts",
+      "queryKeys": [
+        "rhsAccountNumber"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/ceres/v1/accounts",
+      "queryKeys": [
+        "rhsAccountNumber"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/ceres/v1/accounts/:id/aggregated_positions",
+      "queryKeys": [],
+      "status": 200,
+      "count": 197
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/ceres/v1/accounts/:id/aggregated_positions",
+      "queryKeys": [],
+      "status": 200,
+      "count": 197
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/ceres/v1/accounts/:id/pnl_cost_basis",
+      "queryKeys": [],
+      "status": 200,
+      "count": 23
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/ceres/v1/accounts/:id/pnl_cost_basis",
+      "queryKeys": [],
+      "status": 200,
+      "count": 23
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/ceres/v1/futures_account_eligibility/:id",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/ceres/v1/futures_account_eligibility/:id",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/discovery/analytics/ids/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/discovery/analytics/ids/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/discovery/lists/items/",
+      "queryKeys": [
+        "list_id"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/discovery/lists/items/",
+      "queryKeys": [
+        "list_id"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/discovery/lists/v2/:id/items/",
+      "queryKeys": [
+        "owner_type"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/discovery/lists/v2/:id/items/",
+      "queryKeys": [
+        "owner_type"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/futures/:id/futures_buying_power",
+      "queryKeys": [],
+      "status": 301,
+      "count": 69
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/futures/:id/futures_buying_power",
+      "queryKeys": [],
+      "status": 200,
+      "count": 69
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/futures/:id/futures_buying_power/",
+      "queryKeys": [],
+      "status": 0,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/futures/:id/futures_buying_power/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 68
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/futures/:id/futures_buying_power/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 68
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/goku/bw_events",
+      "queryKeys": [],
+      "status": 200,
+      "count": 112
+    },
+    {
+      "method": "POST",
+      "host": "api.robinhood.com",
+      "path": "/goku/bw_events",
+      "queryKeys": [],
+      "status": 201,
+      "count": 112
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/goku/live_frontend_log_events",
+      "queryKeys": [],
+      "status": 200,
+      "count": 155
+    },
+    {
+      "method": "POST",
+      "host": "api.robinhood.com",
+      "path": "/goku/live_frontend_log_events",
+      "queryKeys": [],
+      "status": 201,
+      "count": 152
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/groups",
+      "queryKeys": [],
+      "status": 200,
+      "count": 45
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/groups",
+      "queryKeys": [],
+      "status": 200,
+      "count": 45
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/layouts",
+      "queryKeys": [],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/layouts",
+      "queryKeys": [],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/layouts/:id",
+      "queryKeys": [],
+      "status": 200,
+      "count": 45
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/layouts/:id",
+      "queryKeys": [],
+      "status": 200,
+      "count": 45
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/settings",
+      "queryKeys": [],
+      "status": 200,
+      "count": 47
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/settings",
+      "queryKeys": [],
+      "status": 200,
+      "count": 48
+    },
+    {
+      "method": "PATCH",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/settings",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/user/migrations",
+      "queryKeys": [],
+      "status": 200,
+      "count": 13
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/user/migrations",
+      "queryKeys": [],
+      "status": 200,
+      "count": 13
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widget/settings",
+      "queryKeys": [
+        "widgetIds"
+      ],
+      "status": 200,
+      "count": 3
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widget/settings",
+      "queryKeys": [
+        "widgetIds"
+      ],
+      "status": 200,
+      "count": 3
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widget/settings",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "PATCH",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widget/settings",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widget/type/WIDGET_TYPE_CHART/settings",
+      "queryKeys": [
+        "appType"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widget/type/WIDGET_TYPE_CHART/settings",
+      "queryKeys": [
+        "appType"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widgets/charts/comparisons",
+      "queryKeys": [
+        "widgetId"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widgets/charts/comparisons",
+      "queryKeys": [
+        "widgetId"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widgets/charts/drawings",
+      "queryKeys": [
+        "instrumentId",
+        "instrumentType"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widgets/charts/drawings",
+      "queryKeys": [
+        "instrumentId",
+        "instrumentType",
+        "widgetId"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widgets/charts/drawings",
+      "queryKeys": [
+        "instrumentId",
+        "instrumentType"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/bw/widgets/charts/drawings",
+      "queryKeys": [
+        "instrumentId",
+        "instrumentType",
+        "widgetId"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/hippo/ux-flags",
+      "queryKeys": [
+        "flags"
+      ],
+      "status": 200,
+      "count": 4
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/hippo/ux-flags",
+      "queryKeys": [
+        "flags"
+      ],
+      "status": 200,
+      "count": 4
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/indexes/",
+      "queryKeys": [
+        "ids"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/indexes/",
+      "queryKeys": [
+        "ids"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/instruments/",
+      "queryKeys": [
+        "active_instruments_only",
+        "ids"
+      ],
+      "status": 200,
+      "count": 4
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/instruments/",
+      "queryKeys": [
+        "active_instruments_only",
+        "ids"
+      ],
+      "status": 200,
+      "count": 4
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/instruments/:id/shorting/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/instruments/:id/shorting/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/kaizen/experiments/:id",
+      "queryKeys": [
+        "appVersion",
+        "names",
+        "platform",
+        "trigger"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/kaizen/experiments/:id",
+      "queryKeys": [
+        "appVersion",
+        "names",
+        "platform",
+        "trigger"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/margin/:id/upgrade_restrictions",
+      "queryKeys": [],
+      "status": 301,
+      "count": 2
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/margin/:id/upgrade_restrictions",
+      "queryKeys": [],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/margin/:id/upgrade_restrictions/",
+      "queryKeys": [],
+      "status": 0,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/margin/:id/upgrade_restrictions/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/margin/:id/upgrade_restrictions/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/earnings/",
+      "queryKeys": [
+        "instrument"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/earnings/",
+      "queryKeys": [
+        "instrument"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/equities/ssr/v1/",
+      "queryKeys": [
+        "ids"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/equities/ssr/v1/",
+      "queryKeys": [
+        "ids"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/forex/fundamentals/:id/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/forex/fundamentals/:id/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/forex/historicals/",
+      "queryKeys": [
+        "bounds",
+        "ids",
+        "interval",
+        "span"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/forex/historicals/",
+      "queryKeys": [
+        "bounds",
+        "ids",
+        "interval",
+        "span"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/forex/quotes/",
+      "queryKeys": [
+        "ids",
+        "routing_group"
+      ],
+      "status": 200,
+      "count": 197
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/forex/quotes/",
+      "queryKeys": [
+        "ids",
+        "routing_group"
+      ],
+      "status": 200,
+      "count": 197
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/fundamentals/:id/",
+      "queryKeys": [
+        "include_inactive"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/fundamentals/:id/",
+      "queryKeys": [
+        "include_inactive"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/options/",
+      "queryKeys": [
+        "ids",
+        "include_all_sessions"
+      ],
+      "status": 200,
+      "count": 216
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/options/",
+      "queryKeys": [
+        "ids",
+        "include_all_sessions"
+      ],
+      "status": 200,
+      "count": 216
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/options/chains/stats/v1/:id/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 195
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/options/chains/stats/v1/:id/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 195
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/quotes/",
+      "queryKeys": [
+        "bounds",
+        "ids",
+        "include_inactive"
+      ],
+      "status": 200,
+      "count": 1541
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/quotes/",
+      "queryKeys": [
+        "bounds",
+        "ids",
+        "include_inactive"
+      ],
+      "status": 200,
+      "count": 1543
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/streaming/legend/v2/",
+      "queryKeys": [],
+      "status": 101,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/token/v1/",
+      "queryKeys": [
+        "session_id",
+        "session_type"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/marketdata/token/v1/",
+      "queryKeys": [
+        "session_id",
+        "session_type"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/markets/XNYS/hours/2026-08-03/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/markets/XNYS/hours/2026-08-03/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/markets/XNYS/hours/2026-08-04/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/markets/XNYS/hours/2026-08-04/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/markets/XNYS/hours/2026-08-05/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/markets/XNYS/hours/2026-08-05/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/messaging/price-movement/alerts/logs",
+      "queryKeys": [
+        "pageSize"
+      ],
+      "status": 200,
+      "count": 25
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/messaging/price-movement/alerts/logs",
+      "queryKeys": [
+        "pageSize"
+      ],
+      "status": 200,
+      "count": 25
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/messaging/price-movement/alerts/settings",
+      "queryKeys": [
+        "assetClass",
+        "assetId"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/messaging/price-movement/alerts/settings",
+      "queryKeys": [],
+      "status": 200,
+      "count": 24
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/messaging/price-movement/alerts/settings",
+      "queryKeys": [
+        "assetClass",
+        "assetId"
+      ],
+      "status": 200,
+      "count": 46
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/messaging/price-movement/alerts/settings",
+      "queryKeys": [],
+      "status": 200,
+      "count": 24
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/midlands/notifications/stack/",
+      "queryKeys": [
+        "location"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/midlands/notifications/stack/",
+      "queryKeys": [
+        "location"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/observability/v1/metrics",
+      "queryKeys": [],
+      "status": 200,
+      "count": 3
+    },
+    {
+      "method": "POST",
+      "host": "api.robinhood.com",
+      "path": "/observability/v1/metrics",
+      "queryKeys": [],
+      "status": 200,
+      "count": 3
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/observability/v1/traces",
+      "queryKeys": [],
+      "status": 200,
+      "count": 41
+    },
+    {
+      "method": "POST",
+      "host": "api.robinhood.com",
+      "path": "/observability/v1/traces",
+      "queryKeys": [],
+      "status": 200,
+      "count": 41
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/options-product/simulated-returns/interest-rate-intervals",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/options-product/simulated-returns/interest-rate-intervals",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/options/chains/",
+      "queryKeys": [
+        "ids"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/options/chains/",
+      "queryKeys": [
+        "ids"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/options/instruments/",
+      "queryKeys": [
+        "chain_id",
+        "expiration_dates",
+        "page_size",
+        "state"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/options/instruments/",
+      "queryKeys": [
+        "ids"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/options/instruments/",
+      "queryKeys": [
+        "chain_id",
+        "expiration_dates",
+        "page_size",
+        "state"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/options/instruments/",
+      "queryKeys": [
+        "ids"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/options/option_settings/:id/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/options/option_settings/:id/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/options/orders/",
+      "queryKeys": [
+        "account_number",
+        "created_at__gte"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/options/orders/",
+      "queryKeys": [
+        "account_number",
+        "created_at__gte"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/options/positions/",
+      "queryKeys": [
+        "account_numbers",
+        "nonzero"
+      ],
+      "status": 200,
+      "count": 192
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/options/positions/",
+      "queryKeys": [
+        "account_numbers",
+        "nonzero"
+      ],
+      "status": 200,
+      "count": 193
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/orders/order_checks/presubmit_data/",
+      "queryKeys": [
+        "account_number",
+        "instrument"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/orders/order_checks/presubmit_data/",
+      "queryKeys": [
+        "account_number",
+        "instrument"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/portfolios/v2/performance/summary",
+      "queryKeys": [
+        "metrics",
+        "rhsAccountNumber",
+        "spans"
+      ],
+      "status": 200,
+      "count": 71
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/portfolios/v2/performance/summary",
+      "queryKeys": [
+        "assetClasses",
+        "metrics",
+        "rhsAccountNumber",
+        "spans"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/portfolios/v2/performance/summary",
+      "queryKeys": [
+        "metrics",
+        "rhsAccountNumber",
+        "spans"
+      ],
+      "status": 200,
+      "count": 71
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/portfolios/v2/performance/summary",
+      "queryKeys": [
+        "assetClasses",
+        "metrics",
+        "rhsAccountNumber",
+        "spans"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/positions/",
+      "queryKeys": [
+        "account_number",
+        "nonzero"
+      ],
+      "status": 200,
+      "count": 195
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/positions/",
+      "queryKeys": [
+        "account_number",
+        "nonzero"
+      ],
+      "status": 200,
+      "count": 195
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/subscription/subscriptions/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/subscription/subscriptions/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/user/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/user/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.robinhood.com",
+      "path": "/wormhole/bw/orders/recent",
+      "queryKeys": [
+        "accountNumber"
+      ],
+      "status": 200,
+      "count": 23
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.robinhood.com",
+      "path": "/wormhole/bw/orders/recent",
+      "queryKeys": [
+        "accountNumber"
+      ],
+      "status": 200,
+      "count": 23
+    },
+    {
+      "method": "GET",
+      "host": "api.usercentrics.eu",
+      "path": "/ruleSet/M6Jkl5BTgFMHMJ.json",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.usercentrics.eu",
+      "path": "/ruleSet/M6Jkl5BTgFMHMJ.json",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.usercentrics.eu",
+      "path": "/settings/eRog-on6nfq3j1/latest/en.json",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.usercentrics.eu",
+      "path": "/settings/eRog-on6nfq3j1/latest/en.json",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "api.usercentrics.eu",
+      "path": "/translations/translations-en.json",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "api.usercentrics.eu",
+      "path": "/translations/translations-en.json",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "app.usercentrics.eu",
+      "path": "/browser-sdk/4.59.0/cross-domain-bridge.html",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "app.usercentrics.eu",
+      "path": "/session/1px.png",
+      "queryKeys": [
+        "settingsId"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/accounts/:id/currency_buying_power/USD/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 71
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/accounts/:id/currency_buying_power/USD/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 71
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/accounts/:id/options_buying_power/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 71
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/accounts/:id/options_buying_power/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 71
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/app-comms/batch/surface/info-banner/",
+      "queryKeys": [
+        "account_number",
+        "locations"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/app-comms/batch/surface/info-banner/",
+      "queryKeys": [
+        "account_number",
+        "locations"
+      ],
+      "status": 200,
+      "count": 5
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/app-comms/surface/alert-sheet/",
+      "queryKeys": [
+        "account_number",
+        "location"
+      ],
+      "status": 200,
+      "count": 4
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/app-comms/surface/alert-sheet/",
+      "queryKeys": [
+        "account_number",
+        "location"
+      ],
+      "status": 200,
+      "count": 4
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/crypto/cryptobility/:id/",
+      "queryKeys": [
+        "account_id"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/crypto/cryptobility/:id/",
+      "queryKeys": [
+        "account_id"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/options/should_show_options_upgrade_on_sdp/",
+      "queryKeys": [
+        "account_number",
+        "should_include_null_risk_tolerance"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/options/should_show_options_upgrade_on_sdp/",
+      "queryKeys": [
+        "account_number",
+        "should_include_null_risk_tolerance"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/portfolio/performance/:id/",
+      "queryKeys": [
+        "chart_style",
+        "chart_type",
+        "display_span",
+        "include_all_hours",
+        "is_privacy_enabled"
+      ],
+      "status": 200,
+      "count": 44
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/portfolio/performance/:id/",
+      "queryKeys": [
+        "chart_style",
+        "chart_type",
+        "display_span",
+        "include_all_hours",
+        "is_privacy_enabled"
+      ],
+      "status": 503,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/portfolio/performance/:id/",
+      "queryKeys": [
+        "chart_style",
+        "chart_type",
+        "display_span",
+        "include_all_hours",
+        "is_privacy_enabled"
+      ],
+      "status": 200,
+      "count": 45
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/sms/margin/:id/buying_power_impact",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/sms/margin/:id/buying_power_impact",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "bonfire.robinhood.com",
+      "path": "/social/user_profile/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "bonfire.robinhood.com",
+      "path": "/social/user_profile/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "cdn.robinhood.com",
+      "path": "/assets/generated_assets/black-widow/:asset",
+      "queryKeys": [],
+      "status": 200,
+      "count": 131
+    },
+    {
+      "method": "GET",
+      "host": "cdn.robinhood.com",
+      "path": "/assets/generated_assets/black-widow/:asset",
+      "queryKeys": [],
+      "status": 206,
+      "count": 10
+    },
+    {
+      "method": "GET",
+      "host": "cdn.robinhood.com",
+      "path": "/assets/generated_assets/webapp/vendor/user_centrics/3.90.0/:asset",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "googleads.g.doubleclick.net",
+      "path": "/pagead/viewthroughconversion/:id/",
+      "queryKeys": [
+        "async",
+        "auid",
+        "bg",
+        "cv",
+        "data",
+        "dma",
+        "en",
+        "ept",
+        "fmt",
+        "frm",
+        "fst",
+        "gcd",
+        "gtm",
+        "guid",
+        "hn",
+        "npa",
+        "pscdl",
+        "random",
+        "rcb",
+        "rfmt",
+        "tag_exp",
+        "tiba",
+        "u_h",
+        "u_w",
+        "uaa",
+        "uab",
+        "uafvl",
+        "uam",
+        "uamb",
+        "uap",
+        "uapv",
+        "uaw",
+        "url"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "identi.robinhood.com",
+      "path": "/user_info/address/residential/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "identi.robinhood.com",
+      "path": "/user_info/address/residential/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "identi.robinhood.com",
+      "path": "/user_info/agreement_logs/v2/check/cortex_legend_agreement/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "identi.robinhood.com",
+      "path": "/user_info/agreement_logs/v2/check/cortex_legend_agreement/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "nummus.robinhood.com",
+      "path": "/accounts/",
+      "queryKeys": [
+        "default_to_all_accounts"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "nummus.robinhood.com",
+      "path": "/accounts/",
+      "queryKeys": [
+        "default_to_all_accounts"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "nummus.robinhood.com",
+      "path": "/currency_pairs/",
+      "queryKeys": [],
+      "status": 0,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "nummus.robinhood.com",
+      "path": "/currency_pairs/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "OPTIONS",
+      "host": "nummus.robinhood.com",
+      "path": "/currency_pairs/",
+      "queryKeys": [],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "nummus.robinhood.com",
+      "path": "/holdings/",
+      "queryKeys": [
+        "nonzero",
+        "rhs_account_number"
+      ],
+      "status": 200,
+      "count": 190
+    },
+    {
+      "method": "OPTIONS",
+      "host": "nummus.robinhood.com",
+      "path": "/holdings/",
+      "queryKeys": [
+        "nonzero",
+        "rhs_account_number"
+      ],
+      "status": 200,
+      "count": 191
+    },
+    {
+      "method": "POST",
+      "host": "o62437.ingest.us.sentry.io",
+      "path": "/api/:id/envelope/",
+      "queryKeys": [
+        "sentry_client",
+        "sentry_key",
+        "sentry_version"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "host": "o62437.ingest.us.sentry.io",
+      "path": "/api/:id/security/",
+      "queryKeys": [
+        "sentry_environment",
+        "sentry_key",
+        "sentry_release"
+      ],
+      "status": 200,
+      "count": 3
+    },
+    {
+      "method": "GET",
+      "host": "robinhood.com",
+      "path": "/legend/layout/:id",
+      "queryKeys": [
+        "default_web_client"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "robinhood.com",
+      "path": "/legend/version",
+      "queryKeys": [],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "host": "www.google-analytics.com",
+      "path": "/g/collect",
+      "queryKeys": [
+        "_eu",
+        "_p",
+        "_s",
+        "are",
+        "cid",
+        "dl",
+        "dma",
+        "dt",
+        "en",
+        "frm",
+        "gcd",
+        "gtm",
+        "ngs",
+        "npa",
+        "pscdl",
+        "rcb",
+        "sct",
+        "seg",
+        "sid",
+        "sr",
+        "tag_exp",
+        "tfd",
+        "tid",
+        "uaa",
+        "uab",
+        "uafvl",
+        "uam",
+        "uamb",
+        "uap",
+        "uapv",
+        "uaw",
+        "ul",
+        "v"
+      ],
+      "status": 204,
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "host": "www.google.com",
+      "path": "/ccm/collect",
+      "queryKeys": [
+        "ae",
+        "apvc",
+        "auid",
+        "dl",
+        "dma",
+        "dt",
+        "en",
+        "ep.ads_data_redaction",
+        "fmt",
+        "frm",
+        "gcd",
+        "gtm",
+        "navt",
+        "npa",
+        "rcb",
+        "rnd",
+        "scrsrc",
+        "tag_exp",
+        "tfd",
+        "tft"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "host": "www.google.com",
+      "path": "/ccm/collect",
+      "queryKeys": [
+        "apvc",
+        "auid",
+        "dl",
+        "dma",
+        "dt",
+        "en",
+        "fmt",
+        "frm",
+        "gcd",
+        "gtm",
+        "navt",
+        "npa",
+        "rcb",
+        "rnd",
+        "scrsrc",
+        "tag_exp",
+        "tfd",
+        "tft",
+        "tid",
+        "tids"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "host": "www.google.com",
+      "path": "/ccm/collect",
+      "queryKeys": [
+        "apvc",
+        "auid",
+        "dl",
+        "dma",
+        "dt",
+        "en",
+        "ep.user_data_mode",
+        "fmt",
+        "frm",
+        "gcd",
+        "gtm",
+        "navt",
+        "npa",
+        "rcb",
+        "rnd",
+        "scrsrc",
+        "tag_exp",
+        "tfd",
+        "tft",
+        "tid",
+        "tids"
+      ],
+      "status": 200,
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "host": "www.google.com",
+      "path": "/pagead/1p-user-list/:id/",
+      "queryKeys": [
+        "async",
+        "auid",
+        "bg",
+        "cid",
+        "cv",
+        "data",
+        "dma",
+        "en",
+        "ept",
+        "fmt",
+        "frm",
+        "fst",
+        "gcd",
+        "gtm",
+        "guid",
+        "hn",
+        "ipr",
+        "is_vtc",
+        "npa",
+        "pscdl",
+        "random",
+        "rcb",
+        "rfmt",
+        "rmt_tld",
+        "tag_exp",
+        "tiba",
+        "u_h",
+        "u_w",
+        "uaa",
+        "uab",
+        "uafvl",
+        "uam",
+        "uamb",
+        "uap",
+        "uapv",
+        "uaw",
+        "url"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "POST",
+      "host": "www.google.com",
+      "path": "/rmkt/collect/:id/",
+      "queryKeys": [
+        "async",
+        "auid",
+        "bg",
+        "cv",
+        "data",
+        "dma",
+        "en",
+        "ept",
+        "fmt",
+        "frm",
+        "fst",
+        "gcd",
+        "gcp",
+        "gtm",
+        "guid",
+        "hn",
+        "npa",
+        "pscdl",
+        "random",
+        "rcb",
+        "tag_exp",
+        "tiba",
+        "u_h",
+        "u_w",
+        "uaa",
+        "uab",
+        "uafvl",
+        "uam",
+        "uamb",
+        "uap",
+        "uapv",
+        "uaw",
+        "url"
+      ],
+      "status": 200,
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "host": "www.googletagmanager.com",
+      "path": "/gtag/js",
+      "queryKeys": [
+        "cx",
+        "gtm",
+        "id"
+      ],
+      "status": 200,
+      "count": 4
+    },
+    {
+      "method": "GET",
+      "host": "www.googletagmanager.com",
+      "path": "/gtm.js",
+      "queryKeys": [
+        "id"
+      ],
+      "status": 200,
+      "count": 1
+    }
+  ]
+}

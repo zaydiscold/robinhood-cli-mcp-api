@@ -245,7 +245,8 @@ describe("MCP profile protocol surfaces", () => {
       const bytes = Buffer.byteLength(JSON.stringify(tools.tools));
       const estimatedTokens = Math.ceil(bytes / 4);
       const instructionBytes = Buffer.byteLength(profileClient.getInstructions() ?? "");
-      expect(tools.tools).toHaveLength(15);
+      expect(tools.tools).toHaveLength(16);
+      expect(tools.tools.some((tool) => tool.name === "robinhood_account_pulse")).toBe(true);
       expect(bytes).toBeLessThanOrEqual(40_000);
       expect(estimatedTokens).toBeLessThanOrEqual(10_000);
       expect(instructionBytes).toBeLessThanOrEqual(800);
@@ -276,7 +277,8 @@ describe("MCP profile protocol surfaces", () => {
           .map((entry) => entry.mcp!)
           .sort(),
       );
-      expect(tools.tools).toHaveLength(85);
+      expect(tools.tools).toHaveLength(86);
+      expect(tools.tools.some((tool) => tool.name === "robinhood_account_pulse")).toBe(true);
       expect(defaultClient.getInstructions()).toMatch(/ROBINHOOD_ALLOW_LIVE_WRITE/);
     } finally {
       await defaultClient.close();

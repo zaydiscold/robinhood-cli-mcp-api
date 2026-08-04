@@ -77,7 +77,7 @@ For maintainers and agents that need the system map, [`docs/cli-mcp-architecture
 
 ## Coverage
 
-- **Accounts** — multiple accounts including retirement / Roth, balances, identity, settings.
+- **Accounts** — multiple accounts including retirement / Roth, balances, identity, settings. `account-pulse` adds a privacy-normalized all-account health view: options buying power, recent-order counts/failures, options expiration settings, and optional Ceres futures position/cost-basis counts (Ceres is not mislabeled as universal brokerage P&L).
 - **Positions** — equity holdings, cost basis, day-trade counters.
 - **Options** — chains, Greeks, multi-leg spreads, rolling, and selling.
 - **Performance** — windowed returns: YTD, 1w, 1m, 1y, 5y, and all-time.

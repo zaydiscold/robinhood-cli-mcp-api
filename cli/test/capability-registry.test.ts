@@ -64,8 +64,10 @@ describe("typed capability registry", () => {
     expect(
       capabilitiesForProfile(DEFAULT_MCP_PROFILE).some((entry) => entry.access === "write"),
     ).toBe(true);
-    expect(capabilitiesForProfile("lean")).toHaveLength(15);
-    expect(capabilitiesForProfile("lean").every((entry) => entry.access === "read")).toBe(true);
+    const lean = capabilitiesForProfile("lean");
+    expect(lean).toHaveLength(16);
+    expect(lean.some((entry) => entry.mcp === "robinhood_account_pulse")).toBe(true);
+    expect(lean.every((entry) => entry.access === "read")).toBe(true);
   });
 
   it("validates every named profile and rejects typos instead of advertising zero tools", () => {

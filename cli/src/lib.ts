@@ -6308,6 +6308,163 @@ export async function listOwnedTradingAccounts(
   return accts;
 }
 
+export interface AccountPulseAccount {
+  accountLast4: string;
+  label: string;
+  optionsBuyingPower?: unknown;
+  recentOrderCount?: number;
+  recentFailedAssetTypes?: string[];
+  optionSettings?: {
+    tradingOnExpirationState?: string;
+    tradingOnExpirationEnabled?: boolean;
+    shortSharesOnOptionEventsEnabled?: boolean;
+    defaultPrice?: string;
+  };
+  futures?: {
+    accountTypes: string[];
+    aggregatedPositionCount: number;
+    costBasisContractCount: number;
+  };
+  warnings: string[];
+}
+
+/**
+ * Compact, read-only health pulse across every owned trading account (or one).
+ *
+ * Universal surfaces are scoped by account number. Ceres is NOT treated as a universal brokerage
+ * P&L API: it resolves optional futures subaccounts (SWAP/FUTURES/CFTC_30_7) and is included only
+ * when `/ceres/v1/accounts?rhsAccountNumber=` returns exact matches.
+ */
+export async function readAccountPulse(
+  opts: { accountNumber?: string } = {},
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{ accounts: AccountPulseAccount[] }> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const owned = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  const accounts = await Promise.all(
+    owned.map(async ({ acct, label }): Promise<AccountPulseAccount> => {
+      const out: AccountPulseAccount = {
+        accountLast4: acct.slice(-4),
+        label,
+        warnings: [],
+      };
+
+      await Promise.all([
+        (async () => {
+          try {
+            out.optionsBuyingPower = await getJson(
+              "https://bonfire.robinhood.com/accounts/{account_number}/options_buying_power",
+              { account_number: acct },
+            );
+          } catch {
+            out.warnings.push("options buying power unavailable");
+          }
+        })(),
+        (async () => {
+          try {
+            const recent = await getJson(
+              "https://api.robinhood.com/wormhole/bw/orders/recent",
+              {},
+              { accountNumber: acct },
+            );
+            out.recentOrderCount = Array.isArray(recent?.results) ? recent.results.length : 0;
+            out.recentFailedAssetTypes = Array.isArray(recent?.failedAssetTypes)
+              ? recent.failedAssetTypes.map(String)
+              : [];
+          } catch {
+            out.warnings.push("recent orders unavailable");
+          }
+        })(),
+        (async () => {
+          try {
+            const settings = await getJson(
+              "https://api.robinhood.com/options/option_settings/{account_number}/",
+              { account_number: acct },
+            );
+            out.optionSettings = {
+              tradingOnExpirationState: settings?.trading_on_expiration_state,
+              tradingOnExpirationEnabled: settings?.trading_on_expiration_enabled,
+              shortSharesOnOptionEventsEnabled: settings?.short_shares_on_option_events_enabled,
+              defaultPrice: settings?.default_price,
+            };
+          } catch {
+            out.warnings.push("options settings unavailable");
+          }
+        })(),
+        (async () => {
+          try {
+            const ceres = await getJson(
+              "https://api.robinhood.com/ceres/v1/accounts",
+              {},
+              { rhsAccountNumber: acct },
+            );
+            const rows: any[] = Array.isArray(ceres?.results)
+              ? ceres.results
+              : Array.isArray(ceres)
+                ? ceres
+                : [];
+            const matches = rows.filter(
+              (row) => row?.id && String(row?.rhsAccountNumber) === acct,
+            );
+            if (!matches.length) return;
+            const surfaces = await Promise.all(
+              matches.map(async (row) => {
+                const id = String(row.id);
+                let aggregatedPositionCount = 0;
+                let costBasisContractCount = 0;
+                try {
+                  const aggregated = await getJson(
+                    "https://api.robinhood.com/ceres/v1/accounts/{id}/aggregated_positions",
+                    { id },
+                  );
+                  aggregatedPositionCount = Array.isArray(aggregated?.results)
+                    ? aggregated.results.length
+                    : 0;
+                } catch {
+                  out.warnings.push("futures aggregated positions unavailable");
+                }
+                try {
+                  const costBasis = await getJson(
+                    "https://api.robinhood.com/ceres/v1/accounts/{id}/pnl_cost_basis",
+                    { id },
+                  );
+                  costBasisContractCount =
+                    costBasis?.contractToInfo && typeof costBasis.contractToInfo === "object"
+                      ? Object.keys(costBasis.contractToInfo).length
+                      : 0;
+                } catch {
+                  out.warnings.push("futures cost basis unavailable");
+                }
+                return {
+                  accountType: String(row.accountType ?? "unknown"),
+                  aggregatedPositionCount,
+                  costBasisContractCount,
+                };
+              }),
+            );
+            out.futures = {
+              accountTypes: [...new Set(surfaces.map((x) => x.accountType))],
+              aggregatedPositionCount: surfaces.reduce(
+                (sum, x) => sum + x.aggregatedPositionCount,
+                0,
+              ),
+              costBasisContractCount: surfaces.reduce(
+                (sum, x) => sum + x.costBasisContractCount,
+                0,
+              ),
+            };
+          } catch {
+            out.warnings.push("futures account resolver unavailable");
+          }
+        })(),
+      ]);
+
+      return out;
+    }),
+  );
+  return { accounts };
+}
+
 const round2 = (value: number): number =>
   Number.isFinite(value) ? Math.round(value * 100) / 100 : Number.NaN;
 

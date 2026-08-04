@@ -272,6 +272,21 @@
       "notes": "Full graph via transfer/accounts/ (bare accounts/ under-reports). Never hardcode account numbers."
     },
     {
+      "id": "account-pulse",
+      "intent": "Read a compact health pulse across all owned accounts",
+      "triggers": [
+        "account pulse",
+        "account health",
+        "recent order health",
+        "options settings by account",
+        "futures exposure by account"
+      ],
+      "command": "account-pulse [--account <N>]",
+      "mcpTool": "robinhood_account_pulse",
+      "risk": "sensitive-read",
+      "notes": "Fans out over the complete owned trading graph. Returns account last-four labels, options buying power, recent-order counts/failures, normalized options settings, and optional Ceres futures position/cost-basis counts. Ceres is futures-only here, not universal brokerage P&L."
+    },
+    {
       "id": "buy-equity",
       "intent": "Buy a stock (dollars or shares)",
       "triggers": [

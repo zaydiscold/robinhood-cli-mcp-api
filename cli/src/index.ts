@@ -38,6 +38,7 @@ import {
   brokerageGetJson,
   brokerageGetAllResults,
   loadOwnedAccounts,
+  readAccountPulse,
   assertAccountOwned as assertOwnedAccount,
   fetchOptionMarks,
   fetchQuotes,
@@ -2680,6 +2681,32 @@ program
       ["account", "nickname", "class", "cash", "buying_power", "margin", "roll", "naked"]
     );
     for (const row of rows) process.stdout.write(`\n${row.accountNumber} (${row.class}): ${row.capabilityNote}\n`);
+  });
+
+program
+  .command("account-pulse")
+  .description(
+    "Compact read-only pulse across every owned account: options buying power, recent-order health, options settings, and optional Ceres futures exposure.",
+  )
+  .option("--account <account_number>", "scope to one owned account")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; json?: boolean }) => {
+    const pulse = await readAccountPulse({ accountNumber: opts.account });
+    if (opts.json) {
+      printJson(pulse);
+      return;
+    }
+    printTable(
+      pulse.accounts.map((row) => ({
+        account: `…${row.accountLast4}`,
+        nickname: row.label || "—",
+        recent_orders: row.recentOrderCount ?? "unavailable",
+        expiration: row.optionSettings?.tradingOnExpirationState ?? "unavailable",
+        futures_positions: row.futures?.aggregatedPositionCount ?? "n/a",
+        warnings: row.warnings.length,
+      })),
+      ["account", "nickname", "recent_orders", "expiration", "futures_positions", "warnings"],
+    );
   });
 
 // Unified account history: /account/history in the web app aggregates several

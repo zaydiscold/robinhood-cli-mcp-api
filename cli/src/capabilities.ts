@@ -23,6 +23,7 @@ const LEGACY_MCP_TOOLS = [
   "robinhood_account_context_url",
   "robinhood_account_context_workflows",
   "robinhood_accounts",
+  "robinhood_account_pulse",
   "robinhood_api_map_directory",
   "robinhood_api_map_summary",
   "robinhood_autopilot",
@@ -107,6 +108,7 @@ type LegacyMcpTool = (typeof LEGACY_MCP_TOOLS)[number];
 const PROFILE_TOOL_NAMES: Record<Exclude<CapabilityProfile, "full">, readonly string[]> = {
   lean: [
     "robinhood_accounts",
+    "robinhood_account_pulse",
     "robinhood_portfolio",
     "robinhood_positions",
     "robinhood_quote",
@@ -124,6 +126,7 @@ const PROFILE_TOOL_NAMES: Record<Exclude<CapabilityProfile, "full">, readonly st
   ],
   core: [
     "robinhood_accounts",
+    "robinhood_account_pulse",
     "robinhood_autopilot",
     "robinhood_buying_power",
     "robinhood_gold_fees",
@@ -168,6 +171,7 @@ const PROFILE_TOOL_NAMES: Record<Exclude<CapabilityProfile, "full">, readonly st
   ],
   trading: [
     "robinhood_accounts",
+    "robinhood_account_pulse",
     "robinhood_autopilot",
     "robinhood_brokerage_execute",
     "robinhood_buy",

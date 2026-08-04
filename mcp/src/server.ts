@@ -49,6 +49,7 @@ import {
   brokerageGetJson,
   brokerageGetAllResults,
   loadOwnedAccounts,
+  readAccountPulse,
   fetchOptionMarks,
   computePortfolioPnl,
   getUnifiedHistory,
@@ -1196,6 +1197,19 @@ server.registerTool(
       }));
     return jsonResponse({ count: rows.length, accounts: rows });
   },
+);
+
+server.registerTool(
+  "robinhood_account_pulse",
+  {
+    title: "Robinhood Account Pulse",
+    description:
+      "Compact read-only health pulse across all owned accounts (or one): options buying power, recent-order health, normalized options settings, and optional Ceres futures position/cost-basis counts. Returns account last-four labels rather than raw account numbers.",
+    inputSchema: z.object({ account_number: z.string().optional() }),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async ({ account_number }) =>
+    jsonResponse(await readAccountPulse({ accountNumber: account_number })),
 );
 
 server.registerTool(

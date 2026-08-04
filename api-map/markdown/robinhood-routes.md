@@ -4,10 +4,10 @@ Source: official Robinhood Crypto Trading OpenAPI plus sanitized authenticated C
 
 Crypto operations are official Robinhood-published endpoints and should use Ed25519 signing. Brokerage/account operations are browser-backed route-map entries and use caller-owned brokerage token or browser cookie auth.
 
-Current count: 384 route entries.
+Current count: 388 route entries.
 Official Crypto route entries: 16.
-Brokerage/account route entries: 368.
-Risk counts: destructive=11, read=105, sensitive-read=237, write-mutate=13, write-or-sensitive=7, write-safe=11.
+Brokerage/account route entries: 372.
+Risk counts: destructive=11, read=105, sensitive-read=241, write-mutate=13, write-or-sensitive=7, write-safe=11.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -186,7 +186,9 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | sensitive-read | GET | options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/options/chains/{id}/collateral/` |
 | no | sensitive-read | GET | history-documents, options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/options/corp_actions/` |
 | no | sensitive-read | GET | options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/options/events/` |
+| no | sensitive-read | GET | options, order-diagnostics | api.robinhood.com | public-web-bundle module 474280 (observed request contract; response semantics unverified) | `https://api.robinhood.com/options/exercise_checks/` |
 | no | read | GET | options, trading | api.robinhood.com | cdp-2026-06-04-dram-option-order-flow (observed; per-order fee schedule) | `https://api.robinhood.com/options/fees/` |
+| no | sensitive-read | GET | options, order-diagnostics | api.robinhood.com | public-web-bundle module 580605 (observed request contract; response semantics unverified) | `https://api.robinhood.com/options/has_recent_rejection/` |
 | no | read | GET | instruments, marketdata, options, reference | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id | `https://api.robinhood.com/options/instruments/` |
 | no | read | GET | options, instruments, reference | api.robinhood.com | self-extension 2026-05-28: list option instruments for a chain/expiry/type -> find strike + option id | `https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}` |
 | no | read | inferred | marketdata, options | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/options/instruments/{0}/` |
@@ -197,6 +199,8 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | yes | write-mutate | POST | account, options, trading | api.robinhood.com | self-extension 2026-05-28: options order PLACEMENT (POST). Same reason as equity orders; supports legs[] for single/multi-leg. Double-gated. | `https://api.robinhood.com/options/orders/` |
 | no | sensitive-read | GET | options, orders | api.robinhood.com | self-extension 2026-06-11: single OPTIONS order lookup by ID, for the post-cancel/post-send evidence re-read (order-evidence rule). Live-verified 200 against a filled SPXW order. | `https://api.robinhood.com/options/orders/{0}/` |
 | yes | destructive | POST | options, orders | api.robinhood.com | wire-writes 2026-05-29 | `https://api.robinhood.com/options/orders/{0}/cancel/` |
+| no | sensitive-read | GET | options, order-diagnostics | api.robinhood.com | public-web-bundle module 452309 (observed request contract; response semantics unverified) | `https://api.robinhood.com/options/orders/available_contracts/{account_number}/` |
+| no | sensitive-read | GET | options, order-diagnostics | api.robinhood.com | public-web-bundle module 222520 (observed request contract; response semantics unverified) | `https://api.robinhood.com/options/orders/available_shares/{account_number}/` |
 | no | read | GET | options, trading | api.robinhood.com | cdp-2026-06-04-dram-option-order-flow; cdp-2026-06-23-googl-native-roll (response live-verified; collateral pre-check, full order passed url-encoded in ?order={json}) | `https://api.robinhood.com/options/orders/collateral/` |
 | no | sensitive-read | inferred | account, options | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/options/positions/` |
 | no | sensitive-read | GET | account, options | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/options/positions/?account_numbers=` |

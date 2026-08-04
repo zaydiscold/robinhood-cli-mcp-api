@@ -626,6 +626,22 @@
       "mcpTool": "robinhood_hotlist",
       "risk": "read",
       "notes": "Reads repo-root hotlist.md (one `TICKER — thesis` per line; example-marked lines ignored) and quotes every ticker live: last, day $ and %, thesis. Operators maintain the file; agents read it alongside ball-knowledge.md."
+    },
+    {
+      "id": "options-diagnostics",
+      "intent": "Read-only options availability, recent rejection, rollable quantity, or exercise checks",
+      "triggers": [
+        "options diagnostics",
+        "available contracts",
+        "available shares",
+        "recent option rejection",
+        "rollable quantity",
+        "exercise checks"
+      ],
+      "command": "options diagnostics --account <N> [--strategy-code <CODE>] [--equity-instrument-id <UUID>] [--option-id <UUID>] [--order-to-replace-id <UUID>] [--json]",
+      "mcpTool": "robinhood_options_diagnostics",
+      "risk": "sensitive-read",
+      "notes": "Strictly read-only availability/rejection/exercise diagnostics; endpoint-specific missing inputs SKIP locally. availableContracts, availableShares, recentRejection, and exerciseChecks are public-bundle observed-contract evidence; maximumRollableQuantity is live-verified. Never reviews or submits an order."
     }
   ]
 }

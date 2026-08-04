@@ -4,8 +4,8 @@ Source: reverse-engineered routes plus sanitized authenticated Chrome/CDP captur
 
 Personal repo semantics: mapped routes can be executed live with caller-owned `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE`. Pass `--dry-run` when you want a non-sending test plan.
 
-Current count: 368 route templates.
-Risk counts: destructive=9, read=99, sensitive-read=231, write-mutate=11, write-or-sensitive=7, write-safe=11.
+Current count: 372 route templates.
+Risk counts: destructive=9, read=99, sensitive-read=235, write-mutate=11, write-or-sensitive=7, write-safe=11.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -379,5 +379,9 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | destructive | POST | orders | nummus.robinhood.com | wire-writes 2026-05-29 | `https://nummus.robinhood.com/orders/{0}/cancel/` |
 | sensitive-read | GET | account | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://nummus.robinhood.com/portfolios/{uuid}/` |
 | sensitive-read | inferred | account | phoenix.robinhood.com | community-seed | `https://phoenix.robinhood.com/accounts/unified` |
+| sensitive-read | GET | options, order-diagnostics | api.robinhood.com | public-web-bundle module 452309 (observed request contract; response semantics unverified) | `https://api.robinhood.com/options/orders/available_contracts/{account_number}/` |
+| sensitive-read | GET | options, order-diagnostics | api.robinhood.com | public-web-bundle module 222520 (observed request contract; response semantics unverified) | `https://api.robinhood.com/options/orders/available_shares/{account_number}/` |
+| sensitive-read | GET | options, order-diagnostics | api.robinhood.com | public-web-bundle module 580605 (observed request contract; response semantics unverified) | `https://api.robinhood.com/options/has_recent_rejection/` |
+| sensitive-read | GET | options, order-diagnostics | api.robinhood.com | public-web-bundle module 474280 (observed request contract; response semantics unverified) | `https://api.robinhood.com/options/exercise_checks/` |
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

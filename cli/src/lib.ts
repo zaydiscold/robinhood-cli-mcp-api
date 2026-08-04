@@ -3095,7 +3095,7 @@ export async function computePortfolioPnl(
         optionPositions: [],
         warnings: [] as string[],
       };
-    try {
+      try {
         const p = await getJson("https://api.robinhood.com/portfolios/{account_number}/", {
           account_number: acct,
         });
@@ -3105,28 +3105,28 @@ export async function computePortfolioPnl(
           rawPrev = n(p.equity_previous_close);
         const prevClose =
           Number.isFinite(adjPrev) && (adjPrev !== 0 || equity === 0)
-        ? adjPrev
+            ? adjPrev
             : Number.isFinite(rawPrev) && (rawPrev !== 0 || equity === 0)
               ? rawPrev
               : Number.NaN;
-      a.equity = equity;
-      a.currentEquity = Number.isFinite(ext) ? ext : equity;
-      a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
+        a.equity = equity;
+        a.currentEquity = Number.isFinite(ext) ? ext : equity;
+        a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
         a.reportedDay =
           Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
       } catch (e: any) {
         a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`);
       }
-    try {
+      try {
         const bp = await getJson(
           "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
           { num: acct },
         );
-      a.buyingPower = n(bp.buying_power);
+        a.buyingPower = n(bp.buying_power);
       } catch {
         a.warnings.push(`buying power read failed (${acct})`);
       }
-    try {
+      try {
         const eq = await getAll(
           "https://api.robinhood.com/positions/",
           {},
@@ -3138,7 +3138,7 @@ export async function computePortfolioPnl(
       } catch {
         a.warnings.push(`equity positions read failed (${acct})`);
       }
-    try {
+      try {
         const od = await getAll(
           "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
           {},
@@ -3152,7 +3152,7 @@ export async function computePortfolioPnl(
             oid: x.legs?.[0]?.option_id,
             qty: n(x.quantity),
             underlyingType: x.underlying_type ?? null,
-  }));
+          }));
       } catch {
         a.warnings.push(`option positions read failed (${acct})`);
       }
@@ -3343,10 +3343,10 @@ export async function computePortfolioPnl(
   const mispricedAfterHoursPositions = drivers.filter((d) => !Number.isFinite(d.ahUsd)).length;
   const mispricedPositions =
     window === "day"
-    ? mispricedDayPositions
-    : window === "after-hours"
-      ? mispricedAfterHoursPositions
-      : drivers.filter((d) => !Number.isFinite(d.dayUsd) || !Number.isFinite(d.ahUsd)).length;
+      ? mispricedDayPositions
+      : window === "after-hours"
+        ? mispricedAfterHoursPositions
+        : drivers.filter((d) => !Number.isFinite(d.dayUsd) || !Number.isFinite(d.ahUsd)).length;
   for (const a of perAccount) {
     const accountDrivers = drivers.filter((d) => d.acct === a.acct);
     a.day = accountDrivers.some((d) => !Number.isFinite(d.dayUsd))
@@ -3355,9 +3355,9 @@ export async function computePortfolioPnl(
   }
   const failedReads = perAccount.filter(
     (a) =>
-    !Number.isFinite(a.currentEquity) ||
-    (accountNeedsDay && !Number.isFinite(a.day)) ||
-    (accountNeedsAfterHours && !Number.isFinite(a.afterHours)),
+      !Number.isFinite(a.currentEquity) ||
+      (accountNeedsDay && !Number.isFinite(a.day)) ||
+      (accountNeedsAfterHours && !Number.isFinite(a.afterHours)),
   ).length;
   const driverDaySum = drivers.reduce((s, d) => s + (Number.isFinite(d.dayUsd) ? d.dayUsd : 0), 0);
   const driverAfterHoursSum = drivers.reduce(
@@ -3377,8 +3377,8 @@ export async function computePortfolioPnl(
   };
   const residual =
     Number.isFinite(reportedAccountDayDelta) && mispricedDayPositions === 0
-    ? reportedAccountDayDelta - driverDaySum
-    : Number.NaN;
+      ? reportedAccountDayDelta - driverDaySum
+      : Number.NaN;
   // After-hours is meaningful only in an extended session; intraday/closed it's ~0. Flag so callers don't
   // read a regular-session "$0 after-hours / no AH losers" as a failed or flat session.
   const afterHoursActive = perAccount.some(
@@ -3459,8 +3459,8 @@ export async function computePortfolioPnl(
       driverAfterHoursChangeUsd: driverAfterHoursSum,
       afterHoursResidualUsd:
         Number.isFinite(totals.afterHours) && mispricedAfterHoursPositions === 0
-        ? totals.afterHours - driverAfterHoursSum
-        : Number.NaN,
+          ? totals.afterHours - driverAfterHoursSum
+          : Number.NaN,
       mispricedPositions,
       mispricedDayPositions,
       mispricedAfterHoursPositions,
@@ -3502,6 +3502,8 @@ export interface OptionsOrderFlow {
   collateral?: any;
   /** Supplemental chain-level context; never a substitute for order-specific collateral. */
   chainCollateral?: unknown;
+  /** Explicit ledger for calculations that could not be evaluated because required input was absent. */
+  notEvaluated: Array<{ surface: string; reason: string }>;
   warnings: string[];
 }
 export async function readOptionsOrderFlow(
@@ -3514,7 +3516,11 @@ export async function readOptionsOrderFlow(
   deps: { getJson?: typeof brokerageGetJson } = {},
 ): Promise<OptionsOrderFlow> {
   const getJson = deps.getJson ?? brokerageGetJson;
-  const out: OptionsOrderFlow = { accountNumber: opts.accountNumber, warnings: [] };
+  const out: OptionsOrderFlow = {
+    accountNumber: opts.accountNumber,
+    notEvaluated: [],
+    warnings: [],
+  };
   if (opts.accountNumber) {
     try {
       out.buyingPower = await getJson(
@@ -3525,7 +3531,10 @@ export async function readOptionsOrderFlow(
       out.warnings.push(`options buying power read failed: ${(e as Error).message.slice(0, 60)}`);
     }
   } else {
-    out.warnings.push("no --account given: options buying power is per-account and was skipped.");
+    out.notEvaluated.push({ surface: "buyingPower", reason: "accountNumber is required" });
+    out.warnings.push(
+      "options buying power not evaluated: accountNumber is required for this per-account surface.",
+    );
   }
   if (opts.legs) {
     try {
@@ -3538,7 +3547,8 @@ export async function readOptionsOrderFlow(
       out.warnings.push(`options fees read failed: ${(e as Error).message.slice(0, 60)}`);
     }
   } else {
-    out.warnings.push("no prospective legs given: order-specific options fees were skipped.");
+    out.notEvaluated.push({ surface: "fees", reason: "prospective legs are required" });
+    out.warnings.push("order-specific options fees not evaluated: prospective legs are required.");
   }
   if (opts.order) {
     try {
@@ -3551,7 +3561,13 @@ export async function readOptionsOrderFlow(
       out.warnings.push(`options collateral read failed: ${(e as Error).message.slice(0, 60)}`);
     }
   } else {
-    out.warnings.push("no prospective order given: order-specific options collateral was skipped.");
+    out.notEvaluated.push({
+      surface: "collateral",
+      reason: "a complete prospective order is required",
+    });
+    out.warnings.push(
+      "order-specific options collateral not evaluated: a complete prospective order is required.",
+    );
   }
   if (opts.chainId) {
     try {
@@ -3560,14 +3576,188 @@ export async function readOptionsOrderFlow(
         { id: opts.chainId },
       );
     } catch (e: unknown) {
-      out.warnings.push(`chain collateral context read failed: ${(e as Error).message.slice(0, 60)}`);
+      out.warnings.push(
+        `chain collateral context read failed: ${(e as Error).message.slice(0, 60)}`,
+      );
     }
   }
   return out;
 }
 
 /**
- * Generic env-gated brokerage write, shared by the CLI and the MCP server. Pass the EXACT templated
+ * Read-only options order diagnostics. Each endpoint is input-gated locally so this function never
+ * emits a malformed/naked request. Bundle-derived contracts remain observed-contract until a
+ * sanitized authenticated response confirms semantics; maximum rollable quantity is live-verified.
+ * This intentionally excludes review/submission and all other POST order surfaces.
+ */
+export interface OptionsOrderDiagnostics {
+  accountNumber?: string;
+  availableContracts?: number;
+  availableShares?: number;
+  rollable?: {
+    availableQuantity: number;
+    pendingClosingQuantity: number;
+    totalQuantity: number;
+    strategyCode: string;
+  };
+  recentRejectionExists?: boolean;
+  exerciseChecks?: {
+    exercisableQuantity: number;
+    corporateActionRestriction: unknown;
+    raw: unknown;
+  };
+  notEvaluated: Array<{ surface: string; reason: string }>;
+  warnings: string[];
+  evidence: {
+    availableContracts: "observed-contract";
+    availableShares: "observed-contract";
+    recentRejection: "live-verified";
+    exerciseChecks: "observed-contract";
+    maximumRollableQuantity: "live-verified";
+  };
+}
+
+function diagnosticsNumber(value: unknown): number {
+  const result = Number(value);
+  return Number.isFinite(result) ? result : Number.NaN;
+}
+
+export async function readOptionsOrderDiagnostics(
+  opts: {
+    accountNumber?: string;
+    strategyCode?: string;
+    equityInstrumentId?: string;
+    optionId?: string;
+    orderToReplaceId?: string;
+  } = {},
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<OptionsOrderDiagnostics> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const out: OptionsOrderDiagnostics = {
+    accountNumber: opts.accountNumber,
+    notEvaluated: [],
+    warnings: [],
+    evidence: {
+      availableContracts: "observed-contract",
+      availableShares: "observed-contract",
+      recentRejection: "live-verified",
+      exerciseChecks: "observed-contract",
+      maximumRollableQuantity: "live-verified",
+    },
+  };
+  if (opts.accountNumber && opts.strategyCode) {
+    const replacement: Record<string, string> = opts.orderToReplaceId
+      ? { order_to_replace_id: opts.orderToReplaceId }
+      : {};
+    try {
+      const value = await getJson(
+        "https://api.robinhood.com/options/orders/available_contracts/{account_number}/",
+        { account_number: opts.accountNumber },
+        { strategy_code: opts.strategyCode, ...replacement },
+      );
+      const normalized = diagnosticsNumber(value?.num_of_contracts);
+      if (Number.isFinite(normalized)) out.availableContracts = normalized;
+      else out.warnings.push("available contracts response omitted a numeric num_of_contracts.");
+    } catch (e: unknown) {
+      out.warnings.push(`available contracts read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
+    try {
+      const value = await getJson(
+        "https://api.robinhood.com/options/maximum_rollable_quantity/{strategy_code}/",
+        { strategy_code: opts.strategyCode },
+        { account_number: opts.accountNumber },
+      );
+      const availableQuantity = diagnosticsNumber(value?.available_quantity);
+      const pendingClosingQuantity = diagnosticsNumber(value?.pending_closing_quantity);
+      const totalQuantity = diagnosticsNumber(value?.total_quantity);
+      if ([availableQuantity, pendingClosingQuantity, totalQuantity].every(Number.isFinite)) {
+        out.rollable = {
+          availableQuantity,
+          pendingClosingQuantity,
+          totalQuantity,
+          strategyCode: opts.strategyCode,
+        };
+      } else
+        out.warnings.push(
+          "maximum rollable quantity response omitted one or more numeric quantity fields.",
+        );
+    } catch (e: unknown) {
+      out.warnings.push(
+        `maximum rollable quantity read failed: ${(e as Error).message.slice(0, 60)}`,
+      );
+    }
+  } else {
+    out.notEvaluated.push({
+      surface: "availableContractsAndRollableQuantity",
+      reason: "accountNumber and strategyCode are required",
+    });
+    out.warnings.push(
+      "available contracts and rollable quantity not evaluated: both account and strategy code are required.",
+    );
+  }
+  if (opts.accountNumber && opts.equityInstrumentId) {
+    try {
+      const replacement: Record<string, string> = opts.orderToReplaceId
+        ? { order_to_replace_id: opts.orderToReplaceId }
+        : {};
+      const value = await getJson(
+        "https://api.robinhood.com/options/orders/available_shares/{account_number}/",
+        { account_number: opts.accountNumber },
+        { equity_instrument_id: opts.equityInstrumentId, ...replacement },
+      );
+      const normalized = diagnosticsNumber(value?.num_of_shares);
+      if (Number.isFinite(normalized)) out.availableShares = normalized;
+      else out.warnings.push("available shares response omitted a numeric num_of_shares.");
+    } catch (e: unknown) {
+      out.warnings.push(`available shares read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
+  } else {
+    out.notEvaluated.push({
+      surface: "availableShares",
+      reason: "accountNumber and equityInstrumentId are required",
+    });
+    out.warnings.push(
+      "available shares not evaluated: both account and equity instrument ID are required.",
+    );
+  }
+  try {
+    const value = await getJson("https://api.robinhood.com/options/has_recent_rejection/");
+    if (typeof value?.recent_rejection_exists === "boolean")
+      out.recentRejectionExists = value.recent_rejection_exists;
+    else out.warnings.push("recent rejection response omitted boolean recent_rejection_exists.");
+  } catch (e: unknown) {
+    out.warnings.push(`recent rejection read failed: ${(e as Error).message.slice(0, 60)}`);
+  }
+  if (opts.accountNumber && opts.optionId) {
+    try {
+      const value = await getJson(
+        "https://api.robinhood.com/options/exercise_checks/",
+        {},
+        { account_number: opts.accountNumber, option_id: opts.optionId },
+      );
+      const exercisableQuantity = diagnosticsNumber(value?.exercisable_quantity);
+      if (Number.isFinite(exercisableQuantity)) {
+        out.exerciseChecks = {
+          exercisableQuantity,
+          corporateActionRestriction: value?.corporate_action_restriction,
+          raw: value,
+        };
+      } else out.warnings.push("exercise checks response omitted a numeric exercisable_quantity.");
+    } catch (e: unknown) {
+      out.warnings.push(`exercise checks read failed: ${(e as Error).message.slice(0, 60)}`);
+    }
+  } else {
+    out.notEvaluated.push({
+      surface: "exerciseChecks",
+      reason: "accountNumber and optionId are required",
+    });
+    out.warnings.push("exercise checks not evaluated: both account and option ID are required.");
+  }
+  return out;
+}
+
+/**
+ * Generic env-gated brokerage write, shared by the CLI and the MCP server.
  * URL (with {placeholders}) so the resolver matches one route and the ambiguity guard can't fire. The
  * gate engages on write verbs even if a route's risk is mis-classified (verb floor). Dry-run by default;
  * a live send needs ROBINHOOD_ALLOW_LIVE_WRITE=1 (the single switch; liveWrite:true optional). Hoisted here so the write path
@@ -6403,9 +6593,7 @@ export async function readAccountPulse(
               : Array.isArray(ceres)
                 ? ceres
                 : [];
-            const matches = rows.filter(
-              (row) => row?.id && String(row?.rhsAccountNumber) === acct,
-            );
+            const matches = rows.filter((row) => row?.id && String(row?.rhsAccountNumber) === acct);
             if (!matches.length) return;
             const surfaces = await Promise.all(
               matches.map(async (row) => {
@@ -6842,7 +7030,8 @@ export async function listDocuments(
     )
     .sort((a: DocumentRecord, b: DocumentRecord) => b.date.localeCompare(a.date));
   const total = documents.length;
-  const limit = Number.isFinite(opts.limit) && Number(opts.limit) > 0 ? Math.floor(Number(opts.limit)) : total;
+  const limit =
+    Number.isFinite(opts.limit) && Number(opts.limit) > 0 ? Math.floor(Number(opts.limit)) : total;
   const boundedDocuments = documents.slice(0, limit);
   const byType: Record<string, number> = {};
   for (const d of boundedDocuments) byType[d.type] = (byType[d.type] ?? 0) + 1;
@@ -10203,13 +10392,15 @@ export async function getSweepInterest(
     if (apyPct !== null) {
       return {
         accountNumber: opts.accountNumber ?? null,
-        rates: [{
-          balanceTier: "Gold cash sweep",
-          apyPct,
-          interestRatePct: null,
-          effectiveDate: null,
-          source: "gold-sweep-splash",
-        }],
+        rates: [
+          {
+            balanceTier: "Gold cash sweep",
+            apyPct,
+            interestRatePct: null,
+            effectiveDate: null,
+            source: "gold-sweep-splash",
+          },
+        ],
         warnings,
       };
     }
@@ -10232,11 +10423,13 @@ export async function getSweepInterest(
 
   const raw = Array.isArray(data?.results)
     ? data.results
-    : data?.interest_rates ?? data?.rates ?? (Array.isArray(data) ? data : [data]);
+    : (data?.interest_rates ?? data?.rates ?? (Array.isArray(data) ? data : [data]));
   const rates: SweepInterestRecord[] = raw
     .filter((record: any) => record && typeof record === "object")
     .map((record: any) => ({
-      balanceTier: String(record?.balance_tier ?? record?.tier ?? record?.label ?? "Account cash sweep"),
+      balanceTier: String(
+        record?.balance_tier ?? record?.tier ?? record?.label ?? "Account cash sweep",
+      ),
       apyPct: finiteSweepNumber(
         record?.apy ?? record?.apy_pct ?? record?.annual_percentage_yield ?? record?.interest_rate,
       ),
@@ -10266,8 +10459,13 @@ export async function listGoldFees(
   opts: { accountNumber?: string; offset?: number; limit?: number } = {},
   deps: { getAll?: typeof brokerageGetAllResults } = {},
 ): Promise<{
-  count: number; total: number; offset: number; limit: number;
-  hasMore: boolean; fees: GoldFeeRecord[]; warnings: string[];
+  count: number;
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  fees: GoldFeeRecord[];
+  warnings: string[];
 }> {
   const getAll = deps.getAll ?? brokerageGetAllResults;
   const limit = opts.limit && opts.limit >= 1 ? opts.limit : 100;
@@ -10278,17 +10476,14 @@ export async function listGoldFees(
   try {
     const q: Record<string, string> = {};
     if (opts.accountNumber) q.account_number = opts.accountNumber;
-    raw = await getAll(
-      "https://bonfire.robinhood.com/gold/get_subscription_fee_list/",
-      {}, q,
-    );
+    raw = await getAll("https://bonfire.robinhood.com/gold/get_subscription_fee_list/", {}, q);
   } catch (e: any) {
     warnings.push(`gold fee read failed: ${(e as Error).message.slice(0, 80)}`);
     return { count: 0, total: 0, offset: 0, limit, hasMore: false, fees: [], warnings };
   }
 
-  const n = (v: unknown): number => (Number(v) || Number.NaN);
-  const all: any[] = Array.isArray(raw) ? raw : raw?.results ?? [];
+  const n = (v: unknown): number => Number(v) || Number.NaN;
+  const all: any[] = Array.isArray(raw) ? raw : (raw?.results ?? []);
 
   const fees: GoldFeeRecord[] = all
     .filter((f: any) => f && typeof f === "object")
@@ -10300,19 +10495,27 @@ export async function listGoldFees(
       billedAt: f?.billed_at ?? f?.date ?? null,
       periodStart: f?.period_start ?? f?.billing_period_start ?? null,
       periodEnd: f?.period_end ?? f?.billing_period_end ?? null,
-      accountNumber: String(
-        f?.account_number ??
-          (typeof f?.account === "string"
-            ? f.account.match(/\/accounts\/([^/]+)\/?/)?.[1] : "") ?? ""
-      ) || null,
+      accountNumber:
+        String(
+          f?.account_number ??
+            (typeof f?.account === "string"
+              ? f.account.match(/\/accounts\/([^/]+)\/?/)?.[1]
+              : "") ??
+            "",
+        ) || null,
     }));
 
   const total = fees.length;
   const page = fees.slice(offset, offset + limit);
 
   return {
-    count: page.length, total, offset, limit,
-    hasMore: offset + limit < total, fees: page, warnings,
+    count: page.length,
+    total,
+    offset,
+    limit,
+    hasMore: offset + limit < total,
+    fees: page,
+    warnings,
   };
 }
 
@@ -10322,7 +10525,14 @@ export interface StockRewardSummary {
   total: number;
   sectionCounts: Record<string, number>;
   typeCounts: Record<string, number>;
-  rewards: Array<{ id: string | null; itemType: string; rewardType: string | null; status: string | null; quantity: number | null; currencyCode: string | null }>;
+  rewards: Array<{
+    id: string | null;
+    itemType: string;
+    rewardType: string | null;
+    status: string | null;
+    quantity: number | null;
+    currencyCode: string | null;
+  }>;
 }
 
 /** Summarize stock rewards without copying referral objects, names, or contact details. */
@@ -10332,30 +10542,44 @@ export async function getStockRewardsSummary(
 ): Promise<StockRewardSummary> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const data = await getJson("https://bonfire.robinhood.com/rewards/reward/stocks/");
-  const sections: unknown[] = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
+  const sections: unknown[] = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.results)
+      ? data.results
+      : [];
   const sectionCounts: Record<string, number> = {};
   const typeCounts: Record<string, number> = {};
   const rewards: StockRewardSummary["rewards"] = [];
   for (const section of sections) {
-    const row = section && typeof section === "object" ? section as Record<string, unknown> : {};
+    const row = section && typeof section === "object" ? (section as Record<string, unknown>) : {};
     const name = typeof row.section_name === "string" ? row.section_name : "Unknown";
     const items = Array.isArray(row.items) ? row.items : [];
     sectionCounts[name] = (sectionCounts[name] ?? 0) + items.length;
     for (const item of items) {
-      const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const itemType = typeof record.type === "string" ? record.type : "unknown";
       typeCounts[itemType] = (typeCounts[itemType] ?? 0) + 1;
-      const dataRecord = record.data && typeof record.data === "object" ? record.data as Record<string, unknown> : {};
-      const reward = dataRecord.reward && typeof dataRecord.reward === "object" ? dataRecord.reward as Record<string, unknown> : {};
+      const dataRecord =
+        record.data && typeof record.data === "object"
+          ? (record.data as Record<string, unknown>)
+          : {};
+      const reward =
+        dataRecord.reward && typeof dataRecord.reward === "object"
+          ? (dataRecord.reward as Record<string, unknown>)
+          : {};
       const rawQuantity = reward.reward_qty ?? reward.quantity;
       const quantity = Number(rawQuantity);
       rewards.push({
         id: typeof reward.id === "string" ? reward.id : null,
         itemType,
         rewardType: typeof reward.reward_type === "string" ? reward.reward_type : null,
-        status: typeof (reward.state ?? reward.status) === "string" ? String(reward.state ?? reward.status) : null,
+        status:
+          typeof (reward.state ?? reward.status) === "string"
+            ? String(reward.state ?? reward.status)
+            : null,
         quantity: Number.isFinite(quantity) ? quantity : null,
-        currencyCode: typeof reward.asset_currency_code === "string" ? reward.asset_currency_code : null,
+        currencyCode:
+          typeof reward.asset_currency_code === "string" ? reward.asset_currency_code : null,
       });
     }
   }
@@ -10384,20 +10608,26 @@ export async function getInboxSummary(
     getJson("https://api.robinhood.com/inbox/threads/"),
   ]);
   const rows: unknown[] = Array.isArray(threads?.results) ? threads.results : [];
-  let unread = 0, critical = 0, muted = 0;
+  let unread = 0,
+    critical = 0,
+    muted = 0;
   let latestActivity: string | null = null;
   for (const thread of rows) {
-    const row = thread && typeof thread === "object" ? thread as Record<string, unknown> : {};
+    const row = thread && typeof thread === "object" ? (thread as Record<string, unknown>) : {};
     if (row.is_read === false) unread++;
     if (row.is_critical === true) critical++;
     if (row.is_muted === true) muted++;
     const activity = row.last_message_sent_at ?? row.updated_at;
-    if (typeof activity === "string" && (!latestActivity || activity > latestActivity)) latestActivity = activity;
+    if (typeof activity === "string" && (!latestActivity || activity > latestActivity))
+      latestActivity = activity;
   }
   const total = Number(threads?.count);
   return {
     total: Number.isFinite(total) ? total : rows.length,
-    unread, critical, muted, latestActivity,
+    unread,
+    critical,
+    muted,
+    latestActivity,
     hasNext: Boolean(threads?.next),
     hasBadge: Boolean(badge?.shouldBadge),
     hasCriticalBadge: Boolean(badge?.shouldCriticalBadge),
@@ -10423,12 +10653,26 @@ export interface IpoAccessOffering {
 export async function getIpoAccess(
   opts: { symbol?: string } = {},
   deps: { getJson?: typeof brokerageGetJson } = {},
-): Promise<{ offerings: IpoAccessOffering[]; openOfferingCount: number; eligibility: { eligibleAccounts: number; restrictedAccounts: number; restrictionReasons: string[] }; message: string | null; warnings: string[] }> {
+): Promise<{
+  offerings: IpoAccessOffering[];
+  openOfferingCount: number;
+  eligibility: {
+    eligibleAccounts: number;
+    restrictedAccounts: number;
+    restrictionReasons: string[];
+  };
+  message: string | null;
+  warnings: string[];
+}> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const symbols: string[] = [];
   if (opts.symbol) symbols.push(opts.symbol.trim().toUpperCase());
   else {
-    const list = await getJson("https://api.robinhood.com/discovery/lists/items/", {}, { list_id: IPO_ACCESS_LIST_ID, owner_type: "robinhood" });
+    const list = await getJson(
+      "https://api.robinhood.com/discovery/lists/items/",
+      {},
+      { list_id: IPO_ACCESS_LIST_ID, owner_type: "robinhood" },
+    );
     for (const item of Array.isArray(list?.results) ? list.results : []) {
       if (typeof item?.symbol === "string") symbols.push(item.symbol.toUpperCase());
     }
@@ -10436,44 +10680,78 @@ export async function getIpoAccess(
   const offerings: IpoAccessOffering[] = [];
   const warnings: string[] = [];
   for (const symbol of [...new Set(symbols)]) {
-    const instrument = (await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })).results?.[0];
+    const instrument = (
+      await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })
+    ).results?.[0];
     if (!instrument?.id) continue;
     let summary: any = {};
     // Listing historical/public offerings should not fan out into a feature-gated
     // detail call per symbol. A direct show and an actually open offering do need it.
     if (opts.symbol || instrument.ipo_access_status === "open") {
       try {
-        summary = await getJson("https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/", { ipo_id: instrument.id });
+        summary = await getJson(
+          "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/",
+          { ipo_id: instrument.id },
+        );
       } catch (error) {
         // The offering's public instrument fields remain useful if a feature-gated/retired
         // summary viewmodel is unavailable. Do not turn a read-only list into a hard failure.
-        warnings.push(`IPO summary unavailable for ${String(instrument.symbol ?? symbol)}: ${error instanceof Error ? error.message.slice(0, 80) : "unknown error"}`);
+        warnings.push(
+          `IPO summary unavailable for ${String(instrument.symbol ?? symbol)}: ${error instanceof Error ? error.message.slice(0, 80) : "unknown error"}`,
+        );
       }
     }
     const price = summary?.ipo_price ?? summary?.price?.amount ?? summary?.price;
-    const customerCount = summary?.customer_count ?? summary?.participation?.customers ?? summary?.participation_stats?.customers;
+    const customerCount =
+      summary?.customer_count ??
+      summary?.participation?.customers ??
+      summary?.participation_stats?.customers;
     offerings.push({
-      symbol: String(instrument.symbol ?? symbol), ipoId: String(instrument.id), name: typeof instrument.name === "string" ? instrument.name : null,
-      status: typeof (instrument.ipo_access_status ?? summary?.status) === "string" ? String(instrument.ipo_access_status ?? summary?.status) : null,
-      deadline: typeof instrument.ipo_access_cob_deadline === "string" ? instrument.ipo_access_cob_deadline : null,
+      symbol: String(instrument.symbol ?? symbol),
+      ipoId: String(instrument.id),
+      name: typeof instrument.name === "string" ? instrument.name : null,
+      status:
+        typeof (instrument.ipo_access_status ?? summary?.status) === "string"
+          ? String(instrument.ipo_access_status ?? summary?.status)
+          : null,
+      deadline:
+        typeof instrument.ipo_access_cob_deadline === "string"
+          ? instrument.ipo_access_cob_deadline
+          : null,
       startDate: typeof instrument.ipoa_start_date === "string" ? instrument.ipoa_start_date : null,
       listDate: typeof instrument.list_date === "string" ? instrument.list_date : null,
       priceUsd: Number.isFinite(Number(price)) ? Number(price) : null,
       s1Url: typeof instrument.ipo_s1_url === "string" ? instrument.ipo_s1_url : null,
-      roadshowUrl: typeof instrument.ipo_roadshow_url === "string" ? instrument.ipo_roadshow_url : null,
+      roadshowUrl:
+        typeof instrument.ipo_roadshow_url === "string" ? instrument.ipo_roadshow_url : null,
       customerCount: Number.isFinite(Number(customerCount)) ? Number(customerCount) : null,
     });
   }
   const accountsData = await getJson("https://api.robinhood.com/accounts/");
-  const accounts: unknown[] = Array.isArray(accountsData?.results) ? accountsData.results : Array.isArray(accountsData) ? accountsData : [];
-  const reasons = new Set<string>(); let eligibleAccounts = 0; let restrictedAccounts = 0;
+  const accounts: unknown[] = Array.isArray(accountsData?.results)
+    ? accountsData.results
+    : Array.isArray(accountsData)
+      ? accountsData
+      : [];
+  const reasons = new Set<string>();
+  let eligibleAccounts = 0;
+  let restrictedAccounts = 0;
   for (const account of accounts) {
-    const row = account && typeof account === "object" ? account as Record<string, unknown> : {};
-    if (row.ipo_access_restricted === true) { restrictedAccounts++; if (typeof row.ipo_access_restricted_reason === "string") reasons.add(row.ipo_access_restricted_reason); }
-    else eligibleAccounts++;
+    const row = account && typeof account === "object" ? (account as Record<string, unknown>) : {};
+    if (row.ipo_access_restricted === true) {
+      restrictedAccounts++;
+      if (typeof row.ipo_access_restricted_reason === "string")
+        reasons.add(row.ipo_access_restricted_reason);
+    } else eligibleAccounts++;
   }
   const openOfferingCount = offerings.filter((offering) => offering.status === "open").length;
-  return { offerings, openOfferingCount, eligibility: { eligibleAccounts, restrictedAccounts, restrictionReasons: [...reasons].sort() }, message: openOfferingCount === 0 ? "No open IPO offerings are currently available." : null, warnings };
+  return {
+    offerings,
+    openOfferingCount,
+    eligibility: { eligibleAccounts, restrictedAccounts, restrictionReasons: [...reasons].sort() },
+    message: openOfferingCount === 0 ? "No open IPO offerings are currently available." : null,
+    warnings,
+  };
 }
 
 /* eslint-enable @typescript-eslint/no-explicit-any */

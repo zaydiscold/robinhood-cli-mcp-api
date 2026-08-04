@@ -61,6 +61,7 @@ const LEGACY_MCP_TOOLS = [
   "robinhood_options_holdings",
   "robinhood_options_inspect",
   "robinhood_options_order_flow",
+  "robinhood_options_diagnostics",
   "robinhood_options_roll_plan",
   "robinhood_options_strategy_plan",
   "robinhood_options_strategy_quote",
@@ -146,6 +147,7 @@ const PROFILE_TOOL_NAMES: Record<Exclude<CapabilityProfile, "full">, readonly st
     "robinhood_options_holdings",
     "robinhood_options_inspect",
     "robinhood_options_order_flow",
+    "robinhood_options_diagnostics",
     "robinhood_options_roll_plan",
     "robinhood_options_strategy_plan",
     "robinhood_options_strategy_quote",
@@ -204,6 +206,7 @@ const PROFILE_TOOL_NAMES: Record<Exclude<CapabilityProfile, "full">, readonly st
     "robinhood_options_holdings",
     "robinhood_options_inspect",
     "robinhood_options_order_flow",
+    "robinhood_options_diagnostics",
     "robinhood_options_roll_plan",
     "robinhood_options_strategy_plan",
     "robinhood_options_strategy_quote",
@@ -333,6 +336,7 @@ function profilesForMcp(mcp: string): CapabilityProfile[] {
 function legacyDefinition(mcp: LegacyMcpTool): CapabilityDefinition {
   return {
     id: mcp.replace(/^robinhood_/, ""),
+    cli: mcp === "robinhood_options_diagnostics" ? "options diagnostics" : undefined,
     mcp,
     access: WRITE_TOOL_NAMES.has(mcp) ? "write" : "read",
     profiles: profilesForMcp(mcp),

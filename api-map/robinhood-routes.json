@@ -15835,6 +15835,33 @@
     ]
   },
   {
+    "url": "https://api.robinhood.com/options/exercise_checks/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "order-diagnostics"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "public-web-bundle module 474280 (observed request contract; response semantics unverified)",
+    "queryKeys": [
+      "account_number",
+      "option_id"
+    ],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [
+      "exercisable_quantity",
+      "corporate_action_restriction"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object",
+    "verificationStatus": "inferred"
+  },
+  {
     "url": "https://api.robinhood.com/options/fees/",
     "host": "api.robinhood.com",
     "categories": [
@@ -15866,6 +15893,29 @@
     ],
     "fieldsSource": "verified",
     "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/options/has_recent_rejection/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "order-diagnostics"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "public-web-bundle module 580605 (observed request contract; response semantics unverified)",
+    "queryKeys": [],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [
+      "recent_rejection_exists"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object",
+    "verificationStatus": "inferred"
   },
   {
     "url": "https://api.robinhood.com/options/instruments/",
@@ -16588,6 +16638,58 @@
     "source": "wire-writes 2026-05-29",
     "fields": [],
     "fieldsSource": "undocumented"
+  },
+  {
+    "url": "https://api.robinhood.com/options/orders/available_contracts/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "order-diagnostics"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "public-web-bundle module 452309 (observed request contract; response semantics unverified)",
+    "queryKeys": [
+      "strategy_code",
+      "order_to_replace_id"
+    ],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [
+      "num_of_contracts"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object",
+    "verificationStatus": "inferred"
+  },
+  {
+    "url": "https://api.robinhood.com/options/orders/available_shares/{account_number}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "options",
+      "order-diagnostics"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "public-web-bundle module 222520 (observed request contract; response semantics unverified)",
+    "queryKeys": [
+      "equity_instrument_id",
+      "order_to_replace_id"
+    ],
+    "requestTypes": [
+      "XHR"
+    ],
+    "fields": [
+      "num_of_shares"
+    ],
+    "fieldsSource": "inferred",
+    "fieldsShape": "object",
+    "verificationStatus": "inferred"
   },
   {
     "url": "https://api.robinhood.com/options/orders/collateral/",

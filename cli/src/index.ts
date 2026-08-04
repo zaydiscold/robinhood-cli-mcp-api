@@ -93,6 +93,7 @@ import {
   loadRecipes,
   filterRecipes,
   readOptionsOrderFlow,
+  readOptionsOrderDiagnostics,
   loadOptionsStrategyWorkflows,
   loadRobinhoodRoutes,
   optionReturnPct,
@@ -1606,6 +1607,48 @@ options
       process.stdout.write(`Supplemental chain collateral: ${JSON.stringify(flow.chainCollateral).slice(0, 200)}\n`);
     for (const w of flow.warnings) process.stderr.write(`warning: ${w}\n`);
     process.stdout.write(`\nRead-only context only: this command never reviews or submits the prospective order.\n`);
+  });
+
+options
+  .command("diagnostics")
+  .description("Read-only options availability, rejection, rollable-quantity, and exercise diagnostics; never reviews or submits an order")
+  .option("--account <account_number>", "account for account-scoped diagnostics")
+  .option("--strategy-code <strategy_code>", "strategy code for available-contracts and maximum-rollable-quantity")
+  .option("--equity-instrument-id <uuid>", "equity instrument UUID for available-shares")
+  .option("--option-id <uuid>", "option instrument UUID for exercise checks")
+  .option("--order-to-replace-id <uuid>", "optional replacement-order UUID for availability reads")
+  .option("--json", "emit JSON")
+  .action(async (opts: {
+    account?: string;
+    strategyCode?: string;
+    equityInstrumentId?: string;
+    optionId?: string;
+    orderToReplaceId?: string;
+    json?: boolean;
+  }) => {
+    const diagnostics = await readOptionsOrderDiagnostics({
+      accountNumber: opts.account,
+      strategyCode: opts.strategyCode,
+      equityInstrumentId: opts.equityInstrumentId,
+      optionId: opts.optionId,
+      orderToReplaceId: opts.orderToReplaceId,
+    });
+    if (opts.json) {
+      printJson(diagnostics);
+      return;
+    }
+    if (diagnostics.availableContracts !== undefined)
+      process.stdout.write(`Available contracts: ${diagnostics.availableContracts}\n`);
+    if (diagnostics.availableShares !== undefined)
+      process.stdout.write(`Available shares: ${diagnostics.availableShares}\n`);
+    if (diagnostics.rollable)
+      process.stdout.write(`Maximum rollable quantity: ${diagnostics.rollable.availableQuantity} (pending close ${diagnostics.rollable.pendingClosingQuantity}; total ${diagnostics.rollable.totalQuantity})\n`);
+    if (diagnostics.recentRejectionExists !== undefined)
+      process.stdout.write(`Recent rejection exists: ${diagnostics.recentRejectionExists}\n`);
+    if (diagnostics.exerciseChecks)
+      process.stdout.write(`Exercisable quantity: ${diagnostics.exerciseChecks.exercisableQuantity}\n`);
+    for (const warning of diagnostics.warnings) process.stderr.write(`warning: ${warning}\n`);
+    process.stdout.write("\nRead-only diagnostics only: this command never reviews or submits an order. Bundle-derived fields are observed-contract; rollable quantity is live-verified.\n");
   });
 
 options

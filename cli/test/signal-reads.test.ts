@@ -5,7 +5,7 @@ import {
   computeEarnings,
   computeMovers,
   computeOptionsEvents,
-  computeSentinel
+  computeSentinel,
 } from "../src/lib.js";
 
 // Phase-3 signal/event read engines — the shared code path behind the CLI news/ratings/earnings/
@@ -16,10 +16,21 @@ describe("computeNews", () => {
   it("shapes the latest articles with source + link and honors the limit", async () => {
     const getJson = async () => ({
       results: [
-        { title: "A", source: "Nasdaq", relay_url: "http://x/a", summary: "s", published_at: "2026-06-19T00:00:00Z" },
-        { title: "B", source: "Reuters", relay_url: "http://x/b", published_at: "2026-06-18T00:00:00Z" },
-        { title: "C", source: "WSJ", relay_url: "http://x/c" }
-      ]
+        {
+          title: "A",
+          source: "Nasdaq",
+          relay_url: "http://x/a",
+          summary: "s",
+          published_at: "2026-06-19T00:00:00Z",
+        },
+        {
+          title: "B",
+          source: "Reuters",
+          relay_url: "http://x/b",
+          published_at: "2026-06-18T00:00:00Z",
+        },
+        { title: "C", source: "WSJ", relay_url: "http://x/c" },
+      ],
     });
     const r = await computeNews({ symbol: "aapl", limit: 2 }, { getJson: getJson as any });
     expect(r.symbol).toBe("AAPL");
@@ -31,9 +42,13 @@ describe("computeNews", () => {
 describe("computeRatings", () => {
   const getJson = (async (url: string) => {
     if (url.includes("instruments/?symbol")) return { results: [{ id: "iid-1" }] };
-    if (url.includes("midlands/ratings")) return {
+    if (url.includes("midlands/ratings"))
+      return {
       summary: { num_buy_ratings: 34, num_hold_ratings: 15, num_sell_ratings: 2 },
-      ratings: [{ type: "buy", text: "strong", published_at: "2026-06-18T00:00:00Z" }, { type: "sell", text: "risk" }]
+        ratings: [
+          { type: "buy", text: "strong", published_at: "2026-06-18T00:00:00Z" },
+          { type: "sell", text: "risk" },
+        ],
     };
     throw new Error(`unexpected ${url}`);
   }) as any;
@@ -46,25 +61,43 @@ describe("computeRatings", () => {
   });
 
   it("reports consensus 'none' when there are zero ratings", async () => {
-    const empty = (async (url: string) => url.includes("instruments/?symbol")
+    const empty = (async (url: string) =>
+      url.includes("instruments/?symbol")
       ? { results: [{ id: "iid-1" }] }
-      : { summary: { num_buy_ratings: 0, num_hold_ratings: 0, num_sell_ratings: 0 }, ratings: [] }) as any;
+        : {
+            summary: { num_buy_ratings: 0, num_hold_ratings: 0, num_sell_ratings: 0 },
+            ratings: [],
+          }) as any;
     const r = await computeRatings({ symbol: "AAPL" }, { getJson: empty });
     expect(r.consensus).toBe("none");
   });
 
   it("throws when the symbol can't be resolved to an instrument", async () => {
     const noInst = (async () => ({ results: [] })) as any;
-    await expect(computeRatings({ symbol: "ZZZZ" }, { getJson: noInst })).rejects.toThrow(/No instrument/);
+    await expect(computeRatings({ symbol: "ZZZZ" }, { getJson: noInst })).rejects.toThrow(
+      /No instrument/,
+    );
   });
 });
 
 describe("computeEarnings — null-safe EPS (the Number(null)===0 trap)", () => {
   const getJson = (async () => ({
     results: [
-      { symbol: "AAPL", year: 2026, quarter: 3, eps: { estimate: "1.890000", actual: null }, report: { date: "2026-07-30", timing: "pm", verified: true } },
-      { symbol: "AAPL", year: 2026, quarter: 2, eps: { estimate: "1.940000", actual: "2.010000" }, report: { date: "2026-04-30", timing: "pm", verified: true } }
-    ]
+      {
+        symbol: "AAPL",
+        year: 2026,
+        quarter: 3,
+        eps: { estimate: "1.890000", actual: null },
+        report: { date: "2026-07-30", timing: "pm", verified: true },
+      },
+      {
+        symbol: "AAPL",
+        year: 2026,
+        quarter: 2,
+        eps: { estimate: "1.940000", actual: "2.010000" },
+        report: { date: "2026-04-30", timing: "pm", verified: true },
+      },
+    ],
   })) as any;
 
   it("treats a not-yet-reported quarter (actual=null) as pending, NOT a $0 miss", async () => {
@@ -86,9 +119,21 @@ describe("computeEarnings — null-safe EPS (the Number(null)===0 trap)", () => 
 describe("computeMovers", () => {
   const getJson = (async () => ({
     results: [
-      { symbol: "SNDK", price_movement: { market_hours_last_movement_pct: "11.42", market_hours_last_price: "2182.45" } },
-      { symbol: "GLW", price_movement: { market_hours_last_movement_pct: "11.16", market_hours_last_price: "194.97" } }
-    ]
+      {
+        symbol: "SNDK",
+        price_movement: {
+          market_hours_last_movement_pct: "11.42",
+          market_hours_last_price: "2182.45",
+        },
+      },
+      {
+        symbol: "GLW",
+        price_movement: {
+          market_hours_last_movement_pct: "11.16",
+          market_hours_last_price: "194.97",
+        },
+      },
+    ],
   })) as any;
 
   it("shapes sp500 movers with inline pct + price, defaulting direction up", async () => {
@@ -103,20 +148,45 @@ describe("computeOptionsEvents", () => {
   // The option id rides in the params arg ({ "0": id }) — brokerageGetJson interpolates {0} internally,
   // so the fake must distinguish on params, NOT on the (un-substituted) URL template string.
   const getJson = (async (url: string, params: Record<string, string> = {}) => {
-    if (url.includes("options/events")) return {
+    if (url.includes("options/events"))
+      return {
       results: [
-        { event_date: "2026-03-20", type: "expiration", direction: "credit", quantity: "14.0000", total_cash_amount: "0", state: "confirmed", account_number: "A1", option_id: "oid-1" },
-        { event_date: "2026-03-19", type: "assignment", direction: "debit", quantity: "1", total_cash_amount: "500", state: "confirmed", account_number: "A2", option_id: "oid-2" }
-      ]
+          {
+            event_date: "2026-03-20",
+            type: "expiration",
+            direction: "credit",
+            quantity: "14.0000",
+            total_cash_amount: "0",
+            state: "confirmed",
+            account_number: "A1",
+            option_id: "oid-1",
+          },
+          {
+            event_date: "2026-03-19",
+            type: "assignment",
+            direction: "debit",
+            quantity: "1",
+            total_cash_amount: "500",
+            state: "confirmed",
+            account_number: "A2",
+            option_id: "oid-2",
+          },
+        ],
     };
-    if (url.includes("options/instruments")) return { chain_symbol: params["0"] === "oid-1" ? "GOOG" : "AMD" };
+    if (url.includes("options/instruments"))
+      return { chain_symbol: params["0"] === "oid-1" ? "GOOG" : "AMD" };
     throw new Error(`unexpected ${url}`);
   }) as any;
 
   it("shapes events newest-first with best-effort symbol enrichment", async () => {
     const r = await computeOptionsEvents({}, { getJson });
     expect(r.count).toBe(2);
-    expect(r.events[0]).toMatchObject({ date: "2026-03-20", type: "expiration", symbol: "GOOG", account: "A1" });
+    expect(r.events[0]).toMatchObject({
+      date: "2026-03-20",
+      type: "expiration",
+      symbol: "GOOG",
+      account: "A1",
+    });
   });
 
   it("filters to one account when account_number is passed", async () => {
@@ -124,11 +194,21 @@ describe("computeOptionsEvents", () => {
     expect(r.count).toBe(1);
     expect(r.events[0]).toMatchObject({ account: "A2", type: "assignment", cash: 500 });
   });
+
+  it("rejects unbounded or non-integer event limits before making a live read", async () => {
+    for (const limit of [0, 1.5, 101]) {
+      await expect(computeOptionsEvents({ limit }, { getJson })).rejects.toThrow(
+        /limit must be an integer from 1 through 100/,
+      );
+    }
+  });
 });
 
 describe("computeSentinel — composes risk scan + options-event guardian", () => {
   const ownsA1 = (url: string) =>
-    url.includes("transfer/accounts") ? { results: [{ type: "rhs", account_number: "A1", account_name: "Indiv" }] } : null;
+    url.includes("transfer/accounts")
+      ? { results: [{ type: "rhs", account_number: "A1", account_name: "Indiv" }] }
+      : null;
 
   it("returns the documented shape and degrades gracefully on empty data (no throw)", async () => {
     // A1 is owned but has no positions/events → computeRisk scans nothing, events empty. Proves the
@@ -146,15 +226,31 @@ describe("computeSentinel — composes risk scan + options-event guardian", () =
   it("surfaces a near-term assignment as a warning", async () => {
     const today = new Date().toISOString().slice(0, 10);
     const getJson = (async (url: string) => {
-      const acc = ownsA1(url); if (acc) return acc;
-      if (url.includes("options/events")) return {
-        results: [{ event_date: today, type: "assignment", direction: "debit", quantity: "1", total_cash_amount: "0", state: "confirmed", account_number: "A1", option_id: "oid-1" }]
+      const acc = ownsA1(url);
+      if (acc) return acc;
+      if (url.includes("options/events"))
+        return {
+          results: [
+            {
+              event_date: today,
+              type: "assignment",
+              direction: "debit",
+              quantity: "1",
+              total_cash_amount: "0",
+              state: "confirmed",
+              account_number: "A1",
+              option_id: "oid-1",
+            },
+          ],
       };
       if (url.includes("options/instruments")) return { chain_symbol: "AAPL" };
       return { results: [] }; // risk reads → empty
     }) as any;
     const getAll = (async () => []) as any;
-    const r = await computeSentinel({ accountNumber: "A1", eventLookaheadDays: 7 }, { getJson, getAll });
+    const r = await computeSentinel(
+      { accountNumber: "A1", eventLookaheadDays: 7 },
+      { getJson, getAll },
+    );
     expect(r.events.count).toBe(1);
     expect(r.warnings.some((w: string) => /assignment event/i.test(w))).toBe(true);
   });

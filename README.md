@@ -208,8 +208,11 @@ robinhood-cli order-status -i <ORDER_ID>              # single order — real ti
 robinhood-cli wheel F                                 # Wheel stage + next leg from account evidence
 robinhood-cli positions                               # equity holdings ranked by return
 robinhood-cli positions --account <ACCOUNT_NUMBER>     # per-account equity positions
-robinhood-cli options positions                       # rank open options by % return
+robinhood-cli options positions                       # rank open options by dollar P&L
 robinhood-cli options chain MRVL --width 6            # live chain around the money
+robinhood-cli options events --limit 25               # canonical events path; `options-events` remains an alias
+robinhood-cli options history <CONTRACT_UUID> --json  # contract OHLC/volume points (bounded; default 100)
+robinhood-cli options chain-stats NVDA --json         # ATM IV + expected move per expiration
 robinhood-cli options strategy-quote call-credit-spread --account <ACCOUNT_NUMBER> --symbol DRAM --expiration 2026-12-18 --leg short_call=80 --leg long_call=85 --pricing-mode safe-sell-probe --json
 robinhood-cli options roll-plan --account <ACCOUNT_NUMBER> --symbol DRAM --type call --close-expiration 2026-06-26 --close-strike 70 --open-expiration 2026-12-18 --open-strike 80 --cash-account --json
 robinhood-cli api-map options-contract-links --account <ACCOUNT_NUMBER> --symbol DRAM --expiration 2026-12-18 --type call --side buy --strike 80 --json
@@ -232,6 +235,9 @@ One line per question. All reads are live and free; the order/settings commands 
 | `positions [--account N]` | "What stock do I own, at what basis, up or down how much?" |
 | `options positions` | "What option contracts am I holding, ranked by dollar P&L, in which account?" |
 | `options chain <SYM>` / `options expirations <SYM>` | "What's trading around the money, at what bid/ask/Greeks?" |
+| `options events [--account N]` | "What expirations, assignments, or exercises happened?" — canonical nested path; legacy `options-events` stays supported |
+| `options history <CONTRACT_UUID>` | "What were this contract's historical OHLC, volume, and session points?" — interval `5minute|10minute|hour`, span `day|week`, bounded to 1–500 points |
+| `options chain-stats <SYM>` | "What are ATM IV and expected move for each expiration?" — each row is expiration-specific and expected move is dollars |
 | `options strategy-quote <id> ...` | "Price this spread/condor/CSP and build the exact dry-run order body" |
 | `wheel [SYM]` | "Where am I in the Wheel, and what's the next leg?" — evidence-based stage + the literal next command |
 | `dividends [--upcoming]` | "How much dividend income am I making — $/day · $/wk · $/mo · $/qtr · $/yr — and what's about to pay?" |

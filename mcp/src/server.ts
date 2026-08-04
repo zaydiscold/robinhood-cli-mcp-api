@@ -24,6 +24,8 @@ import {
   computeEarnings,
   computeMovers,
   computeOptionsEvents,
+  computeOptionsHistory,
+  computeChainStats,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -2689,6 +2691,56 @@ server.registerTool(
   async ({ account_number, limit }) => {
     try {
       return jsonResponse(await computeOptionsEvents({ accountNumber: account_number, limit }));
+    } catch (e: any) {
+      return mcpError(e);
+    }
+  },
+);
+
+server.registerTool(
+  "robinhood_options_history",
+  {
+    title: "Robinhood Option Contract History",
+    description:
+      "Historical OHLC, volume, and session points for one known option contract. Accepts an option instrument UUID or its Robinhood instrument URL. Same shared engine as the CLI `options history` command. Live read; no gate.",
+    inputSchema: z.object({
+      contract_id: z.string().min(1, "contract_id is required"),
+      interval: z.enum(["5minute", "10minute", "hour"]).default("5minute"),
+      span: z.enum(["day", "week"]).default("day"),
+      limit: z.number().int().min(1).max(500).default(100),
+    }),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async ({ contract_id, interval, span, limit }) => {
+    try {
+      return jsonResponse(
+        await computeOptionsHistory({ contractId: contract_id, interval, span, maxPoints: limit }),
+      );
+    } catch (e: any) {
+      return mcpError(e);
+    }
+  },
+);
+
+server.registerTool(
+  "robinhood_options_chain_stats",
+  {
+    title: "Robinhood Options Chain Stats",
+    description:
+      "ATM implied volatility and expected move for every available expiration in an option chain. Supply a ticker or a known Robinhood chain UUID. Stats are per expiration, not a single chain-wide forecast. Same shared engine as the CLI `options chain-stats` command. Live read; no gate.",
+    inputSchema: z
+      .object({
+        symbol: symbolOptionalSchema,
+        chain_id: z.string().min(1).optional(),
+      })
+      .refine((value) => Boolean(value.symbol || value.chain_id), {
+        message: "symbol or chain_id is required",
+      }),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async ({ symbol, chain_id }) => {
+    try {
+      return jsonResponse(await computeChainStats({ symbol, chainId: chain_id }));
     } catch (e: any) {
       return mcpError(e);
     }

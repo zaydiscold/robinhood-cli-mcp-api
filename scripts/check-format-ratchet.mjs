@@ -32,7 +32,7 @@ for (const file of files) {
   const source = await readFile(file, "utf8");
   const options = (await prettier.resolveConfig(file)) ?? {};
   if (!(await prettier.check(source, { ...options, filepath: file }))) {
-    unformatted.push(relative(root, file));
+    unformatted.push(relative(root, file).replaceAll("\\", "/"));
   }
 }
 

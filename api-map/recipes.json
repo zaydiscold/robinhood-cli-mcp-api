@@ -73,6 +73,48 @@
       "notes": "Bulk-enumerate first — option UUIDs are random v4, never computable."
     },
     {
+      "id": "options-events",
+      "intent": "Review option expirations, assignments, or exercises",
+      "triggers": [
+        "options events",
+        "option assignments",
+        "option exercises",
+        "option expirations"
+      ],
+      "command": "options events [--account N] [--limit 1..100]   (legacy alias: options-events)",
+      "mcpTool": "robinhood_options_events",
+      "risk": "sensitive-read",
+      "notes": "Canonical nested path. Returns at most 100 newest events, puts cash dollars first in table output, and masks account suffixes; use --share-safe for JSON intended for sharing."
+    },
+    {
+      "id": "options-history",
+      "intent": "Get intraday or weekly historical prices for a known option contract",
+      "triggers": [
+        "option history",
+        "option historical prices",
+        "option ohlc",
+        "option volume history"
+      ],
+      "command": "options history <CONTRACT_UUID_OR_URL> [--interval 5minute|10minute|hour] [--span day|week] [--limit 1..500]",
+      "mcpTool": "robinhood_options_history",
+      "risk": "read",
+      "notes": "Contract IDs must be discovered from options enumerate/holdings/inspect. Normalizes dollar OHLC points and bounds output to the requested limit (100 default)."
+    },
+    {
+      "id": "options-chain-stats",
+      "intent": "Compare ATM IV and dollar expected move by option expiration",
+      "triggers": [
+        "option expected move",
+        "options chain stats",
+        "atm iv",
+        "implied volatility by expiration"
+      ],
+      "command": "options chain-stats <SYM> [--chain-id UUID]",
+      "mcpTool": "robinhood_options_chain_stats",
+      "risk": "read",
+      "notes": "Each row is an expiration-specific ATM IV plus dollar expected move, not a chain-wide forecast."
+    },
+    {
       "id": "enumerate-uuids",
       "intent": "Get every option_instrument_id for a chain/expiration",
       "triggers": [

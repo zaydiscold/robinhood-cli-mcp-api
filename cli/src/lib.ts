@@ -3080,34 +3080,85 @@ export async function computePortfolioPnl(
   };
 
   // 2. Per-account top-line + raw positions + buying power, in parallel; a failure degrades to a warning.
-  const perAccount = await Promise.all(accts.map(async (acct) => {
-    const a: any = { acct, label: labelFor(acct), equity: Number.NaN, currentEquity: Number.NaN, reportedDay: Number.NaN, day: Number.NaN, afterHours: Number.NaN, buyingPower: Number.NaN, equityPositions: [], optionPositions: [], warnings: [] as string[] };
+  const perAccount = await Promise.all(
+    accts.map(async (acct) => {
+      const a: any = {
+        acct,
+        label: labelFor(acct),
+        equity: Number.NaN,
+        currentEquity: Number.NaN,
+        reportedDay: Number.NaN,
+        day: Number.NaN,
+        afterHours: Number.NaN,
+        buyingPower: Number.NaN,
+        equityPositions: [],
+        optionPositions: [],
+        warnings: [] as string[],
+      };
     try {
-      const p = await getJson("https://api.robinhood.com/portfolios/{account_number}/", { account_number: acct });
-      const equity = n(p.equity), ext = n(p.extended_hours_equity);
-      const adjPrev = n(p.adjusted_equity_previous_close), rawPrev = n(p.equity_previous_close);
-      const prevClose = Number.isFinite(adjPrev) && (adjPrev !== 0 || equity === 0)
+        const p = await getJson("https://api.robinhood.com/portfolios/{account_number}/", {
+          account_number: acct,
+        });
+        const equity = n(p.equity),
+          ext = n(p.extended_hours_equity);
+        const adjPrev = n(p.adjusted_equity_previous_close),
+          rawPrev = n(p.equity_previous_close);
+        const prevClose =
+          Number.isFinite(adjPrev) && (adjPrev !== 0 || equity === 0)
         ? adjPrev
-        : (Number.isFinite(rawPrev) && (rawPrev !== 0 || equity === 0) ? rawPrev : Number.NaN);
+            : Number.isFinite(rawPrev) && (rawPrev !== 0 || equity === 0)
+              ? rawPrev
+              : Number.NaN;
       a.equity = equity;
       a.currentEquity = Number.isFinite(ext) ? ext : equity;
       a.afterHours = Number.isFinite(ext) && Number.isFinite(equity) ? ext - equity : Number.NaN;
-      a.reportedDay = Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
-    } catch (e: any) { a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`); }
+        a.reportedDay =
+          Number.isFinite(equity) && Number.isFinite(prevClose) ? equity - prevClose : Number.NaN;
+      } catch (e: any) {
+        a.warnings.push(`portfolio read failed (${acct}): ${(e as Error).message.slice(0, 50)}`);
+      }
     try {
-      const bp = await getJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", { num: acct });
+        const bp = await getJson(
+          "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
+          { num: acct },
+        );
       a.buyingPower = n(bp.buying_power);
-    } catch { a.warnings.push(`buying power read failed (${acct})`); }
+      } catch {
+        a.warnings.push(`buying power read failed (${acct})`);
+      }
     try {
-      const eq = await getAll("https://api.robinhood.com/positions/", {}, { nonzero: "true", account_number: acct });
-      a.equityPositions = eq.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
-    } catch { a.warnings.push(`equity positions read failed (${acct})`); }
+        const eq = await getAll(
+          "https://api.robinhood.com/positions/",
+          {},
+          { nonzero: "true", account_number: acct },
+        );
+        a.equityPositions = eq
+          .filter((x: any) => n(x.quantity) > 0)
+          .map((x: any) => ({ symbol: x.symbol, iid: x.instrument_id, qty: n(x.quantity) }));
+      } catch {
+        a.warnings.push(`equity positions read failed (${acct})`);
+      }
     try {
-      const od = await getAll("https://api.robinhood.com/options/aggregate_positions/?account_numbers=", {}, { account_numbers: acct, nonzero: "true" });
-      a.optionPositions = od.filter((x: any) => n(x.quantity) > 0).map((x: any) => ({ symbol: x.symbol, name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(), oid: x.legs?.[0]?.option_id, qty: n(x.quantity), underlyingType: x.underlying_type ?? null }));
-    } catch { a.warnings.push(`option positions read failed (${acct})`); }
-    return a;
+        const od = await getAll(
+          "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+          {},
+          { account_numbers: acct, nonzero: "true" },
+        );
+        a.optionPositions = od
+          .filter((x: any) => n(x.quantity) > 0)
+          .map((x: any) => ({
+            symbol: x.symbol,
+            name: `${x.symbol} ${x.detail_display_name ?? x.strategy ?? ""}`.trim(),
+            oid: x.legs?.[0]?.option_id,
+            qty: n(x.quantity),
+            underlyingType: x.underlying_type ?? null,
   }));
+      } catch {
+        a.warnings.push(`option positions read failed (${acct})`);
+      }
+      return a;
+    }),
+  );
 
   // 3. Batch quotes + option marks across all accounts (one ticker quoted once).
   const allEqIds = [
@@ -3128,11 +3179,24 @@ export async function computePortfolioPnl(
   // top-lines remain available, but regular-session P&L must degrade rather than falling back to the
   // cash-flow-adjusted account-equity delta (which is not a market P&L measure).
   const globalWarnings: string[] = [];
-  let quotes = new Map<string, any>(), marks = new Map<string, any>();
-  try { if (allEqIds.length) quotes = await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds); }
-  catch (e: any) { globalWarnings.push(`equity quotes batch failed — regular-session P&L and per-name drivers degraded (${(e as Error).message.slice(0, 50)})`); }
-  try { if (allOptIds.length) marks = await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds); }
-  catch (e: any) { globalWarnings.push(`option marks batch failed — option drivers degraded (${(e as Error).message.slice(0, 50)})`); }
+  let quotes = new Map<string, any>(),
+    marks = new Map<string, any>();
+  try {
+    if (allEqIds.length)
+      quotes = await fetchMap("https://api.robinhood.com/marketdata/quotes/?ids={ids}", allEqIds);
+  } catch (e: any) {
+    globalWarnings.push(
+      `equity quotes batch failed — regular-session P&L and per-name drivers degraded (${(e as Error).message.slice(0, 50)})`,
+    );
+  }
+  try {
+    if (allOptIds.length)
+      marks = await fetchMap("https://api.robinhood.com/marketdata/options/?ids={ids}", allOptIds);
+  } catch (e: any) {
+    globalWarnings.push(
+      `option marks batch failed — option drivers degraded (${(e as Error).message.slice(0, 50)})`,
+    );
+  }
 
   // 3b. WINDOW COHERENCE (the pre-open $0-options bug). Between a session close and the next open,
   // marketdata/options/ rolls previous_close_price to the JUST-COMPLETED session while equity quotes
@@ -3221,12 +3285,27 @@ export async function computePortfolioPnl(
           ? n(q.last_extended_hours_trade_price)
           : Number.NaN;
       const prev = n(q.adjusted_previous_close ?? q.previous_close);
-      drivers.push({ acct: a.acct, label: a.label, kind: "equity", symbol: p.symbol, name: p.symbol, qty: p.qty,
-        value: Number.isFinite(ext) ? p.qty * ext : (Number.isFinite(last) ? p.qty * last : Number.NaN),
+      drivers.push({
+        acct: a.acct,
+        label: a.label,
+        kind: "equity",
+        symbol: p.symbol,
+        name: p.symbol,
+        qty: p.qty,
+        value: Number.isFinite(ext)
+          ? p.qty * ext
+          : Number.isFinite(last)
+            ? p.qty * last
+            : Number.NaN,
         dayUsd: Number.isFinite(last) && Number.isFinite(prev) ? p.qty * (last - prev) : Number.NaN,
         // No extended-hours print means no observed per-name AH move, not a failed quote. The account-level
         // extended equity remains authoritative and any unattributed amount is surfaced as AH residual.
-        ahUsd: Number.isFinite(last) ? (Number.isFinite(ext) ? p.qty * (ext - last) : 0) : Number.NaN });
+        ahUsd: Number.isFinite(last)
+          ? Number.isFinite(ext)
+            ? p.qty * (ext - last)
+            : 0
+          : Number.NaN,
+      });
     }
     for (const p of a.optionPositions) {
       const m = marks.get(p.oid) ?? {};
@@ -3262,7 +3341,8 @@ export async function computePortfolioPnl(
   const accountNeedsAfterHours = window !== "day";
   const mispricedDayPositions = drivers.filter((d) => !Number.isFinite(d.dayUsd)).length;
   const mispricedAfterHoursPositions = drivers.filter((d) => !Number.isFinite(d.ahUsd)).length;
-  const mispricedPositions = window === "day"
+  const mispricedPositions =
+    window === "day"
     ? mispricedDayPositions
     : window === "after-hours"
       ? mispricedAfterHoursPositions
@@ -3273,13 +3353,17 @@ export async function computePortfolioPnl(
       ? Number.NaN
       : sum(accountDrivers.map((d) => d.dayUsd));
   }
-  const failedReads = perAccount.filter((a) =>
+  const failedReads = perAccount.filter(
+    (a) =>
     !Number.isFinite(a.currentEquity) ||
     (accountNeedsDay && !Number.isFinite(a.day)) ||
     (accountNeedsAfterHours && !Number.isFinite(a.afterHours)),
   ).length;
   const driverDaySum = drivers.reduce((s, d) => s + (Number.isFinite(d.dayUsd) ? d.dayUsd : 0), 0);
-  const driverAfterHoursSum = drivers.reduce((s, d) => s + (Number.isFinite(d.ahUsd) ? d.ahUsd : 0), 0);
+  const driverAfterHoursSum = drivers.reduce(
+    (s, d) => s + (Number.isFinite(d.ahUsd) ? d.ahUsd : 0),
+    0,
+  );
   const reportedAccountDayDelta = perAccount.every((a) => Number.isFinite(a.reportedDay))
     ? sum(perAccount.map((a) => a.reportedDay))
     : Number.NaN;
@@ -3291,12 +3375,15 @@ export async function computePortfolioPnl(
       ? sum(perAccount.map((a) => a.afterHours))
       : Number.NaN,
   };
-  const residual = Number.isFinite(reportedAccountDayDelta) && mispricedDayPositions === 0
+  const residual =
+    Number.isFinite(reportedAccountDayDelta) && mispricedDayPositions === 0
     ? reportedAccountDayDelta - driverDaySum
     : Number.NaN;
   // After-hours is meaningful only in an extended session; intraday/closed it's ~0. Flag so callers don't
   // read a regular-session "$0 after-hours / no AH losers" as a failed or flat session.
-  const afterHoursActive = perAccount.some((a) => Number.isFinite(a.afterHours) && Math.abs(a.afterHours) > 0.005);
+  const afterHoursActive = perAccount.some(
+    (a) => Number.isFinite(a.afterHours) && Math.abs(a.afterHours) > 0.005,
+  );
   const hasDegradingWarning =
     perAccount.some((account) => account.warnings.length > 0) ||
     globalWarnings.some((warning) => !warning.startsWith("index options held"));
@@ -3358,14 +3445,20 @@ export async function computePortfolioPnl(
     complete: failedReads === 0 && mispricedPositions === 0 && !hasDegradingWarning,
     afterHoursActive,
     dayWindow,
-    totals: { equityUsd: totals.equity, regularCloseEquityUsd: totals.regularCloseEquity, dayChangeUsd: totals.day, afterHoursChangeUsd: totals.afterHours },
+    totals: {
+      equityUsd: totals.equity,
+      regularCloseEquityUsd: totals.regularCloseEquity,
+      dayChangeUsd: totals.day,
+      afterHoursChangeUsd: totals.afterHours,
+    },
     reconciliation: {
       driverDayChangeUsd: driverDaySum,
       totalsDayChangeUsd: totals.day,
       reportedAccountEquityDeltaUsd: reportedAccountDayDelta,
       residualUsd: residual,
       driverAfterHoursChangeUsd: driverAfterHoursSum,
-      afterHoursResidualUsd: Number.isFinite(totals.afterHours) && mispricedAfterHoursPositions === 0
+      afterHoursResidualUsd:
+        Number.isFinite(totals.afterHours) && mispricedAfterHoursPositions === 0
         ? totals.afterHours - driverAfterHoursSum
         : Number.NaN,
       mispricedPositions,
@@ -3382,7 +3475,8 @@ export async function computePortfolioPnl(
       afterHoursChangeUsd: a.afterHours,
       reportedAccountEquityDeltaUsd: a.reportedDay,
       buyingPower: a.buyingPower,
-      partial: !Number.isFinite(a.currentEquity) ||
+      partial:
+        !Number.isFinite(a.currentEquity) ||
         (accountNeedsDay && !Number.isFinite(a.day)) ||
         (accountNeedsAfterHours && !Number.isFinite(a.afterHours)),
       warnings: a.warnings,
@@ -9540,13 +9634,17 @@ export async function computeOptionsEvents(
   }>;
 }> {
   const getJson = deps.getJson ?? brokerageGetJson;
+  const limit = opts.limit ?? 25;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("limit must be an integer from 1 through 100 for options events.");
+  }
   const data = await getJson("https://api.robinhood.com/options/events/");
   let rows: any[] = Array.isArray(data?.results) ? data.results : [];
   if (opts.accountNumber)
     rows = rows.filter((r) => String(r.account_number ?? "") === String(opts.accountNumber));
   rows = rows
     .sort((a, b) => String(b.event_date ?? "").localeCompare(String(a.event_date ?? "")))
-    .slice(0, Math.max(1, opts.limit ?? 25));
+    .slice(0, limit);
   // Best-effort: resolve each UNIQUE option instrument to its chain symbol (bounded — events are few).
   const symbolByOptionId = new Map<string, string>();
   for (const id of [...new Set(rows.map((r) => String(r.option_id ?? "")).filter(Boolean))]) {
@@ -9674,6 +9772,189 @@ export async function setRecurringState(
     fullBody: false,
   });
   return { status: result.status, dryRun: effectiveDryRun, reason: gate.reason };
+}
+
+// ── Options Contract Historicals ──
+// Live-verified 2026-08-02 against api.robinhood.com/marketdata/options/historicals/{0}/
+// Shared engine behind `options history` CLI + `robinhood_options_history` MCP.
+const VALID_HISTORY_INTERVALS = ["5minute", "10minute", "hour"] as const;
+const VALID_HISTORY_SPANS = ["day", "week"] as const;
+type HistoryInterval = (typeof VALID_HISTORY_INTERVALS)[number];
+type HistorySpan = (typeof VALID_HISTORY_SPANS)[number];
+
+export interface OptionsHistoryPoint {
+  beginsAt: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+  session: string;
+}
+
+export async function computeOptionsHistory(
+  opts: {
+    contractId: string;
+    interval?: HistoryInterval | string;
+    span?: HistorySpan | string;
+    maxPoints?: number;
+  },
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{
+  contractId: string;
+  interval: string;
+  span: string;
+  openPrice: number;
+  previousClosePrice: number;
+  symbol: string;
+  points: OptionsHistoryPoint[];
+  pointCount: number;
+  totalPoints: number;
+  truncated: boolean;
+}> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+
+  // Extract contract id from URL if a full URL was passed
+  let contractId = opts.contractId;
+  const urlMatch = contractId.match(/\/options\/instruments\/([^/]+)\/?$/i);
+  if (urlMatch) contractId = urlMatch[1];
+
+  // Validate interval
+  const interval = opts.interval ?? "5minute";
+  if (!VALID_HISTORY_INTERVALS.includes(interval as any)) {
+    throw new Error(
+      `interval must be one of: ${VALID_HISTORY_INTERVALS.join(", ")} (got "${interval}")`,
+    );
+  }
+
+  // Validate span
+  const span = opts.span ?? "day";
+  if (!VALID_HISTORY_SPANS.includes(span as any)) {
+    throw new Error(`span must be one of: ${VALID_HISTORY_SPANS.join(", ")} (got "${span}")`);
+  }
+
+  const maxPoints = opts.maxPoints ?? 100;
+  if (!Number.isInteger(maxPoints) || maxPoints < 1 || maxPoints > 500) {
+    throw new Error("maxPoints must be an integer from 1 through 500 for options history.");
+  }
+
+  const data = await getJson(
+    "https://api.robinhood.com/marketdata/options/historicals/{0}/",
+    { "0": contractId },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { interval, span } as any,
+  );
+
+  const rawPoints: any[] = Array.isArray(data?.data_points) ? data.data_points : [];
+
+  const points: OptionsHistoryPoint[] = rawPoints.map((p) => ({
+    beginsAt: String(p.begins_at ?? ""),
+    open: Number(p.open_price ?? Number.NaN),
+    close: Number(p.close_price ?? Number.NaN),
+    high: Number(p.high_price ?? Number.NaN),
+    low: Number(p.low_price ?? Number.NaN),
+    volume: Number(p.volume ?? Number.NaN),
+    session: String(p.session ?? ""),
+  }));
+
+  const totalPoints = points.length;
+  const truncated = totalPoints > maxPoints;
+  const bounded = truncated ? points.slice(0, maxPoints) : points;
+
+  return {
+    contractId,
+    interval: String(data.interval ?? interval),
+    span: String(data.span ?? span),
+    openPrice: Number(data.open_price ?? Number.NaN),
+    previousClosePrice: Number(data.previous_close_price ?? Number.NaN),
+    symbol: String(data.symbol ?? ""),
+    points: bounded,
+    pointCount: bounded.length,
+    totalPoints,
+    truncated,
+  };
+}
+
+// ── Options Chain Stats ──
+// Live-verified 2026-08-02 against api.robinhood.com/marketdata/options/chains/stats/v1/{uuid}/
+// Shared engine behind `options chain-stats` CLI + `robinhood_options_chain_stats` MCP.
+export interface ChainStatsExpiration {
+  expirationDate: string;
+  atmIv: number;
+  expectedMove: number;
+}
+
+export async function computeChainStats(
+  opts: { chainId?: string; symbol?: string },
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{
+  chainId: string;
+  symbol: string;
+  underlyingMic: string;
+  openHoursOpen: string;
+  openHoursClose: string;
+  updatedAt: string;
+  expirations: ChainStatsExpiration[];
+  count: number;
+}> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+
+  let chainId = opts.chainId;
+  let symbol = opts.symbol ?? "";
+
+  if (!chainId && !symbol) {
+    throw new Error("chainId or symbol is required for chain stats.");
+  }
+
+  // Resolve chainId from symbol if needed
+  if (!chainId && symbol) {
+    const instrument = (
+      await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", {
+        symbol: symbol.toUpperCase(),
+      })
+    ).results?.[0];
+    if (!instrument || !instrument.tradable_chain_id) {
+      throw new Error(`No options chain for ${symbol}.`);
+    }
+    chainId = instrument.tradable_chain_id;
+    symbol = instrument.symbol ?? symbol.toUpperCase();
+  }
+
+  const raw = await getJson(
+    "https://api.robinhood.com/marketdata/options/chains/stats/v1/{uuid}/",
+    { uuid: chainId! },
+  );
+
+  let stats = raw ?? {};
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (stats?.atm_iv_by_date || !stats?.data || typeof stats.data !== "object") break;
+    stats = stats.data;
+  }
+
+  const atmIvByDate: Record<string, string> = stats.atm_iv_by_date ?? {};
+  const expectedMoveByDate: Record<string, string> =
+    stats.underlying_expected_move_by_date ?? stats.expected_move_by_date ?? {};
+
+  const dates = [
+    ...new Set([...Object.keys(atmIvByDate), ...Object.keys(expectedMoveByDate)]),
+  ].sort();
+
+  const expirations: ChainStatsExpiration[] = dates.map((date) => ({
+    expirationDate: date,
+    atmIv: Number(atmIvByDate[date] ?? Number.NaN),
+    expectedMove: Number(expectedMoveByDate[date] ?? Number.NaN),
+  }));
+
+  return {
+    chainId: chainId!,
+    symbol: symbol || String(stats.chain_symbol ?? ""),
+    underlyingMic: String(stats.underlying_mic ?? ""),
+    openHoursOpen: String(stats.open_hours_open ?? ""),
+    openHoursClose: String(stats.open_hours_close ?? ""),
+    updatedAt: String(stats.updated_at ?? ""),
+    expirations,
+    count: expirations.length,
+  };
 }
 
 // Zayd Khan // cold // www.zayd.wtf

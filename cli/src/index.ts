@@ -25,6 +25,8 @@ import {
   computeEarnings,
   computeMovers,
   computeOptionsEvents,
+  computeOptionsHistory,
+  computeChainStats,
   buildAccountContextUrl,
   buildOptionsContractLinkBundle,
   buildOptionsContractNavigationPlan,
@@ -157,6 +159,43 @@ function parseBodyString(options: { body?: string; bodyJson?: string }): string 
   if (options.body !== undefined) return options.body;
   if (options.bodyJson !== undefined) return JSON.stringify(parseJsonBody(options.bodyJson));
   return undefined;
+}
+
+/**
+ * Canonical renderer for the nested `options events` command. The legacy top-level
+ * `options-events` alias delegates here so its output contract remains unchanged.
+ */
+async function renderOptionsEvents(opts: {
+  account?: string;
+  limit?: string;
+  json?: boolean;
+}): Promise<void> {
+  const r = await computeOptionsEvents({
+    accountNumber: opts.account,
+    limit: Number(opts.limit ?? "25"),
+  });
+  if (opts.json) {
+    printJson({ generatedAt: new Date().toISOString(), ...r });
+    return;
+  }
+  process.stdout.write(`Options Events (${r.count})\n\n`);
+  if (!r.events.length) {
+    process.stdout.write("No options events.\n");
+    return;
+  }
+  printTable(
+    r.events.map((e) => ({
+      cash: usd(e.cash),
+      date: e.date,
+      type: e.type,
+      symbol: e.symbol || "—",
+      dir: e.direction,
+      qty: Number.isFinite(e.quantity) ? String(e.quantity) : "—",
+      state: e.state,
+      acct: "…" + e.account.slice(-4),
+    })),
+    ["cash", "date", "type", "symbol", "dir", "qty", "state", "acct"],
+  );
 }
 
 // selectRouteByQueryAndMethod is imported from ./lib.js — single source of truth shared with
@@ -2393,6 +2432,83 @@ options
   });
 
 options
+  .command("events")
+  .description("Options corporate events: expirations, assignments, exercises (same shared engine as `options-events`). Live read.")
+  .option("--account <number>", "scope to one account (default: all)")
+  .option("--limit <n>", "max events (1-100)", "25")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; limit?: string; json?: boolean }) => {
+    await renderOptionsEvents(opts);
+  });
+
+options
+  .command("history")
+  .description("Historical quotes for one owned/known option contract. Accepts contract UUID or Robinhood option instrument URL. Live read.")
+  .argument("<contract_id_or_url>", "option UUID or https://api.robinhood.com/options/instruments/{uuid}/")
+  .option("--interval <interval>", "5minute, 10minute, or hour", "5minute")
+  .option("--span <span>", "day or week", "day")
+  .option("--limit <n>", "max normalized data points", "100")
+  .option("--json", "emit JSON")
+  .action(async (contractId: string, opts: { interval?: string; span?: string; limit?: string; json?: boolean }) => {
+    const r = await computeOptionsHistory({
+      contractId,
+      interval: opts.interval,
+      span: opts.span,
+      maxPoints: Number(opts.limit ?? "100"),
+    });
+    if (opts.json) {
+      printJson(r);
+      return;
+    }
+    process.stdout.write(`Option history — ${r.symbol || r.contractId} — ${r.interval}/${r.span}\n`);
+    process.stdout.write(`open ${usd(r.openPrice)} · previous close ${usd(r.previousClosePrice)} · ${r.pointCount}/${r.totalPoints} points${r.truncated ? " (truncated)" : ""}\n\n`);
+    if (!r.points.length) {
+      process.stdout.write("No historical data points.\n");
+      return;
+    }
+    printTable(
+      r.points.map((p) => ({
+        at: p.beginsAt,
+        open: usd(p.open),
+        high: usd(p.high),
+        low: usd(p.low),
+        close: usd(p.close),
+        volume: Number.isFinite(p.volume) ? p.volume : "—",
+        session: p.session || "—",
+      })),
+      ["at", "open", "high", "low", "close", "volume", "session"],
+    );
+  });
+
+options
+  .command("chain-stats")
+  .description("ATM implied volatility and expected move by expiration for an option chain. Live read.")
+  .argument("[symbol]", "underlying ticker; provide this or --chain-id")
+  .option("--chain-id <id>", "known Robinhood options chain UUID")
+  .option("--json", "emit JSON")
+  .action(async (symbol: string | undefined, opts: { chainId?: string; json?: boolean }) => {
+    const r = await computeChainStats({ chainId: opts.chainId, symbol });
+    if (opts.json) {
+      printJson(r);
+      return;
+    }
+    process.stdout.write(`Chain stats${r.symbol ? ` — ${r.symbol}` : ""} (${r.count} expirations)\n`);
+    if (!r.expirations.length) {
+      process.stdout.write("No expiration stats available.\n");
+      return;
+    }
+    printTable(
+      r.expirations.map((e) => ({
+        expiration: e.expirationDate,
+        expected_move: usd(e.expectedMove),
+        atm_iv: Number.isFinite(e.atmIv) ? `${(e.atmIv * 100).toFixed(1)}%` : "—",
+      })),
+      ["expiration", "expected_move", "atm_iv"],
+    );
+    if (r.updatedAt) process.stdout.write(`\nUpdated: ${r.updatedAt}\n`);
+  });
+
+options
   .command("workbench")
   .description("Analyze one exact option package: net premium, expiry payoff samples, signed Greeks, collateral/review response, roll alternatives, and a body-bound approval card. Pure analysis; never sends.")
   .requiredOption("--symbol <symbol>")
@@ -3779,23 +3895,12 @@ program
 
 program
   .command("options-events")
-  .description("Options corporate events: expirations, assignments, exercises (the feed behind options P&L + assignment tracking). Live read.")
+  .description("Legacy alias for `options events`: corporate expirations, assignments, and exercises. Live read.")
   .option("--account <number>", "scope to one account (default: all)")
-  .option("--limit <n>", "max events", "25")
+  .option("--limit <n>", "max events (1-100)", "25")
   .option("--json", "emit JSON")
   .action(async (opts: { account?: string; limit?: string; json?: boolean }) => {
-    const r = await computeOptionsEvents({ accountNumber: opts.account, limit: Number(opts.limit ?? "25") });
-    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
-    process.stdout.write(`Options Events (${r.count})\n\n`);
-    if (!r.events.length) { process.stdout.write("No options events.\n"); return; }
-    printTable(
-      r.events.map((e) => ({
-        date: e.date, type: e.type, symbol: e.symbol || "—", dir: e.direction,
-        qty: Number.isFinite(e.quantity) ? String(e.quantity) : "—",
-        cash: usd(e.cash), state: e.state, acct: "…" + e.account.slice(-4)
-      })),
-      ["date", "type", "symbol", "dir", "qty", "cash", "state", "acct"]
-    );
+    await renderOptionsEvents(opts);
   });
 
 // ── exposure: concentration & net greeks ──

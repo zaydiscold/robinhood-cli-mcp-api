@@ -276,7 +276,7 @@ describe("MCP profile protocol surfaces", () => {
           .map((entry) => entry.mcp!)
           .sort(),
       );
-      expect(tools.tools).toHaveLength(78);
+      expect(tools.tools).toHaveLength(80);
       expect(defaultClient.getInstructions()).toMatch(/ROBINHOOD_ALLOW_LIVE_WRITE/);
     } finally {
       await defaultClient.close();

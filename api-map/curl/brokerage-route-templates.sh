@@ -1109,4 +1109,16 @@
 # sensitive-read GET https://phoenix.robinhood.com/accounts/unified
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://phoenix.robinhood.com/accounts/unified'
 
+# sensitive-read GET https://api.robinhood.com/options/orders/available_contracts/{account_number}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/orders/available_contracts/{account_number}/'
+
+# sensitive-read GET https://api.robinhood.com/options/orders/available_shares/{account_number}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/orders/available_shares/{account_number}/'
+
+# sensitive-read GET https://api.robinhood.com/options/has_recent_rejection/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/has_recent_rejection/'
+
+# sensitive-read GET https://api.robinhood.com/options/exercise_checks/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/options/exercise_checks/'
+
 # Zayd Khan // cold // www.zayd.wtf

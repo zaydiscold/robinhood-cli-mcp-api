@@ -4,8 +4,18 @@ import { readOptionsOrderFlow } from "../src/lib.js";
 // Options order-flow reads are strictly non-ordering. Fee and collateral models require
 // prospective-order context serialized as JSON inside query fields; a naked GET is malformed.
 
-function deps(fix: { bp?: any; fees?: any; collateral?: any; chainCollateral?: any; throwOn?: string[] }) {
-  const calls: Array<{ url: string; params: Record<string, string>; query: Record<string, string> }> = [];
+function deps(fix: {
+  bp?: any;
+  fees?: any;
+  collateral?: any;
+  chainCollateral?: any;
+  throwOn?: string[];
+}) {
+  const calls: Array<{
+    url: string;
+    params: Record<string, string>;
+    query: Record<string, string>;
+  }> = [];
   const getJson = async (
     url: string,
     params: Record<string, string> = {},
@@ -13,9 +23,18 @@ function deps(fix: { bp?: any; fees?: any; collateral?: any; chainCollateral?: a
   ) => {
     calls.push({ url, params, query });
     const fail = (k: string) => fix.throwOn?.includes(k);
-    if (url.includes("options_buying_power")) { if (fail("bp")) throw new Error("503"); return fix.bp; }
-    if (url.includes("options/fees")) { if (fail("fees")) throw new Error("503"); return fix.fees; }
-    if (url.includes("options/orders/collateral")) { if (fail("collateral")) throw new Error("503"); return fix.collateral; }
+    if (url.includes("options_buying_power")) {
+      if (fail("bp")) throw new Error("503");
+      return fix.bp;
+    }
+    if (url.includes("options/fees")) {
+      if (fail("fees")) throw new Error("503");
+      return fix.fees;
+    }
+    if (url.includes("options/orders/collateral")) {
+      if (fail("collateral")) throw new Error("503");
+      return fix.collateral;
+    }
     if (url.includes("options/chains/") && url.includes("collateral")) {
       if (fail("chainCollateral")) throw new Error("503");
       return fix.chainCollateral;
@@ -72,13 +91,18 @@ describe("readOptionsOrderFlow", () => {
     expect(JSON.parse(collateralCall?.query.order ?? "null")).toEqual(order);
   });
 
-  it("skips malformed fee/collateral requests when prospective inputs are absent", async () => {
+  it("reports explicit not-evaluated results instead of sending malformed requests", async () => {
     const d = deps(base);
     const r = await readOptionsOrderFlow({ accountNumber: "111" }, d);
     expect(d.calls.some((c) => c.url.includes("options/fees"))).toBe(false);
     expect(d.calls.some((c) => c.url.includes("options/orders/collateral"))).toBe(false);
     expect(r.fees).toBeUndefined();
     expect(r.collateral).toBeUndefined();
+    expect(r.notEvaluated).toEqual([
+      { surface: "fees", reason: "prospective legs are required" },
+      { surface: "collateral", reason: "a complete prospective order is required" },
+    ]);
+    expect(JSON.stringify(r)).not.toMatch(/skipp/i);
     expect(r.warnings.some((w) => /prospective legs/.test(w))).toBe(true);
     expect(r.warnings.some((w) => /prospective order/.test(w))).toBe(true);
   });

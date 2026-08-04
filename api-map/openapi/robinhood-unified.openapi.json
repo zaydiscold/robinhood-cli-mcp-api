@@ -124,6 +124,10 @@
       "description": "Options routes from the brokerage route map."
     },
     {
+      "name": "order-diagnostics",
+      "description": "Order Diagnostics routes from the brokerage route map."
+    },
+    {
       "name": "orders",
       "description": "Orders routes from the brokerage route map."
     },
@@ -27292,6 +27296,60 @@
         "x-robinhood-source": "brokerage-browser-map"
       }
     },
+    "/options/exercise_checks/": {
+      "get": {
+        "operationId": "brokerage_get_options_exercise_checks",
+        "summary": "Options brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "options",
+          "order-diagnostics"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "option_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/options/exercise_checks/"
+        ],
+        "x-robinhood-sources": [
+          "public-web-bundle module 474280 (observed request contract",
+          "response semantics unverified)"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
     "/options/fees/": {
       "get": {
         "operationId": "brokerage_get_options_fees",
@@ -27326,6 +27384,41 @@
         "x-robinhood-seen-on": [
           "option-order-ticket"
         ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/options/has_recent_rejection/": {
+      "get": {
+        "operationId": "brokerage_get_options_has_recent_rejection",
+        "summary": "Options brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "options",
+          "order-diagnostics"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/options/has_recent_rejection/"
+        ],
+        "x-robinhood-sources": [
+          "public-web-bundle module 580605 (observed request contract",
+          "response semantics unverified)"
+        ],
+        "x-robinhood-seen-on": [],
         "x-robinhood-source": "brokerage-browser-map"
       }
     },
@@ -28214,6 +28307,132 @@
         ],
         "x-robinhood-sources": [
           "wire-writes 2026-05-29"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/options/orders/available_contracts/{account_number}/": {
+      "get": {
+        "operationId": "brokerage_get_options_orders_available_contracts_account_number",
+        "summary": "Options brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "options",
+          "order-diagnostics"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder account_number. Mapped route name; live verification should replace with a semantic parameter name when known."
+          },
+          {
+            "name": "order_to_replace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "strategy_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/options/orders/available_contracts/{account_number}/"
+        ],
+        "x-robinhood-sources": [
+          "public-web-bundle module 452309 (observed request contract",
+          "response semantics unverified)"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/options/orders/available_shares/{account_number}/": {
+      "get": {
+        "operationId": "brokerage_get_options_orders_available_shares_account_number",
+        "summary": "Options brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "options",
+          "order-diagnostics"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder account_number. Mapped route name; live verification should replace with a semantic parameter name when known."
+          },
+          {
+            "name": "equity_instrument_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "order_to_replace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/options/orders/available_shares/{account_number}/"
+        ],
+        "x-robinhood-sources": [
+          "public-web-bundle module 222520 (observed request contract",
+          "response semantics unverified)"
         ],
         "x-robinhood-seen-on": [],
         "x-robinhood-source": "brokerage-browser-map"

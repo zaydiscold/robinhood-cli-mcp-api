@@ -277,7 +277,7 @@ describe("MCP profile protocol surfaces", () => {
           .map((entry) => entry.mcp!)
           .sort(),
       );
-      expect(tools.tools).toHaveLength(86);
+      expect(tools.tools).toHaveLength(capabilitiesForProfile("full").length);
       expect(tools.tools.some((tool) => tool.name === "robinhood_account_pulse")).toBe(true);
       expect(defaultClient.getInstructions()).toMatch(/ROBINHOOD_ALLOW_LIVE_WRITE/);
     } finally {

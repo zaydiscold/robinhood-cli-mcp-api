@@ -89,6 +89,7 @@ import {
   loadRecipes,
   filterRecipes,
   readOptionsOrderFlow,
+  readOptionsOrderDiagnostics,
   selectNearStrikes,
   classifyMoneyness,
   finiteNumber,
@@ -417,6 +418,33 @@ server.registerTool(
   },
   async ({ accountNumber, chainId, legs, order }) =>
     jsonResponse(await readOptionsOrderFlow({ accountNumber, chainId, legs, order })),
+);
+
+server.registerTool(
+  "robinhood_options_diagnostics",
+  {
+    title: "Robinhood Options Diagnostics",
+    description:
+      "Read-only options availability, rejection, rollable-quantity, and exercise diagnostics. Endpoint-specific prerequisites are skipped locally with warnings. Available-contracts, available-shares, rejection, and exercise fields are observed-contract; maximum rollable quantity is live-verified. Never reviews or submits an order.",
+    annotations: toolAnnotations(true, "sensitive-read"),
+    inputSchema: z.object({
+      accountNumber: accountNumberOptionalSchema,
+      strategyCode: z.string().min(1).optional(),
+      equityInstrumentId: uuidOptionalSchema,
+      optionId: uuidOptionalSchema,
+      orderToReplaceId: uuidOptionalSchema,
+    }),
+  },
+  async ({ accountNumber, strategyCode, equityInstrumentId, optionId, orderToReplaceId }) =>
+    jsonResponse(
+      await readOptionsOrderDiagnostics({
+        accountNumber,
+        strategyCode,
+        equityInstrumentId,
+        optionId,
+        orderToReplaceId,
+      }),
+    ),
 );
 
 server.registerTool(

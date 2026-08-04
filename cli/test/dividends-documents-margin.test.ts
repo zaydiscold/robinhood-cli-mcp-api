@@ -245,6 +245,15 @@ describe("listDocuments — prefix type filter, tax-year filter, account filter"
     const all = await listDocuments({}, deps);
     expect(all.documents[0].id).toBe("d1");  // 2026-02-11 sorts first
   });
+
+  it("bounds the returned document inventory after filtering and preserves the full matching total", async () => {
+    const r = await listDocuments({ type: "1099", limit: 2 }, deps);
+    expect(r.total).toBe(4);
+    expect(r.count).toBe(2);
+    expect(r.documents.map((d) => d.id)).toEqual(["d1", "d2"]);
+    expect(r.hasMore).toBe(true);
+    expect(r.byType).toEqual({ "1099": 1, "1099_crypto": 1 });
+  });
 });
 
 // ── documents: the bearer must never leave the Robinhood allow-list ─────────────────────────────

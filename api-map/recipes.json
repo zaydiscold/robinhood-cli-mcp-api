@@ -286,7 +286,7 @@
     },
     {
       "id": "options-order-flow",
-      "intent": "Pre-trade options context: buying power, fees, collateral",
+      "intent": "Read-only options order context: account buying power plus order-specific fees and collateral",
       "triggers": [
         "options buying power",
         "options fees",
@@ -294,10 +294,10 @@
         "can I afford this option",
         "pre-trade options"
       ],
-      "command": "options order-flow --account <N> [--chain-id <id>]",
+      "command": "options order-flow --account <N> [--chain-id <id>] [--legs-json '<array>'] [--order-json '<object>']",
       "mcpTool": "robinhood_options_order_flow",
       "risk": "sensitive-read",
-      "notes": "Options buying power is the REAL gate on opens (not regular BP, esp. GTC overnight). The options/orders/review preview is a gated POST until verified non-mutating."
+      "notes": "Options buying power is the real per-account gate on opens. Fees require prospective legs serialized as JSON in the legs query field; exact collateral requires the complete prospective order serialized in the order query field. chain-id adds supplemental chain context only. Missing drafts are skipped locally—never sent as malformed naked GETs. This command never reviews or submits the order."
     },
     {
       "id": "place-option-order",

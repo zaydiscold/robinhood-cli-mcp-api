@@ -405,15 +405,17 @@ server.registerTool(
   {
     title: "Robinhood Options Order Flow",
     description:
-      "Pre-trade options context (live reads): options buying power (per account — the real gate on opens), the fee schedule, and collateral requirements. Each read degrades to a warning independently. The options/orders/review preview is a POST and stays behind the gated write path.",
+      "Read-only pre-trade options context. Reads per-account options buying power; when prospective legs and a complete prospective order are supplied, quotes order-specific fees and collateral using the web-app's JSON-in-query contracts. Optional chainId adds separately labeled supplemental chain collateral. Never reviews or submits an order.",
     annotations: toolAnnotations(true, "sensitive-read"),
     inputSchema: z.object({
       accountNumber: accountNumberOptionalSchema,
       chainId: uuidOptionalSchema,
+      legs: z.array(z.record(z.string(), z.unknown())).optional(),
+      order: z.record(z.string(), z.unknown()).optional(),
     }),
   },
-  async ({ accountNumber, chainId }) =>
-    jsonResponse(await readOptionsOrderFlow({ accountNumber, chainId })),
+  async ({ accountNumber, chainId, legs, order }) =>
+    jsonResponse(await readOptionsOrderFlow({ accountNumber, chainId, legs, order })),
 );
 
 server.registerTool(
@@ -2364,17 +2366,20 @@ server.registerTool(
   {
     title: "Robinhood Documents",
     description:
-      "List account documents (account statements, trade confirms, 1099/1099_crypto/1099r_roth/5498_roth tax forms) across all accounts with their download_urls. LIST ONLY — this tool never writes files; hand the download_url to the operator or use the CLI `documents download` for local PDFs. type is PREFIX-matched ('1099' catches every 1099 variant — the tax-season one-shot is type=1099 + year=2025). year is the TAX year for tax forms (a 1099 dated Feb 2026 is tax year 2025) and the calendar year otherwise. Live read; no gate.",
+      "List a bounded newest-first page of account documents (account statements, trade confirms, 1099/1099_crypto/1099r_roth/5498_roth tax forms) across all accounts with their download_urls. LIST ONLY — this tool never writes files; use the CLI `documents download` for local PDFs. type is PREFIX-matched ('1099' catches every 1099 variant). year is the TAX year for tax forms and the calendar year otherwise. Defaults to 100 rows; response includes total/count/hasMore. Live read; no gate.",
     inputSchema: z.object({
       type: z.string().optional(),
       year: z.string().optional(),
       account_number: accountNumberOptionalSchema,
+      limit: z.number().int().positive().max(500).default(100),
     }),
     annotations: toolAnnotations(true, "sensitive-read"),
   },
-  async ({ type, year, account_number }) => {
+  async ({ type, year, account_number, limit }) => {
     try {
-      return jsonResponse(await listDocuments({ type, year, accountNumber: account_number }));
+      return jsonResponse(
+        await listDocuments({ type, year, accountNumber: account_number, limit }),
+      );
     } catch (e: any) {
       return mcpError(e);
     }

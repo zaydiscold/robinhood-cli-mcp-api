@@ -120,7 +120,12 @@ import {
   diffPortfolioSnapshots,
   readPortfolioSnapshots,
   runDoctor,
-  watchOrderLifecycle
+  watchOrderLifecycle,
+  getSweepInterest,
+  listGoldFees,
+  getStockRewardsSummary,
+  getInboxSummary,
+  getIpoAccess,
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -4318,6 +4323,113 @@ program
     const snapshot = { version: 2 as const, id: randomUUID(), capturedAt: new Date().toISOString(), source: "portfolio" as const, data: await computePortfolioPnl({ accountNumber: opts.account, top: 0 }) };
     appendPortfolioSnapshot(opts.path, snapshot);
     printJson({ path: opts.path, snapshot });
+  });
+
+// ── sweep-interest: current cash-sweep APY with labeled fallback ──
+program
+  .command("sweep-interest")
+  .aliases(["sweep-rates", "cash-interest", "apy"])
+  .description("Current cash sweep APY from the authenticated Gold product surface, with an account-scoped fallback. Provider base rate is shown only when supplied. Read-only; no enrollment changes. Live read.")
+  .option("--account <number>", "scope to one account")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; json?: boolean }) => {
+    const r = await getSweepInterest({ accountNumber: opts.account });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Cash sweep interest rates${r.accountNumber ? ` — account …${r.accountNumber.slice(-4)}` : ""}\n\n`);
+    if (!r.rates.length) { process.stdout.write("No sweep interest rate data available.\n"); return; }
+    printTable(
+      r.rates.map((t) => ({
+        tier: t.balanceTier,
+        apy: t.apyPct !== null && Number.isFinite(t.apyPct) ? `${t.apyPct.toFixed(2)}%` : "—",
+        rate: t.interestRatePct !== null && Number.isFinite(t.interestRatePct) ? `${t.interestRatePct.toFixed(2)}%` : "—",
+        source: t.source,
+        effective: t.effectiveDate?.slice(0, 10) ?? "—",
+      })),
+      ["tier", "apy", "rate", "source", "effective"],
+    );
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => `⚠️  ${w}`).join("\n")}\n`);
+  });
+
+// ── gold-fees: subscription fee history ──
+program
+  .command("gold-fees")
+  .aliases(["gold-subscription", "subscription-fees", "gold-billing"])
+  .description("Gold subscription fee history with pagination and optional account scope. Lists every Gold subscription charge: type, status, dollar amount, billing date, and period. Use --offset/--limit for pagination. Read-only; no subscription changes. Live read.")
+  .option("--account <number>", "scope to one account")
+  .option("--offset <n>", "pagination offset (default 0)")
+  .option("--limit <n>", "page size (default 100)")
+  .option("--json", "emit JSON")
+  .action(async (opts: { account?: string; offset?: string; limit?: string; json?: boolean }) => {
+    const r = await listGoldFees({
+      accountNumber: opts.account,
+      offset: opts.offset ? Number(opts.offset) : undefined,
+      limit: opts.limit ? Number(opts.limit) : undefined,
+    });
+    if (opts.json) { printJson({ generatedAt: new Date().toISOString(), ...r }); return; }
+    process.stdout.write(`Gold subscription fees — ${r.total} record(s)${r.total > r.count ? ` (showing ${r.count})` : ""}\n\n`);
+    if (!r.fees.length) { process.stdout.write("No Gold subscription fee records found.\n"); return; }
+    printTable(
+      r.fees.map((f) => ({
+        billed: f.billedAt?.slice(0, 10) ?? "—",
+        amount: `$${Number.isFinite(f.amountUsd) ? f.amountUsd.toFixed(2) : "—"}`,
+        type: f.type,
+        status: f.status,
+        period: f.periodStart ? `${f.periodStart.slice(0, 10)} → ${f.periodEnd?.slice(0, 10) ?? "—"}` : "—",
+        acct: f.accountNumber ? `…${f.accountNumber.slice(-4)}` : "—",
+      })),
+      ["billed", "amount", "type", "status", "period", "acct"],
+    );
+    if (r.hasMore) process.stdout.write(`\n${r.total - r.offset - r.count} more record(s) — use --offset ${r.offset + r.limit}\n`);
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((w: string) => `⚠️  ${w}`).join("\n")}\n`);
+  });
+
+program
+  .command("rewards")
+  .aliases(["stock-rewards"])
+  .description("Privacy-safe stock reward summary: counts by section/type and normalized reward metadata. Referral identities and contact data are never emitted. Live read.")
+  .option("--json", "emit JSON")
+  .action(async (opts: { json?: boolean }) => {
+    const r = await getStockRewardsSummary();
+    if (opts.json) { printJson(r); return; }
+    process.stdout.write(`Stock rewards — ${r.total} total\n`);
+    printTable(Object.entries(r.sectionCounts).map(([section, count]) => ({ section, count })), ["section", "count"]);
+    process.stdout.write(`Types: ${Object.entries(r.typeCounts).map(([type, count]) => `${type} ${count}`).join(", ") || "none"}\n`);
+  });
+
+program
+  .command("inbox-summary")
+  .aliases(["inbox"])
+  .description("Inbox aggregate only: total, unread, critical, muted, latest activity, and pagination. Never emits message text, names, or raw threads. Live read.")
+  .option("--json", "emit JSON")
+  .action(async (opts: { json?: boolean }) => {
+    const r = await getInboxSummary();
+    if (opts.json) { printJson(r); return; }
+    printTable([{ total: r.total, unread: r.unread, critical: r.critical, muted: r.muted, latest_activity: r.latestActivity ?? "—", has_next: r.hasNext ? "yes" : "no" }], ["total", "unread", "critical", "muted", "latest_activity", "has_next"]);
+  });
+
+const ipoAccess = program.command("ipo-access").description("Read IPO Access offerings, public dates/pricing, and aggregate account eligibility. Read-only; no indication of interest is submitted.");
+ipoAccess
+  .command("list")
+  .description("List IPO Access offerings; reports no-open-offerings when every status is public.")
+  .option("--json", "emit JSON")
+  .action(async (opts: { json?: boolean }) => {
+    const r = await getIpoAccess();
+    if (opts.json) { printJson(r); return; }
+    if (r.message) process.stdout.write(`${r.message}\n`);
+    printTable(r.offerings.map((o) => ({ symbol: o.symbol, status: o.status ?? "—", price: o.priceUsd === null ? "—" : `$${o.priceUsd.toFixed(2)}`, deadline: o.deadline?.slice(0, 10) ?? "—", list_date: o.listDate ?? "—", customers: o.customerCount ?? "—" })), ["symbol", "status", "price", "deadline", "list_date", "customers"]);
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((warning) => `⚠️  ${warning}`).join("\n")}\n`);
+  });
+ipoAccess
+  .command("show <symbol>")
+  .description("Show one IPO Access offering by symbol using Robinhood's instrument resolver.")
+  .option("--json", "emit JSON")
+  .action(async (symbol: string, opts: { json?: boolean }) => {
+    const r = await getIpoAccess({ symbol });
+    if (opts.json) { printJson(r); return; }
+    const offering = r.offerings[0];
+    if (!offering) { process.stdout.write(`No IPO Access offering found for ${symbol.toUpperCase()}.\n`); return; }
+    printTable([{ symbol: offering.symbol, status: offering.status ?? "—", price: offering.priceUsd === null ? "—" : `$${offering.priceUsd.toFixed(2)}`, deadline: offering.deadline ?? "—", start: offering.startDate ?? "—", list_date: offering.listDate ?? "—", customers: offering.customerCount ?? "—" }], ["symbol", "status", "price", "deadline", "start", "list_date", "customers"]);
+    if (r.warnings.length) process.stdout.write(`${r.warnings.map((warning) => `⚠️  ${warning}`).join("\n")}\n`);
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

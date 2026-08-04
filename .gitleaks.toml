@@ -1,0 +1,10 @@
+title = "Robinhood CLI secret scanning allowlist"
+
+[allowlist]
+description = "Ignored local auth files and a public discovery-list UUID are not credentials"
+paths = [
+  '''(^|/)\.env(\.bak)?$''',
+]
+regexes = [
+  '''8ce9f620-5bb0-4b6a-8c61-5a06763f7a8b''',
+]

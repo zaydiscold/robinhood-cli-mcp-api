@@ -46,7 +46,7 @@ node cli/dist/index.js --help
 | Surface | Current state |
 |---------|---------------|
 | API map | 300+ brokerage/account route entries (incl. instrument search + the `midlands/` sentiment layer) + the official Crypto routes, generated OpenAPI, endpoint Markdown, and curl templates. Every entry carries field-level response provenance (`verified`/`inferred`/`undocumented`, test-enforced). Trust the live count (`brokerage routes --json`), never a hardcoded number. |
-| CLI | TypeScript command-line tool: live reads (`quote`, `positions`, `portfolio` (one-call day/after-hours P&L in dollars, by underlying), `accounts`, `history`, `order-status` (UUID→ticker resolved), `buying-power`, `options positions/chain/enumerate/inspect/holdings`, `stock profile`, `watchlist`, `recipes` (intent → the one command)), first-class order lifecycle (`buy` / `sell` / `cancel` — OTC-aware, deduped, `ref_id`-idempotent), options strategy quoting + rolling, first-class `settings` (DRIP/expiration/PDT/lending/sweep), `recurring` (list/pause/resume/create/edit/end), and `watchlist` (list/add/remove/create) — all writes env-gated — plus route planning and dry-run order bodies. |
+| CLI | TypeScript command-line tool: live reads (`quote`, `positions`, `portfolio` (one-call day/after-hours P&L in dollars, by underlying), `accounts`, `history`, `order-status` (UUID→ticker resolved), `buying-power`, `options positions/chain/enumerate/inspect/holdings`, `stock profile`, `rewards` (privacy-safe stock-reward metadata), `inbox-summary` (aggregate only), `ipo-access list/show`, `sweep-interest` (current APY + labeled fallback), `gold-fees` (subscription-fee history), and `recipes` (intent → the one command)), first-class order lifecycle (`buy` / `sell` / `cancel` — OTC-aware, deduped, `ref_id`-idempotent), options strategy quoting + rolling, first-class `settings` (DRIP/expiration/PDT/lending/sweep), `recurring` (list/pause/resume/create/edit/end), and `watchlist` (list/add/remove/create) — all writes env-gated — plus route planning and dry-run order bodies. |
 | MCP | The full agent-tool surface (live truth: `tools/list`) sharing the same engine, auth, route map, and write gates as the CLI — full verb parity. `robinhood_buy`/`robinhood_sell` run the exact same shared order engine as the CLI commands (same dedup, same `ref_id`, same OTC guard), so the two surfaces cannot drift. `robinhood_wheel` reads your actual wheel state (shares + short puts/calls) and returns the next-leg dry-run command. |
 | Memory | `ball-knowledge.md` (market beliefs/themes/sources) + `trading-log.md` (execution + intent history) — the agent's cross-session brain. |
 | Research | A source-quality doctrine (X/Reddit pulse → news/`midlands` confirmer → institutional outlook → academic math, none gospel) + strategy deep-dives (Wheel, rolling, with quant appendices), institutional CMAs, tax-aware notes. |
@@ -92,6 +92,7 @@ For maintainers and agents that need the system map, [`docs/cli-mcp-architecture
 - **Margin health** — `margin`: per-account answer to "am I borrowing, how much, at what rate, billed when" — amount borrowed in dollars, interest rate, next billing date, margin available, and buying power with margin; accounts without margin data degrade silently.
 - **Recurring investments** — first-class list, pause, resume, **create, edit, and end** (all env-gated; create/edit body shapes verified live).
 - **Account settings** — first-class `settings` group: DRIP (account-wide + per-stock), trade-on-expiration, PDT protection, stock lending, cash-sweep unenroll — env-gated, several verified live.
+- **Rewards, inbox, sweep, Gold, and IPO reads** — `rewards` never exposes referred-person identity/contact data; `inbox-summary` never exposes messages, names, or raw threads; `ipo-access` reports public offering status and aggregate eligibility without submitting interest. `sweep-interest` and `gold-fees` remain read-only.
 - **Index options** — RH **does** offer cash-settled §1256 index options (SPX/SPXW/XSP/NDX/VIX/RUT), hidden from the search bar but live under `options/chains/?underlying_symbol=` (see `docs/index-options-1256-conclusion-2026-06-04.md`). Futures are read-only (ceres TLS-walled); FX none; commodities via ETF proxies.
 - **Memory + research** — `ball-knowledge.md` / `trading-log.md` (cross-session brain) and the signal-sourcing doctrine + strategy deep-dives + institutional outlook (the research→decision layer).
 - **Film-study mode** — `review`: your filled orders paired into round trips with realized dollar P&L, hold time, win rate, and best/worst trades — plus `review note` to attach the lesson to the trade it came from (`trade-notes.md`). Watch your own tape.
@@ -202,6 +203,12 @@ robinhood-cli quote MRVL NVDA AAPL                    # live quotes for one+ sym
 robinhood-cli portfolio                               # day + after-hours P&L in dollars, by underlying, all accounts
 robinhood-cli portfolio --after-hours                 # "what's nuking me after hours"
 robinhood-cli recipes "after hours"                   # free-text intent → the one command to run
+robinhood-cli rewards --json                           # privacy-safe stock-reward summary
+robinhood-cli inbox-summary --json                     # aggregate inbox state; no messages/names
+robinhood-cli ipo-access list --json                   # IPO Access offering list + eligibility
+robinhood-cli ipo-access show JMKE --json              # one IPO offering by symbol
+robinhood-cli sweep-interest --json                    # current cash-sweep APY + evidence source/fallback
+robinhood-cli gold-fees --limit 20 --json              # Gold subscription-fee history
 robinhood-cli buying-power                            # per-account BP + margin health
 robinhood-cli buy -s AAPL -a <ACCOUNT_NUMBER> -m 25   # DRY-RUN by default (deduped, ref_id idempotent)
 robinhood-cli order-status -i <ORDER_ID>              # single order — real ticker, state, fills
@@ -250,6 +257,11 @@ One line per question. All reads are live and free; the order/settings commands 
 | `recurring list/pause/resume/create/edit/end` | "What's on autopilot, and change it" |
 | `watchlist list/add/remove/create` | "Show my custom lists, and edit them" — add/remove tickers (resolved by name) or make a new list (env-gated) |
 | `settings show/drip/expiration/pdt/lending/sweep` | "Read or toggle account settings" (env-gated) |
+| `rewards` | "What stock rewards are pending/claimed?" — privacy-safe metadata only; never referred-person identity/contact data |
+| `inbox-summary` | "How many inbox notifications need attention?" — aggregate only; never messages, names, or raw threads |
+| `ipo-access list/show <SYM>` | "What IPO Access offerings are open or public, and am I eligible?" — public dates, price, participation, S-1/roadshow links; no indication of interest |
+| `sweep-interest [--account N]` | "What cash-sweep APY applies now?" — prefers the authenticated Gold product surface, labels its source, and falls back to account sweep context; read-only |
+| `gold-fees [--account N --offset N --limit N]` | "What Gold subscription charges were billed?" — read-only history; does not change the plan |
 | `history --days N` | "What actually executed?" — unified equity + options + crypto + transfers, newest first |
 | `quote <SYM...>` | Live last/bid/ask/day-change for any symbols |
 | `pretrade <SYM> --account N` | "Can I place this trade?" — PASS/WARN/BLOCK checklist: BP + collateral + marketability + min-tick + account capability |

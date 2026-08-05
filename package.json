@@ -1,6 +1,6 @@
 {
   "name": "robinhood-cli-workspace",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "engines": {
     "node": ">=20.19"
@@ -32,7 +32,6 @@
     "format:check": "node scripts/check-format-ratchet.mjs",
     "deadcode": "knip --dependencies --reporter compact --no-progress"
   },
-
   "devDependencies": {
     "@types/node": "^25.9.1",
     "@typescript-eslint/eslint-plugin": "^8.64.0",

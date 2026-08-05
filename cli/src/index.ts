@@ -27,6 +27,7 @@ import {
   computeOptionsEvents,
   computeOptionsHistory,
   computeChainStats,
+  computeOptionsSnapshot,
   buildAccountContextUrl,
   buildOptionsContractLinkBundle,
   buildOptionsContractNavigationPlan,
@@ -1775,6 +1776,46 @@ options
       const q = opts.quotes ? ` bid ${usd(c.bid)}/ask ${usd(c.ask)}` : "";
       process.stdout.write(`  ${c.type.padEnd(4)} ${c.strike.toFixed(2).padStart(9)}  ${c.optionInstrumentId}${q}\n`);
     }
+  });
+
+options
+  .command("snapshot")
+  .description("Research-grade bulk options snapshot: enumerate complete quote, Greeks, IV, liquidity, spread, and moneyness data across one or many expirations, plus put/call concentration analytics. Live read.")
+  .argument("<symbol>", "underlying ticker, e.g. GOOGL")
+  .option("--expiration <date|all>", "YYYY-MM-DD or 'all'; default nearest")
+  .option("--type <call|put|both>", "contract side", "both")
+  .option("--max-expirations <n>", "bound all-expiration reads (1-64)", "12")
+  .option("--account <account_number>", "pin desktop contract links to an account")
+  .option("--json", "emit complete machine-readable snapshot")
+  .action(async (symbol: string, opts: { expiration?: string; type?: string; maxExpirations?: string; account?: string; json?: boolean }) => {
+    const result = await computeOptionsSnapshot({
+      symbol,
+      expiration: opts.expiration,
+      type: opts.type as "call" | "put" | "both" | undefined,
+      maxExpirations: Number.parseInt(opts.maxExpirations ?? "12", 10),
+      accountNumber: opts.account,
+    });
+    if (opts.json) {
+      printJson(result);
+      return;
+    }
+    process.stdout.write(
+      `${result.symbol} options snapshot — ${result.contracts.length} contracts / ${result.expirationsRequested.length} expiration(s) — spot ${usd(result.spot)}\n`,
+    );
+    printTable(
+      [{
+        calls: result.summary.callCount,
+        puts: result.summary.putCount,
+        volume: result.summary.totalVolume,
+        open_interest: result.summary.totalOpenInterest,
+        put_call_volume: Number.isFinite(result.summary.putCallVolumeRatio) ? result.summary.putCallVolumeRatio.toFixed(3) : "—",
+        put_call_oi: Number.isFinite(result.summary.putCallOpenInterestRatio) ? result.summary.putCallOpenInterestRatio.toFixed(3) : "—",
+        stale: result.summary.staleOrMissingMarketDataCount,
+      }],
+      ["calls", "puts", "volume", "open_interest", "put_call_volume", "put_call_oi", "stale"]
+    );
+    for (const warning of result.warnings) process.stdout.write(`\nWarning: ${warning}\n`);
+    process.stdout.write("\nUse --json for every contract field and deep link.\n");
   });
 
 // --- Owned-option inspection: the "click the contract, read everything" flow ---

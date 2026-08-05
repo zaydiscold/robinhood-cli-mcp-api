@@ -10266,6 +10266,350 @@ export async function computeOptionsHistory(
   };
 }
 
+// ── Research-grade bulk options snapshot ──
+// Shared engine behind `options snapshot` + `robinhood_options_snapshot`.
+// It deliberately normalizes the complete market-data contract once so CLI and
+// MCP cannot drift into different field subsets. Large all-expiration reads are
+// bounded and report truncation instead of silently pretending to be complete.
+export type OptionsSnapshotSide = "call" | "put" | "both";
+
+export interface OptionsSnapshotContract {
+  optionInstrumentId: string;
+  optionInstrumentUrl: string;
+  deepLink: string;
+  chainId: string;
+  symbol: string;
+  expiration: string;
+  type: "call" | "put";
+  strike: number;
+  state: string;
+  spot: number;
+  moneyness: Moneyness;
+  bid: number;
+  ask: number;
+  mark: number;
+  midpoint: number;
+  last: number;
+  previousClose: number;
+  spread: number;
+  spreadPct: number;
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  rho: number;
+  impliedVolatility: number;
+  impliedVolatilityPct: number;
+  volume: number;
+  openInterest: number;
+  updatedAt: string;
+}
+
+export interface OptionsSnapshotSummary {
+  contractCount: number;
+  callCount: number;
+  putCount: number;
+  quotedContractCount: number;
+  staleOrMissingMarketDataCount: number;
+  totalVolume: number;
+  totalOpenInterest: number;
+  putCallVolumeRatio: number;
+  putCallOpenInterestRatio: number;
+  highestOpenInterest: Pick<
+    OptionsSnapshotContract,
+    "optionInstrumentId" | "expiration" | "type" | "strike" | "openInterest"
+  > | null;
+  highestVolume: Pick<
+    OptionsSnapshotContract,
+    "optionInstrumentId" | "expiration" | "type" | "strike" | "volume"
+  > | null;
+  byExpiration: Array<{
+    expiration: string;
+    contractCount: number;
+    callVolume: number;
+    putVolume: number;
+    callOpenInterest: number;
+    putOpenInterest: number;
+    putCallVolumeRatio: number;
+    putCallOpenInterestRatio: number;
+    atmStrike: number;
+    atmCallIv: number;
+    atmPutIv: number;
+    atmIvSkew: number;
+    atmStraddleMark: number;
+    atmStraddleExpectedMovePct: number;
+  }>;
+}
+
+export async function computeOptionsSnapshot(
+  opts: {
+    symbol: string;
+    expiration?: string;
+    type?: OptionsSnapshotSide;
+    maxExpirations?: number;
+    accountNumber?: string;
+  },
+  deps: {
+    getJson?: typeof brokerageGetJson;
+    getAll?: typeof brokerageGetAllResults;
+  } = {},
+): Promise<{
+  symbol: string;
+  chainId: string;
+  spot: number;
+  type: OptionsSnapshotSide;
+  expirationsRequested: string[];
+  availableExpirations: string[];
+  availableExpirationCount: number;
+  truncatedExpirations: boolean;
+  contracts: OptionsSnapshotContract[];
+  summary: OptionsSnapshotSummary;
+  warnings: string[];
+}> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const symbol = String(opts.symbol ?? "")
+    .trim()
+    .toUpperCase();
+  if (!symbol) throw new Error("symbol is required for options snapshot.");
+  const type: OptionsSnapshotSide = opts.type ?? "both";
+  if (!(["call", "put", "both"] as const).includes(type)) {
+    throw new Error("type must be call, put, or both.");
+  }
+  const maxExpirations = opts.maxExpirations ?? 12;
+  if (!Number.isInteger(maxExpirations) || maxExpirations < 1 || maxExpirations > 64) {
+    throw new Error("maxExpirations must be an integer between 1 and 64.");
+  }
+
+  const instrument = (
+    await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })
+  ).results?.[0];
+  if (!instrument) throw new Error(`No equity instrument found for ${symbol}.`);
+  const chainId = String(instrument.tradable_chain_id ?? "");
+  if (!chainId) throw new Error(`${symbol} has no tradable options chain.`);
+
+  const chain = await getJson("https://api.robinhood.com/options/chains/{id}/", { id: chainId });
+  const availableExpirations: string[] = Array.isArray(chain?.expiration_dates)
+    ? chain.expiration_dates.map(String)
+    : [];
+  if (availableExpirations.length === 0)
+    throw new Error(`${symbol} chain has no listed expirations.`);
+
+  const requested = opts.expiration ?? availableExpirations[0];
+  if (requested !== "all" && !availableExpirations.includes(requested)) {
+    throw new Error(
+      `${symbol} has no listed expiration ${requested}. Available: ${availableExpirations.join(", ")}.`,
+    );
+  }
+  const expirationsRequested =
+    requested === "all" ? availableExpirations.slice(0, maxExpirations) : [requested];
+  const truncatedExpirations =
+    requested === "all" && expirationsRequested.length < availableExpirations.length;
+  const warnings: string[] = [];
+  if (truncatedExpirations) {
+    warnings.push(
+      `All-expiration snapshot bounded to ${expirationsRequested.length} of ${availableExpirations.length}; raise maxExpirations (maximum 64) for a larger read.`,
+    );
+  }
+
+  const quote =
+    (
+      await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
+        ids: String(instrument.id ?? ""),
+      })
+    ).results?.[0] ?? {};
+  const spot = Number(
+    quote.last_trade_price ??
+      quote.last_extended_hours_trade_price ??
+      quote.adjusted_previous_close,
+  );
+  const sides: Array<"call" | "put"> = type === "both" ? ["call", "put"] : [type];
+  const metadata: any[] = [];
+  for (const expiration of expirationsRequested) {
+    for (const side of sides) {
+      const rows = await getAll(
+        "https://api.robinhood.com/options/instruments/?chain_id={chain_id}&expiration_dates={expiration_dates}&state=active&type={type}",
+        { chain_id: chainId, expiration_dates: expiration, type: side },
+      );
+      for (const row of rows)
+        metadata.push({ ...row, type: side, expiration_date: row.expiration_date ?? expiration });
+    }
+  }
+  const marks = await fetchOptionMarks(
+    metadata.map((row) => String(row.id)),
+    { getJson },
+  );
+  const round = (value: number, digits = 8): number =>
+    Number.isFinite(value) ? Number(value.toFixed(digits)) : Number.NaN;
+  const contracts: OptionsSnapshotContract[] = metadata.map((row) => {
+    const id = String(row.id);
+    const side = row.type === "put" ? "put" : "call";
+    const strike = Number(row.strike_price);
+    const mark = marks.get(id) ?? {};
+    const bid = Number(mark.bid_price);
+    const ask = Number(mark.ask_price);
+    const adjustedMark = Number(mark.adjusted_mark_price ?? mark.mark_price);
+    const midpoint =
+      Number.isFinite(bid) && Number.isFinite(ask) ? round((bid + ask) / 2) : Number.NaN;
+    const spread = Number.isFinite(bid) && Number.isFinite(ask) ? round(ask - bid) : Number.NaN;
+    const spreadBase =
+      Number.isFinite(adjustedMark) && adjustedMark !== 0 ? adjustedMark : midpoint;
+    const iv = Number(mark.implied_volatility);
+    return {
+      optionInstrumentId: id,
+      optionInstrumentUrl: `https://api.robinhood.com/options/instruments/${id}/`,
+      deepLink: `https://robinhood.com/options/instruments/${id}/${opts.accountNumber ? `?account_number=${opts.accountNumber}` : ""}`,
+      chainId,
+      symbol,
+      expiration: String(row.expiration_date ?? ""),
+      type: side,
+      strike,
+      state: String(row.state ?? ""),
+      spot,
+      moneyness: classifyMoneyness(strike, spot, side),
+      bid,
+      ask,
+      mark: adjustedMark,
+      midpoint,
+      last: Number(mark.last_trade_price),
+      previousClose: Number(mark.previous_close_price),
+      spread,
+      spreadPct:
+        Number.isFinite(spread) && Number.isFinite(spreadBase) && spreadBase !== 0
+          ? round((spread / spreadBase) * 100)
+          : Number.NaN,
+      delta: Number(mark.delta),
+      gamma: Number(mark.gamma),
+      theta: Number(mark.theta),
+      vega: Number(mark.vega),
+      rho: Number(mark.rho),
+      impliedVolatility: iv,
+      impliedVolatilityPct: Number.isFinite(iv) ? round(iv * 100) : Number.NaN,
+      volume: Number(mark.volume),
+      openInterest: Number(mark.open_interest),
+      updatedAt: String(mark.updated_at ?? mark.last_trade_price_source ?? ""),
+    };
+  });
+  contracts.sort((a, b) =>
+    a.expiration !== b.expiration
+      ? a.expiration.localeCompare(b.expiration)
+      : a.type !== b.type
+        ? a.type.localeCompare(b.type)
+        : a.strike - b.strike,
+  );
+
+  const finiteSum = (rows: OptionsSnapshotContract[], key: "volume" | "openInterest") =>
+    rows.reduce((sum, row) => sum + (Number.isFinite(row[key]) ? row[key] : 0), 0);
+  const calls = contracts.filter((row) => row.type === "call");
+  const puts = contracts.filter((row) => row.type === "put");
+  const callVolume = finiteSum(calls, "volume");
+  const putVolume = finiteSum(puts, "volume");
+  const callOi = finiteSum(calls, "openInterest");
+  const putOi = finiteSum(puts, "openInterest");
+  const byMax = (key: "volume" | "openInterest") => {
+    const finite = contracts.filter((row) => Number.isFinite(row[key]));
+    if (!finite.length) return null;
+    return finite.reduce((best, row) => (row[key] > best[key] ? row : best));
+  };
+  const oiWinner = byMax("openInterest");
+  const volumeWinner = byMax("volume");
+  const byExpiration = expirationsRequested.map((expiration) => {
+    const rows = contracts.filter((row) => row.expiration === expiration);
+    const expirationCalls = rows.filter((row) => row.type === "call");
+    const expirationPuts = rows.filter((row) => row.type === "put");
+    const callVolumeForExpiration = finiteSum(expirationCalls, "volume");
+    const putVolumeForExpiration = finiteSum(expirationPuts, "volume");
+    const callOiForExpiration = finiteSum(expirationCalls, "openInterest");
+    const putOiForExpiration = finiteSum(expirationPuts, "openInterest");
+    const strikes = [...new Set(rows.map((row) => row.strike).filter(Number.isFinite))];
+    const atmStrike = strikes.length
+      ? strikes.reduce((best, strike) =>
+          Math.abs(strike - spot) < Math.abs(best - spot) ? strike : best,
+        )
+      : Number.NaN;
+    const atmCall = expirationCalls.find((row) => row.strike === atmStrike);
+    const atmPut = expirationPuts.find((row) => row.strike === atmStrike);
+    const atmCallIv = atmCall?.impliedVolatility ?? Number.NaN;
+    const atmPutIv = atmPut?.impliedVolatility ?? Number.NaN;
+    const atmCallMark = atmCall?.mark ?? Number.NaN;
+    const atmPutMark = atmPut?.mark ?? Number.NaN;
+    const atmStraddleMark =
+      Number.isFinite(atmCallMark) && Number.isFinite(atmPutMark)
+        ? round(atmCallMark + atmPutMark)
+        : Number.NaN;
+    return {
+      expiration,
+      contractCount: rows.length,
+      callVolume: callVolumeForExpiration,
+      putVolume: putVolumeForExpiration,
+      callOpenInterest: callOiForExpiration,
+      putOpenInterest: putOiForExpiration,
+      putCallVolumeRatio:
+        callVolumeForExpiration > 0 ? putVolumeForExpiration / callVolumeForExpiration : Number.NaN,
+      putCallOpenInterestRatio:
+        callOiForExpiration > 0 ? putOiForExpiration / callOiForExpiration : Number.NaN,
+      atmStrike,
+      atmCallIv,
+      atmPutIv,
+      atmIvSkew:
+        Number.isFinite(atmCallIv) && Number.isFinite(atmPutIv)
+          ? round(atmPutIv - atmCallIv)
+          : Number.NaN,
+      atmStraddleMark,
+      atmStraddleExpectedMovePct:
+        Number.isFinite(atmStraddleMark) && Number.isFinite(spot) && spot > 0
+          ? round((atmStraddleMark / spot) * 100)
+          : Number.NaN,
+    };
+  });
+  const summary: OptionsSnapshotSummary = {
+    contractCount: contracts.length,
+    callCount: calls.length,
+    putCount: puts.length,
+    quotedContractCount: contracts.filter((row) => Number.isFinite(row.mark)).length,
+    staleOrMissingMarketDataCount: contracts.filter(
+      (row) => !Number.isFinite(row.mark) || (row.delta === 0 && row.impliedVolatility === 0),
+    ).length,
+    totalVolume: finiteSum(contracts, "volume"),
+    totalOpenInterest: finiteSum(contracts, "openInterest"),
+    putCallVolumeRatio: callVolume > 0 ? putVolume / callVolume : Number.NaN,
+    putCallOpenInterestRatio: callOi > 0 ? putOi / callOi : Number.NaN,
+    highestOpenInterest: oiWinner
+      ? {
+          optionInstrumentId: oiWinner.optionInstrumentId,
+          expiration: oiWinner.expiration,
+          type: oiWinner.type,
+          strike: oiWinner.strike,
+          openInterest: oiWinner.openInterest,
+        }
+      : null,
+    highestVolume: volumeWinner
+      ? {
+          optionInstrumentId: volumeWinner.optionInstrumentId,
+          expiration: volumeWinner.expiration,
+          type: volumeWinner.type,
+          strike: volumeWinner.strike,
+          volume: volumeWinner.volume,
+        }
+      : null,
+    byExpiration,
+  };
+
+  return {
+    symbol,
+    chainId,
+    spot,
+    type,
+    expirationsRequested,
+    availableExpirations,
+    availableExpirationCount: availableExpirations.length,
+    truncatedExpirations,
+    contracts,
+    summary,
+    warnings,
+  };
+}
+
 // ── Options Chain Stats ──
 // Live-verified 2026-08-02 against api.robinhood.com/marketdata/options/chains/stats/v1/{uuid}/
 // Shared engine behind `options chain-stats` CLI + `robinhood_options_chain_stats` MCP.

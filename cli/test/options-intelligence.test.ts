@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeOptionsHistory, computeChainStats } from "../src/lib.js";
+import { computeOptionsHistory, computeChainStats, computeOptionsSnapshot } from "../src/lib.js";
 
 // ── Options Contract Historicals ──
 // Test the shared engine behind `options history` CLI + `robinhood_options_history` MCP.
@@ -186,7 +186,7 @@ describe("computeChainStats", () => {
     expect(r.expirations[0]).toMatchObject({
       expirationDate: "2026-08-07",
       atmIv: 0.3521,
-      expectedMove: 12.50,
+      expectedMove: 12.5,
     });
     expect(r.expirations[1].atmIv).toBe(0.3678);
     expect(r.underlyingMic).toBe("XNAS");
@@ -246,5 +246,174 @@ describe("computeChainStats", () => {
     const empty = async () => ({ data: {} });
     const r = await computeChainStats({ chainId: "chain-abc" }, { getJson: empty as any });
     expect(r.expirations).toHaveLength(0);
+  });
+});
+
+// ── Research-grade bulk options snapshot ──
+// One shared engine must power CLI + MCP so large-chain enumeration returns the
+// same full quote/Greeks/liquidity contract instead of the CLI's former 3-field
+// quote subset and MCP's metadata-only subset.
+describe("computeOptionsSnapshot", () => {
+  const instrumentRows = [
+    { id: "c95", type: "call", strike_price: "95", expiration_date: "2026-09-18", state: "active" },
+    {
+      id: "c100",
+      type: "call",
+      strike_price: "100",
+      expiration_date: "2026-09-18",
+      state: "active",
+    },
+    {
+      id: "p100",
+      type: "put",
+      strike_price: "100",
+      expiration_date: "2026-09-18",
+      state: "active",
+    },
+  ];
+  const marks: Record<string, any> = {
+    c95: {
+      instrument_id: "c95",
+      bid_price: "8",
+      ask_price: "8.4",
+      adjusted_mark_price: "8.2",
+      last_trade_price: "8.1",
+      previous_close_price: "7.9",
+      delta: "0.70",
+      gamma: "0.02",
+      theta: "-0.08",
+      vega: "0.12",
+      rho: "0.04",
+      implied_volatility: "0.40",
+      volume: 20,
+      open_interest: 100,
+    },
+    c100: {
+      instrument_id: "c100",
+      bid_price: "5",
+      ask_price: "5.2",
+      adjusted_mark_price: "5.1",
+      last_trade_price: "5.0",
+      previous_close_price: "4.9",
+      delta: "0.52",
+      gamma: "0.03",
+      theta: "-0.10",
+      vega: "0.15",
+      rho: "0.03",
+      implied_volatility: "0.45",
+      volume: 50,
+      open_interest: 200,
+    },
+    p100: {
+      instrument_id: "p100",
+      bid_price: "4.8",
+      ask_price: "5.0",
+      adjusted_mark_price: "4.9",
+      last_trade_price: "4.85",
+      previous_close_price: "4.7",
+      delta: "-0.48",
+      gamma: "0.03",
+      theta: "-0.09",
+      vega: "0.14",
+      rho: "-0.03",
+      implied_volatility: "0.47",
+      volume: 80,
+      open_interest: 300,
+    },
+  };
+  const getJson = async (url: string, params: Record<string, string> = {}) => {
+    if (url.includes("instruments/?symbol"))
+      return { results: [{ id: "eq1", symbol: "TEST", tradable_chain_id: "chain1" }] };
+    if (url.includes("options/chains/")) return { expiration_dates: ["2026-09-18", "2026-10-16"] };
+    if (url.includes("marketdata/quotes"))
+      return { results: [{ instrument_id: "eq1", last_trade_price: "101" }] };
+    if (url.includes("marketdata/options"))
+      return {
+        results: String(params.ids)
+          .split(",")
+          .map((id) => marks[id])
+          .filter(Boolean),
+      };
+    throw new Error(`unexpected getJson ${url}`);
+  };
+  const getAll = async (_url: string, params: Record<string, string>) =>
+    instrumentRows.filter(
+      (row) => row.type === params.type && row.expiration_date === params.expiration_dates,
+    );
+
+  it("returns complete quote, Greeks, liquidity, moneyness, and spread fields", async () => {
+    const r = await computeOptionsSnapshot(
+      { symbol: "test", expiration: "2026-09-18", type: "both" },
+      { getJson: getJson as any, getAll: getAll as any },
+    );
+    expect(r.symbol).toBe("TEST");
+    expect(r.contracts).toHaveLength(3);
+    expect(r.contracts[1]).toMatchObject({
+      optionInstrumentId: "c100",
+      type: "call",
+      strike: 100,
+      bid: 5,
+      ask: 5.2,
+      mark: 5.1,
+      last: 5,
+      previousClose: 4.9,
+      spread: 0.2,
+      spreadPct: expect.any(Number),
+      delta: 0.52,
+      gamma: 0.03,
+      theta: -0.1,
+      vega: 0.15,
+      rho: 0.03,
+      impliedVolatility: 0.45,
+      impliedVolatilityPct: 45,
+      volume: 50,
+      openInterest: 200,
+      moneyness: "ITM",
+    });
+  });
+
+  it("aggregates put/call liquidity and identifies concentration", async () => {
+    const r = await computeOptionsSnapshot(
+      { symbol: "TEST", expiration: "2026-09-18", type: "both" },
+      { getJson: getJson as any, getAll: getAll as any },
+    );
+    expect(r.summary).toMatchObject({
+      contractCount: 3,
+      callCount: 2,
+      putCount: 1,
+      totalVolume: 150,
+      totalOpenInterest: 600,
+      putCallVolumeRatio: 80 / 70,
+      putCallOpenInterestRatio: 1,
+      highestOpenInterest: { optionInstrumentId: "p100", openInterest: 300 },
+      highestVolume: { optionInstrumentId: "p100", volume: 80 },
+    });
+    expect(r.summary.byExpiration).toEqual([
+      expect.objectContaining({
+        expiration: "2026-09-18",
+        contractCount: 3,
+        callVolume: 70,
+        putVolume: 80,
+        callOpenInterest: 300,
+        putOpenInterest: 300,
+        atmStrike: 100,
+        atmCallIv: 0.45,
+        atmPutIv: 0.47,
+        atmIvSkew: 0.02,
+        atmStraddleMark: 10,
+        atmStraddleExpectedMovePct: expect.closeTo(9.90099, 4),
+      }),
+    ]);
+  });
+
+  it("supports bounded all-expiration enumeration and reports truncation explicitly", async () => {
+    const r = await computeOptionsSnapshot(
+      { symbol: "TEST", expiration: "all", type: "call", maxExpirations: 1 },
+      { getJson: getJson as any, getAll: getAll as any },
+    );
+    expect(r.expirationsRequested).toEqual(["2026-09-18"]);
+    expect(r.availableExpirationCount).toBe(2);
+    expect(r.truncatedExpirations).toBe(true);
+    expect(r.warnings.join(" ")).toMatch(/bounded/i);
   });
 });

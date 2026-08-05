@@ -26,6 +26,7 @@ import {
   computeOptionsEvents,
   computeOptionsHistory,
   computeChainStats,
+  computeOptionsSnapshot,
   executeBrokerageRequest,
   executeCryptoRequest,
   filterAccountContextWorkflows,
@@ -2377,6 +2378,38 @@ server.registerTool(
       count: contracts.length,
       contracts,
     });
+  },
+);
+
+server.registerTool(
+  "robinhood_options_snapshot",
+  {
+    title: "Robinhood Options Research Snapshot",
+    description:
+      "Research-grade bulk option-chain dataset across one expiration or a bounded all-expiration range. Returns every active contract with bid/ask/mark/mid/last/previous close/spread, delta/gamma/theta/vega/rho, IV, volume, open interest, moneyness, UUID and deep link, plus put/call liquidity ratios and concentration leaders. Shared engine with CLI `options snapshot`; live read only.",
+    inputSchema: z.object({
+      symbol: symbolSchema,
+      expiration: z.union([dateSchema, z.literal("all")]).optional(),
+      type: z.enum(["call", "put", "both"]).default("both"),
+      max_expirations: z.number().int().min(1).max(64).default(12),
+      account_number: accountNumberOptionalSchema,
+    }),
+    annotations: toolAnnotations(true, "read"),
+  },
+  async ({ symbol, expiration, type, max_expirations, account_number }) => {
+    try {
+      return jsonResponse(
+        await computeOptionsSnapshot({
+          symbol,
+          expiration,
+          type,
+          maxExpirations: max_expirations,
+          accountNumber: account_number,
+        }),
+      );
+    } catch (e: any) {
+      return mcpError(e);
+    }
   },
 );
 

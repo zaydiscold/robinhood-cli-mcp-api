@@ -461,7 +461,7 @@ Interpretation:
 
 ## CLI Usage — The 80/20
 
-All commands run from repo root. Reads run live and free. Writes are dry-run by default unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set (the single switch; `--live-write` is an optional no-op).
+All commands run from repo root. Live-capable reads send requests without the write gate; local/catalog/plan tools do not. Writes are dry-run by default unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set (the single switch; `--live-write` is an optional no-op). Consult `docs/evidence-confidence-ledger.md` before describing a capability as verified.
 
 ```bash
 robinhood-cli api-map summary --json
@@ -1524,7 +1524,7 @@ claude mcp add robinhood-cli -s user \
 
 Same single switch as the CLI:
 
-- **Reads run live** — no gate needed.
+- **Live-capable reads need no write gate** — local/catalog/plan tools do not send requests; check the evidence ledger.
 - **Writes are dry-run by default.** To go live: set `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the server's environment — the one switch; **no per-call `liveWrite` required** (it's accepted but optional, no longer the gate).
 - `dryRun: true` always forces a plan, even when the switch is on — a deliberate "preview this exact live call" escape hatch.
 
@@ -1814,7 +1814,7 @@ Deep implementation and reproducibility details:
 
 - Treat `api-map/robinhood-routes.json` as the unified route map: official Robinhood Crypto OpenAPI + community seed + sanitized CDP capture.
 - Treat `api-map/brokerage-routes.json` as the browser-backed brokerage/account subset used by `brokerage execute`.
-- Reads run live and free. Writes default to dry-run unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set.
+- Live-capable reads send without the write gate; local/catalog/plan tools do not. Writes default to dry-run unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set.
 - Never trade, transfer, cancel, unlink, or mutate unless the user explicitly asked for that exact live operation. Echo back the resolved account + symbol + side + qty + price and get a yes before sending.
 - If you discover a route not in the map, add it, classify risk conservatively, rebuild, and document the discovery in `docs/undocumented-surface.md`.
 - If you hit a 401: the engine self-heals. If it fails, run `pnpm auth:refresh` manually.

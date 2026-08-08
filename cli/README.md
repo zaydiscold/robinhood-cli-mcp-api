@@ -6,7 +6,7 @@ the shared engine in `cli/src/lib.ts`; the MCP server imports the same engine.
 
 ## Safety Model
 
-- Reads run live with caller-owned auth.
+- Live-capable reads send requests with caller-owned auth; local/catalog/plan commands do not. See `../docs/evidence-confidence-ledger.md`.
 - Brokerage writes are dry-run by default unless
   `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set.
 - `--dry-run` always previews and sends nothing, even when the live-write switch

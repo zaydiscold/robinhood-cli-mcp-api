@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-08",
+  "kind": "sanitized-live-evidence-derivative",
+  "privacy": {
+    "rawResponsesRetained": false,
+    "tokensRetained": false,
+    "accountIdentifiersRetained": false,
+    "positionsOrBalancesRetained": false,
+    "orderIdentifiersRetained": false
+  },
+  "limitations": [
+    "This receipt records semantic outcomes from live commands; it is not a raw HTTP capture or cryptographic attestation.",
+    "A representative live read does not validate every account class, pagination branch, instrument, empty state, or calculation.",
+    "No brokerage mutation was armed or submitted during this walk.",
+    "No ordinary-equity order ID was available through the privacy-safe history output, so live status reconciliation was not performed."
+  ],
+  "authenticatedLiveReads": [
+    "accounts",
+    "positions",
+    "portfolio",
+    "buying-power",
+    "history",
+    "account-pulse",
+    "dividends",
+    "documents",
+    "margin",
+    "options-holdings",
+    "options-events",
+    "options-expirations",
+    "options-chain",
+    "options-chain-stats",
+    "performance",
+    "risk",
+    "calendar",
+    "exposure",
+    "rewards",
+    "inbox-summary",
+    "gold-fees",
+    "recurring-list",
+    "settings-show",
+    "watchlists",
+    "orders-open",
+    "sentinel",
+    "tax-lot-inventory"
+  ],
+  "publicOrMarketReads": [
+    "quote",
+    "news",
+    "ratings",
+    "earnings",
+    "movers",
+    "sweep-interest",
+    "ipo-access-list"
+  ],
+  "preflightAndPlans": [
+    {
+      "capability": "pretrade",
+      "tier": "live-preflight",
+      "semantic": "owned account and held symbol resolved; no POST"
+    },
+    {
+      "capability": "ipo-request-readiness",
+      "tier": "live-preflight",
+      "semantic": "current offering/account viewmodels parsed; no request submitted"
+    },
+    {
+      "capability": "ordinary-equity-order",
+      "tier": "unit-plus-real-account-dry-run",
+      "semantic": "owned account/symbol body path; no send"
+    },
+    {
+      "capability": "overnight-equity",
+      "tier": "live-input-dry-run-or-safety-block",
+      "semantic": "eligibility/body/spread boundary; no send"
+    }
+  ],
+  "notProven": [
+    "ordinary equity live submit/cancel/status/fill in this audit",
+    "options strategy submission or fill",
+    "exact-lot review/submit/status/fill",
+    "IPO request create/update/cancel/allocation",
+    "24-hour or overnight live submission",
+    "recurring/settings/watchlist mutation in this audit",
+    "independent statement or spreadsheet reconciliation of financial calculations",
+    "tax-law, wash-sale, basis-reporting, or return-preparation correctness"
+  ]
+}

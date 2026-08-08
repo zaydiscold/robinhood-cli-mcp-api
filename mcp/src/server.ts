@@ -1414,7 +1414,9 @@ server.registerTool(
       market_hours: z
         .enum(["regular_hours", "extended_hours", "all_day_hours"])
         .optional()
-        .describe("explicit execution session; all_day_hours is the 24-hour market and remains dry-run-only until account-scoped order-check capture"),
+        .describe(
+          "explicit execution session; all_day_hours is the 24-hour market and remains dry-run-only until account-scoped order-check capture",
+        ),
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional(),
@@ -1488,7 +1490,9 @@ server.registerTool(
       market_hours: z
         .enum(["regular_hours", "extended_hours", "all_day_hours"])
         .optional()
-        .describe("explicit execution session; all_day_hours is the 24-hour market and remains dry-run-only until account-scoped order-check capture"),
+        .describe(
+          "explicit execution session; all_day_hours is the 24-hour market and remains dry-run-only until account-scoped order-check capture",
+        ),
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional(),

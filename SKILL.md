@@ -1094,7 +1094,9 @@ Live all-day submission remains blocked until account/session order-check eligib
 
 ### Tax-lot inventory and exact-unit selling
 
-**Reference:** `docs/tax-lot-intelligence-and-exact-lot-selling.md` contains the full evidence map, official Robinhood/IRS rules, objectives, wash-sale model, and verification workflow.
+**Product contract:** `docs/tax-lot-intelligence-and-exact-lot-selling.md` contains the endpoint evidence map, exact-ID planner contract, official Robinhood/IRS rules, wash-sale model, and verification workflow.
+
+**Strategy curriculum:** `docs/tax-lot-strategy-playbook.md` is the in-depth operating and learning guide: objective tradeoffs, gain/loss harvesting, holding-period management, tax-aware rebalancing, charitable appreciated-lot selection, basis hygiene, year-round cadence, verified articles/videos, retrieval prompts, and an exit test. Load it before advising which lots to preserve or dispose. The matching Hermes skill is `tax-lot-strategy`.
 
 ```bash
 # Stable IDs + basis/term/availability

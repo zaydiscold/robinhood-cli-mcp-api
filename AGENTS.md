@@ -96,7 +96,7 @@ enumerate`). These kill the #1 wrong-account and #1 options-failure traps.
 
 Then the safety rails:
 
-- **Reads run live, free.** Writes (trade / cancel / transfer) are **env-gated** and
+- **Live-capable reads send real requests without the write gate.** Local/catalog/plan commands do not; classify them through `docs/evidence-confidence-ledger.md`. Writes (trade / cancel / transfer) are **env-gated** and
   default to a safe dry-run.
 - **Match a route by substring** of its URL, fill `{placeholders}` with `--param`.
 - **Rebuild after editing the route map** or your edits are silently ignored (§3).
@@ -595,7 +595,7 @@ basis (`average_open_price` / `average_buy_price`) vs the live mark/last.
 ### Preferred: the first-class `recurring` command
 
 Recurring buys have a dedicated command so you don't hand-craft URLs or bodies. It shares
-the same engine + env-gate as everything else (reads run live, writes need the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch):
+the same engine + env-gate as everything else (live-capable reads need no write gate; local/plan tools do not send; writes need the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch):
 
 ```bash
 robinhood-cli recurring list                        # live read: symbol/state/amount/next/id

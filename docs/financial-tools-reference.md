@@ -68,7 +68,8 @@ robinhood-cli risk --account <N> --json
 |---|---|
 | `totalEquityUsd` | Sum of all account equities |
 | `totalBorrowedUsd` | Sum of all margin borrowings |
-| `marginCallDistancePct` | `totalBorrowed / totalEquity × 100` (null if no equity) |
+| `marginUtilizationPct` | `totalBorrowed / totalEquity × 100` (null if no equity); this is utilization, not distance to a broker margin call |
+| `marginCallDistancePct` | Deprecated compatibility alias of `marginUtilizationPct`; the name is inaccurate and must not be interpreted as a liquidation or maintenance-margin buffer |
 | `positions[]` | Per-position risk profile |
 | `concentrationWarnings[]` | Symbols with >20% portfolio weight |
 

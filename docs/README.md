@@ -18,6 +18,7 @@ folder stays local and is never pushed.
 | `authenticated-api-map-capture-2026-07-14.md`       | Read-only Chrome/CDP coverage, value-free request/response shapes, sanitization contract, and reproducible merge pipeline                 |
 | `auth.md`                                           | Browser-session bearer auth, token refresh, and local `.env` behavior                                                                     |
 | `write-operations.md`                               | The dry-run/live-write gate and mutation rules                                                                                            |
+| `evidence-confidence-ledger.md`                     | Current proof tier for each capability family: live-read, preflight, plan-only, historical mutation, submitted, reconciled, or unverified |
 | `safety-and-workflow-features-2026-07-10.md`        | Doctor, durable order watch, options workbench, portfolio snapshots, share-safe output, MCP schemas/profiles                              |
 | `account-service-reads-2026-08-04.md`               | Privacy-safe rewards/inbox/IPO reads plus cash-sweep rate and Gold-fee recipes, contracts, and live-evidence boundaries                   |
 | `ipo-access-and-24-hour-contract-map-2026-08-08.md` | IPO request-readiness viewmodels and the 24-hour whole-share limit dry-run contract, including explicit missing submit/preflight evidence |

@@ -550,11 +550,12 @@ describe("computeRisk — portfolio risk scanner", () => {
     expect(warning!.message).toContain(">20% concentration");
   });
 
-  it("computes total equity, borrowed, and margin call distance", async () => {
+  it("computes total equity, borrowed, and margin utilization while preserving the legacy alias", async () => {
     const r = await computeRisk({}, riskFix());
     expect(r.totalEquityUsd).toBe(6000);
     expect(r.totalBorrowedUsd).toBe(1200);
-    expect(r.marginCallDistancePct).toBe(20); // 1200/6000 * 100
+    expect(r.marginUtilizationPct).toBe(20); // 1200/6000 * 100
+    expect(r.marginCallDistancePct).toBe(20); // deprecated compatibility alias, not call distance
   });
 
   it("gracefully handles no positions or marks", async () => {

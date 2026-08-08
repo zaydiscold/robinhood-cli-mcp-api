@@ -122,6 +122,10 @@ import {
   getInboxSummary,
   getIpoAccess,
   getIpoAccessRequestPlan,
+  getTaxLotInventory,
+  getTaxLotsForOrder,
+  planTaxLotSale,
+  submitTaxLotSale,
   type BrokerageRoute,
 } from "@zaydiscold/robinhood-cli/lib";
 
@@ -3791,6 +3795,128 @@ registerCapabilityTool(
   async ({ symbol, account_number }: { symbol: string; account_number: string }) =>
     jsonResponse(await getIpoAccessRequestPlan({ symbol, accountNumber: account_number })),
 );
+
+/* MCP inputs are runtime-validated by the Zod schemas immediately above each adapter. */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const taxLotSelectionSchema = z.object({
+  open_lot_id: z.string().min(1).describe("Stable open_lot_id returned by robinhood_tax_lots"),
+  quantity: z.number().positive(),
+});
+const taxLotObjectiveSchema = z.enum([
+  "specific",
+  "fifo",
+  "harvest_loss",
+  "minimize_gain",
+  "highest_basis",
+  "lowest_basis",
+  "long_term_first",
+  "short_term_first",
+]);
+const taxLotPlanSchema = z.object({
+  symbol: symbolSchema,
+  account_number: accountNumberSchema,
+  shares: z.number().positive().optional(),
+  selections: z.array(taxLotSelectionSchema).min(1).optional(),
+  objective: taxLotObjectiveSchema.default("fifo"),
+  short_term_rate: z.number().min(0).max(1).optional(),
+  long_term_rate: z.number().min(0).max(1).optional(),
+  limit_price: z.number().positive().optional(),
+  time_in_force: z.enum(["gfd", "gtc"]).optional(),
+  market_hours: z
+    .enum(["regular_hours", "extended_hours", "all_day_hours"])
+    .default("regular_hours"),
+});
+const mapTaxLotInput = (input: any) => ({
+  symbol: input.symbol,
+  accountNumber: input.account_number,
+  shares: input.shares,
+  selections: input.selections?.map((item: any) => ({
+    openLotId: item.open_lot_id,
+    quantity: item.quantity,
+  })),
+  objective: input.objective,
+  shortTermRate: input.short_term_rate,
+  longTermRate: input.long_term_rate,
+  limitPrice: input.limit_price,
+  timeInForce: input.time_in_force,
+  marketHours: input.market_hours,
+});
+
+registerCapabilityTool(
+  "tax_lots",
+  {
+    title: "Robinhood Tax Lots",
+    description:
+      "Enumerate live open tax lots for one owned position using stable open_lot_id values, available quantity, book vs tax basis, acquisition date, short/long term, selectability, holding clock, and per-lot unrealized gain/loss. Read-only.",
+    inputSchema: z.object({
+      symbol: symbolSchema,
+      account_number: accountNumberSchema,
+      price: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Optional scenario price; defaults to live quote"),
+    }),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "sensitive-read"),
+  },
+  async ({ symbol, account_number, price }: any) =>
+    jsonResponse(await getTaxLotInventory({ symbol, accountNumber: account_number, price })),
+);
+
+registerCapabilityTool(
+  "tax_lot_order",
+  {
+    title: "Robinhood Order Tax-Lot Verification",
+    description:
+      "Read the exact selected and closed/realized tax lots for an existing equity order. Use after submission and after fill to verify Robinhood honored the intended disposition. Read-only.",
+    inputSchema: z.object({
+      order_id: z.string().min(1),
+      account_number: accountNumberSchema,
+    }),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "sensitive-read"),
+  },
+  async ({ order_id, account_number }: any) =>
+    jsonResponse(await getTaxLotsForOrder({ orderId: order_id, accountNumber: account_number })),
+);
+
+registerCapabilityTool(
+  "tax_lot_plan",
+  {
+    title: "Robinhood Tax-Aware Exact-Lot Sell Plan",
+    description:
+      "Build a dry-run exact-lot sale from stable lot IDs or objectives such as harvest_loss, minimize_gain, highest_basis, FIFO, or long_term_first. Reports short/long realized estimates, assumption-labeled federal estimate only when rates are supplied, and explicit wash-sale not_evaluated state when cross-account history is absent. Never submits.",
+    inputSchema: taxLotPlanSchema,
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "sensitive-read"),
+  },
+  async (input: any) => jsonResponse(await planTaxLotSale(mapTaxLotInput(input))),
+);
+
+registerCapabilityTool(
+  "tax_lot_sell",
+  {
+    title: "Robinhood Exact-Lot Sell",
+    description:
+      "Build an exact stable-ID tax-lot sell boundary as a dry-run. Re-reads live lot availability, but fails closed on every live request until Robinhood's authenticated account-scoped review/submit contract is mapped.",
+    inputSchema: taxLotPlanSchema.extend({
+      live_write: z.boolean().default(false),
+    }),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(false, "write-mutate"),
+  },
+  async (input: any) => {
+    if (input.live_write)
+      throw new Error(
+        "Exact-lot live submission is not mapped; use robinhood_tax_lot_plan or this tool with live_write=false.",
+      );
+    return jsonResponse(
+      await submitTaxLotSale({ ...mapTaxLotInput(input), liveWrite: input.live_write }),
+    );
+  },
+);
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ── MCP Prompts: reusable operating templates ────────────────────────────────────────────────────
 // Surfaced so a client can offer them as slash-commands / starters. Each just orchestrates EXISTING

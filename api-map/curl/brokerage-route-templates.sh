@@ -1106,6 +1106,15 @@
 # sensitive-read GET https://nummus.robinhood.com/orders/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://nummus.robinhood.com/orders/'
 
+# sensitive-read GET https://api.robinhood.com/tax_lots/open/{account_number}/{instrument_id}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/tax_lots/open/{account_number}/{instrument_id}/'
+
+# sensitive-read GET https://api.robinhood.com/tax_lots/order/{order_id}/selected/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/tax_lots/order/{order_id}/selected/'
+
+# sensitive-read GET https://api.robinhood.com/tax_lots/order/{order_id}/closed/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/tax_lots/order/{order_id}/closed/'
+
 # write-mutate POST https://nummus.robinhood.com/orders/
 # curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://nummus.robinhood.com/orders/'
 

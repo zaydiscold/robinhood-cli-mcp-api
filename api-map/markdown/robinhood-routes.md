@@ -4,10 +4,10 @@ Source: official Robinhood Crypto Trading OpenAPI plus sanitized authenticated C
 
 Crypto operations are official Robinhood-published endpoints and should use Ed25519 signing. Brokerage/account operations are browser-backed route-map entries and use caller-owned brokerage token or browser cookie auth.
 
-Current count: 392 route entries.
+Current count: 395 route entries.
 Official Crypto route entries: 16.
-Brokerage/account route entries: 376.
-Risk counts: destructive=11, read=108, sensitive-read=242, write-mutate=13, write-or-sensitive=7, write-safe=11.
+Brokerage/account route entries: 379.
+Risk counts: destructive=11, read=108, sensitive-read=245, write-mutate=13, write-or-sensitive=7, write-safe=11.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -230,6 +230,9 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | yes | write-mutate | PUT | account, settings, margin | api.robinhood.com | settings-capture-2026-06-03 | `https://api.robinhood.com/settings/margin/{account_number}/` |
 | yes | write-or-sensitive | inferred | account | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/subscription/subscription_fees/` |
 | no | sensitive-read | GET | account | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/subscription/subscriptions/` |
+| no | sensitive-read | GET | tax-lots, positions | api.robinhood.com | live-read-2026-08-08 | `https://api.robinhood.com/tax_lots/open/{account_number}/{instrument_id}/` |
+| no | sensitive-read | GET | tax-lots, orders | api.robinhood.com | production-web-contract-and-robin-stocks-pr1648-2026-08-08 | `https://api.robinhood.com/tax_lots/order/{order_id}/closed/` |
+| no | sensitive-read | GET | tax-lots, orders | api.robinhood.com | production-web-contract-and-robin-stocks-pr1648-2026-08-08 | `https://api.robinhood.com/tax_lots/order/{order_id}/selected/` |
 | no | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/user/` |
 | no | sensitive-read | GET | account | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized | `https://api.robinhood.com/user/additional_info/` |
 | no | sensitive-read | inferred | account | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/user/basic_info/` |

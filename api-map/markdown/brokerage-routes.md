@@ -4,8 +4,8 @@ Source: reverse-engineered routes plus sanitized authenticated Chrome/CDP captur
 
 Personal repo semantics: mapped routes can be executed live with caller-owned `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE`. Pass `--dry-run` when you want a non-sending test plan.
 
-Current count: 376 route templates.
-Risk counts: destructive=9, read=102, sensitive-read=236, write-mutate=11, write-or-sensitive=7, write-safe=11.
+Current count: 379 route templates.
+Risk counts: destructive=9, read=102, sensitive-read=239, write-mutate=11, write-or-sensitive=7, write-safe=11.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -378,6 +378,9 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | GET | marketdata | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://nummus.robinhood.com/currency_pairs/` |
 | sensitive-read | GET | unknown | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://nummus.robinhood.com/holdings/` |
 | sensitive-read | GET | orders | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://nummus.robinhood.com/orders/` |
+| sensitive-read | GET | tax-lots, positions | api.robinhood.com | live-read-2026-08-08 | `https://api.robinhood.com/tax_lots/open/{account_number}/{instrument_id}/` |
+| sensitive-read | GET | tax-lots, orders | api.robinhood.com | production-web-contract-and-robin-stocks-pr1648-2026-08-08 | `https://api.robinhood.com/tax_lots/order/{order_id}/selected/` |
+| sensitive-read | GET | tax-lots, orders | api.robinhood.com | production-web-contract-and-robin-stocks-pr1648-2026-08-08 | `https://api.robinhood.com/tax_lots/order/{order_id}/closed/` |
 | write-mutate | POST | orders | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://nummus.robinhood.com/orders/` |
 | sensitive-read | GET | orders | nummus.robinhood.com | community-seed | `https://nummus.robinhood.com/orders/{0}/` |
 | destructive | POST | orders | nummus.robinhood.com | wire-writes 2026-05-29 | `https://nummus.robinhood.com/orders/{0}/cancel/` |

@@ -4577,7 +4577,9 @@ export async function placeEquityOrder(
   };
   if (marketHours !== "regular_hours") {
     if (input.amount != null)
-      throw new Error(`${symbol}: ${marketHours} orders require an explicit share quantity; dollar/notional sizing is not supported.`);
+      throw new Error(
+        `${symbol}: ${marketHours} orders require an explicit share quantity; dollar/notional sizing is not supported.`,
+      );
     if (input.limitPrice == null)
       throw new Error(`${symbol}: ${marketHours} execution requires an explicit limit price.`);
     if (marketHours === "all_day_hours") {
@@ -11020,6 +11022,531 @@ export async function getStockRewardsSummary(
   return { total: rewards.length, sectionCounts, typeCounts, rewards };
 }
 
+/* Robinhood's private tax-lot payload is an undocumented JSON boundary; normalize and validate every field below. */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export type TaxLotObjective =
+  | "specific"
+  | "fifo"
+  | "harvest_loss"
+  | "minimize_gain"
+  | "highest_basis"
+  | "lowest_basis"
+  | "long_term_first"
+  | "short_term_first";
+
+export interface TaxLot {
+  accountNumber: string;
+  instrumentId: string;
+  openLotId: string;
+  openTransactionType: string | null;
+  orderId: string | null;
+  quantity: number;
+  quantityAvailable: number;
+  bookCostBasisUsd: number | null;
+  taxCostBasisUsd: number | null;
+  taxCostPerShareUsd: number | null;
+  bookProceedsUsd: number | null;
+  openDate: string | null;
+  term: "short_term" | "long_term" | "unknown";
+  termSource?: "robinhood" | "calendar_estimate" | "unknown";
+  selectable: boolean;
+  currentPriceUsd: number;
+  unrealizedGainLossUsd: number | null;
+  holdingDays: number | null;
+  daysToLongTerm: number | null;
+  taxBasis:
+    | { status: "evaluated"; valueUsd: number; perShareUsd: number }
+    | { status: "not_evaluated"; reason: string };
+}
+
+export interface TaxLotInventory {
+  symbol: string;
+  accountNumber: string;
+  accountType: string | null;
+  instrumentId: string;
+  currentPriceUsd: number;
+  eligibility:
+    | { status: "evaluated"; eligible: boolean; source: string }
+    | { status: "not_evaluated"; reason: string; requiredInputs: string[] };
+  lots: TaxLot[];
+  rawFieldContract: Record<string, true>;
+  warnings: string[];
+}
+
+const TAX_LOT_RAW_FIELDS = [
+  "account_number",
+  "instrument_id",
+  "open_lot_id",
+  "open_tran_type",
+  "order_id",
+  "quantity",
+  "quantity_available",
+  "book_cost_basis",
+  "tax_cost_basis",
+  "book_proceeds",
+  "open_date",
+  "term",
+  "is_selectable",
+  "cost_per_share",
+] as const;
+
+function taxLotNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function accountTypeFromRow(row: any): string | null {
+  const value = row?.account_type ?? row?.brokerage_account_type ?? row?.type;
+  return typeof value === "string" ? value.toLowerCase() : null;
+}
+
+function accountIsIra(accountType: string | null): boolean {
+  return Boolean(accountType && /ira|retirement|roth/.test(accountType));
+}
+
+/** Read and normalize Robinhood's open-lot contract. No financial mutation. */
+export async function getTaxLotInventory(
+  input: { symbol: string; accountNumber: string; price?: number },
+  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {},
+): Promise<TaxLotInventory> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const now = deps.now ?? Date.now;
+  const symbol = input.symbol.trim().toUpperCase();
+  if (!symbol) throw new Error("symbol is required");
+  await assertAccountOwned(input.accountNumber, { getJson, onLookupFailure: "block" });
+  const accountGraph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
+  const accounts = Array.isArray(accountGraph?.results) ? accountGraph.results : [];
+  const accountRow = accounts.find(
+    (row: any) =>
+      String(row?.account_number ?? row?.rhs_account_number ?? "") === input.accountNumber,
+  );
+  const accountType = accountTypeFromRow(accountRow);
+  const instrument = (
+    await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })
+  ).results?.[0];
+  if (!instrument?.id) throw new Error(`Symbol ${symbol} not found`);
+  const quote = (
+    await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", { ids: instrument.id })
+  ).results?.[0];
+  const livePrice = input.price ?? taxLotNumber(quote?.last_trade_price);
+  if (livePrice == null || livePrice <= 0)
+    throw new Error(`Invalid or missing quote for ${symbol}`);
+
+  const response = await getJson(
+    "https://api.robinhood.com/tax_lots/open/{account_number}/{instrument_id}/",
+    { account_number: input.accountNumber, instrument_id: String(instrument.id) },
+    {
+      sort_type: "date",
+      sort_direction: "DESC",
+      fetch_max_abs_values: "true",
+      price: Number(livePrice).toFixed(2),
+    },
+  );
+  const rows: any[] = Array.isArray(response?.results)
+    ? response.results
+    : Array.isArray(response)
+      ? response
+      : [];
+  const warnings: string[] = [];
+  const lots = rows.map((row): TaxLot => {
+    const quantity = taxLotNumber(row?.quantity) ?? 0;
+    const quantityAvailable = taxLotNumber(row?.quantity_available) ?? 0;
+    const bookCostBasisUsd = taxLotNumber(row?.book_cost_basis);
+    const taxCostBasisUsd = taxLotNumber(row?.tax_cost_basis);
+    const taxCostPerShareUsd =
+      taxCostBasisUsd != null && quantity > 0 ? taxCostBasisUsd / quantity : null;
+    const openDate = typeof row?.open_date === "string" ? row.open_date : null;
+    const acquired = openDate ? Date.parse(openDate) : Number.NaN;
+    const holdingDays = Number.isFinite(acquired)
+      ? Math.max(0, Math.floor((now() - acquired) / 86_400_000))
+      : null;
+    const rawTerm = typeof row?.term === "string" ? row.term.toLowerCase() : "";
+    const calendarTerm: TaxLot["term"] =
+      holdingDays == null ? "unknown" : holdingDays > 365 ? "long_term" : "short_term";
+    const term: TaxLot["term"] = rawTerm.includes("long")
+      ? "long_term"
+      : rawTerm.includes("short")
+        ? "short_term"
+        : calendarTerm;
+    const termSource: TaxLot["termSource"] =
+      rawTerm.includes("long") || rawTerm.includes("short")
+        ? "robinhood"
+        : calendarTerm === "unknown"
+          ? "unknown"
+          : "calendar_estimate";
+    const unrealizedGainLossUsd =
+      taxCostPerShareUsd == null
+        ? null
+        : (Number(livePrice) - taxCostPerShareUsd) * quantityAvailable;
+    if (!row?.open_lot_id) warnings.push("Robinhood returned an open lot without open_lot_id");
+    return {
+      accountNumber: String(row?.account_number ?? input.accountNumber),
+      instrumentId: String(row?.instrument_id ?? instrument.id),
+      openLotId: String(row?.open_lot_id ?? ""),
+      openTransactionType: typeof row?.open_tran_type === "string" ? row.open_tran_type : null,
+      orderId: typeof row?.order_id === "string" ? row.order_id : null,
+      quantity,
+      quantityAvailable,
+      bookCostBasisUsd,
+      taxCostBasisUsd,
+      taxCostPerShareUsd,
+      bookProceedsUsd: taxLotNumber(row?.book_proceeds),
+      openDate,
+      term,
+      termSource,
+      selectable: row?.is_selectable === true && quantityAvailable > 0,
+      currentPriceUsd: Number(livePrice),
+      unrealizedGainLossUsd:
+        unrealizedGainLossUsd == null ? null : roundMoney(unrealizedGainLossUsd),
+      holdingDays,
+      daysToLongTerm:
+        holdingDays == null || term === "long_term" ? 0 : Math.max(0, 366 - holdingDays),
+      taxBasis:
+        taxCostBasisUsd == null || taxCostPerShareUsd == null
+          ? { status: "not_evaluated", reason: "tax_cost_basis is missing" }
+          : { status: "evaluated", valueUsd: taxCostBasisUsd, perShareUsd: taxCostPerShareUsd },
+    };
+  });
+  const retirement = accountIsIra(accountType);
+  const eligibility: TaxLotInventory["eligibility"] = {
+    status: "evaluated",
+    eligible: !retirement && lots.some((lot) => lot.selectable),
+    source: "owned account type plus open-lot is_selectable fields",
+  };
+  return {
+    symbol,
+    accountNumber: input.accountNumber,
+    accountType,
+    instrumentId: String(instrument.id),
+    currentPriceUsd: Number(livePrice),
+    eligibility,
+    lots,
+    rawFieldContract: Object.fromEntries(TAX_LOT_RAW_FIELDS.map((key) => [key, true])),
+    warnings,
+  };
+}
+
+/** Verify the exact selected and realized lots for a Robinhood equity order. Read-only. */
+export async function getTaxLotsForOrder(
+  input: { orderId: string; accountNumber: string },
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<{
+  orderId: string;
+  accountNumber: string;
+  selected: unknown[];
+  closed: unknown[];
+  settlementStatus: "selected_only" | "closed_lots_available" | "no_lots_returned";
+}> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const orderId = input.orderId.trim();
+  if (!orderId) throw new Error("orderId is required");
+  await assertAccountOwned(input.accountNumber, { getJson, onLookupFailure: "block" });
+  const query = { account_number: input.accountNumber, fetch_max_abs_values: "true" };
+  const [selectedRaw, closedRaw] = await Promise.all([
+    getJson(
+      "https://api.robinhood.com/tax_lots/order/{order_id}/selected/",
+      { order_id: orderId },
+      query,
+    ),
+    getJson(
+      "https://api.robinhood.com/tax_lots/order/{order_id}/closed/",
+      { order_id: orderId },
+      query,
+    ),
+  ]);
+  const selected = Array.isArray(selectedRaw?.results)
+    ? selectedRaw.results
+    : Array.isArray(selectedRaw)
+      ? selectedRaw
+      : [];
+  const closed = Array.isArray(closedRaw?.results)
+    ? closedRaw.results
+    : Array.isArray(closedRaw)
+      ? closedRaw
+      : [];
+  return {
+    orderId,
+    accountNumber: input.accountNumber,
+    selected,
+    closed,
+    settlementStatus: closed.length
+      ? "closed_lots_available"
+      : selected.length
+        ? "selected_only"
+        : "no_lots_returned",
+  };
+}
+
+export function rankTaxLots(lots: readonly TaxLot[], objective: TaxLotObjective): TaxLot[] {
+  const candidates = lots.filter((lot) => lot.selectable && lot.quantityAvailable > 0);
+  const byDate = (a: TaxLot, b: TaxLot) =>
+    String(a.openDate ?? "9999").localeCompare(String(b.openDate ?? "9999")) ||
+    a.openLotId.localeCompare(b.openLotId);
+  return [...candidates].sort((a, b) => {
+    if (objective === "fifo") return byDate(a, b);
+    if (objective === "long_term_first" || objective === "short_term_first") {
+      const desired = objective === "long_term_first" ? "long_term" : "short_term";
+      const termOrder = Number(b.term === desired) - Number(a.term === desired);
+      return termOrder || byDate(a, b);
+    }
+    if (
+      objective === "highest_basis" ||
+      objective === "harvest_loss" ||
+      objective === "minimize_gain"
+    ) {
+      return (
+        (b.taxCostPerShareUsd ?? -Infinity) - (a.taxCostPerShareUsd ?? -Infinity) || byDate(a, b)
+      );
+    }
+    if (objective === "lowest_basis") {
+      return (
+        (a.taxCostPerShareUsd ?? Infinity) - (b.taxCostPerShareUsd ?? Infinity) || byDate(a, b)
+      );
+    }
+    return byDate(a, b);
+  });
+}
+
+export interface TaxLotSelectionInput {
+  openLotId: string;
+  quantity: number;
+}
+
+export interface TaxLotSalePlanInput {
+  symbol: string;
+  accountNumber: string;
+  shares?: number;
+  selections?: TaxLotSelectionInput[];
+  objective?: TaxLotObjective;
+  shortTermRate?: number;
+  longTermRate?: number;
+  limitPrice?: number;
+  timeInForce?: "gfd" | "gtc";
+  marketHours?: "regular_hours" | "extended_hours" | "all_day_hours";
+  dryRun?: boolean;
+  liveWrite?: boolean;
+}
+
+/** Build a stable-ID exact-lot sell plan. It never submits an order. */
+export async function planTaxLotSale(
+  input: TaxLotSalePlanInput,
+  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {},
+): Promise<any> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const accountGraph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
+  const accounts = Array.isArray(accountGraph?.results) ? accountGraph.results : [];
+  const row = accounts.find(
+    (item: any) =>
+      String(item?.account_number ?? item?.rhs_account_number ?? "") === input.accountNumber,
+  );
+  const accountType = accountTypeFromRow(row);
+  const objective = input.objective ?? (input.selections ? "specific" : "fifo");
+  if (objective === "harvest_loss" && accountIsIra(accountType)) {
+    throw new Error(
+      "Tax-loss harvesting is not applicable inside an IRA/Roth account; losses there are not deductible.",
+    );
+  }
+  const inventory = await getTaxLotInventory(
+    { symbol: input.symbol, accountNumber: input.accountNumber },
+    deps,
+  );
+  if (inventory.eligibility.status === "evaluated" && !inventory.eligibility.eligible)
+    throw new Error(
+      `${inventory.symbol}: custom tax-lot selection is not eligible for this account.`,
+    );
+  const byId = new Map(inventory.lots.map((lot) => [lot.openLotId, lot]));
+  const totalAvailable = inventory.lots
+    .filter((lot) => lot.selectable)
+    .reduce((sum, lot) => sum + lot.quantityAvailable, 0);
+  let selections: TaxLotSelectionInput[];
+  if (input.selections) {
+    selections = input.selections.map((selection) => ({ ...selection }));
+    for (const selection of selections) {
+      const lot = byId.get(selection.openLotId);
+      if (!lot) throw new Error(`Unknown open_lot_id: ${selection.openLotId}`);
+      if (!lot.selectable) throw new Error(`open_lot_id ${selection.openLotId} is not selectable`);
+      if (!Number.isFinite(selection.quantity) || selection.quantity <= 0)
+        throw new Error(`Invalid quantity for open_lot_id ${selection.openLotId}`);
+      if (selection.quantity > lot.quantityAvailable)
+        throw new Error(
+          `open_lot_id ${selection.openLotId} has only ${lot.quantityAvailable} shares available`,
+        );
+    }
+    const selectedTotal = selections.reduce((sum, item) => sum + item.quantity, 0);
+    if (input.shares != null && Math.abs(selectedTotal - input.shares) > 1e-8)
+      throw new Error(
+        `Tax-lot selection total ${selectedTotal} does not match requested shares ${input.shares}`,
+      );
+  } else {
+    if (!Number.isFinite(input.shares) || Number(input.shares) <= 0)
+      throw new Error("shares or explicit selections are required");
+    if (Number(input.shares) > totalAvailable + 1e-8)
+      throw new Error(
+        `${inventory.symbol}: only ${totalAvailable} selectable shares are available across tax lots`,
+      );
+    let remaining = Number(input.shares);
+    selections = [];
+    for (const lot of rankTaxLots(inventory.lots, objective)) {
+      if (remaining <= 1e-8) break;
+      const quantity = Math.min(remaining, lot.quantityAvailable);
+      selections.push({ openLotId: lot.openLotId, quantity });
+      remaining -= quantity;
+    }
+  }
+  const totalQuantity = selections.reduce((sum, item) => sum + item.quantity, 0);
+  let shortTermUsd = 0;
+  let longTermUsd = 0;
+  const selectedLots = selections.map((selection) => {
+    const lot = byId.get(selection.openLotId)!;
+    if (lot.taxCostPerShareUsd == null)
+      throw new Error(`open_lot_id ${selection.openLotId} has no evaluated tax basis`);
+    const gainLossUsd = roundMoney(
+      (inventory.currentPriceUsd - lot.taxCostPerShareUsd) * selection.quantity,
+    );
+    if (lot.term === "long_term") longTermUsd += gainLossUsd;
+    else shortTermUsd += gainLossUsd;
+    return {
+      ...selection,
+      term: lot.term,
+      openDate: lot.openDate,
+      taxCostPerShareUsd: lot.taxCostPerShareUsd,
+      estimatedGainLossUsd: gainLossUsd,
+    };
+  });
+  shortTermUsd = roundMoney(shortTermUsd);
+  longTermUsd = roundMoney(longTermUsd);
+  const quote = (
+    await getJson("https://api.robinhood.com/marketdata/quotes/?ids={ids}", {
+      ids: inventory.instrumentId,
+    })
+  ).results?.[0];
+  const orderType = input.limitPrice == null ? "market" : "limit";
+  const tif = input.timeInForce ?? (orderType === "market" ? "gfd" : "gtc");
+  const orderBody: Record<string, unknown> = {
+    account: `https://api.robinhood.com/accounts/${input.accountNumber}/`,
+    instrument: `https://api.robinhood.com/instruments/${inventory.instrumentId}/`,
+    symbol: inventory.symbol,
+    ask_price: String(quote?.ask_price ?? inventory.currentPriceUsd),
+    bid_ask_timestamp: String(
+      quote?.updated_at ?? new Date((deps.now ?? Date.now)()).toISOString(),
+    ),
+    bid_price: String(quote?.bid_price ?? inventory.currentPriceUsd),
+    estimated_fees: [],
+    estimated_total_fee: "0.00",
+    quantity: String(totalQuantity),
+    tax_lot_selection_type: "custom",
+    tax_lots: selections.map((selection) => ({
+      open_lot_id: selection.openLotId,
+      quantity: String(selection.quantity),
+    })),
+    market_hours: input.marketHours ?? "regular_hours",
+    order_form_version: "7",
+    position_effect: "close",
+    ref_id: randomUUID(),
+    side: "sell",
+    time_in_force: tif,
+    trigger: "immediate",
+    type: orderType,
+  };
+  if (input.limitPrice != null) orderBody.price = Number(input.limitPrice).toFixed(2);
+  const ratesPresent = input.shortTermRate != null && input.longTermRate != null;
+  if (
+    (input.shortTermRate != null && (input.shortTermRate < 0 || input.shortTermRate > 1)) ||
+    (input.longTermRate != null && (input.longTermRate < 0 || input.longTermRate > 1))
+  )
+    throw new Error("tax rates must be decimal values between 0 and 1");
+  return {
+    symbol: inventory.symbol,
+    accountNumber: input.accountNumber,
+    accountType,
+    objective,
+    currentPriceUsd: inventory.currentPriceUsd,
+    selections,
+    selectedLots,
+    estimatedRealized: {
+      totalUsd: roundMoney(shortTermUsd + longTermUsd),
+      shortTermUsd,
+      longTermUsd,
+    },
+    estimatedFederalTaxImpact: ratesPresent
+      ? {
+          status: "evaluated",
+          estimatedUsd: roundMoney(
+            shortTermUsd * Number(input.shortTermRate) + longTermUsd * Number(input.longTermRate),
+          ),
+          assumptions: {
+            shortTermRate: input.shortTermRate,
+            longTermRate: input.longTermRate,
+            excludesStateLocalNiitAndTaxProfileNetting: true,
+          },
+        }
+      : {
+          status: "not_evaluated",
+          reason: "short-term and long-term marginal tax rates were not supplied",
+          requiredInputs: ["shortTermRate", "longTermRate"],
+        },
+    washSale: {
+      status: "not_evaluated",
+      reason: "cross-account acquisition and replacement-intent history was not supplied",
+      requiredInputs: ["acquisitions61DayWindow", "replacementIntent"],
+    },
+    orderBody,
+    live: false,
+    dryRun: true,
+    warnings: [
+      "Estimate is educational and excludes state/local tax, NIIT, capital-loss carryovers, cross-category netting, and tax-profile-specific rules.",
+      "A specific-lot order must be revalidated against live quantity_available immediately before submission.",
+    ],
+  };
+}
+
+/** Submit a validated exact-lot sell through the same env-gated brokerage write chokepoint. Dry-run by default. */
+export async function submitTaxLotSale(
+  input: TaxLotSalePlanInput,
+  deps: {
+    getJson?: typeof brokerageGetJson;
+    now?: () => number;
+    write?: typeof gatedBrokerageWrite;
+  } = {},
+): Promise<any> {
+  if (input.liveWrite || input.dryRun === false) {
+    throw new Error(
+      "Exact-lot live submission is not mapped from an authenticated account-scoped Robinhood review/submit contract; use plan-sell or the default dry-run sell path.",
+    );
+  }
+  const plan = await planTaxLotSale(input, deps);
+  const write = deps.write ?? gatedBrokerageWrite;
+  const result = await write({
+    url: "https://api.robinhood.com/orders/",
+    method: "POST",
+    body: plan.orderBody,
+    accountNumber: input.accountNumber,
+    dryRun: input.dryRun,
+    liveWrite: input.liveWrite ?? false,
+  });
+  let response: any = null;
+  try {
+    response = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+  } catch {
+    response = null;
+  }
+  const orderId = response?.id ? String(response.id) : null;
+  return {
+    ...plan,
+    live: !result.dryRun,
+    dryRun: result.dryRun,
+    httpStatus: result.status,
+    orderId,
+    state: typeof response?.state === "string" ? response.state : null,
+    result,
+  };
+}
+
 export interface InboxSummary {
   total: number;
   unread: number;
@@ -11285,7 +11812,10 @@ export async function getIpoAccessRequestPlan(
   const blockers: string[] = [];
   if (!enrolled) blockers.push("ipo_access_not_enrolled");
   if (deadlinePassed === true) blockers.push("cob_deadline_passed");
-  if (typeof entry?.ipoa_new_orders_blocked_details === "string" && entry.ipoa_new_orders_blocked_details)
+  if (
+    typeof entry?.ipoa_new_orders_blocked_details === "string" &&
+    entry.ipoa_new_orders_blocked_details
+  )
     blockers.push(entry.ipoa_new_orders_blocked_details);
   if (entry?.action_required_view_model) blockers.push("action_required");
   return {
@@ -11315,8 +11845,7 @@ export async function getIpoAccessRequestPlan(
       subtitleMarkdown:
         typeof splash?.subtitle_markdown === "string" ? splash.subtitle_markdown : null,
       sections: Array.isArray(splash?.sections) ? splash.sections : [],
-      startLabel:
-        typeof splash?.continue_cta_title === "string" ? splash.continue_cta_title : null,
+      startLabel: typeof splash?.continue_cta_title === "string" ? splash.continue_cta_title : null,
       suppressLabel:
         typeof splash?.dont_show_again_cta_title === "string"
           ? splash.dont_show_again_cta_title

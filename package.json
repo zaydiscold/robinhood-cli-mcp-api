@@ -24,6 +24,7 @@
     "auth:refresh": "bash scripts/refresh-auth.sh",
     "version:refresh": "node scripts/scrape-web-app-version.mjs",
     "quality": "corepack pnpm lint && corepack pnpm format:check && corepack pnpm deadcode && corepack pnpm test:api-map && corepack pnpm test:skill && corepack pnpm test:portability",
+    "regression:recent": "corepack pnpm build && corepack pnpm test:portability && corepack pnpm@11.13.1 --pm-on-fail=ignore audit --audit-level low",
     "test:portability": "node scripts/check-public-portability.mjs",
     "lint": "node scripts/check-eslint-ratchet.mjs",
     "lint:report": "eslint cli/src mcp/src",

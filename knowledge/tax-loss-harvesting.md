@@ -4,7 +4,7 @@
 > "offset my gains," or any December "what should I sell before year-end" question. This module
 > is the mechanics plus the live-account procedure. Educational background only — not tax advice;
 > surface the numbers and the flags, the operator (and their tax professional) decide. General
-> tax law lives in `knowledge/tax.md`; this module is the *harvesting workflow* specifically.
+> tax law lives in `knowledge/tax.md`; this module is the _harvesting workflow_ specifically.
 
 ## The mechanic, in dollars
 
@@ -19,7 +19,7 @@ Selling a position below basis **realizes a capital loss**. Realized losses are 
 
 Rough value math: a $5,000 harvested short-term loss against short-term gains at a 32% marginal
 rate ≈ **$1,600 of tax deferred this year**. Harvesting **defers** tax (the replacement has a
-lower basis → bigger gain later) — it only *eliminates* tax if you later realize at a lower rate,
+lower basis → bigger gain later) — it only _eliminates_ tax if you later realize at a lower rate,
 donate the appreciated replacement, or get a step-up. Still usually worth it: deferral is an
 interest-free loan from the IRS.
 
@@ -47,12 +47,12 @@ the loss is simply gone. The window spans **all accounts** (taxable, IRA, spouse
 The repo's two source docs read the strictness differently. Present both; apply the conservative
 one when the user's money depends on it:
 
-| Reading | Source | Rule |
-|---|---|---|
-| **Strict** (facts-and-circumstances) | `docs/tax-aware-options-strategies.md` §6 | No bright line. Same underlying with a *near* strike/expiry generally does **not** escape; only a different underlying clearly does. |
-| **Consensus** (practitioner) | `docs/strategy-deep-dive-rolling-options-2026-06-04.md` §5 | Substantially identical ≈ same underlying AND same strike; **changing strike OR expiration generally breaks it**, so a normal roll-out is usually fine. |
+| Reading                              | Source                                                     | Rule                                                                                                                                                    |
+| ------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Strict** (facts-and-circumstances) | `docs/tax-aware-options-strategies.md` §6                  | No bright line. Same underlying with a _near_ strike/expiry generally does **not** escape; only a different underlying clearly does.                    |
+| **Consensus** (practitioner)         | `docs/strategy-deep-dive-rolling-options-2026-06-04.md` §5 | Substantially identical ≈ same underlying AND same strike; **changing strike OR expiration generally breaks it**, so a normal roll-out is usually fine. |
 
-**Conservative rule for harvesting:** when the point of the trade is the *loss*, do not re-touch
+**Conservative rule for harvesting:** when the point of the trade is the _loss_, do not re-touch
 the same underlying — shares **or** options — for 31 days after the sale. The consensus reading
 is reasonable for defending a tested short (rolling); it is the wrong risk posture when the loss
 itself is the asset you're protecting. Flag, don't adjudicate.
@@ -60,17 +60,21 @@ itself is the asset you're protecting. Flag, don't adjudicate.
 **§1256 exemption:** SPX/XSP/NDX/VIX/RUT index options are marked-to-market and exempt from wash
 sales entirely — losses there need no window management (see `knowledge/tax.md`).
 
-## Lot selection — FIFO is what this CLI sells
+## Lot selection — stable-ID exact units, not implied FIFO
 
-Robinhood's default disposal method is **FIFO** (first-in, first-out). The app UI supports
-picking **specific tax lots** on sells in taxable accounts; **this CLI's `sell` order body
-carries no lot field**, so a partial sell through the CLI/MCP disposes FIFO. Consequences:
+Robinhood's default disposal method remains FIFO when no valid specific-lot selection survives. This CLI/MCP now has a live-verified exact-lot path for US taxable accounts:
 
-- Selling the **whole position** makes lot selection moot — the full loss realizes either way.
-- A **partial** harvest of a position with mixed lots (early cheap shares + recent expensive
-  ones) will FIFO out the *cheapest* lots first — possibly realizing a **gain** when the user
-  wanted a loss. Compute per-lot before promising a number; if specific high-cost lots are the
-  target, say plainly that the lot-picking step belongs in the app UI, or sell the entire position.
+```bash
+node cli/dist/index.js tax-lots list HPE --account <ACCOUNT> --json
+node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> --shares 4 --objective harvest_loss --json
+node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> --lot <OPEN_LOT_ID>:3.5 --lot <OPEN_LOT_ID>:0.5 --json
+```
+
+Every sale uses stable `open_lot_id` plus exact quantity and re-reads live `quantity_available`. The planner rejects unknown/unselectable IDs, over-allocation, mismatched totals, and missing adjusted tax basis. Never identify execution lots by acquisition date alone.
+
+Robinhood fills multiple selected lots in submitted priority order. If another order consumes selected shares first, unavailable remainder can fall back to the account's default FIFO. Therefore serialize competing sells, verify `tax_lots/order/{order_id}/selected/` after placement and `.../closed/` after fill, and surface Robinhood's correction deadline: support before 9 PM ET on settlement date.
+
+Full contract and caveats: [`../docs/tax-lot-intelligence-and-exact-lot-selling.md`](../docs/tax-lot-intelligence-and-exact-lot-selling.md).
 
 ## The traps, ranked
 
@@ -85,14 +89,14 @@ carries no lot field**, so a partial sell through the CLI/MCP disposes FIFO. Con
 5. **December timing.** Trade date controls the tax year — the sell must execute by the year's
    last trading day. And the window crosses the boundary: a late-December harvest re-bought in
    mid-January still washes. Harvesting season is also when a near-1-year lot is worth a look —
-   crossing into long-term *gains* territory cuts the other way (see `knowledge/tax.md`).
+   crossing into long-term _gains_ territory cuts the other way (see `knowledge/tax.md`).
 6. **The Wheel re-establishes identical exposure.** Selling shares at a loss then writing a new
    CSP on the same name inside the window can wash the share loss (`knowledge/wheel.md`).
 
 ## Harvesting into correlated-but-not-identical exposure
 
 The legal way to keep market exposure during the 31 days: replace with something **correlated
-but not substantially identical** — a *different index* tracking similar exposure (S&P 500 fund
+but not substantially identical** — a _different index_ tracking similar exposure (S&P 500 fund
 → total-market fund), a single stock → its sector ETF, one semiconductor name → a chip-basket
 ETF. Identical CUSIP is always washed; same index from a different issuer is gray; different
 index is the standard practitioner-safe swap. The IRS has never drawn the ETF line precisely —

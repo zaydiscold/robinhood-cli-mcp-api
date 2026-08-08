@@ -17433,6 +17433,16 @@
       "trigger",
       "price",
       "quantity",
+      "tax_lot_selection_type",
+      "tax_lots",
+      "market_hours",
+      "order_form_version",
+      "position_effect",
+      "bid_price",
+      "ask_price",
+      "bid_ask_timestamp",
+      "estimated_fees",
+      "estimated_total_fee",
       "side",
       "ref_id"
     ],
@@ -18977,6 +18987,97 @@
     ],
     "fieldsSource": "verified",
     "fieldsShape": "object"
+  },
+  {
+    "url": "https://api.robinhood.com/tax_lots/open/{account_number}/{instrument_id}/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "tax-lots",
+      "positions"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "requiresAuth": true,
+    "queryKeys": [
+      "sort_type",
+      "sort_direction",
+      "fetch_max_abs_values",
+      "price"
+    ],
+    "summary": "Enumerate open tax lots with stable IDs, available quantity, tax/book basis, acquisition date, term, and selectability.",
+    "source": "live-read-2026-08-08",
+    "observationCount": 1,
+    "verificationStatus": "captured",
+    "fields": [
+      "account_number",
+      "instrument_id",
+      "open_lot_id",
+      "open_tran_type",
+      "order_id",
+      "quantity",
+      "quantity_available",
+      "book_cost_basis",
+      "tax_cost_basis",
+      "book_proceeds",
+      "open_date",
+      "term",
+      "is_selectable",
+      "cost_per_share"
+    ],
+    "fieldsSource": "verified"
+  },
+  {
+    "url": "https://api.robinhood.com/tax_lots/order/{order_id}/closed/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "tax-lots",
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "requiresAuth": true,
+    "summary": "Read closed tax lots and realized lot results for a filled equity order.",
+    "source": "production-web-contract-and-robin-stocks-pr1648-2026-08-08",
+    "verificationStatus": "verified",
+    "fields": [
+      "account_number",
+      "open_lot_id",
+      "quantity",
+      "open_date",
+      "term",
+      "tax_cost_basis",
+      "proceeds"
+    ],
+    "fieldsSource": "verified"
+  },
+  {
+    "url": "https://api.robinhood.com/tax_lots/order/{order_id}/selected/",
+    "host": "api.robinhood.com",
+    "categories": [
+      "tax-lots",
+      "orders"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "requiresAuth": true,
+    "summary": "Read the tax lots selected for an equity order.",
+    "source": "production-web-contract-and-robin-stocks-pr1648-2026-08-08",
+    "verificationStatus": "verified",
+    "fields": [
+      "account_number",
+      "open_lot_id",
+      "quantity",
+      "open_date",
+      "term",
+      "tax_cost_basis"
+    ],
+    "fieldsSource": "verified"
   },
   {
     "url": "https://api.robinhood.com/user/",

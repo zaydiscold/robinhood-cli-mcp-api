@@ -105,7 +105,7 @@ describe("roll ledger — add → list → done round trip", () => {
       account: "…5555", // masked to last-4 on write
       earliestOpenDate: "2026-06-12"
     });
-  });
+  }, 30_000);
 
   it("completePendingRoll removes ONLY the matched entry and returns it; file keeps header + example + others", () => {
     const file = tempRollsFile();

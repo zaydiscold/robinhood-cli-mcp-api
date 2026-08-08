@@ -132,6 +132,10 @@
       "description": "Orders routes from the brokerage route map."
     },
     {
+      "name": "positions",
+      "description": "Positions routes from the brokerage route map."
+    },
+    {
       "name": "preview",
       "description": "Preview routes from the brokerage route map."
     },
@@ -166,6 +170,10 @@
     {
       "name": "stock-lending",
       "description": "Stock Lending routes from the brokerage route map."
+    },
+    {
+      "name": "tax-lots",
+      "description": "Tax Lots routes from the brokerage route map."
     },
     {
       "name": "telemetry-config",
@@ -37632,6 +37640,211 @@
           "stock-aapl",
           "stock-nvda",
           "stock-tsla"
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/tax_lots/open/{account_number}/{instrument_id}/": {
+      "get": {
+        "operationId": "brokerage_get_tax_lots_open_account_number_instrument_id",
+        "summary": "Positions brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "positions",
+          "tax-lots"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder account_number. Mapped route name; live verification should replace with a semantic parameter name when known."
+          },
+          {
+            "name": "instrument_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder instrument_id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          },
+          {
+            "name": "fetch_max_abs_values",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "sort_direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "sort_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/tax_lots/open/{account_number}/{instrument_id}/"
+        ],
+        "x-robinhood-sources": [
+          "live-read-2026-08-08"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-observation-count": 1,
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/tax_lots/order/{order_id}/closed/": {
+      "get": {
+        "operationId": "brokerage_get_tax_lots_order_order_id_closed",
+        "summary": "Orders brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "orders",
+          "tax-lots"
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder order_id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/tax_lots/order/{order_id}/closed/"
+        ],
+        "x-robinhood-sources": [
+          "production-web-contract-and-robin-stocks-pr1648-2026-08-08"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/tax_lots/order/{order_id}/selected/": {
+      "get": {
+        "operationId": "brokerage_get_tax_lots_order_order_id_selected",
+        "summary": "Orders brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "orders",
+          "tax-lots"
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder order_id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/tax_lots/order/{order_id}/selected/"
+        ],
+        "x-robinhood-sources": [
+          "production-web-contract-and-robin-stocks-pr1648-2026-08-08"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
         ],
         "x-robinhood-source": "brokerage-browser-map"
       }

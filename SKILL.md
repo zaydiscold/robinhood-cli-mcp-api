@@ -16,7 +16,22 @@ license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [robinhood, trading, finance, api, mcp, brokerage, crypto, stocks, options, sentiment, due-diligence, signal-sourcing, ball-knowledge]
+    tags:
+      [
+        robinhood,
+        trading,
+        finance,
+        api,
+        mcp,
+        brokerage,
+        crypto,
+        stocks,
+        options,
+        sentiment,
+        due-diligence,
+        signal-sourcing,
+        ball-knowledge,
+      ]
     related_skills: []
 ---
 
@@ -35,7 +50,7 @@ metadata:
 
 ## 🎯 What this is — and how to be a productive operator
 
-**This is an agent-native control plane for a *real* Robinhood account.** It collapses the entire
+**This is an agent-native control plane for a _real_ Robinhood account.** It collapses the entire
 research → decision → execution loop into one typed, gated pipe: read the account truthfully, reason
 like an options trader, and — only on the operator's explicit go-ahead, behind the live-write switch — act,
 across **every** account and the full surface (equities, options, multi-leg strategies, rolls,
@@ -53,7 +68,7 @@ official equity-only "agent sandbox."
    "How am I down today / after hours, and which names?" is exactly one command: `portfolio`
    (`--day` / `--after-hours`). A −9% move on a $6 lot is noise; a −5% move on a $1,600 call is the story.
 3. **Read → classify → gate, in that order.** Reads are free and live. Before any write: classify the
-   *exact* strategy (sell-to-close ≠ covered call ≠ credit spread ≠ naked short), echo the resolved
+   _exact_ strategy (sell-to-close ≠ covered call ≠ credit spread ≠ naked short), echo the resolved
    account + symbol + side + qty + price, then send only with the live-write switch on. Never infer naked exposure
    from loose wording.
 4. **Make two things reflex: pass the account explicitly, and bulk-enumerate option UUIDs first.** The
@@ -64,7 +79,7 @@ official equity-only "agent sandbox."
 Everything below expands these. Cold start? Read `docs/agent-operating-intelligence-2026-06-04.md` first,
 then this file. When the answer isn't obvious, the docs already have it — read, don't guess.
 
-## ⚡ Agent Quick Scan *(read this in 5 seconds)*
+## ⚡ Agent Quick Scan _(read this in 5 seconds)_
 
 - **What:** CLI + MCP for a REAL Robinhood brokerage account. Reads are live and free. Writes are env-gated (dry-run by default).
 - **When to load:** User mentions Robinhood, portfolio, positions, tickers, options, trades, watchlists, crypto.
@@ -76,61 +91,61 @@ then this file. When the answer isn't obvious, the docs already have it — read
 
 ## 📑 Table of Contents
 
-| Section | What it covers |
-|---|---|
-| [Skill Operating Model](#skill-operating-model) | How to use this skill (progressive disclosure layers) |
-| [When to Use](#when-to-use) | Trigger conditions |
-| [Capability Catalog](#capability-catalog--what-this-cliapimcp-can-actually-do) | Everything the CLI/API/MCP can do |
-| [Failure Modes](#️-failure-modes--hard-rules-read-before-any-write-this-is-where-a-weak-agent-loses-money) | Ranked money-loss risks (read before ANY write) |
-| [Quick Start + Auth](#quick-start) | Clone, build, auth |
-| [CLI Usage 80/20](#cli-usage--the-8020) | Most-used commands |
-| [Operating Playbook](#operating-playbook--when-to-use-what) | Intent → action routing table |
-| [Options Greeks + Strategy Math](#options-greeks-and-strategy-math) | Greeks formulas, classification, payoff checks |
-| [Options CLI Playbook](#options-cliapi-playbook) | Exact planning sequence + worked examples |
-| [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03) | Order creation, cancel, equity buying |
-| [Sentiment + Signal Sourcing](#signal-sourcing--where-due-diligence-signal-comes-from-descriptive-not-risk-guidance) | News, Twitter/X, Reddit, institutional research |
-| [Ball Knowledge + Trading Log](#ball-knowledge--the-operators-investing-memory-ledger-ball-knowledgemd) | Operator's market memory + execution history |
-| [MCP Server](#mcp-server) | MCP tools, registration, safety gates |
-| [Common Pitfalls](#common-pitfalls) | Route map, portfolio, watchlists, writes, cross-machine |
-| [One-Shot Recipes](#one-shot-recipes) | Portfolio snapshot, options trade, recurring buys |
-| [Verification Checklist](#verification-checklist) | Post-setup checks |
+| Section                                                                                                              | What it covers                                          |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| [Skill Operating Model](#skill-operating-model)                                                                      | How to use this skill (progressive disclosure layers)   |
+| [When to Use](#when-to-use)                                                                                          | Trigger conditions                                      |
+| [Capability Catalog](#capability-catalog--what-this-cliapimcp-can-actually-do)                                       | Everything the CLI/API/MCP can do                       |
+| [Failure Modes](#️-failure-modes--hard-rules-read-before-any-write-this-is-where-a-weak-agent-loses-money)            | Ranked money-loss risks (read before ANY write)         |
+| [Quick Start + Auth](#quick-start)                                                                                   | Clone, build, auth                                      |
+| [CLI Usage 80/20](#cli-usage--the-8020)                                                                              | Most-used commands                                      |
+| [Operating Playbook](#operating-playbook--when-to-use-what)                                                          | Intent → action routing table                           |
+| [Options Greeks + Strategy Math](#options-greeks-and-strategy-math)                                                  | Greeks formulas, classification, payoff checks          |
+| [Options CLI Playbook](#options-cliapi-playbook)                                                                     | Exact planning sequence + worked examples               |
+| [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03)                                             | Order creation, cancel, equity buying                   |
+| [Sentiment + Signal Sourcing](#signal-sourcing--where-due-diligence-signal-comes-from-descriptive-not-risk-guidance) | News, Twitter/X, Reddit, institutional research         |
+| [Ball Knowledge + Trading Log](#ball-knowledge--the-operators-investing-memory-ledger-ball-knowledgemd)              | Operator's market memory + execution history            |
+| [MCP Server](#mcp-server)                                                                                            | MCP tools, registration, safety gates                   |
+| [Common Pitfalls](#common-pitfalls)                                                                                  | Route map, portfolio, watchlists, writes, cross-machine |
+| [One-Shot Recipes](#one-shot-recipes)                                                                                | Portfolio snapshot, options trade, recurring buys       |
+| [Verification Checklist](#verification-checklist)                                                                    | Post-setup checks                                       |
 
-## 🧭 Navigation by Task *(what the user said → which section)*
+## 🧭 Navigation by Task _(what the user said → which section)_
 
-| User says | Go to |
-|---|---|
-| "What do I own?" / "Show my positions" | [CLI Usage 80/20](#cli-usage--the-8020) → `positions` / `options positions` |
-| "What am I down today?" / "Biggest losers" | `portfolio --day` (after hours: `portfolio --after-hours`) — one call, dollars, by underlying |
-| "Place a trade" / "Buy X" | [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03) |
-| "Before I place an order — is it safe?" | `pretrade` — one-shot PASS/WARN/BLOCK checklist (BP, collateral, marketability, min-tick, account capability) |
-| "Cancel EVERY open order — NOW" | `panic` — kill switch: enumerate + cancel every open equity + options order across all accounts (env-gated per cancel) |
-| "Show me open orders" | `orders open` — every open/pending equity + options order, symbol-resolved, with state/age/TIF/price + exact cancel commands |
-| "Wheel" / "got assigned — now what?" | `wheel [symbol]` — evidence-based stage + the next-leg dry-run command (background: `docs/strategy-deep-dive-the-wheel-2026-06-04.md`) |
-| "Quote a spread" / "Price an iron condor" | [Options CLI Playbook](#options-cliapi-playbook) |
-| "Review my trades / film study" | `review` — round trips with realized P&L, win rate, best/worst trades (filter by days/symbol/account) |
-| "How much income am I making?" | `income` — combined dividends + option premium by month, in dollars (TTM total, monthly avg, projected annual run-rate) |
+| User says                                               | Go to                                                                                                                                            |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "What do I own?" / "Show my positions"                  | [CLI Usage 80/20](#cli-usage--the-8020) → `positions` / `options positions`                                                                      |
+| "What am I down today?" / "Biggest losers"              | `portfolio --day` (after hours: `portfolio --after-hours`) — one call, dollars, by underlying                                                    |
+| "Place a trade" / "Buy X"                               | [Live Write Lifecycle](#live-write--order-lifecycle-verified-2026-06-03)                                                                         |
+| "Before I place an order — is it safe?"                 | `pretrade` — one-shot PASS/WARN/BLOCK checklist (BP, collateral, marketability, min-tick, account capability)                                    |
+| "Cancel EVERY open order — NOW"                         | `panic` — kill switch: enumerate + cancel every open equity + options order across all accounts (env-gated per cancel)                           |
+| "Show me open orders"                                   | `orders open` — every open/pending equity + options order, symbol-resolved, with state/age/TIF/price + exact cancel commands                     |
+| "Wheel" / "got assigned — now what?"                    | `wheel [symbol]` — evidence-based stage + the next-leg dry-run command (background: `docs/strategy-deep-dive-the-wheel-2026-06-04.md`)           |
+| "Quote a spread" / "Price an iron condor"               | [Options CLI Playbook](#options-cliapi-playbook)                                                                                                 |
+| "Review my trades / film study"                         | `review` — round trips with realized P&L, win rate, best/worst trades (filter by days/symbol/account)                                            |
+| "How much income am I making?"                          | `income` — combined dividends + option premium by month, in dollars (TTM total, monthly avg, projected annual run-rate)                          |
 | "How am I doing over time / my returns / equity curve?" | `performance` (alias `perf`) — account value + return across day/week/month/3month/ytd/year/all; per-account (portfolio-wide summed client-side) |
-| "What's my risk exposure?" | `risk` — max loss per position, ITM assignment exposure, undercovered short legs, margin-call distance, concentration warnings |
-| "What if spot drops 10% / IV spikes?" | `whatif` — Greeks-based scenario calc: spot ±X%, IV ±N pts, T−n days → P&L per position in dollars |
-| "What's coming up on my holdings?" | `calendar` — upcoming option expirations, ex-div dates, earnings for held names with assignment-risk flags |
-| "How concentrated am I?" | `exposure` — concentration by underlying/sector (% of portfolio, flag >20%) + portfolio-wide net Greeks |
-| "Which short options should I roll?" | `autopilot` — scan open short options near expiration, suggest roll candidates with estimated net credit |
-| "Quote my hotlist tickers" | `hotlist` — `hotlist.md` ticker watchlist quoted live: last price, day Δ in $ and %, thesis per line |
-| "What dividends am I getting?" | `dividends` — all-time/YTD totals in dollars, cadence detection, upcoming payouts, projected income from holdings |
-| "Download my 1099s / statements" | `documents` — list by type/year, download PDFs; tax-year-aware (1099 for prior year) |
-| "Am I borrowing on margin?" | `margin` — amount borrowed, interest rate, next billing date, margin available, buying power with margin |
-| "Search Robinhood for a company" | `search <query>` — natural-language search → ticker, instrument UUID, tradability, OTC flags |
-| "News on a ticker" / "latest on X" | `news <symbol>` — latest headlines + source + clickable link (the slow 'confirmer' signal layer) |
-| "Analyst ratings for X" | `ratings <symbol>` — buy/hold/sell counts, derived consensus, and rationale texts |
-| "When does X report / earnings history" | `earnings <symbol>` — per-quarter EPS estimate vs actual (surprise), report date/timing, call replay; future quarters show pending |
-| "What's moving today / biggest gainers" | `movers [--direction up\|down]` — S&P 500 top movers: symbol + day move% + price inline |
-| "Any assignments / options events?" | `options-events [--account N]` — expirations/assignments/exercises across accounts (the options-P&L + assignment-tracking feed) |
-| "Buy $X of every name in a watchlist" | `watchlist buy <list> --amount $X` — basket buy (BP-aware, OTC/dedup/ref_id guards); env-gated |
-| "Stage a cash-account roll" | `roll-ledger` — pending kosher-roll tracker (close today, open next business day); list/add/done |
-| "What can this account do?" | [Account-Aware Capabilities](#account-aware-capabilities--read-the-account-then-say-whats-allowed) |
-| "Map a new endpoint" | [Research Methodology](#research-methodology--mapping-a-no-official-api-surface) |
-| "MCP setup" / "Register tools" | [MCP Server](#mcp-server) |
-| "I got a weird error" | [Failure Modes](#️-failure-modes--hard-rules-read-before-any-write-this-is-where-a-weak-agent-loses-money) + [Common Pitfalls](#common-pitfalls) |
+| "What's my risk exposure?"                              | `risk` — max loss per position, ITM assignment exposure, undercovered short legs, margin-call distance, concentration warnings                   |
+| "What if spot drops 10% / IV spikes?"                   | `whatif` — Greeks-based scenario calc: spot ±X%, IV ±N pts, T−n days → P&L per position in dollars                                               |
+| "What's coming up on my holdings?"                      | `calendar` — upcoming option expirations, ex-div dates, earnings for held names with assignment-risk flags                                       |
+| "How concentrated am I?"                                | `exposure` — concentration by underlying/sector (% of portfolio, flag >20%) + portfolio-wide net Greeks                                          |
+| "Which short options should I roll?"                    | `autopilot` — scan open short options near expiration, suggest roll candidates with estimated net credit                                         |
+| "Quote my hotlist tickers"                              | `hotlist` — `hotlist.md` ticker watchlist quoted live: last price, day Δ in $ and %, thesis per line                                             |
+| "What dividends am I getting?"                          | `dividends` — all-time/YTD totals in dollars, cadence detection, upcoming payouts, projected income from holdings                                |
+| "Download my 1099s / statements"                        | `documents` — list by type/year, download PDFs; tax-year-aware (1099 for prior year)                                                             |
+| "Am I borrowing on margin?"                             | `margin` — amount borrowed, interest rate, next billing date, margin available, buying power with margin                                         |
+| "Search Robinhood for a company"                        | `search <query>` — natural-language search → ticker, instrument UUID, tradability, OTC flags                                                     |
+| "News on a ticker" / "latest on X"                      | `news <symbol>` — latest headlines + source + clickable link (the slow 'confirmer' signal layer)                                                 |
+| "Analyst ratings for X"                                 | `ratings <symbol>` — buy/hold/sell counts, derived consensus, and rationale texts                                                                |
+| "When does X report / earnings history"                 | `earnings <symbol>` — per-quarter EPS estimate vs actual (surprise), report date/timing, call replay; future quarters show pending               |
+| "What's moving today / biggest gainers"                 | `movers [--direction up\|down]` — S&P 500 top movers: symbol + day move% + price inline                                                          |
+| "Any assignments / options events?"                     | `options-events [--account N]` — expirations/assignments/exercises across accounts (the options-P&L + assignment-tracking feed)                  |
+| "Buy $X of every name in a watchlist"                   | `watchlist buy <list> --amount $X` — basket buy (BP-aware, OTC/dedup/ref_id guards); env-gated                                                   |
+| "Stage a cash-account roll"                             | `roll-ledger` — pending kosher-roll tracker (close today, open next business day); list/add/done                                                 |
+| "What can this account do?"                             | [Account-Aware Capabilities](#account-aware-capabilities--read-the-account-then-say-whats-allowed)                                               |
+| "Map a new endpoint"                                    | [Research Methodology](#research-methodology--mapping-a-no-official-api-surface)                                                                 |
+| "MCP setup" / "Register tools"                          | [MCP Server](#mcp-server)                                                                                                                        |
+| "I got a weird error"                                   | [Failure Modes](#️-failure-modes--hard-rules-read-before-any-write-this-is-where-a-weak-agent-loses-money) + [Common Pitfalls](#common-pitfalls)  |
 
 ---
 
@@ -148,13 +163,13 @@ Operate real Robinhood brokerage accounts from the terminal or via MCP tools.
 This skill uses **progressive disclosure** — an agent cold-starting should read
 in layers, not consume the whole repository into context:
 
-| Layer | File(s) | When to read | Contents |
-|---|---|---|---|
-| **0 — Boot KB** | `docs/agent-operating-intelligence-2026-06-04.md` | **READ FIRST** | Operating intelligence: cardinal rule, boot checklist, account model, order lifecycle, failure→fix decision tree, asset-class reality map, roadmap |
-| **1 — Router** | This file (`SKILL.md`) | Read second | Trigger conditions, failure modes, 80/20 commands, intent-routing table, safety gates |
-| **2 — Topic modules** | `knowledge/*.md` (index: `knowledge/README.md`) | Load ONE module matching the task | Per-topic commands + decision rules (80-200 lines each; no essays) |
-| **3 — Deep research** | `docs/*.md` | Load only when a module's link directs there | Dated, source-backed studies with live verifications |
-| **4 — Full reference** | `AGENTS.md` (repo root) | Load for complete API surface, raw examples | Self-contained: auth, route map, every command, every worked example |
+| Layer                  | File(s)                                           | When to read                                 | Contents                                                                                                                                           |
+| ---------------------- | ------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0 — Boot KB**        | `docs/agent-operating-intelligence-2026-06-04.md` | **READ FIRST**                               | Operating intelligence: cardinal rule, boot checklist, account model, order lifecycle, failure→fix decision tree, asset-class reality map, roadmap |
+| **1 — Router**         | This file (`SKILL.md`)                            | Read second                                  | Trigger conditions, failure modes, 80/20 commands, intent-routing table, safety gates                                                              |
+| **2 — Topic modules**  | `knowledge/*.md` (index: `knowledge/README.md`)   | Load ONE module matching the task            | Per-topic commands + decision rules (80-200 lines each; no essays)                                                                                 |
+| **3 — Deep research**  | `docs/*.md`                                       | Load only when a module's link directs there | Dated, source-backed studies with live verifications                                                                                               |
+| **4 — Full reference** | `AGENTS.md` (repo root)                           | Load for complete API surface, raw examples  | Self-contained: auth, route map, every command, every worked example                                                                               |
 
 **Agent behavior rules:**
 
@@ -178,6 +193,7 @@ requires a specific route family.
 ## When to Use
 
 Load this skill when:
+
 - The user asks about Robinhood — portfolio, positions, orders, watchlists, options chains
 - You need to query account data (balances, positions, orders, watchlists, dividends)
 - The user mentions any account they want operated (the operator designates which account to act on)
@@ -193,11 +209,12 @@ Do NOT load for: general investing advice (that's not what this tool does), pape
 
 ## Capability Catalog — what this CLI/API/MCP can actually do
 
-Read this first: it is the menu of supported operations so an agent has full context *before*
+Read this first: it is the menu of supported operations so an agent has full context _before_
 scanning the route map. (Far exceeds what one user would manually do.) Reads are live; every write
 is gated by the single switch `ROBINHOOD_ALLOW_LIVE_WRITE=1` (dry-run by default; `--live-write` optional).
 
 **Equity**
+
 - Buy by dollar-notional (fractional, market) or by shares (`brokerage buy`); OTC names auto-limit
   at the ask (whole shares only).
 - Sell (shares / dollar), search the universe (`brokerage search`), live quotes, positions,
@@ -208,26 +225,29 @@ is gated by the single switch `ROBINHOOD_ALLOW_LIVE_WRITE=1` (dry-run by default
   skips), `ref_id` idempotency (429 ⇒ retry the SAME ref_id), trading-log append on live sends.
 
 **Options — single-leg (the four primitives)**
+
 - **Buy to open** — long call or long put (`side:buy, position_effect:open`).
 - **Sell to close** — close a long (`side:sell, position_effect:close`).
 - **Sell to open** — short call or short put / naked (`side:sell, position_effect:open`; needs option level + BP).
 - **Buy to close** — cover a short (`side:buy, position_effect:close`).
 
 **Options — multi-leg / strategies** (`options strategy-quote`, `api-map options-strategies`; 20 workflows)
+
 - Vertical spreads: call/put **debit** and **credit** spreads.
 - **Covered call (CC)** and **cash-secured put (CSP)** (coverage/collateral checked); covered put.
 - Straddles / strangles (long & short), butterflies, iron condors, calendars / diagonals.
 
 **Rolling** (close one leg, open another — account TYPE decides the model)
+
 - **THE DEFAULT IS THE ATOMIC NATIVE ROLL.** When the operator says "roll an option," `options roll-plan`
   (mode=`auto`) emits the **single 2-leg `strategy_roll` order** the real Robinhood "Roll this position"
   button POSTs — `legs[0]`=sell/close the held contract, `legs[1]`=buy/open the new one, ONE net direction +
   net `price`, `form_source:"strategy_roll"`. This is correct for **margin and IRA** accounts (auto-detected).
   The emitted `rollOrder` is the ONE body to send; the separate close/open orders are informational only.
 - **KOSHER roll is ONLY for CASH accounts.** When the account is cash-type, `auto` falls back to the two-order
-  staging: close **now** → open **next business day** with *settled* cash (T+1, good-faith). Cash can't fund the
+  staging: close **now** → open **next business day** with _settled_ cash (T+1, good-faith). Cash can't fund the
   new leg same-day. Force it anywhere with `--mode kosher` (or `--cash-account`); force atomic with `--mode atomic`.
-  *(Why this matters: the tool used to default every roll to kosher — that was a bug; atomic is the common path.)*
+  _(Why this matters: the tool used to default every roll to kosher — that was a bug; atomic is the common path.)_
 - **Roll a CSP / CC:** roll out (later expiry), up/down (strike) for a net credit; assignment- and
   ex-dividend-aware. Rolling a tested short is the core income-management move.
 - Roll enumeration: bulk-enumerate **both** the near (close) and far (open) expirations — see
@@ -237,10 +257,11 @@ is gated by the single switch `ROBINHOOD_ALLOW_LIVE_WRITE=1` (dry-run by default
   `options/orders/`. Full capture + body schema: **`docs/native-option-roll-surface-2026-06-23.md`**.
 
 **Tax-advantaged / account-aware knowledge** (surface this when planning)
+
 - Account gating: **cash** (no margin/naked, T+1, good-faith) vs **margin** (rolls/spreads/shorts;
   PDT lifted on RH — no $25k cap) vs **Roth IRA** (long options + defined-risk + CC/CSP; no
   margin/naked). See the account-capability table + the PDT scale below.
-- **Wash sale:** rolling a *losing* leg (or re-buying within 30d) can trigger a wash sale in a taxable
+- **Wash sale:** rolling a _losing_ leg (or re-buying within 30d) can trigger a wash sale in a taxable
   account — flag it. In an **IRA** wash-sale tracking is moot but there's no tax-loss harvest either.
 - **LEAPS** (>1yr) for long-term capital-gains treatment; rolling short-dated premium is ordinary income.
 - DRIP (read), recurring buys (list/pause/resume).
@@ -284,10 +305,12 @@ with `watchlist buy <list> --account <N> --amount <$>` — BP-aware, looping the
 per ticker (same OTC/dedup/`ref_id`/evidence guards; skips what won't fit; env-gated). Item **reorder** is not yet mapped.
 
 ### Strategy & tax knowledge (background — neutral, NOT risk guidance)
+
 Reference docs that give the agent broad options/tax background to reason about ANY strategy a user
 asks for. **Descriptive, not prescriptive** — they do NOT push a risk tolerance or steer toward "safe"
 vs "aggressive." Risk is the user's call: surface the mechanics/options, then do what the user asks
 (within the dry-run/live-write gates). Don't be timid and don't impose caution the user didn't ask for.
+
 - `docs/options-strategies-knowledge-base-2026-06-03.md` — mechanics + use + payoff + Greeks across the
   full menu (directional, covered-call family, Wheel, PMCC, verticals, condors/flies, ratio/backspread,
   straddles, covered-call ETFs, 0DTE/QDTE income, box spreads) + a cross-cutting Greek mental model.
@@ -308,9 +331,10 @@ write carries the account in the path (`drip/account_settings/{account}/`,
 `options/option_settings/{account}/`, `settings/margin/{account}/`).
 
 **Apply by default — do not wait to be told:**
+
 - Enumerate accounts first (`accounts` CLI / `robinhood_accounts` MCP / `transfer/accounts/`), then **always pass the account**
   (`?account_number=` on web URLs, the `{account}` path/param on API routes). The UI/bare endpoints
-  often default to the *individual* account — not the one you intend.
+  often default to the _individual_ account — not the one you intend.
 - `/accounts/` (no id) = all accounts; `/accounts/{id}/…` or `?account_number={id}` = one account.
 - This is the single biggest "which account am I acting on?" lever. Get it wrong and a trade or a
   settings change lands on the wrong account. When in doubt, set it explicitly.
@@ -322,7 +346,8 @@ write carries the account in the path (`drip/account_settings/{account}/`,
 Ranked by money-loss. Each is a real way an agent has tripped or would. Follow the rule, not the vibe.
 
 **CRITICAL — real money / wrong account**
-1. **Wrong account is the #1 risk.** Bare endpoints + the web UI default to the *individual* account,
+
+1. **Wrong account is the #1 risk.** Bare endpoints + the web UI default to the _individual_ account,
    NOT the one you intend. Enumerate via `transfer/accounts/` (the bare `accounts/` under-reports —
    shows ~2 of 5), then pass `?account_number=` / the `{account}` segment on **every** op. Before any
    write, echo the resolved `account_number` + nickname and confirm it's the intended account.
@@ -342,52 +367,38 @@ Ranked by money-loss. Each is a real way an agent has tripped or would. Follow t
 5. **Equity orders need `order_form_version: 7`** (+ the web headers the engine sends) or they 400
    "app version missing important stock trading updates." Add the field; don't spin on the vague error.
 
-**HIGH — wrong/failed orders, unintended state**
-6. **Bulk-enumerate option UUIDs FIRST.** `strategy-quote`/orders need the real `option_instrument_id`,
-   never a strike or a guessed UUID. Run `options enumerate <SYM> --expiration <D>` before quoting/ordering.
-7. **`recurring --all` is state-scoped:** `pause --all` only pauses *active* schedules; `resume --all`
-   only resumes *paused* ones. Report what actually changed, not "all paused."
-8. **Per-chain min-tick:** option limits below the chain's `cutoff_price` (~$3) must use `below_tick`
-   (ARKG = $0.05). `$0.01` → 400. Read `options/chains/{id}` `min_ticks` first.
-9. **GTC option opens are gated by *overnight* buying power**, not regular BP — regular BP looking fine
-   does NOT mean the order clears.
-10. **DRIP write = `PATCH corp_actions/drip/account_settings/{account}/` (account-wide) or
-   `.../drip/instrument_settings/{account}/{instrument_id}/` (per-stock), body `{"drip_enabled":bool}`** —
-   NOT `drip/enrollment/` (that's GET-only, 405 on writes). Before any settings write
-   (DRIP/options/margin/sweep/lending), check `docs/account-settings-capability-map-2026-06-03.md`
-   for which are **verified-live** vs **route-map-research-only** — don't claim an unproven write works.
+**HIGH — wrong/failed orders, unintended state** 6. **Bulk-enumerate option UUIDs FIRST.** `strategy-quote`/orders need the real `option_instrument_id`,
+never a strike or a guessed UUID. Run `options enumerate <SYM> --expiration <D>` before quoting/ordering. 7. **`recurring --all` is state-scoped:** `pause --all` only pauses _active_ schedules; `resume --all`
+only resumes _paused_ ones. Report what actually changed, not "all paused." 8. **Per-chain min-tick:** option limits below the chain's `cutoff_price` (~$3) must use `below_tick`
+   (ARKG = $0.05). `$0.01` → 400. Read `options/chains/{id}` `min_ticks` first. 9. **GTC option opens are gated by _overnight_ buying power**, not regular BP — regular BP looking fine
+does NOT mean the order clears. 10. **DRIP write = `PATCH corp_actions/drip/account_settings/{account}/` (account-wide) or
+`.../drip/instrument_settings/{account}/{instrument_id}/` (per-stock), body `{"drip_enabled":bool}`** —
+NOT `drip/enrollment/` (that's GET-only, 405 on writes). Before any settings write
+(DRIP/options/margin/sweep/lending), check `docs/account-settings-capability-map-2026-06-03.md`
+for which are **verified-live** vs **route-map-research-only** — don't claim an unproven write works.
 
-**MEDIUM — silent misreads / classification**
-11. Positions return instrument **UUIDs, not tickers** — resolve via `instruments/?ids=`; quotes need tickers.
-12. Watchlist reads require `owner_type=custom`; rename uses `display_name` (sending `name` = silent 200 no-op).
-13. On **429**: sleep the server-directed seconds, retry the **same `ref_id`** (a new ref_id risks a
-   duplicate order). Don't fixed-sleep, don't give up after one.
-14. Route map: use `{placeholder}` + `--param`, never raw values (substring match); rebuild (`pnpm build`)
-   after map edits — runtime reads `dist`.
-15. **Classify "sell a call/put" BEFORE building** — sell-to-close vs covered call vs credit spread vs
-   naked short are different orders + risk. Ask if ambiguous; never default into naked/undefined-risk exposure.
-   For exact per-strategy leg topology (side/position_effect/ratio/direction) see
-   `docs/options-strategy-order-templates-2026-06-03.md` — hard templates so you can't botch the legs.
-16. **Coverage/collateral up front:** covered call needs 100 shares in the SAME account; CSP needs the
-   cash. Verify before building, not after a reject.
-17. **Roll model is account-TYPE-driven — atomic is the default, kosher is cash-only.** `options roll-plan`
-   (mode=auto) emits the ATOMIC native `strategy_roll` order (one 2-leg order) for margin/IRA; for a CASH
-   account it falls back to the KOSHER two-order staging (close today, open next business day with settled
-   cash — same-day open = good-faith violation). Never hand a cash account an atomic roll, and never make a
-   margin/IRA roll a two-day kosher trade. `--mode atomic|kosher` overrides; `--cash-account` forces kosher.
-18. **Crypto API uses separate auth** (API key + ed25519 signing), not the brokerage bearer.
-19. **PDT lifted on Robinhood — no $25k day-trade cap.** FINRA eliminated the PDT designation + $25k
-   minimum (Reg Notice 26-10, 2026-06-04) and RH has implemented it; margin accounts day-trade freely
-   under dynamic intraday margin. (Cash accounts: T+1 / good-faith still apply.)
+**MEDIUM — silent misreads / classification** 11. Positions return instrument **UUIDs, not tickers** — resolve via `instruments/?ids=`; quotes need tickers. 12. Watchlist reads require `owner_type=custom`; rename uses `display_name` (sending `name` = silent 200 no-op). 13. On **429**: sleep the server-directed seconds, retry the **same `ref_id`** (a new ref_id risks a
+duplicate order). Don't fixed-sleep, don't give up after one. 14. Route map: use `{placeholder}` + `--param`, never raw values (substring match); rebuild (`pnpm build`)
+after map edits — runtime reads `dist`. 15. **Classify "sell a call/put" BEFORE building** — sell-to-close vs covered call vs credit spread vs
+naked short are different orders + risk. Ask if ambiguous; never default into naked/undefined-risk exposure.
+For exact per-strategy leg topology (side/position_effect/ratio/direction) see
+`docs/options-strategy-order-templates-2026-06-03.md` — hard templates so you can't botch the legs. 16. **Coverage/collateral up front:** covered call needs 100 shares in the SAME account; CSP needs the
+cash. Verify before building, not after a reject. 17. **Roll model is account-TYPE-driven — atomic is the default, kosher is cash-only.** `options roll-plan`
+(mode=auto) emits the ATOMIC native `strategy_roll` order (one 2-leg order) for margin/IRA; for a CASH
+account it falls back to the KOSHER two-order staging (close today, open next business day with settled
+cash — same-day open = good-faith violation). Never hand a cash account an atomic roll, and never make a
+margin/IRA roll a two-day kosher trade. `--mode atomic|kosher` overrides; `--cash-account` forces kosher. 18. **Crypto API uses separate auth** (API key + ed25519 signing), not the brokerage bearer. 19. **PDT lifted on Robinhood — no $25k day-trade cap.** FINRA eliminated the PDT designation + $25k
+minimum (Reg Notice 26-10, 2026-06-04) and RH has implemented it; margin accounts day-trade freely
+under dynamic intraday margin. (Cash accounts: T+1 / good-faith still apply.)
 
 **EXECUTION EVIDENCE — what counts as proof an order happened**
 
-20. **Brokerage order history is the source of truth.** An order *happened* only if it appears in the
-   order history (`orders/`, `options/orders/`) as filled/pending/rejected/cancelled, or you see a
-   position / cash / buying-power change. If **no** such record exists, treat the attempted action as
-   **non-executed** — don't claim or imply it placed. Screenshots, UI/review screens, "the button was
-   clicked", app state, or agent logs are **not** proof. (Lived this session: a "nothing executed"
-   scare resolved by reading the orders list — and the place→cancel tests were confirmed the same way.)
+20. **Brokerage order history is the source of truth.** An order _happened_ only if it appears in the
+    order history (`orders/`, `options/orders/`) as filled/pending/rejected/cancelled, or you see a
+    position / cash / buying-power change. If **no** such record exists, treat the attempted action as
+    **non-executed** — don't claim or imply it placed. Screenshots, UI/review screens, "the button was
+    clicked", app state, or agent logs are **not** proof. (Lived this session: a "nothing executed"
+    scare resolved by reading the orders list — and the place→cancel tests were confirmed the same way.)
 
 > Golden rule: reads are free and live; **every write is dry-run unless `ROBINHOOD_ALLOW_LIVE_WRITE=1` is set** (the single switch — no per-call flag required; `--dry-run`/`dryRun:true` still previews even when it's on).
 > When unsure about account, side, position_effect, or amount — stop and confirm. A wrong write is real money.
@@ -485,55 +496,55 @@ robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/market
 
 Keep this split current when editing the skill:
 
-| Surface | Current state | Agent rule |
-|---------|---------------|------------|
-| API map | ~300 brokerage/account route entries (live count via `brokerage routes --json`) plus official Crypto API routes | Rebuild after edits; runtime reads `cli/dist/api-map/` |
-| Read commands | `quote`, `positions`, `options positions`, `options expirations`, `options chain`, `watchlist list`, `recurring list`, route-map reads, crypto read plans | Live reads are allowed with caller-owned auth, but redact balances/tokens in shareable output |
-| Options research/planning | 20 strategy workflows; `options-strategy-plan` emits `reviewContract` | Planning only until exact user approval and write gates |
-| Equity/options order writes | Route-map executor against `orders/`, `options/orders/`, and cancel routes | Must use `--method` and an exact body; live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1` (the single switch; `--live-write` optional); dry-run first |
-| Recurring investments | First-class `recurring list`, `recurring resume`, `recurring pause`; route map also has GET one schedule and POST create | Resume/pause are the verified first-class writes. Create/edit amount/funding-source are route-map research unless a fresh capture verifies body shape |
+| Surface                            | Current state                                                                                                                                                     | Agent rule                                                                                                                                                                                                                                                                      |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API map                            | ~300 brokerage/account route entries (live count via `brokerage routes --json`) plus official Crypto API routes                                                   | Rebuild after edits; runtime reads `cli/dist/api-map/`                                                                                                                                                                                                                          |
+| Read commands                      | `quote`, `positions`, `options positions`, `options expirations`, `options chain`, `watchlist list`, `recurring list`, route-map reads, crypto read plans         | Live reads are allowed with caller-owned auth, but redact balances/tokens in shareable output                                                                                                                                                                                   |
+| Options research/planning          | 20 strategy workflows; `options-strategy-plan` emits `reviewContract`                                                                                             | Planning only until exact user approval and write gates                                                                                                                                                                                                                         |
+| Equity/options order writes        | Route-map executor against `orders/`, `options/orders/`, and cancel routes                                                                                        | Must use `--method` and an exact body; live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1` (the single switch; `--live-write` optional); dry-run first                                                                                                                                    |
+| Recurring investments              | First-class `recurring list`, `recurring resume`, `recurring pause`; route map also has GET one schedule and POST create                                          | Resume/pause are the verified first-class writes. Create/edit amount/funding-source are route-map research unless a fresh capture verifies body shape                                                                                                                           |
 | Watchlist read / edit / basket-buy | `watchlist list`/`items` (read); `watchlist add`/`remove`/`create` + `watchlist buy` (basket) (MCP `robinhood_watchlist_add`/`_remove`/`_create`/`_items`/`_buy`) | Env-gated writes (verified 2026-06-14): add/remove batch `discovery/lists/items/`, create POSTs `discovery/lists/`; `watchlist buy` loops the shared order engine per ticker (BP-aware, OTC/dedup/`ref_id` guards, skips what won't fit); item reorder still route-map research |
-| Money movement / funding | ACH relationships/transfers and cashier/deposit-schedule routes are mapped mostly as read or `write-or-sensitive` | Never mutate funding, ACH links, deposits, withdrawals, or transfers without a fresh route/body capture and explicit approval |
-| DRIP/options/account settings | DRIP GET/PATCH is method-split; account-setting routes are mapped or browser-observed | Treat account-setting writes as dry-run first; plan, obtain exact approval, send only with the switch on, then verify reload state |
-| Crypto | Official Crypto API signing/planning/execution commands | Different auth from brokerage; crypto writes/cancels use the same `ROBINHOOD_ALLOW_LIVE_WRITE=1` switch |
+| Money movement / funding           | ACH relationships/transfers and cashier/deposit-schedule routes are mapped mostly as read or `write-or-sensitive`                                                 | Never mutate funding, ACH links, deposits, withdrawals, or transfers without a fresh route/body capture and explicit approval                                                                                                                                                   |
+| DRIP/options/account settings      | DRIP GET/PATCH is method-split; account-setting routes are mapped or browser-observed                                                                             | Treat account-setting writes as dry-run first; plan, obtain exact approval, send only with the switch on, then verify reload state                                                                                                                                              |
+| Crypto                             | Official Crypto API signing/planning/execution commands                                                                                                           | Different auth from brokerage; crypto writes/cancels use the same `ROBINHOOD_ALLOW_LIVE_WRITE=1` switch                                                                                                                                                                         |
 
 Do not overclaim first-class support. If a capability is route-map-only, say so and build a dry-run body from the current route map before considering implementation.
 
 ### Critical Query Patterns
 
-| Task | Query | Notes |
-|------|-------|-------|
-| All accounts (complete) | `bonfire.robinhood.com/transfer/accounts/` | ONLY endpoint that lists every account |
-| Primary account portfolio | `portfolios/` | List endpoint, includes `equity_previous_close` |
-| Per-account portfolio | `portfolios/{account_number}/` | Use `--param account_number=X`. Does NOT include prev_close |
-| Positions | `positions/?account_number={n}&nonzero=true` | Returns instrument UUIDs, not tickers |
-| Instruments→tickers | `instruments/?ids={ids}` | Batch resolve UUIDs: `--param ids=uuid1,uuid2` |
-| Quotes | `marketdata/quotes/?ids={ids}` | Batch resolve instrument UUIDs to prices |
-| Watchlists | `discovery/lists/?owner_type=custom` | `owner_type=custom` is MANDATORY |
-| Orders (read) | `orders/` | GET by default |
-| Orders (create) | `orders/` | Requires `--method POST` |
-| Options chain | `options/chains/{id}/` | Get expirations + tick rules |
-| Options instruments | `options/instruments/?chain_id={id}&expiration_dates={date}&state=active&type=call` | Find specific strikes |
-| Options orders | `options/orders/` | POST, same env gate |
-| Stock profile page | `stock profile <symbol> --account <n> --json` | Joins quote, description, fundamentals, shorting/borrow, buying-power, and margin reads |
-| Recurring buys | `recurring` subcommand | `robinhood-cli recurring list` — dedicated command |
-| Recurring pause/resume | `recurring pause|resume` | Verified first-class writes; env-gated |
-| Recurring create/edit/funding source | `bonfire.robinhood.com/recurring_schedules/` | Route-map research only until fresh body capture verifies amount/source fields |
-| Funding sources | `cashier.robinhood.com/ach/relationships/`, `payment_instruments/v2/` | Read first; writes are high-risk and not first-class |
-| Account settings capability map | `docs/account-settings-capability-map-2026-06-03.md` | Defines what is first-class, route-map-only, browser-observed, or not yet proven |
-| Crypto market data | `crypto execute "marketdata/best_bid_ask/" --query-param symbol=BTC-USD` | Official Crypto API |
+| Task                                 | Query                                                                               | Notes                                                                                   |
+| ------------------------------------ | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| All accounts (complete)              | `bonfire.robinhood.com/transfer/accounts/`                                          | ONLY endpoint that lists every account                                                  |
+| Primary account portfolio            | `portfolios/`                                                                       | List endpoint, includes `equity_previous_close`                                         |
+| Per-account portfolio                | `portfolios/{account_number}/`                                                      | Use `--param account_number=X`. Does NOT include prev_close                             |
+| Positions                            | `positions/?account_number={n}&nonzero=true`                                        | Returns instrument UUIDs, not tickers                                                   |
+| Instruments→tickers                  | `instruments/?ids={ids}`                                                            | Batch resolve UUIDs: `--param ids=uuid1,uuid2`                                          |
+| Quotes                               | `marketdata/quotes/?ids={ids}`                                                      | Batch resolve instrument UUIDs to prices                                                |
+| Watchlists                           | `discovery/lists/?owner_type=custom`                                                | `owner_type=custom` is MANDATORY                                                        |
+| Orders (read)                        | `orders/`                                                                           | GET by default                                                                          |
+| Orders (create)                      | `orders/`                                                                           | Requires `--method POST`                                                                |
+| Options chain                        | `options/chains/{id}/`                                                              | Get expirations + tick rules                                                            |
+| Options instruments                  | `options/instruments/?chain_id={id}&expiration_dates={date}&state=active&type=call` | Find specific strikes                                                                   |
+| Options orders                       | `options/orders/`                                                                   | POST, same env gate                                                                     |
+| Stock profile page                   | `stock profile <symbol> --account <n> --json`                                       | Joins quote, description, fundamentals, shorting/borrow, buying-power, and margin reads |
+| Recurring buys                       | `recurring` subcommand                                                              | `robinhood-cli recurring list` — dedicated command                                      |
+| Recurring pause/resume               | `recurring pause                                                                    | resume`                                                                                 | Verified first-class writes; env-gated |
+| Recurring create/edit/funding source | `bonfire.robinhood.com/recurring_schedules/`                                        | Route-map research only until fresh body capture verifies amount/source fields          |
+| Funding sources                      | `cashier.robinhood.com/ach/relationships/`, `payment_instruments/v2/`               | Read first; writes are high-risk and not first-class                                    |
+| Account settings capability map      | `docs/account-settings-capability-map-2026-06-03.md`                                | Defines what is first-class, route-map-only, browser-observed, or not yet proven        |
+| Crypto market data                   | `crypto execute "marketdata/best_bid_ask/" --query-param symbol=BTC-USD`            | Official Crypto API                                                                     |
 
 ### Account Context and Strategy Maps
 
-| Task | Command | Notes |
-|------|---------|-------|
-| Browser account routing | `robinhood-cli api-map account-context` | Shows whether `?account_number=` propagates, is mixed, or is ignored on each web surface |
-| Build web workflow URL | `robinhood-cli api-map account-url <id> --account <n> ...` | Navigation/research only; prefer direct API routes for automation |
-| Options strategy catalog | `robinhood-cli api-map options-strategies` | Lists single legs, covered calls, cash-secured/naked puts, naked calls, debit/credit spreads, straddles, strangles, butterflies, iron condors, calendar rolls |
-| Live strategy dry-run quote | `robinhood-cli options strategy-quote <id> --account <n> --symbol <s> --expiration <d> --leg leg_id=strike --json` | Resolves exact option ids, reads bid/ask/Greeks, computes natural/mid/protective limits, and fills a dry-run body; never sends |
-| Roll an option (any account) | `robinhood-cli options roll-plan --account <n> --symbol <s> --type call|put --close-expiration <d1> --close-strike <k1> --open-expiration <d2> --open-strike <k2> [--mode auto|atomic|kosher] --json` | Auto-detects account type. ATOMIC native `strategy_roll` (one 2-leg order) for margin/IRA → emits `rollOrder`; KOSHER two-order staging (close-now/open-T+1 + fresh-check gates) for cash. Pass `--close-pricing-mode mid --open-pricing-mode mid` for a realistic net |
-| Strategy dry-run body | `robinhood-cli api-map options-strategy-plan <id> --param key=value` | Emits lookup steps + `options/orders/` body template; never sends |
-| Exact contract navigation plan | `robinhood-cli api-map options-contract-plan --account <n> --symbol <s> --expiration <d> --type call|put --side buy|sell --strike <k> --json` | Emits the tested web account shell, candidate web URL probes, API resolution steps, and dry-run single-leg handoff |
+| Task                           | Command                                                                                                            | Notes                                                                                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser account routing        | `robinhood-cli api-map account-context`                                                                            | Shows whether `?account_number=` propagates, is mixed, or is ignored on each web surface                                                                      |
+| Build web workflow URL         | `robinhood-cli api-map account-url <id> --account <n> ...`                                                         | Navigation/research only; prefer direct API routes for automation                                                                                             |
+| Options strategy catalog       | `robinhood-cli api-map options-strategies`                                                                         | Lists single legs, covered calls, cash-secured/naked puts, naked calls, debit/credit spreads, straddles, strangles, butterflies, iron condors, calendar rolls |
+| Live strategy dry-run quote    | `robinhood-cli options strategy-quote <id> --account <n> --symbol <s> --expiration <d> --leg leg_id=strike --json` | Resolves exact option ids, reads bid/ask/Greeks, computes natural/mid/protective limits, and fills a dry-run body; never sends                                |
+| Roll an option (any account)   | `robinhood-cli options roll-plan --account <n> --symbol <s> --type call                                            | put --close-expiration <d1> --close-strike <k1> --open-expiration <d2> --open-strike <k2> [--mode auto                                                        | atomic                    | kosher] --json`                                                                                                    | Auto-detects account type. ATOMIC native `strategy_roll` (one 2-leg order) for margin/IRA → emits `rollOrder`; KOSHER two-order staging (close-now/open-T+1 + fresh-check gates) for cash. Pass `--close-pricing-mode mid --open-pricing-mode mid` for a realistic net |
+| Strategy dry-run body          | `robinhood-cli api-map options-strategy-plan <id> --param key=value`                                               | Emits lookup steps + `options/orders/` body template; never sends                                                                                             |
+| Exact contract navigation plan | `robinhood-cli api-map options-contract-plan --account <n> --symbol <s> --expiration <d> --type call               | put --side buy                                                                                                                                                | sell --strike <k> --json` | Emits the tested web account shell, candidate web URL probes, API resolution steps, and dry-run single-leg handoff |
 
 Primary references:
 
@@ -665,13 +676,13 @@ sign and magnitude.
 
 Core interpretations:
 
-| Greek | Meaning for an agent |
-|-------|----------------------|
-| Delta | Directional exposure. Positive benefits from up moves; negative benefits from down moves. |
+| Greek | Meaning for an agent                                                                                      |
+| ----- | --------------------------------------------------------------------------------------------------------- |
+| Delta | Directional exposure. Positive benefits from up moves; negative benefits from down moves.                 |
 | Gamma | How fast delta changes. Long gamma likes movement; short gamma can lose faster as price moves against it. |
-| Theta | Time decay. Positive theta collects decay; negative theta pays decay. |
-| Vega | Implied-volatility exposure. Long vega benefits from IV expansion; short vega benefits from IV crush. |
-| Rho | Interest-rate exposure. Usually less important intraday but include it in summaries. |
+| Theta | Time decay. Positive theta collects decay; negative theta pays decay.                                     |
+| Vega  | Implied-volatility exposure. Long vega benefits from IV expansion; short vega benefits from IV crush.     |
+| Rho   | Interest-rate exposure. Usually less important intraday but include it in summaries.                      |
 
 ### Options Strategy Classification
 
@@ -679,49 +690,49 @@ First classify the requested trade. Never infer naked exposure from loose
 language. If the user says "sell a call", distinguish sell-to-close, covered
 call, call credit spread, and naked short call before planning an order.
 
-| Strategy family | Typical posture | Aggression |
-|-----------------|-----------------|------------|
-| Long call / put | Defined-risk directional debit; long gamma, long vega, negative theta | Moderate |
-| Sell-to-close | Reduces an existing long option; should use `position_effect=close` | Conservative |
-| Covered call | Short call against 100 owned shares; income but caps upside and can assign shares | Conservative |
-| Cash-secured put | Short put backed by cash for 100 shares; bullish income with assignment risk | Moderate |
-| Covered put | Short stock plus short put; not the same as cash-secured, keeps short-stock upside risk | Aggressive |
-| Naked short call / short straddle | Undefined-risk short-volatility exposure | Aggressive |
-| Naked/margin short put | Short put without verified full cash collateral | Aggressive |
-| Vertical credit spread | Defined-risk premium selling; short gamma/vega with long wing protection | Moderate |
-| Vertical debit spread | Defined-risk directional debit; capped gain and capped loss | Moderate |
-| Long straddle | Defined-risk long-volatility trade; long gamma/vega, heavy negative theta | Moderate |
-| Short straddle / short strangle | Short-volatility income with undefined risk | Aggressive |
-| Long strangle | Defined-risk long-volatility trade with OTM call and OTM put | Moderate |
-| Butterfly / iron condor | Defined-risk range/pin or short-volatility structures | Moderate |
-| Calendar roll | Close one option and open another expiration/strike; compare realized close and new open risk | Moderate |
+| Strategy family                   | Typical posture                                                                               | Aggression   |
+| --------------------------------- | --------------------------------------------------------------------------------------------- | ------------ |
+| Long call / put                   | Defined-risk directional debit; long gamma, long vega, negative theta                         | Moderate     |
+| Sell-to-close                     | Reduces an existing long option; should use `position_effect=close`                           | Conservative |
+| Covered call                      | Short call against 100 owned shares; income but caps upside and can assign shares             | Conservative |
+| Cash-secured put                  | Short put backed by cash for 100 shares; bullish income with assignment risk                  | Moderate     |
+| Covered put                       | Short stock plus short put; not the same as cash-secured, keeps short-stock upside risk       | Aggressive   |
+| Naked short call / short straddle | Undefined-risk short-volatility exposure                                                      | Aggressive   |
+| Naked/margin short put            | Short put without verified full cash collateral                                               | Aggressive   |
+| Vertical credit spread            | Defined-risk premium selling; short gamma/vega with long wing protection                      | Moderate     |
+| Vertical debit spread             | Defined-risk directional debit; capped gain and capped loss                                   | Moderate     |
+| Long straddle                     | Defined-risk long-volatility trade; long gamma/vega, heavy negative theta                     | Moderate     |
+| Short straddle / short strangle   | Short-volatility income with undefined risk                                                   | Aggressive   |
+| Long strangle                     | Defined-risk long-volatility trade with OTM call and OTM put                                  | Moderate     |
+| Butterfly / iron condor           | Defined-risk range/pin or short-volatility structures                                         | Moderate     |
+| Calendar roll                     | Close one option and open another expiration/strike; compare realized close and new open risk | Moderate     |
 
 Payoff checks:
 
-| Strategy | Quant check |
-|----------|-------------|
-| Long call | Max loss = debit * 100; breakeven = strike + debit |
-| Long put | Max loss = debit * 100; breakeven = strike - debit |
-| Covered call | Verify 100 shares per short call in same account; upside capped above strike |
-| Cash-secured put | Verify cash collateral; max loss = (strike - credit) * 100 |
-| Naked short call | Max profit = credit * 100; max loss theoretically unlimited |
-| Credit spread | Max profit = credit * 100; max loss = (width - credit) * 100 |
-| Debit spread | Max loss = debit * 100; max profit = (width - debit) * 100 |
-| Long straddle | Max loss = debit * 100; breakevens = strike +/- debit |
-| Long strangle | Max loss = debit * 100; breakevens = call strike + debit and put strike - debit |
-| Short strangle | Max profit = credit * 100; undefined call-side risk and large put-side downside |
-| Iron condor | Max profit = credit * 100; max loss = widest wing - credit, scaled by 100 |
-| Calendar roll | Net = close credit - open debit; compare old and new Greeks, duration, and assignment risk |
+| Strategy         | Quant check                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| Long call        | Max loss = debit * 100; breakeven = strike + debit                                         |
+| Long put         | Max loss = debit * 100; breakeven = strike - debit                                         |
+| Covered call     | Verify 100 shares per short call in same account; upside capped above strike               |
+| Cash-secured put | Verify cash collateral; max loss = (strike - credit) * 100                                 |
+| Naked short call | Max profit = credit * 100; max loss theoretically unlimited                                |
+| Credit spread    | Max profit = credit * 100; max loss = (width - credit) * 100                               |
+| Debit spread     | Max loss = debit * 100; max profit = (width - debit) * 100                                 |
+| Long straddle    | Max loss = debit * 100; breakevens = strike +/- debit                                      |
+| Long strangle    | Max loss = debit * 100; breakevens = call strike + debit and put strike - debit            |
+| Short strangle   | Max profit = credit * 100; undefined call-side risk and large put-side downside            |
+| Iron condor      | Max profit = credit * 100; max loss = widest wing - credit, scaled by 100                  |
+| Calendar roll    | Net = close credit - open debit; compare old and new Greeks, duration, and assignment risk |
 
 Ambiguous wording:
 
-| User says | Clarify before planning |
-|-----------|-------------------------|
-| Sell a call | Sell-to-close, covered call, call credit spread, or naked short call |
-| Sell a put | Cash-secured put, put credit spread, or margin/naked short put |
-| Covered short put | Cash-secured put or covered put; these are not the same |
-| Straddle | Long debit straddle or short undefined-risk straddle |
-| Roll | Which legs close, which legs open, and whether net risk increases |
+| User says         | Clarify before planning                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| Sell a call       | Sell-to-close, covered call, call credit spread, or naked short call |
+| Sell a put        | Cash-secured put, put credit spread, or margin/naked short put       |
+| Covered short put | Cash-secured put or covered put; these are not the same              |
+| Straddle          | Long debit straddle or short undefined-risk straddle                 |
+| Roll              | Which legs close, which legs open, and whether net risk increases    |
 
 Use the risk-score heuristic in
 `docs/options-greeks-strategy-research-2026-06-02.md` for aggressive vs.
@@ -841,13 +852,13 @@ UI/API state rather than the location bar.
 
 Map the UI to APIs like this:
 
-| UI state | API state |
-|----------|-----------|
-| Symbol page | `options/chains/?account_number=<N>&underlying_symbol=<SYMBOL>` |
-| Expiration dropdown | `options/instruments/?chain_id=<ID>&expiration_dates=<DATE>` |
-| Call/put toggle | `type=call|put` |
-| Strike rows | returned option instrument ids |
-| Right-side price | `marketdata/options/?ids=<IDS>` |
+| UI state                       | API state                                                                   |
+| ------------------------------ | --------------------------------------------------------------------------- |
+| Symbol page                    | `options/chains/?account_number=<N>&underlying_symbol=<SYMBOL>`             |
+| Expiration dropdown            | `options/instruments/?chain_id=<ID>&expiration_dates=<DATE>`                |
+| Call/put toggle                | `type=call                                                                  | put` |
+| Strike rows                    | returned option instrument ids                                              |
+| Right-side price               | `marketdata/options/?ids=<IDS>`                                             |
 | Spread/straddle/condor Builder | `marketdata/options/strategy/quotes/` plus multi-leg `options/orders/` body |
 
 For a spread, never trust a label alone. Reconstruct every leg from option
@@ -924,27 +935,27 @@ brokerage API** (only the separate official Crypto API). Everything below the
 crypto line is a mapped browser/app surface. So an agent's job is two things at
 once: **(1) call the hardcoded actions correctly**, and **(2) reason like an
 options trader** about what to call. This section routes intent to action; the
-deep math lives in *Options Greeks and Strategy Math* above.
+deep math lives in _Options Greeks and Strategy Math_ above.
 
-| User intent | Action | Command (verify with `--help`) |
-|-------------|--------|--------------------------------|
-| "What do I own / how are my accounts?" | discover accounts, then read | `accounts` (lists every account with cash/margin/IRA capabilities; unverified-type accounts flagged conservative); then portfolios/positions per account |
-| **"Why am I down / what's bleeding me / how's my portfolio today / after hours?"** | **one command** | **`portfolio` (aliases `pnl`/`snapshot`; MCP `robinhood_portfolio`) — `--day`/`--after-hours`/`--by position`. One call → per-account day Δ + after-hours Δ, drivers by underlying in DOLLARS, + reconciliation. Don't hand-stitch or lead with percents. Details in "Portfolio loss attribution" below.** |
-| "Quote X" / "what's the chain?" | live read | `quote <SYM>`, `options chain <SYM>`, `options expirations <SYM>` |
-| "Best option position" / P&L | ranked read | `options positions` |
-| "What transactions went through (today/yesterday)?" | unified history | `history --days <n> [--account <N>]` (merges equity + options + crypto orders + ACH transfers, newest first) |
-| "Price a spread / iron condor" | dry-run strategy quote | `options strategy-quote <strategy> --account <N> --symbol <S> --expiration <D> --leg ...` |
-| "Plan a named strategy" | catalog plan | `api-map options-strategies`, `api-map options-strategy-plan <id>` |
-| "Open the exact contract for me" | resolve + navigate | `api-map options-contract-links ...` (emits the API-resolved contract + chain-id deeplink) |
-| "Roll my position" | atomic native roll (default) or kosher (cash) | `options roll-plan ...` — auto-detects account type: ATOMIC `strategy_roll` for margin/IRA, KOSHER two-order for cash. `--mode atomic\|kosher` overrides. See `docs/native-option-roll-surface-2026-06-23.md` |
-| "Where am I in the wheel / what's the next leg?" | evidence-based stage + next-leg command | `wheel [symbol] [--account <N>]` (read-only; classifies CSP→shares→CC from live positions, flags undercovered short calls, works with no position as discussion mode) |
-| "Place / cancel an order" | gated write | `brokerage execute "options/orders/" --method POST` ... then `options/orders/{0}/cancel/` (live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1`) |
-| "Change a setting (DRIP, recurring, etc.)" | gated write | `recurring pause|resume`; route-map writes via `brokerage execute --method ...` (live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1`) |
+| User intent                                                                        | Action                                        | Command (verify with `--help`)                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "What do I own / how are my accounts?"                                             | discover accounts, then read                  | `accounts` (lists every account with cash/margin/IRA capabilities; unverified-type accounts flagged conservative); then portfolios/positions per account                                                                                                                                                   |
+| **"Why am I down / what's bleeding me / how's my portfolio today / after hours?"** | **one command**                               | **`portfolio` (aliases `pnl`/`snapshot`; MCP `robinhood_portfolio`) — `--day`/`--after-hours`/`--by position`. One call → per-account day Δ + after-hours Δ, drivers by underlying in DOLLARS, + reconciliation. Don't hand-stitch or lead with percents. Details in "Portfolio loss attribution" below.** |
+| "Quote X" / "what's the chain?"                                                    | live read                                     | `quote <SYM>`, `options chain <SYM>`, `options expirations <SYM>`                                                                                                                                                                                                                                          |
+| "Best option position" / P&L                                                       | ranked read                                   | `options positions`                                                                                                                                                                                                                                                                                        |
+| "What transactions went through (today/yesterday)?"                                | unified history                               | `history --days <n> [--account <N>]` (merges equity + options + crypto orders + ACH transfers, newest first)                                                                                                                                                                                               |
+| "Price a spread / iron condor"                                                     | dry-run strategy quote                        | `options strategy-quote <strategy> --account <N> --symbol <S> --expiration <D> --leg ...`                                                                                                                                                                                                                  |
+| "Plan a named strategy"                                                            | catalog plan                                  | `api-map options-strategies`, `api-map options-strategy-plan <id>`                                                                                                                                                                                                                                         |
+| "Open the exact contract for me"                                                   | resolve + navigate                            | `api-map options-contract-links ...` (emits the API-resolved contract + chain-id deeplink)                                                                                                                                                                                                                 |
+| "Roll my position"                                                                 | atomic native roll (default) or kosher (cash) | `options roll-plan ...` — auto-detects account type: ATOMIC `strategy_roll` for margin/IRA, KOSHER two-order for cash. `--mode atomic\|kosher` overrides. See `docs/native-option-roll-surface-2026-06-23.md`                                                                                              |
+| "Where am I in the wheel / what's the next leg?"                                   | evidence-based stage + next-leg command       | `wheel [symbol] [--account <N>]` (read-only; classifies CSP→shares→CC from live positions, flags undercovered short calls, works with no position as discussion mode)                                                                                                                                      |
+| "Place / cancel an order"                                                          | gated write                                   | `brokerage execute "options/orders/" --method POST` ... then `options/orders/{0}/cancel/` (live needs `ROBINHOOD_ALLOW_LIVE_WRITE=1`)                                                                                                                                                                      |
+| "Change a setting (DRIP, recurring, etc.)"                                         | gated write                                   | `recurring pause                                                                                                                                                                                                                                                                                           | resume`; route-map writes via `brokerage execute --method ...`(live needs`ROBINHOOD_ALLOW_LIVE_WRITE=1`) |
 
 **Decision rule:** read first, classify the strategy, compute payoff + net Greeks,
-emit blockers, *then* (only on explicit request + the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch) send. Never
-infer naked/undefined-risk exposure from loose wording — see *Options Strategy
-Classification*.
+emit blockers, _then_ (only on explicit request + the ROBINHOOD_ALLOW_LIVE_WRITE=1 switch) send. Never
+infer naked/undefined-risk exposure from loose wording — see _Options Strategy
+Classification_.
 
 ### Portfolio loss attribution — "why am I down?" (answer in DOLLARS, not percents)
 
@@ -955,13 +966,13 @@ follow this exact order — it is the intuitive answer they actually want:
    `extended_hours_equity`) vs `equity_previous_close`. The difference is the authoritative "$ down/up
    today" per account. Lead with this number. (Per-account `portfolios/{account_number}/` may lack
    `equity_previous_close`; the list endpoint has it for the primary.)
-2. **Attribute by DOLLARS, never percents.** Rank holdings by *dollar* day-change, not %:
+2. **Attribute by DOLLARS, never percents.** Rank holdings by _dollar_ day-change, not %:
    - equity: `qty × last × dayPct`
    - **options:** `(adjusted_mark_price − previous_close_price) × 100 × qty` (from `marketdata/options/`).
-   A −9% move on a $6 fractional position is −$0.50 and irrelevant; a −5% move on a $1,600 deep-ITM call
+     A −9% move on a $6 fractional position is −$0.50 and irrelevant; a −5% move on a $1,600 deep-ITM call
    is −$350 and the real story. **Percent leaderboards mislead — always weight by position size.**
 3. **Roll up by UNDERLYING across ALL accounts.** Losses concentrate by ticker, not by account (e.g. HPE
-   calls bleed across 3 accounts at once; GOOGL/NET winners can *mask* it inside one account so it nets
+   calls bleed across 3 accounts at once; GOOGL/NET winners can _mask_ it inside one account so it nets
    positive). A per-account-only view buries the real driver. Group every leg by underlying, sum the
    dollar day-change, rank.
 4. **"After hours" is its OWN number — compute it correctly, and do NOT hard-rule an asset class out.**
@@ -969,7 +980,7 @@ follow this exact order — it is the intuitive answer they actually want:
    **`extended_hours_equity − equity`** (NOT `… − equity_previous_close`, which is the full day). Read it
    from `portfolios/{account_number}/` (param is `{account_number}`); it's the exact "−$X after hours" the app shows.
    Sum across accounts and lead with it. Per-name attribution: `qty × (last_extended_hours_trade_price −
-   last_trade_price)` from `marketdata/quotes/` (equities/ETFs) and `marketdata/options/` (options).
+last_trade_price)` from `marketdata/quotes/` (equities/ETFs) and `marketdata/options/` (options).
    - **It is NOT "equities only."** Index/ETF options (SPX, SPXW, SPY, NDX, …) trade ~15 min past the bell
      and in extended sessions — they move after-hours too. Equities + leveraged single-stock ETFs are
      typically the bulk of the dollars, but **CHECK the actual extended marks; never assert a class can't
@@ -984,19 +995,20 @@ full host URL. Fix the call and get the number. Find the field, fix the route, t
 
 **USE THE FIRST-CLASS COMMAND — don't hand-stitch.** This is `portfolio` (aliases `pnl`, `snapshot`),
 also the MCP tool `robinhood_portfolio`:
+
 - `portfolio` — all accounts, day Δ + after-hours Δ, drivers rolled up by underlying in dollars.
 - `portfolio --after-hours` — rank by the after-hours move (the "what's nuking me after hours" answer).
 - `portfolio --day` · `--by position|account|underlying` · `--account <n>` · `--json`.
-One call returns the per-account top-line, the by-underlying dollar drivers, and a reconciliation line.
-The manual composition below is only a FALLBACK if the command is unavailable: `portfolios/{account_number}/`
-(current/extended equity and the broker-adjusted account delta) +
-`positions/?account_number={account_number}&nonzero=true` + `options aggregate_positions/` +
-`marketdata/{quotes,options}/`. Regular-session market P&L comes from the fully priced position set;
-`equity − adjusted_equity_previous_close` is retained only as a diagnostic because deposits, transfers,
-cash, dividends, and broker baseline adjustments can make it disagree with market P&L. After-hours remains
-the account-level `extended_hours_equity − equity` delta so extended index-option value is not lost. The
-deliverable is one ranked, dollar-weighted, by-underlying answer across accounts, with the **after-hours
-number kept separate from the regular-session number** — not a per-account percent dump.
+  One call returns the per-account top-line, the by-underlying dollar drivers, and a reconciliation line.
+  The manual composition below is only a FALLBACK if the command is unavailable: `portfolios/{account_number}/`
+  (current/extended equity and the broker-adjusted account delta) +
+  `positions/?account_number={account_number}&nonzero=true` + `options aggregate_positions/` +
+  `marketdata/{quotes,options}/`. Regular-session market P&L comes from the fully priced position set;
+  `equity − adjusted_equity_previous_close` is retained only as a diagnostic because deposits, transfers,
+  cash, dividends, and broker baseline adjustments can make it disagree with market P&L. After-hours remains
+  the account-level `extended_hours_equity − equity` delta so extended index-option value is not lost. The
+  deliverable is one ranked, dollar-weighted, by-underlying answer across accounts, with the **after-hours
+  number kept separate from the regular-session number** — not a per-account percent dump.
 
 ## Worked Build — Iron Condor, End to End
 
@@ -1034,11 +1046,11 @@ the account can and cannot do** before planning a write. This is required behavi
 not a nicety — operators typically hold a mix of cash, margin, and IRA accounts, and the
 allowed actions differ by type:
 
-| Account type | Can | Cannot / caution |
-|--------------|-----|------------------|
-| `cash` | buy/sell, cash-secured puts, covered calls, debit spreads | no margin borrowing, no naked/undefined-risk shorts, **rolling that needs margin won't work**, unsettled-cash (T+1) limits, watch good-faith violations |
-| `margin` (individual) | the above + margin, rolls, spreads requiring buying power | **PDT lifted on RH — no $25k day-trade cap** (FINRA eliminated it 2026-06-04); maintenance margin still applies |
-| `ira_roth` | long options, defined-risk spreads, covered calls | no margin, no naked shorts; contribution/withdrawal rules out of scope |
+| Account type          | Can                                                       | Cannot / caution                                                                                                                                        |
+| --------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cash`                | buy/sell, cash-secured puts, covered calls, debit spreads | no margin borrowing, no naked/undefined-risk shorts, **rolling that needs margin won't work**, unsettled-cash (T+1) limits, watch good-faith violations |
+| `margin` (individual) | the above + margin, rolls, spreads requiring buying power | **PDT lifted on RH — no $25k day-trade cap** (FINRA eliminated it 2026-06-04); maintenance margin still applies                                         |
+| `ira_roth`            | long options, defined-risk spreads, covered calls         | no margin, no naked shorts; contribution/withdrawal rules out of scope                                                                                  |
 
 When a requested action is impossible for the account type, **say so and stop**:
 e.g. "Account `…cash…` is a cash account — it can't roll on margin; options-level
@@ -1055,6 +1067,79 @@ minimum $2,000). **Robinhood has implemented it** — so on RH margin accounts t
 day-trade cap**; day-trade freely within margin / buying-power limits. (Buys alone never counted
 anyway — only round trips did.) **Cash accounts are unchanged:** PDT never applied, but T+1 settlement
 and good-faith violations still do — selling unsettled funds can flag it.
+
+## IPO Access, 24-Hour Orders, and Tax-Lot Intelligence (mapped 2026-08-08)
+
+These are three separate product lanes. Do not collapse tax lots into generic equity selling.
+
+### IPO Access
+
+```bash
+node cli/dist/index.js ipo-access list --json
+node cli/dist/index.js ipo-access show RVII --json
+node cli/dist/index.js ipo-access plan-request RVII --account <ACCOUNT> --json
+```
+
+`plan-request` consolidates education, indication-of-interest acknowledgement, notification disclosure, enrollment, account eligibility, buying power, deadline, existing order, review fields, and blockers. It is read-only. IPO create/update/cancel remains `not_evaluated` until its exact mutation contract is captured; never improvise an IPO POST or skip disclosures.
+
+### 24-hour / overnight equity orders
+
+User-facing `overnight` maps to Robinhood `market_hours: "all_day_hours"`. The evidence-backed plan currently requires whole shares, a limit price, a valid two-sided quote, `instrument.all_day_tradability === "tradable"`, and the configured spread cap. Do not infer overnight fractional/dollar, market, stop, stop-limit, or trailing-stop support from regular-session UI.
+
+```bash
+node cli/dist/index.js sell NBIL --account <ACCOUNT> --shares 1 --limit 20.55 --market-hours overnight --json
+```
+
+Live all-day submission remains blocked until account/session order-check eligibility is captured; dry-run bodies are mapped.
+
+### Tax-lot inventory and exact-unit selling
+
+**Reference:** `docs/tax-lot-intelligence-and-exact-lot-selling.md` contains the full evidence map, official Robinhood/IRS rules, objectives, wash-sale model, and verification workflow.
+
+```bash
+# Stable IDs + basis/term/availability
+node cli/dist/index.js tax-lots list HPE --account <ACCOUNT> --json
+
+# Objective-assisted dry run
+node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> --shares 4 --objective harvest_loss --json
+
+# Exact stable IDs + partial quantities
+node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> \
+  --lot <OPEN_LOT_ID>:3.5 --lot <OPEN_LOT_ID>:0.5 --json
+
+# Assumption-labeled estimate only when rates are supplied
+node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> --shares 4 \
+  --objective minimize_gain --short-term-rate 0.32 --long-term-rate 0.15 --json
+
+# Exercise the exact-lot submission boundary as a dry-run
+node cli/dist/index.js tax-lots sell HPE \
+  --account <ACCOUNT> --lot <OPEN_LOT_ID>:1 --json
+```
+
+MCP parity:
+
+- `robinhood_tax_lots`
+- `robinhood_tax_lot_order`
+- `robinhood_tax_lot_plan`
+- `robinhood_tax_lot_sell` — dry-run boundary only; live requests fail closed
+
+Stable `open_lot_id` is mandatory. Never identify execution lots only by acquisition date. Every plan re-reads `quantity_available` and rejects unknown, unavailable, unselectable, overallocated, or basis-missing lots.
+
+Exact-lot live submission is deliberately unavailable. Do not infer it from the generic `/orders/` route or a third-party client body. Capture Robinhood's authenticated account-scoped review/check and submit contract first; until then both CLI and MCP reject every live request before the write chokepoint.
+
+Objectives: `specific`, `fifo`, `highest_basis`, `lowest_basis`, `harvest_loss`, `minimize_gain`, `long_term_first`, `short_term_first`. Show the exact selected IDs, quantities, term, basis, and estimated realization—never hide the deterministic ordering behind “AI recommends.”
+
+Tax rules that must survive every response:
+
+- Tax-lot selection is for US taxable investing accounts; IRA/Roth loss harvesting is not applicable.
+- Robinhood can temporarily block same-day lots, ACATs, and corporate-action lots.
+- Selected lots fill in submitted order. Concurrent orders can consume them; Robinhood may then fall back to default FIFO.
+- Robinhood gain/loss is an estimate, not filing data; missing transferred basis stays `not_evaluated`.
+- Wash-sale scope is a 61-day window and taxpayer-wide across Robinhood, outside brokers, recurring buys/DRIP, options/contracts, and IRAs.
+- Without complete cross-account acquisition history and forward replacement intent, return wash-sale `not_evaluated`; never say “safe.”
+- An IRA/Roth replacement purchase can disallow a taxable loss under IRS Rev. Rul. 2008-5 without adding the loss to IRA basis.
+- Tax-dollar estimates require explicit ST/LT rates and must disclose exclusions: state/local, NIIT, carryovers, annual category netting, and profile-specific rules.
+- Post-trade selected/closed-lot verification is mandatory. Robinhood says corrections require support before 9 PM ET on settlement date.
 
 ## Live Write & Order Lifecycle (verified 2026-06-03)
 
@@ -1094,7 +1179,7 @@ Verified live, not theorized:
   orders** — trade them (buy AND sell both supported) as **whole shares via an auto marketable
   limit** (buy at the ask, sell at the bid). "$X of <OTC>" is impossible in either direction;
   switch to `--shares` and say so rather than malforming an order.
-- **Rate limit — agentic managers, NOT an HFT script.** `orders/` burst-limits *fractional*
+- **Rate limit — agentic managers, NOT an HFT script.** `orders/` burst-limits _fractional_
   orders (~9, then HTTP **429**, ~48s cooldown). A web endpoint will never tolerate hammering.
   Pace ≥2.5s; on 429 sleep the server-directed seconds and retry the **same `ref_id`** (429 =
   nothing placed → idempotent). The batch script does this and **stops on "You can only purchase
@@ -1106,10 +1191,10 @@ Verified live, not theorized:
 
 - **Per-chain min tick.** `options/chains/{id}` returns `min_ticks` (`below_tick`, `above_tick`,
   `cutoff_price`). A limit below `cutoff_price` (often $3.00) must use `below_tick` — ARKG is
-  **$0.05**, so `$0.01` → 400 *"Price does not satisfy the min tick value."* (AAPL allows $0.01.)
+  **$0.05**, so `$0.01` → 400 _"Price does not satisfy the min tick value."_ (AAPL allows $0.01.)
   Read the chain's ticks; never assume $0.01.
 - **GTC options open is gated by _overnight_ buying power**, not regular BP. A `time_in_force: gtc`
-  buy-to-open on thin overnight BP → 400 *"not enough overnight buying power"* even when regular BP
+  buy-to-open on thin overnight BP → 400 _"not enough overnight buying power"_ even when regular BP
   looks fine. (Verified cross-account: the same ARKG $0.05 call `201 queued` in one margin account but
   `400` overnight-BP in others — overnight BP, not regular BP, decides.)
 - **No version gate on options.** `options/orders/` takes the standard body (no `order_form_version`)
@@ -1119,30 +1204,33 @@ Verified live, not theorized:
 - **DRIP toggle is NOT `PATCH corp_actions/drip/enrollment/{num}/`** — that one is GET-only; PATCH/POST/PUT → `405`
   (re-verified). The REAL DRIP write is `PATCH corp_actions/drip/account_settings/{account_number}/` (account-wide)
   / `.../instrument_settings/{account_number}/{instrument_id}/` (per-stock), body `{"drip_enabled":bool}` — captured
-  + wired (first-class `settings drip`; see `docs/account-settings-capability-map-2026-06-03.md`). Cash-sweep /
-  stock-lending / margin **write** endpoints remain unproven and need a fresh browser capture before any
-  automation — treat THOSE as research, not supported writes.
+  - wired (first-class `settings drip`; see `docs/account-settings-capability-map-2026-06-03.md`). Cash-sweep /
+    stock-lending / margin **write** endpoints remain unproven and need a fresh browser capture before any
+    automation — treat THOSE as research, not supported writes.
 
 ### Option UUIDs — always bulk-enumerate (default behavior, no prompt needed)
 
 Option `instrument_id`s are random **UUID v4**. There is NO deterministic mapping from the OCC
-symbol/strike/expiration — you can never *compute* one. This isn't an anti-forge security choice:
+symbol/strike/expiration — you can never _compute_ one. This isn't an anti-forge security choice:
 options contracts are **ephemeral and astronomically numerous** (every strike × expiry × call/put,
 created and expired constantly — far more instruments than there are shares), so a random
 per-contract id is simply the only practical way to address a space that large and short-lived.
 **The id must be enumerated, every time — that is the backbone of every options flow.**
 
-So by default, *without being asked*, whenever a specific option / chain / contract comes up:
+So by default, _without being asked_, whenever a specific option / chain / contract comes up:
+
 - **Bulk-enumerate first:** `options enumerate <SYM> --expiration <YYYY-MM-DD> [--type call|put|both] [--account <N>]`
   → every strike's `option_instrument_id` + desktop deep link in one shot (one API call per
   chain/expiration/type). Use `--expiration all` to list expirations first. Prefer this over
   resolving contracts one at a time.
 - **Single known contract:** `api-map options-contract-links ... --strike <K>` resolves just that one.
-- **Don't cache per-contract ids** (unique + ephemeral); the reusable thing is the *chain enumeration*.
-Treat UUID bulk-enumeration as the first move in any options task, not an afterthought.
+- **Don't cache per-contract ids** (unique + ephemeral); the reusable thing is the _chain enumeration_.
+  Treat UUID bulk-enumeration as the first move in any options task, not an afterthought.
 
 ### Inspect an owned option contract (read everything, then act) — verified 2026-06-04
+
 To pull "all the info" on a contract you hold (the option-detail page surface), chain these reads:
+
 - **Owned options:** `options positions` / `GET options/aggregate_positions/?account_numbers={acct}&nonzero=true`
   → symbol, quantity, average_open_price, strategy, legs[].option (the option_instrument_id).
 - **Contract metadata:** `GET options/instruments/{option_id}/` → strike, expiration_date, type, chain_id, state.
@@ -1161,11 +1249,12 @@ RH exposes a live sentiment layer under `api.robinhood.com/midlands/` (risk `rea
 pulse (see "Signal sourcing" below). These now have **first-class commands** (`news`/`ratings`/
 `earnings`/`movers`/`options-events`) + MCP tools — prefer them over raw `brokerage execute`; raw
 queries can use repeatable `--query-param key=value` flags when needed:
+
 - `midlands/news/?symbol=<SYM>` — news articles per ticker → `news <symbol>`.
 - `midlands/ratings/{instrument_id}/` — analyst buy/hold/sell summary + dated texts → `ratings <symbol>`.
 - `midlands/tags/tag/{100-most-popular|top-movers|...}/` — crowd / momentum instrument lists.
-(Per-instrument `instruments/{id}/popularity/` is now 404 — use the `tags` crowd lists instead.
-Internal hosts `news./youfeed./charted./ai-realtime.` have no public TLS; `midlands/` is the surface.)
+  (Per-instrument `instruments/{id}/popularity/` is now 404 — use the `tags` crowd lists instead.
+  Internal hosts `news./youfeed./charted./ai-realtime.` have no public TLS; `midlands/` is the surface.)
 
 **Signal → deep link → order:** a signal ("SPY $1000c EOY", "+$100 from strike") → contract spec
 → resolve via `api-map options-contract-links` (symbol→chain→**bulk-enumerate** `options/instruments/`
@@ -1177,12 +1266,12 @@ call.** The URL carries no side; set `side`+`position_effect` in the `options/or
 
 ### Signal sourcing — where due-diligence signal comes from (descriptive, NOT risk guidance)
 
-A research-grade view of *where to look* and *how much to trust it*. This is a decision framework —
+A research-grade view of _where to look_ and _how much to trust it_. This is a decision framework —
 a tool in the kit — not a mandate to be cautious. Risk and sizing are the operator's call.
 
 - **News is slow but authoritative for key/binary events.** Articles lag the real move by ~hours to
   a day; their value is the discrete, confirmable event — earnings, M&A, Fed, halts, guidance — where
-  being *right* matters more than being *first*. Useful, just late. Don't treat it as early signal.
+  being _right_ matters more than being _first_. Useful, just late. Don't treat it as early signal.
 - **Every feed is noisy — but Twitter/X and Reddit carry the best signal-to-noise**, and **Twitter is
   the fastest finger on the pulse**, ahead of any news article. For DD on a thesis, a narrative, or an
   unfolding move, X/Reddit are first-class research sources (`bird search`, the `last30days` skill,
@@ -1193,31 +1282,31 @@ a tool in the kit — not a mandate to be cautious. Risk and sizing are the oper
   Morgan / Goldman / Morgan Stanley** year-ahead theses and **long-term capital market assumptions**
   (1-yr and 5–10-yr expected returns by asset class). Lower frequency than the pulse — useful for the
   "what regime are we in / what's the decade thesis" frame. But a house view is **still a view**: these
-  firms are routinely wrong and talk their book. It *informs* sector/ticker attention and feeds Ball
+  firms are routinely wrong and talk their book. It _informs_ sector/ticker attention and feeds Ball
   Knowledge; it never dictates. Current synthesis: `docs/institutional-outlook-2026-06-04.md` (refresh
   each cycle — year-ahead drops Nov–Dec, CMAs annually).
 - **Academic + dissertation-level math — the "why it works" foundation.** For any strategy the agent
   reasons about deeply, go past prose to the actual quant (Black-Scholes derivations, EV under the
   variance-risk-premium, N(d₂) assignment probability, Greeks calculus, management/sizing math) grounded
   in peer-reviewed / SSRN work. The strategy deep-dives carry rigorous **Quant appendices** for this —
-  but a model is a *model*: every result rides assumptions (lognormal, constant σ, no early exercise,
-  frictionless) that break in practice; the appendices say where. Math explains the *structure* of an
+  but a model is a _model_: every result rides assumptions (lognormal, constant σ, no early exercise,
+  frictionless) that break in practice; the appendices say where. Math explains the _structure_ of an
   edge, not a guarantee it persists.
-- **None of these is gospel — they are information *on deck*.** The pulse, the house views, and the math
-  are all *inputs to weigh by reliability*, never authority or permission to act. Same stance as Ball
+- **None of these is gospel — they are information _on deck_.** The pulse, the house views, and the math
+  are all _inputs to weigh by reliability_, never authority or permission to act. Same stance as Ball
   Knowledge: weigh them, cross-check, and decide — don't obey any of them. Rough ladder by
   speed-vs-conviction: **X/Reddit pulse → institutional outlooks → academic math**, all subordinate to
   live market data and brokerage order history for anything that touches a real trade.
 - **Twitter's edge is conditional: fastest pulse AND fastest misinformation.** The high
-  signal-to-noise only holds *if you know whom to read* — which accounts have earned signal vs. which
+  signal-to-noise only holds _if you know whom to read_ — which accounts have earned signal vs. which
   are hype/promotion. The "who" is operator-specific and lives in the **Ball Knowledge** ledger
   (`ball-knowledge.md`, see its own section below) as source-lead entries; the committed file stays
   generic, and sensitive/personal source lists are the operator's discretion. Weight known,
   track-record sources over anonymous virality, and corroborate a single post before leaning on it.
 - **Signal → (optional) validation → action.** Any feed — RH `midlands/*` or external X/Reddit — is a
-  *direction input*. You *can* corroborate against live market data (bid/ask, Greeks, volume/OI,
+  _direction input_. You _can_ corroborate against live market data (bid/ask, Greeks, volume/OI,
   `quote`) before acting; presented as available reasoning, not a requirement. RH's own feeds sit at
-  the *confirmer* end of this; the off-platform pulse leads.
+  the _confirmer_ end of this; the off-platform pulse leads.
 
 > RH `midlands/news|ratings|tags` is the slow, broker-native layer. Lead due diligence with the
 > real-time pulse (X/Reddit) and let RH's feeds confirm — not the reverse. (Trusted sources + themes
@@ -1234,18 +1323,18 @@ binding for this skill; the ledger file itself stays deliberately messy and unla
   source leads / X accounts, analysts, earnings & investor-day notes, macro, catalysts, trading-style
   notes, dividend/income preferences, risk appetite, watchlist ideas — down to a single ticker or
   `@handle`. Rough/shorthand/speculative entries are valid.
-- **Binding rule:** anything in the file was *intentionally added* → treat it as **important investing
+- **Binding rule:** anything in the file was _intentionally added_ → treat it as **important investing
   context**, even if rough. "Important context" = pay attention, frame analysis, prioritize research,
   remember themes/sources/preferences. It does **not** mean blindly obey.
-- **Classify by type before using it** (the file is unlabeled — you infer): rumor → *consider, then
-  verify before relying on it*; bare sector/ticker → *keep on the radar*; `@handle`/newsletter →
-  *source lead, not verified truth*; "0DTE / balls-to-the-wall" → *high-risk style note — surface the
-  risk plainly, don't normalize it as default*; "QDTE / dividend" → *income preference — weigh yield
-  sustainability, taxes, downside*; "user wants X" → *preference/profile, reconfirm specifics*.
+- **Classify by type before using it** (the file is unlabeled — you infer): rumor → _consider, then
+  verify before relying on it_; bare sector/ticker → _keep on the radar_; `@handle`/newsletter →
+  _source lead, not verified truth_; "0DTE / balls-to-the-wall" → _high-risk style note — surface the
+  risk plainly, don't normalize it as default_; "QDTE / dividend" → _income preference — weigh yield
+  sustainability, taxes, downside_; "user wants X" → _preference/profile, reconfirm specifics_.
 - **Minor recency bias only.** Newer entries are slightly more relevant; older ones still matter unless
   contradicted, marked obsolete, clearly stale, or removed. A timeline, not an expiring feed.
-- **Influences vs. cannot do.** *Influences:* which sectors/tickers/sources/risks/catalysts the agent
-  attends to, how it frames a thesis, what it researches. *Cannot:* authorize/place/cancel a trade,
+- **Influences vs. cannot do.** _Influences:_ which sectors/tickers/sources/risks/catalysts the agent
+  attends to, how it frames a thesis, what it researches. _Cannot:_ authorize/place/cancel a trade,
   prove a rumor or thesis, or override user confirmation, live market data, or brokerage order history.
 - **Neutral, not preachy.** Reflect the operator's own posture; surface risk where an entry implies it,
   but don't impose caution or sizing the operator didn't ask for (same stance as "Signal sourcing").
@@ -1263,20 +1352,21 @@ binding for this skill; the ledger file itself stays deliberately messy and unla
   """
   === END BALL KNOWLEDGE ENTRY
   ```
+
 - **When Ball Knowledge shapes an answer, say so plainly** ("your Ball Knowledge already flags
   semiconductors, so I'd start the universe at NVDA/TSMC/…"; "that reads as a source lead, not a
   verified thesis yet"). **Public file — keep committed entries generic;** sensitive/personal source
   lists belong in the git-crypt-encrypted `local/` overlay, not the committed seed.
 
-> **Two memory layers:** *Ball Knowledge* (`ball-knowledge.md`) = market context/beliefs;
-> *Trading log* (`trading-log.md`, below) = execution + intent history. Read both on finance tasks.
+> **Two memory layers:** _Ball Knowledge_ (`ball-knowledge.md`) = market context/beliefs;
+> _Trading log_ (`trading-log.md`, below) = execution + intent history. Read both on finance tasks.
 
 ### Trading log — execution + intent history (`trading-log.md`)
 
-The repo root holds **`trading-log.md`**, an append-only, dated log of what the agent *executes*, with
+The repo root holds **`trading-log.md`**, an append-only, dated log of what the agent _executes_, with
 the **intent** and the **strategy thread** behind each trade. Order history has price/qty/time; this
-log adds the *why* and links legs into a thread, so the agent can reconstruct **what it's rolling
-*from*** (e.g. a Wheel: CSP → assignment → CC → roll) instead of re-deriving it from raw history.
+log adds the _why_ and links legs into a thread, so the agent can reconstruct **what it's rolling
+_from_** (e.g. a Wheel: CSP → assignment → CC → roll) instead of re-deriving it from raw history.
 
 - **Log every execution** the agent performs via CLI/MCP — orders, cancels, settings changes, recurring
   pause/resume. **Append at the bottom** (newest last); never rewrite or delete prior entries.
@@ -1284,7 +1374,7 @@ log adds the *why* and links legs into a thread, so the agent can reconstruct **
   brokerage order history confirms** it (filled/pending/cancelled record, or a position/cash/BP
   change). UI/screenshots/"clicked it" are not proof — if there's no record, it's `dry-run`/`rejected`/
   non-executed, and say so.
-- **Always capture INTENT + THREAD.** On a wheel/roll, record what you're rolling *from* (prior leg,
+- **Always capture INTENT + THREAD.** On a wheel/roll, record what you're rolling _from_ (prior leg,
   assignment date, old strike/DTE). This is the field that makes the log worth more than order history.
 - **Entry format** (mirror `trading-log.md`'s header):
 
@@ -1296,6 +1386,7 @@ log adds the *why* and links legs into a thread, so the agent can reconstruct **
   THREAD: <strategy thread, e.g. "Wheel on F: leg 2 CC after CSP assigned YYYY-MM-DD; rolling from $K">
   === END
   ```
+
 - **Public + committed — keep entries generic** (account masked to last-4). Real, sensitive personal
   logs stay generic here or in the git-crypt-encrypted `local/` overlay. Same
   neutral stance as Ball Knowledge: record faithfully, don't impose caution.
@@ -1321,8 +1412,8 @@ documented. To extend it safely:
    CLI/MCP/docs.
 
 > Greeks as a math function: the full delta/gamma/theta/vega/rho model, net-Greek
-> aggregation across legs, and the Black-Scholes sanity baseline are in *Options
-> Greeks and Strategy Math* above. An agent can specialize there when asked for
+> aggregation across legs, and the Black-Scholes sanity baseline are in _Options
+> Greeks and Strategy Math_ above. An agent can specialize there when asked for
 > deep options analysis — but it is a tool in the kit, not the default mode.
 
 ---
@@ -1331,7 +1422,7 @@ documented. To extend it safely:
 
 The full first-class tool roster (live truth: `tools/list`, never a hardcoded count) surfaced via Hermes MCP (route/strategy planning + generic executors, PLUS first-class parity tools mirroring the CLI verbs: `robinhood_accounts`, `robinhood_positions`, `robinhood_portfolio` (one-call P&L: day Δ + after-hours Δ, drivers by underlying in dollars), `robinhood_buy`/`robinhood_sell` (the SAME shared order engine as the CLI — dedup, `ref_id`, OTC guard), `robinhood_cancel`, `robinhood_order_status` (UUID→ticker resolved), `robinhood_buying_power`, `robinhood_wheel` (evidence-based Wheel stage + next-leg command), `robinhood_options_holdings`, `robinhood_options_inspect`, `robinhood_settings`, `robinhood_recurring`, `robinhood_quote`, `robinhood_history`, `robinhood_watchlist` + the env-gated `robinhood_watchlist_add`/`robinhood_watchlist_remove`/`robinhood_watchlist_create` writes, `robinhood_options_enumerate`). Same engine -> same auth, gate, and method-aware routing as the CLI.
 
-> **Count note:** the *source/dist* registers the full roster (live truth: `tools/list`, never a hardcoded count). A *running* MCP process started before the
+> **Count note:** the _source/dist_ registers the full roster (live truth: `tools/list`, never a hardcoded count). A _running_ MCP process started before the
 > last tool additions will still advertise its old count until reloaded — run `/reload-mcp` (or restart
 > the server) after pulling, then confirm the client's `tools/list` count matches the current build.
 
@@ -1351,85 +1442,86 @@ claude mcp add robinhood-cli -s user \
 
 ### MCP Tools
 
-| Tool | Purpose |
-|------|---------|
-| `robinhood_api_map_summary` | Summarize the route map |
-| `robinhood_api_map_directory` | By-domain endpoint directory: intent → route + first-class command + response fields (verified/inferred/undocumented) |
-| `robinhood_brokerage_describe` | Self-describing route card for one URL: tokens, query keys, response fields, risk, command; did-you-mean on a miss, candidates on ambiguity |
-| `robinhood_recipes` | Intent → the one command to run (+ MCP-tool equivalent); free-text filterable. The agent's intent-routing table |
-| `robinhood_options_order_flow` | Pre-trade options context: options buying power (per account), fee schedule, collateral. Each read degrades independently |
-| `robinhood_brokerage_routes` | List brokerage routes with filters |
-| `robinhood_routes` | Unified route map (crypto + brokerage) |
-| `robinhood_browser_routes` | Latest CDP-captured route templates |
-| `robinhood_account_context_workflows` | Browser-observed account-number routing workflows |
-| `robinhood_account_context_url` | Build a workflow URL from safe placeholders |
-| `robinhood_options_strategy_workflows` | Strategy catalog with payoff and Greek posture |
-| `robinhood_options_strategy_plan` | Dry-run strategy lookup steps + order body template |
-| `robinhood_options_contract_plan` | Exact contract web navigation candidates + API resolution plan |
-| `robinhood_options_contract_link_bundle` | Account-pinned option chain/link bundle for webhook handoff research |
-| `robinhood_stock_profile` | Stock detail page quote/fundamental/borrow/margin read join |
-| `robinhood_brokerage_plan` | Create a dry-run plan (no execution) |
-| `robinhood_brokerage_execute` | Execute a brokerage request |
-| `robinhood_crypto_routes` | List official Crypto API routes |
-| `robinhood_crypto_sign` | Generate Crypto API auth headers |
-| `robinhood_crypto_plan` | Dry-run plan for Crypto API |
-| `robinhood_crypto_execute` | Execute a Crypto API request |
-| `robinhood_accounts` | List every account (full graph via `transfer/accounts/`) with type/capabilities |
-| `robinhood_positions` | Equity positions for an account (UUIDs resolved to tickers + quotes) |
-| `robinhood_portfolio` | One-call portfolio P&L: per-account day Δ + after-hours Δ, drivers by underlying in **dollars**, all accounts |
-| `robinhood_performance` | Portfolio historical performance (the equity curve over time): value + return across day/week/month/3month/ytd/year/all spans, per account |
-| `robinhood_options_holdings` | Every held option contract (UUID + strike + bid/ask/last + qty + link) |
-| `robinhood_options_inspect` | Full detail on one owned contract (metadata, Greeks, fills, buy/sell handoff) |
-| `robinhood_options_chain` | Live options chain around the money for a symbol (width, expiration, type filters) |
-| `robinhood_options_expirations` | List available expiration dates for an options chain |
-| `robinhood_options_strategy_quote` | Price a named options strategy (spread/condor/CSP/etc.) with bid/ask/Greeks and a dry-run order body |
-| `robinhood_options_roll_plan` | Account-type-aware roll: ATOMIC native `strategy_roll` (one 2-leg order, emits `rollOrder`) for margin/IRA by default; KOSHER two-order staging (close today / open T+1) only for cash. `mode`=auto\|atomic\|kosher |
-| `robinhood_options_close` | Build a close-order plan for an owned option contract (sell-to-close long, buy-to-close short) |
-| `robinhood_options_enumerate` | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration |
-| `robinhood_settings` | Read/toggle account settings: DRIP, trade-on-expiration, PDT-protection, lending, sweep (env-gated) |
-| `robinhood_recurring` | List/create/edit/end recurring investment schedules (env-gated writes) |
-| `robinhood_quote` | Live quote(s) for one or more equity/ETF symbols |
-| `robinhood_history` | Unified history (equity + options + crypto orders + transfers), newest first |
-| `robinhood_watchlist` | Read custom watchlists (`owner_type=custom`) |
-| `robinhood_watchlist_add` | Add ticker(s) to a custom watchlist by name/id — batch `discovery/lists/items/` write (env-gated) |
-| `robinhood_watchlist_remove` | Remove ticker(s) from a custom watchlist by name/id (env-gated) |
-| `robinhood_watchlist_create` | Create a new custom watchlist (optional emoji) via `discovery/lists/` (env-gated) |
-| `robinhood_watchlist_items` | Read a custom watchlist's tickers live (symbol, price, equity-buyable flag) — the read half; pair with `robinhood_watchlist_buy` |
-| `robinhood_watchlist_buy` | **Basket buy** — buy $<amount> of EACH equity-buyable ticker in a watchlist (BP-aware; loops the shared order engine per ticker — OTC/dedup/`ref_id`/evidence guards) (env-gated) |
-| `robinhood_buy` | Equity buy (dollar-notional fractional or shares) — shared engine: OTC guard, pending-order dedup (5-min, `force` skips), `ref_id` idempotency, trade log; env-gated |
-| `robinhood_sell` | Equity sell — same shared engine + gates as `robinhood_buy` |
-| `robinhood_cancel` | Cancel a pending order by ID or URL (env-gated) |
-| `robinhood_order_status` | One order's state/fills/price — instrument UUID resolved to the real ticker |
-| `robinhood_buying_power` | Per-account buying power breakdown + margin health |
-| `robinhood_wheel` | Wheel stage from account evidence (shares + short puts/calls) + the literal next-leg dry-run command; flags undercovered short calls; discussion mode when no position |
-| `robinhood_pretrade` | Pre-trade guard: PASS/WARN/BLOCK on BP + collateral + marketability + min-tick + account capability — one shot before any order |
-| `robinhood_dividends` | Dividend income engine: all-time/YTD totals in dollars, per-symbol cadence, upcoming payouts, projected $/day·week·month·quarter·year from current holdings |
-| `robinhood_documents` | Tax + statement document surface: list by type/year, download PDFs; tax-year-aware (1099 issued Feb 2026 → 2025) |
-| `robinhood_margin` | Margin health: amount borrowed, interest rate, next billing date, margin available, buying power with margin |
-| `robinhood_review` | Film-study mode: filled orders paired into round trips with realized dollar P&L, hold time, win rate, best/worst trades |
-| `robinhood_review_note` | Attach a lesson to a trade by ref — `trade-notes.md` entry joined to the round trip |
-| `robinhood_hotlist` | `hotlist.md` ticker watchlist quoted live: last price, day Δ in dollars and %, thesis per line |
-| `robinhood_knowledge` | Knowledge library: index + read per-topic operating modules (wheel, rolling, multi-leg, Greeks, tax, signals, execution safety, playbooks) |
-| `robinhood_roll_ledger` | Pending cash-account kosher roll tracker: list in-flight rolls, mark done, auto-cleanup |
-| `robinhood_income` | Combined income view: dividends + option premium collected, by month, in dollars |
-| `robinhood_risk` | Portfolio risk scan: max loss across open positions, assignment exposure, undercovered short legs, margin-call distance |
-| `robinhood_whatif` | Greeks-based scenario calculator: spot ±X%, IV ±N pts, T−n days → position P&L in dollars |
-| `robinhood_calendar` | Upcoming events for held names: option expirations, ex-div dates, earnings |
-| `robinhood_exposure` | Concentration by underlying/sector + portfolio-wide net Greeks |
-| `robinhood_autopilot` | Roll candidate scanner: scan open short options approaching expiration, suggest roll candidates with estimated net credit |
-| `robinhood_sentinel` | Daily risk + event guardian: composes the risk scan + upcoming calendar (expirations/ex-div/earnings) into one morning-brief view, flagging assignment exposure and time-sensitive events across accounts. Read |
-| `robinhood_orders_open` | All open/pending equity + options orders across all owned accounts (or one), symbol-resolved, with state, age, TIF, limit price, and exact cancel command for each. Read half of `panic` |
-| `robinhood_panic` | PANIC: enumerate every open/pending equity + options order across all owned accounts (or one) and cancel each — every cancel individually env-gated. DRY-RUN by default: returns the full would-cancel list and sends NOTHING |
-| `robinhood_search` | Natural-language search → Robinhood instruments (stocks/ETFs), crypto pairs, or market indexes — resolves company names/partial names to ticker + UUID |
-| `robinhood_news` | Per-ticker news (source + headline + link + date) — the slow 'confirmer' signal layer |
-| `robinhood_ratings` | Analyst ratings for a ticker: buy/hold/sell counts, derived consensus, rationale texts |
-| `robinhood_earnings` | Earnings history/calendar: per-quarter EPS estimate vs actual (surprise), report date/timing, call replay; future quarters read as pending |
-| `robinhood_movers` | S&P 500 top movers (symbol + day move% + price inline), direction up\|down — discovery/momentum surface |
-| `robinhood_options_events` | Options corporate events across accounts (expirations/assignments/exercises) — the per-position options-P&L + assignment-tracking feed, with symbol enrichment |
+| Tool                                     | Purpose                                                                                                                                                                                                                       |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `robinhood_api_map_summary`              | Summarize the route map                                                                                                                                                                                                       |
+| `robinhood_api_map_directory`            | By-domain endpoint directory: intent → route + first-class command + response fields (verified/inferred/undocumented)                                                                                                         |
+| `robinhood_brokerage_describe`           | Self-describing route card for one URL: tokens, query keys, response fields, risk, command; did-you-mean on a miss, candidates on ambiguity                                                                                   |
+| `robinhood_recipes`                      | Intent → the one command to run (+ MCP-tool equivalent); free-text filterable. The agent's intent-routing table                                                                                                               |
+| `robinhood_options_order_flow`           | Pre-trade options context: options buying power (per account), fee schedule, collateral. Each read degrades independently                                                                                                     |
+| `robinhood_brokerage_routes`             | List brokerage routes with filters                                                                                                                                                                                            |
+| `robinhood_routes`                       | Unified route map (crypto + brokerage)                                                                                                                                                                                        |
+| `robinhood_browser_routes`               | Latest CDP-captured route templates                                                                                                                                                                                           |
+| `robinhood_account_context_workflows`    | Browser-observed account-number routing workflows                                                                                                                                                                             |
+| `robinhood_account_context_url`          | Build a workflow URL from safe placeholders                                                                                                                                                                                   |
+| `robinhood_options_strategy_workflows`   | Strategy catalog with payoff and Greek posture                                                                                                                                                                                |
+| `robinhood_options_strategy_plan`        | Dry-run strategy lookup steps + order body template                                                                                                                                                                           |
+| `robinhood_options_contract_plan`        | Exact contract web navigation candidates + API resolution plan                                                                                                                                                                |
+| `robinhood_options_contract_link_bundle` | Account-pinned option chain/link bundle for webhook handoff research                                                                                                                                                          |
+| `robinhood_stock_profile`                | Stock detail page quote/fundamental/borrow/margin read join                                                                                                                                                                   |
+| `robinhood_brokerage_plan`               | Create a dry-run plan (no execution)                                                                                                                                                                                          |
+| `robinhood_brokerage_execute`            | Execute a brokerage request                                                                                                                                                                                                   |
+| `robinhood_crypto_routes`                | List official Crypto API routes                                                                                                                                                                                               |
+| `robinhood_crypto_sign`                  | Generate Crypto API auth headers                                                                                                                                                                                              |
+| `robinhood_crypto_plan`                  | Dry-run plan for Crypto API                                                                                                                                                                                                   |
+| `robinhood_crypto_execute`               | Execute a Crypto API request                                                                                                                                                                                                  |
+| `robinhood_accounts`                     | List every account (full graph via `transfer/accounts/`) with type/capabilities                                                                                                                                               |
+| `robinhood_positions`                    | Equity positions for an account (UUIDs resolved to tickers + quotes)                                                                                                                                                          |
+| `robinhood_portfolio`                    | One-call portfolio P&L: per-account day Δ + after-hours Δ, drivers by underlying in **dollars**, all accounts                                                                                                                 |
+| `robinhood_performance`                  | Portfolio historical performance (the equity curve over time): value + return across day/week/month/3month/ytd/year/all spans, per account                                                                                    |
+| `robinhood_options_holdings`             | Every held option contract (UUID + strike + bid/ask/last + qty + link)                                                                                                                                                        |
+| `robinhood_options_inspect`              | Full detail on one owned contract (metadata, Greeks, fills, buy/sell handoff)                                                                                                                                                 |
+| `robinhood_options_chain`                | Live options chain around the money for a symbol (width, expiration, type filters)                                                                                                                                            |
+| `robinhood_options_expirations`          | List available expiration dates for an options chain                                                                                                                                                                          |
+| `robinhood_options_strategy_quote`       | Price a named options strategy (spread/condor/CSP/etc.) with bid/ask/Greeks and a dry-run order body                                                                                                                          |
+| `robinhood_options_roll_plan`            | Account-type-aware roll: ATOMIC native `strategy_roll` (one 2-leg order, emits `rollOrder`) for margin/IRA by default; KOSHER two-order staging (close today / open T+1) only for cash. `mode`=auto\|atomic\|kosher           |
+| `robinhood_options_close`                | Build a close-order plan for an owned option contract (sell-to-close long, buy-to-close short)                                                                                                                                |
+| `robinhood_options_enumerate`            | Bulk-enumerate every strike's `option_instrument_id` for a chain/expiration                                                                                                                                                   |
+| `robinhood_settings`                     | Read/toggle account settings: DRIP, trade-on-expiration, PDT-protection, lending, sweep (env-gated)                                                                                                                           |
+| `robinhood_recurring`                    | List/create/edit/end recurring investment schedules (env-gated writes)                                                                                                                                                        |
+| `robinhood_quote`                        | Live quote(s) for one or more equity/ETF symbols                                                                                                                                                                              |
+| `robinhood_history`                      | Unified history (equity + options + crypto orders + transfers), newest first                                                                                                                                                  |
+| `robinhood_watchlist`                    | Read custom watchlists (`owner_type=custom`)                                                                                                                                                                                  |
+| `robinhood_watchlist_add`                | Add ticker(s) to a custom watchlist by name/id — batch `discovery/lists/items/` write (env-gated)                                                                                                                             |
+| `robinhood_watchlist_remove`             | Remove ticker(s) from a custom watchlist by name/id (env-gated)                                                                                                                                                               |
+| `robinhood_watchlist_create`             | Create a new custom watchlist (optional emoji) via `discovery/lists/` (env-gated)                                                                                                                                             |
+| `robinhood_watchlist_items`              | Read a custom watchlist's tickers live (symbol, price, equity-buyable flag) — the read half; pair with `robinhood_watchlist_buy`                                                                                              |
+| `robinhood_watchlist_buy`                | **Basket buy** — buy $<amount> of EACH equity-buyable ticker in a watchlist (BP-aware; loops the shared order engine per ticker — OTC/dedup/`ref_id`/evidence guards) (env-gated)                                             |
+| `robinhood_buy`                          | Equity buy (dollar-notional fractional or shares) — shared engine: OTC guard, pending-order dedup (5-min, `force` skips), `ref_id` idempotency, trade log; env-gated                                                          |
+| `robinhood_sell`                         | Equity sell — same shared engine + gates as `robinhood_buy`                                                                                                                                                                   |
+| `robinhood_cancel`                       | Cancel a pending order by ID or URL (env-gated)                                                                                                                                                                               |
+| `robinhood_order_status`                 | One order's state/fills/price — instrument UUID resolved to the real ticker                                                                                                                                                   |
+| `robinhood_buying_power`                 | Per-account buying power breakdown + margin health                                                                                                                                                                            |
+| `robinhood_wheel`                        | Wheel stage from account evidence (shares + short puts/calls) + the literal next-leg dry-run command; flags undercovered short calls; discussion mode when no position                                                        |
+| `robinhood_pretrade`                     | Pre-trade guard: PASS/WARN/BLOCK on BP + collateral + marketability + min-tick + account capability — one shot before any order                                                                                               |
+| `robinhood_dividends`                    | Dividend income engine: all-time/YTD totals in dollars, per-symbol cadence, upcoming payouts, projected $/day·week·month·quarter·year from current holdings                                                                   |
+| `robinhood_documents`                    | Tax + statement document surface: list by type/year, download PDFs; tax-year-aware (1099 issued Feb 2026 → 2025)                                                                                                              |
+| `robinhood_margin`                       | Margin health: amount borrowed, interest rate, next billing date, margin available, buying power with margin                                                                                                                  |
+| `robinhood_review`                       | Film-study mode: filled orders paired into round trips with realized dollar P&L, hold time, win rate, best/worst trades                                                                                                       |
+| `robinhood_review_note`                  | Attach a lesson to a trade by ref — `trade-notes.md` entry joined to the round trip                                                                                                                                           |
+| `robinhood_hotlist`                      | `hotlist.md` ticker watchlist quoted live: last price, day Δ in dollars and %, thesis per line                                                                                                                                |
+| `robinhood_knowledge`                    | Knowledge library: index + read per-topic operating modules (wheel, rolling, multi-leg, Greeks, tax, signals, execution safety, playbooks)                                                                                    |
+| `robinhood_roll_ledger`                  | Pending cash-account kosher roll tracker: list in-flight rolls, mark done, auto-cleanup                                                                                                                                       |
+| `robinhood_income`                       | Combined income view: dividends + option premium collected, by month, in dollars                                                                                                                                              |
+| `robinhood_risk`                         | Portfolio risk scan: max loss across open positions, assignment exposure, undercovered short legs, margin-call distance                                                                                                       |
+| `robinhood_whatif`                       | Greeks-based scenario calculator: spot ±X%, IV ±N pts, T−n days → position P&L in dollars                                                                                                                                     |
+| `robinhood_calendar`                     | Upcoming events for held names: option expirations, ex-div dates, earnings                                                                                                                                                    |
+| `robinhood_exposure`                     | Concentration by underlying/sector + portfolio-wide net Greeks                                                                                                                                                                |
+| `robinhood_autopilot`                    | Roll candidate scanner: scan open short options approaching expiration, suggest roll candidates with estimated net credit                                                                                                     |
+| `robinhood_sentinel`                     | Daily risk + event guardian: composes the risk scan + upcoming calendar (expirations/ex-div/earnings) into one morning-brief view, flagging assignment exposure and time-sensitive events across accounts. Read               |
+| `robinhood_orders_open`                  | All open/pending equity + options orders across all owned accounts (or one), symbol-resolved, with state, age, TIF, limit price, and exact cancel command for each. Read half of `panic`                                      |
+| `robinhood_panic`                        | PANIC: enumerate every open/pending equity + options order across all owned accounts (or one) and cancel each — every cancel individually env-gated. DRY-RUN by default: returns the full would-cancel list and sends NOTHING |
+| `robinhood_search`                       | Natural-language search → Robinhood instruments (stocks/ETFs), crypto pairs, or market indexes — resolves company names/partial names to ticker + UUID                                                                        |
+| `robinhood_news`                         | Per-ticker news (source + headline + link + date) — the slow 'confirmer' signal layer                                                                                                                                         |
+| `robinhood_ratings`                      | Analyst ratings for a ticker: buy/hold/sell counts, derived consensus, rationale texts                                                                                                                                        |
+| `robinhood_earnings`                     | Earnings history/calendar: per-quarter EPS estimate vs actual (surprise), report date/timing, call replay; future quarters read as pending                                                                                    |
+| `robinhood_movers`                       | S&P 500 top movers (symbol + day move% + price inline), direction up\|down — discovery/momentum surface                                                                                                                       |
+| `robinhood_options_events`               | Options corporate events across accounts (expirations/assignments/exercises) — the per-position options-P&L + assignment-tracking feed, with symbol enrichment                                                                |
 
 ### MCP Safety Gates
 
 Same single switch as the CLI:
+
 - **Reads run live** — no gate needed.
 - **Writes are dry-run by default.** To go live: set `ROBINHOOD_ALLOW_LIVE_WRITE=1` in the server's environment — the one switch; **no per-call `liveWrite` required** (it's accepted but optional, no longer the gate).
 - `dryRun: true` always forces a plan, even when the switch is on — a deliberate "preview this exact live call" escape hatch.
@@ -1597,6 +1689,7 @@ node cli/dist/index.js portfolio --after-hours  # rank by the after-hours move
 node cli/dist/index.js portfolio --day          # rank by the full-day move
 node cli/dist/index.js portfolio --by position --top 10 --json
 ```
+
 It composes accounts → `portfolios/{account_number}/` (current equity and after-hours Δ =
 `extended_hours_equity − equity`) → positions + quotes + option marks. Regular-session P&L is the fully
 priced position sum; the broker's `equity − adjusted_equity_previous_close` value is reported separately as

@@ -1,6 +1,6 @@
 # Robinhood Legend Data Model — Authenticated Pass 2026-08-04
 
-Captured via CUA/SOM on mothership Chrome, authenticated session.
+Captured via authenticated browser accessibility instrumentation during an authorized local session.
 
 ## Layout (3-panel)
 

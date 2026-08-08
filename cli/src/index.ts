@@ -129,6 +129,7 @@ import {
   getStockRewardsSummary,
   getInboxSummary,
   getIpoAccess,
+  getIpoAccessRequestPlan,
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -830,13 +831,14 @@ brokerage
   .option("--shares <qty>", "share quantity (whole shares for OTC names)")
   .option("--limit <price>", "explicit limit price; else market with ask collar (OTC forces a limit at the ask)")
   .option("--tif <gfd|gtc>", "time in force (default: gfd for market/OTC, gtc for an explicit limit)")
+  .option("--market-hours <regular|extended|overnight>", "execution session; overnight maps to Robinhood all_day_hours and is dry-run-only until account order-check capture")
   .option("--dry-run", "print plan/body, send nothing")
   .option("--live", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--force", "skip the pending-duplicate-order check")
   .option("--override-cap", "bypass the ROBINHOOD_MAX_ORDER_DOLLARS / ROBINHOOD_MAX_SESSION_DOLLARS notional caps for this order")
   .option("--live-write", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--json", "emit JSON")
-  .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; dryRun?: boolean; live?: boolean; force?: boolean; overrideCap?: boolean; liveWrite?: boolean; json?: boolean }) => {
+  .action(async (symbol: string, opts: { account: string; dollars?: string; shares?: string; limit?: string; tif?: string; marketHours?: string; dryRun?: boolean; live?: boolean; force?: boolean; overrideCap?: boolean; liveWrite?: boolean; json?: boolean }) => {
     if (!opts.dollars && !opts.shares) throw new Error("Pass --dollars <amt> or --shares <qty>.");
     if (opts.dollars && opts.shares) throw new Error("Pass only one of --dollars or --shares.");
     if (opts.dollars && !(Number(opts.dollars) > 0)) throw new Error(`--dollars must be a positive number (got "${opts.dollars}").`);
@@ -854,6 +856,7 @@ brokerage
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.limit ? Number(opts.limit) : undefined,
       timeInForce: parseTif(opts.tif),
+      marketHours: parseMarketHours(opts.marketHours),
       dryRun: Boolean(opts.dryRun),
       liveWrite: Boolean(opts.live ?? opts.liveWrite),
       force: Boolean(opts.force),
@@ -3495,6 +3498,23 @@ function parseTif(v: string | undefined): "gfd" | "gtc" | undefined {
   return t;
 }
 
+function parseMarketHours(v: string | undefined): "regular_hours" | "extended_hours" | "all_day_hours" | undefined {
+  if (v == null) return undefined;
+  const value = String(v).toLowerCase();
+  const aliases: Record<string, "regular_hours" | "extended_hours" | "all_day_hours"> = {
+    regular: "regular_hours",
+    regular_hours: "regular_hours",
+    extended: "extended_hours",
+    extended_hours: "extended_hours",
+    overnight: "all_day_hours",
+    "24-hour": "all_day_hours",
+    all_day_hours: "all_day_hours",
+  };
+  const resolved = aliases[value];
+  if (!resolved) throw new Error(`--market-hours must be regular, extended, or overnight (got "${v}")`);
+  return resolved;
+}
+
 // ── buy: simple market/limit order — one command, no raw JSON needed ──
 program
   .command("buy")
@@ -3506,6 +3526,7 @@ program
   .option("-q, --shares <number>", "Share quantity — alternative to --amount")
   .option("-p, --price <number>", "Limit price (omit for market order)")
   .option("--tif <gfd|gtc>", "time in force (default: gfd for market/OTC, gtc for an explicit limit)")
+  .option("--market-hours <regular|extended|overnight>", "execution session; overnight maps to Robinhood all_day_hours and is dry-run-only until account order-check capture")
   .option("--dry-run", "Force a non-sending preview even when live writes are enabled")
   .option("--live", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--force", "Skip duplicate order check")
@@ -3522,6 +3543,7 @@ program
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.price ? Number(opts.price) : undefined,
       timeInForce: parseTif(opts.tif),
+      marketHours: parseMarketHours(opts.marketHours),
       dryRun: Boolean(opts.dryRun),
       liveWrite: Boolean(opts.live),
       force: Boolean(opts.force),
@@ -3529,7 +3551,7 @@ program
     });
 
     if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, session: r.session, sessionWarning: r.sessionWarning, live: r.live, refId: r.refId, result: r.result });
+      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, marketHours: r.marketHours, eligibility: r.eligibility, session: r.session, sessionWarning: r.sessionWarning, live: r.live, refId: r.refId, result: r.result });
       return;
     }
 
@@ -3551,6 +3573,7 @@ program
   .option("-q, --shares <number>", "Share quantity — alternative to --amount")
   .option("-p, --price <number>", "Limit price (omit for market order)")
   .option("--tif <gfd|gtc>", "time in force (default: gfd for market/OTC, gtc for an explicit limit)")
+  .option("--market-hours <regular|extended|overnight>", "execution session; overnight maps to Robinhood all_day_hours and is dry-run-only until account order-check capture")
   .option("--dry-run", "Force a non-sending preview even when live writes are enabled")
   .option("--live", "optional back-compat no-op; the live-write gate is ROBINHOOD_ALLOW_LIVE_WRITE=1")
   .option("--force", "Skip duplicate order check")
@@ -3566,6 +3589,7 @@ program
       shares: opts.shares ? Number(opts.shares) : undefined,
       limitPrice: opts.price ? Number(opts.price) : undefined,
       timeInForce: parseTif(opts.tif),
+      marketHours: parseMarketHours(opts.marketHours),
       dryRun: Boolean(opts.dryRun),
       liveWrite: Boolean(opts.live),
       force: Boolean(opts.force),
@@ -3573,7 +3597,7 @@ program
     });
 
     if (opts.json) {
-      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, session: r.session, sessionWarning: r.sessionWarning, live: r.live, refId: r.refId, result: r.result });
+      printJson({ generatedAt: new Date().toISOString(), symbol: opts.symbol, account: opts.account, shares: r.shares, estimatedPrice: r.estimatedPrice, estimatedTotal: r.estimatedTotal, type: r.type, dollarBased: r.dollarBased, marketHours: r.marketHours, eligibility: r.eligibility, session: r.session, sessionWarning: r.sessionWarning, live: r.live, refId: r.refId, result: r.result });
       return;
     }
 
@@ -4557,6 +4581,26 @@ ipoAccess
     if (!offering) { process.stdout.write(`No IPO Access offering found for ${symbol.toUpperCase()}.\n`); return; }
     printTable([{ symbol: offering.symbol, status: offering.status ?? "—", price: offering.priceUsd === null ? "—" : `$${offering.priceUsd.toFixed(2)}`, deadline: offering.deadline ?? "—", start: offering.startDate ?? "—", list_date: offering.listDate ?? "—", customers: offering.customerCount ?? "—" }], ["symbol", "status", "price", "deadline", "start", "list_date", "customers"]);
     if (r.warnings.length) process.stdout.write(`${r.warnings.map((warning) => `⚠️  ${warning}`).join("\n")}\n`);
+  });
+ipoAccess
+  .command("plan-request <symbol>")
+  .description("Collapse IPO onboarding, disclosures, eligibility, buying power, deadline, and review into one read-only plan. Never submits interest.")
+  .requiredOption("--account <account_number>", "brokerage account number")
+  .option("--json", "emit JSON")
+  .action(async (symbol: string, opts: { account: string; json?: boolean }) => {
+    const plan = await getIpoAccessRequestPlan({ symbol, accountNumber: opts.account });
+    if (opts.json) { printJson(plan); return; }
+    printTable([{
+      symbol: plan.symbol,
+      status: plan.status ?? "—",
+      can_request: plan.canRequest ? "yes" : "no",
+      enrolled: plan.enrollment.enrolled ? "yes" : "no",
+      deadline: plan.deadline.at ?? "—",
+      buying_power: plan.buyingPower.amount ?? "—",
+      existing_order: plan.existingOrder.present ? "yes" : "no",
+    }], ["symbol", "status", "can_request", "enrolled", "deadline", "buying_power", "existing_order"]);
+    if (plan.blockers.length) process.stdout.write(`Blockers: ${plan.blockers.join(", ")}\n`);
+    process.stdout.write(`Submission: ${plan.submission.status} — ${plan.submission.missingInput}\n`);
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

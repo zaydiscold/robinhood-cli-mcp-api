@@ -780,4 +780,32 @@ anything a generator produced, and we may spin up separate repos to keep buildin
 rather than conforming back to the generator. The map is the product; Printing Press just gave us a good
 place to start.
 
+## 17. Recent release regressions and focused gate
+
+These checks are intentionally specific to failures observed in this repository; they complement rather than duplicate the full quality matrix.
+
+### Source/dist parity
+
+The MCP previously served stale `dist` after source changes. Build both packages before runtime or registration checks and exercise the built packages. Never validate source while serving stale dist.
+
+### Public portability
+
+A tracked research document exposed a private machine name. `pnpm test:portability` must continue scanning the complete tracked public tree for private usernames, hostnames, paths, account identifiers, tokens, cookies, and capture secrets. Fix findings; do not narrow or whitelist the scan to make it green.
+
+### Dependency audit
+
+CI found vulnerable transitive versions of `nanoid`, `hono`, `@hono/node-server`, `postcss`, and `body-parser`. Patched workspace overrides and the lockfile are intentional. The focused gate audits at `low`, so any low/moderate/high/critical advisory blocks release. Do not raise the threshold to hide findings.
+
+### Live semantics
+
+Auth presence is not product proof. Live acceptance requires verified accounts, a real quote, portfolio values, MCP registration, and a write plan with `live=false`. Never perform a live trade to test a release gate.
+
+Run after dependency, lockfile, build-output, public-doc/capture, MCP-registration, or packaging changes:
+
+```bash
+pnpm regression:recent
+```
+
+It composes the existing build and portability checks with a zero-advisory audit. Before release, also run the full quality/test matrix and external live ship gate.
+
 <!-- Zayd Khan // cold // www.zayd.wtf -->

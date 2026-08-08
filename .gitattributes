@@ -1,3 +1,14 @@
+# Keep Prettier-controlled text deterministic across Windows/macOS/Linux.
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
 # Personal cross-machine workspace. Contents are encrypted before entering Git.
 # Filenames and file sizes remain visible in the public repository.
 local/** filter=git-crypt diff=git-crypt -text

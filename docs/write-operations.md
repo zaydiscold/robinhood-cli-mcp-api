@@ -48,4 +48,14 @@ robinhood-cli crypto execute "https://trading.robinhood.com/api/v2/crypto/market
 
 Use exact-action consent for mutations: trade, transfer, cancel, unlink, or destructive calls should only be run live when the user asked for that specific live operation.
 
+## Product-specific boundaries
+
+The generic write gate does not manufacture a missing product contract:
+
+- **Ordinary regular-session equity orders** have an implemented gated submit/history/cancel lifecycle.
+- **Exact-lot sells** are live-read + dry-run-plan only. `tax-lots sell` fails closed before submission even when `ROBINHOOD_ALLOW_LIVE_WRITE=1` is armed. Do not strip the lot fields and call a generic sell “exact-lot proof.”
+- **IPO Access** is read-only request planning. Submit/update/cancel method, URL, serializer, and disclosure acceptance contract remain `not_evaluated`; never improvise a generic order POST.
+- **24-hour / overnight equity** has an evidence-backed whole-share limit dry-run contract, but live non-regular submission fails closed until account/session order-check and final review evidence are captured.
+- A route being mapped, a request body being generated, or a preflight returning data is not evidence that a financial write was accepted. Reconcile real orders through order history and terminal state.
+
 <!-- Zayd Khan // cold // www.zayd.wtf -->

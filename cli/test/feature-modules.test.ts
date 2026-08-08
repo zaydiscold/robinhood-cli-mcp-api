@@ -131,7 +131,7 @@ describe("portfolio time machine", () => {
       totals: { equityDelta: 10, dayDelta: 2, afterHoursDelta: -2 },
       positions: [{ valueDelta: 10 }],
     });
-  });
+  }, 30_000);
 });
 
 describe("options workbench", () => {

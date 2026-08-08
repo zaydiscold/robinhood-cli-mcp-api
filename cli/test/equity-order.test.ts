@@ -213,6 +213,55 @@ describe("placeEquityOrder — validation & guards", () => {
     await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 }, missing.deps))
       .rejects.toThrow(/Invalid or missing quote/);
   });
+  it("builds a true 24-hour whole-share limit body and rejects ineligible variants", async () => {
+    const eligible = {
+      id: "iid-nbil",
+      symbol: "NBIL",
+      fractional_tradability: "tradable",
+      all_day_tradability: "tradable",
+      twenty_four_seven_tradability: "untradable",
+    };
+    const ok = makeDeps({
+      instrument: eligible,
+      quote: {
+        last_trade_price: "20.50",
+        bid_price: "20.50",
+        ask_price: "20.64",
+        updated_at: "2026-08-08T06:00:00Z",
+        instrument_id: "iid-nbil",
+      },
+      session: "closed",
+    });
+    const result = await placeEquityOrder(
+      { symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 20.55, marketHours: "all_day_hours" },
+      ok.deps,
+    );
+    expect(ok.calls.writes[0].body).toMatchObject({
+      symbol: "NBIL",
+      side: "sell",
+      quantity: "1",
+      type: "limit",
+      price: "20.55",
+      market_hours: "all_day_hours",
+      time_in_force: "gtc",
+      order_form_version: "7",
+      bid_price: "20.50",
+      ask_price: "20.64",
+      bid_ask_timestamp: "2026-08-08T06:00:00Z",
+    });
+    expect(result).toMatchObject({ marketHours: "all_day_hours", eligibility: { evaluated: true, eligible: true } });
+
+    const wide = makeDeps({ instrument: eligible, quote: { last_trade_price: "19.67", bid_price: "18.90", ask_price: "21.00", instrument_id: "iid-nbil" } });
+    await expect(placeEquityOrder({ symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 20.55, marketHours: "all_day_hours" }, wide.deps)).rejects.toThrow(/spread is 10\.53%.*above the 5\.00% safety cap/i);
+    expect(wide.calls.writes).toHaveLength(0);
+
+    const fractional = makeDeps({ instrument: eligible });
+    await expect(placeEquityOrder({ symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1.5, limitPrice: 20.55, marketHours: "all_day_hours" }, fractional.deps)).rejects.toThrow(/whole shares/i);
+    const noLimit = makeDeps({ instrument: eligible });
+    await expect(placeEquityOrder({ symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1, marketHours: "all_day_hours" }, noLimit.deps)).rejects.toThrow(/limit/i);
+    const blocked = makeDeps({ instrument: { ...eligible, all_day_tradability: "untradable" } });
+    await expect(placeEquityOrder({ symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 20.55, marketHours: "all_day_hours" }, blocked.deps)).rejects.toThrow(/all_day_tradability=untradable/);
+  });
 });
 
 describe("placeEquityOrder — owned-account guard (WSF-02: the #1 money-loss defense)", () => {

@@ -10901,6 +10901,150 @@
         ]
       }
     },
+    "/equity_trading/ipo_access/viewmodels/indication_of_interest/{instrument_id}/": {
+      "get": {
+        "operationId": "brokerage_get_equity_trading_ipo_access_viewmodels_indication_of_interest_instrument_id",
+        "summary": "Equity brokerage route",
+        "description": "Personal route map entry. Risk: read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "equity",
+          "ipo-access"
+        ],
+        "parameters": [
+          {
+            "name": "instrument_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder instrument_id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/indication_of_interest/{instrument_id}/"
+        ],
+        "x-robinhood-sources": [
+          "web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08"
+        ],
+        "x-robinhood-seen-on": [
+          "ipo-access-order-entry"
+        ]
+      }
+    },
+    "/equity_trading/ipo_access/viewmodels/notification_disclosure/{instrument_id}/": {
+      "get": {
+        "operationId": "brokerage_get_equity_trading_ipo_access_viewmodels_notification_disclosure_instrument_id",
+        "summary": "Equity brokerage route",
+        "description": "Personal route map entry. Risk: read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "equity",
+          "ipo-access"
+        ],
+        "parameters": [
+          {
+            "name": "instrument_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder instrument_id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/notification_disclosure/{instrument_id}/"
+        ],
+        "x-robinhood-sources": [
+          "web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08"
+        ],
+        "x-robinhood-seen-on": [
+          "ipo-access-order-entry"
+        ]
+      }
+    },
+    "/equity_trading/ipo_access/viewmodels/order_entry_splash/{instrument_id}/": {
+      "get": {
+        "operationId": "brokerage_get_equity_trading_ipo_access_viewmodels_order_entry_splash_instrument_id",
+        "summary": "Equity brokerage route",
+        "description": "Personal route map entry. Risk: read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "equity",
+          "ipo-access"
+        ],
+        "parameters": [
+          {
+            "name": "instrument_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder instrument_id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          },
+          {
+            "name": "endpoint_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/order_entry_splash/{instrument_id}/"
+        ],
+        "x-robinhood-sources": [
+          "web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08"
+        ],
+        "x-robinhood-seen-on": [
+          "ipo-access-order-entry"
+        ]
+      }
+    },
     "/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/": {
       "get": {
         "operationId": "brokerage_get_equity_trading_ipo_access_viewmodels_summary_ipo_id",
@@ -10945,6 +11089,61 @@
         ],
         "x-robinhood-seen-on": [
           "ipo-access"
+        ]
+      }
+    },
+    "/equity_trading/ipo_access/viewmodels/web_order_entry/{instrument_id}/": {
+      "get": {
+        "operationId": "brokerage_get_equity_trading_ipo_access_viewmodels_web_order_entry_instrument_id",
+        "summary": "Equity brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "equity",
+          "ipo-access",
+          "orders"
+        ],
+        "parameters": [
+          {
+            "name": "instrument_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Route placeholder instrument_id. Mapped route name; live verification should replace with a semantic parameter name when known."
+          },
+          {
+            "name": "account_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/web_order_entry/{instrument_id}/"
+        ],
+        "x-robinhood-sources": [
+          "web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08"
+        ],
+        "x-robinhood-seen-on": [
+          "ipo-access-order-entry"
         ]
       }
     },

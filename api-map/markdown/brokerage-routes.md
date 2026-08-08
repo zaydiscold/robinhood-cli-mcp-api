@@ -4,8 +4,8 @@ Source: reverse-engineered routes plus sanitized authenticated Chrome/CDP captur
 
 Personal repo semantics: mapped routes can be executed live with caller-owned `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE`. Pass `--dry-run` when you want a non-sending test plan.
 
-Current count: 372 route templates.
-Risk counts: destructive=9, read=99, sensitive-read=235, write-mutate=11, write-or-sensitive=7, write-safe=11.
+Current count: 376 route templates.
+Risk counts: destructive=9, read=102, sensitive-read=236, write-mutate=11, write-or-sensitive=7, write-safe=11.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -264,6 +264,10 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/education/tour/` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/equities/history/{id}` |
 | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/equities/history/aggregated_borrow_charge` |
+| read | GET | equity, ipo-access | bonfire.robinhood.com | web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08 | `https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/indication_of_interest/{instrument_id}/` |
+| read | GET | equity, ipo-access | bonfire.robinhood.com | web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08 | `https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/notification_disclosure/{instrument_id}/` |
+| read | GET | equity, ipo-access | bonfire.robinhood.com | web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08 | `https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/order_entry_splash/{instrument_id}/` |
+| sensitive-read | GET | equity, ipo-access, orders | bonfire.robinhood.com | web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08 | `https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/web_order_entry/{instrument_id}/` |
 | read | GET | equity, ipo-access | bonfire.robinhood.com | cdp (observed; RH IPO Access summary viewmodel — Idea A seed; full prospectus/IOI family TBD via interactive capture) | `https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/` |
 | sensitive-read | GET | orders | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/equity_trading/order_type_selector/buy/` |
 | read | GET | equity, trading | bonfire.robinhood.com | cdp (observed; web order-ticket SELL-side selector viewmodel) | `https://bonfire.robinhood.com/equity_trading/order_type_selector/sell/` |

@@ -764,6 +764,18 @@
 # sensitive-read GET https://bonfire.robinhood.com/equities/history/aggregated_borrow_charge
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/equities/history/aggregated_borrow_charge'
 
+# read GET https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/indication_of_interest/{instrument_id}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/indication_of_interest/{instrument_id}/'
+
+# read GET https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/notification_disclosure/{instrument_id}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/notification_disclosure/{instrument_id}/'
+
+# read GET https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/order_entry_splash/{instrument_id}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/order_entry_splash/{instrument_id}/'
+
+# sensitive-read GET https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/web_order_entry/{instrument_id}/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/web_order_entry/{instrument_id}/'
+
 # read GET https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/'
 

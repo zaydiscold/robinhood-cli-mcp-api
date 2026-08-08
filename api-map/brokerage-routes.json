@@ -22140,6 +22140,58 @@
     "fieldsSource": "undocumented"
   },
   {
+    "url": "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/indication_of_interest/{instrument_id}/",
+    "host": "bonfire.robinhood.com",
+    "categories": ["equity", "ipo-access"],
+    "risk": "read",
+    "methods": ["GET"],
+    "source": "web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08",
+    "seenOn": ["ipo-access-order-entry"],
+    "queryKeys": [],
+    "requestTypes": ["XHR"],
+    "fields": ["instrument_id", "title", "subtitle_markdown", "rows", "footer_markdown", "accept_title", "dismiss_title"],
+    "fieldsSource": "verified"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/notification_disclosure/{instrument_id}/",
+    "host": "bonfire.robinhood.com",
+    "categories": ["equity", "ipo-access"],
+    "risk": "read",
+    "methods": ["GET"],
+    "source": "web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08",
+    "seenOn": ["ipo-access-order-entry"],
+    "queryKeys": [],
+    "requestTypes": ["XHR"],
+    "fields": ["instrument_id", "title", "rows", "disclosure_markdown", "continue_button"],
+    "fieldsSource": "verified"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/order_entry_splash/{instrument_id}/",
+    "host": "bonfire.robinhood.com",
+    "categories": ["equity", "ipo-access"],
+    "risk": "read",
+    "methods": ["GET"],
+    "source": "web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08",
+    "seenOn": ["ipo-access-order-entry"],
+    "queryKeys": ["endpoint_version"],
+    "requestTypes": ["XHR"],
+    "fields": ["instrument_id", "title", "subtitle_markdown", "sections", "continue_cta_title", "dont_show_again_cta_title"],
+    "fieldsSource": "verified"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/web_order_entry/{instrument_id}/",
+    "host": "bonfire.robinhood.com",
+    "categories": ["equity", "ipo-access", "orders"],
+    "risk": "sensitive-read",
+    "methods": ["GET"],
+    "source": "web-bundle-2026.32.5622 plus authenticated live GET 2026-08-08",
+    "seenOn": ["ipo-access-order-entry"],
+    "queryKeys": ["account_number"],
+    "requestTypes": ["XHR"],
+    "fields": ["account_number", "instrument_id", "form_state", "order_entry_view_model", "trade_receipt_view_model", "action_required_view_model", "context"],
+    "fieldsSource": "verified"
+  },
+  {
     "url": "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/summary/{ipo_id}/",
     "host": "bonfire.robinhood.com",
     "categories": [

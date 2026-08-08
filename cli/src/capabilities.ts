@@ -100,6 +100,7 @@ const LEGACY_MCP_TOOLS = [
   "robinhood_rewards",
   "robinhood_inbox_summary",
   "robinhood_ipo_access",
+  "robinhood_ipo_access_request_plan",
 ] as const;
 
 type LegacyMcpTool = (typeof LEGACY_MCP_TOOLS)[number];
@@ -134,6 +135,7 @@ const PROFILE_TOOL_NAMES: Record<Exclude<CapabilityProfile, "full">, readonly st
     "robinhood_rewards",
     "robinhood_inbox_summary",
     "robinhood_ipo_access",
+    "robinhood_ipo_access_request_plan",
     "robinhood_history",
     "robinhood_margin",
     "robinhood_options_chain",
@@ -189,6 +191,7 @@ const PROFILE_TOOL_NAMES: Record<Exclude<CapabilityProfile, "full">, readonly st
     "robinhood_rewards",
     "robinhood_inbox_summary",
     "robinhood_ipo_access",
+    "robinhood_ipo_access_request_plan",
     "robinhood_history",
     "robinhood_hotlist",
     "robinhood_income",

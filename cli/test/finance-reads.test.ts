@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getInboxSummary,
   getIpoAccess,
+  getIpoAccessRequestPlan,
   getStockRewardsSummary,
   getSweepInterest,
   listGoldFees,
@@ -95,6 +96,76 @@ describe("finance read summaries", () => {
     expect(calls.some((url) => url.includes("discovery/lists/items"))).toBe(false);
     expect(result.offerings[0]).toMatchObject({ symbol: "JMKE", ipoId: "ipo-1", status: "open", priceUsd: 23, customerCount: 12 });
     expect(result.eligibility).toEqual({ eligibleAccounts: 0, restrictedAccounts: 1, restrictionReasons: ["account_ineligible"] });
+  });
+
+  it("collapses IPO onboarding cards into one explicit request plan without pretending the submit write is mapped", async () => {
+    const calls: string[] = [];
+    const result = await getIpoAccessRequestPlan(
+      { symbol: "rvii", accountNumber: "A1" },
+      {
+        getJson: async (url: string, _pathParams?: Record<string, string>, query?: Record<string, string>) => {
+          calls.push(`${url}?${new URLSearchParams(query ?? {}).toString()}`);
+          if (url.includes("transfer/accounts")) return { results: [{ account_number: "A1", type: "rhs" }] };
+          if (url.includes("instruments/?symbol"))
+            return {
+              results: [
+                {
+                  id: "ipo-1",
+                  symbol: "RVII",
+                  ipo_access_status: "price_finalized",
+                  ipo_access_cob_deadline: "2026-08-13T00:00:00Z",
+                },
+              ],
+            };
+          if (url.includes("order_entry_splash"))
+            return {
+              title: "IPO Access",
+              subtitle_markdown: "Learn before requesting",
+              continue_cta_title: "Start request",
+              dont_show_again_cta_title: "Don't show again",
+              sections: [],
+            };
+          if (url.includes("web_order_entry"))
+            return {
+              ipoa_new_orders_blocked_details: "",
+              form_state: { form_state_id: "price_finalized2525" },
+              order_entry_view_model: {
+                title: "Request to buy RVII",
+                buying_power_description: "$50.00 Buying Power Available",
+                rows: { quantity_row: { label: "Number of shares" }, price_row: { value: "$25.00" } },
+                order_summary: { description_markdown: "conditional offer to buy" },
+                disclaimer: { label_markdown: "deadline" },
+              },
+              context: {
+                phase: "price_finalized",
+                user_is_enrolled: true,
+                has_cob_deadline_passed: false,
+                available_buying_power: { amount: "50.00", currency_code: "USD" },
+                existing_order: null,
+              },
+            };
+          if (url.includes("indication_of_interest"))
+            return { title: "Before you request", rows: [{ title_markdown: "Risk" }], footer_markdown: "Terms", accept_title: "I agree", dismiss_title: "Cancel" };
+          if (url.includes("notification_disclosure"))
+            return { title: "Notifications", rows: [], disclosure_markdown: "Notice", continue_button: { title: "Continue" } };
+          throw new Error(`unexpected ${url}`);
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      symbol: "RVII",
+      status: "price_finalized",
+      canRequest: true,
+      enrollment: { evaluated: true, enrolled: true },
+      deadline: { evaluated: true, passed: false, at: "2026-08-13T00:00:00Z" },
+      buyingPower: { evaluated: true, amount: 50, currencyCode: "USD" },
+      education: { startLabel: "Start request", suppressLabel: "Don't show again" },
+      acknowledgement: { required: true, acceptLabel: "I agree", dismissLabel: "Cancel" },
+      submission: { evaluated: false, status: "not_evaluated" },
+    });
+    expect(calls.some((url) => url.includes("account_number=A1"))).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("A1");
   });
 });
 

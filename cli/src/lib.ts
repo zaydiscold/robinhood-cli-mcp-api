@@ -4459,6 +4459,9 @@ export interface EquityOrderInput {
   /** Explicit time-in-force override. Omit to let the engine pick (gfd for market/OTC, gtc for limit).
    *  gtc is rejected on a fractional dollar-market order (Robinhood requires gfd there). */
   timeInForce?: "gfd" | "gtc";
+  /** Explicit execution session. `all_day_hours` is Robinhood's current 24-hour-market enum.
+   * Non-regular sessions are evidence-gated whole-share limit orders; no implicit promotion. */
+  marketHours?: "regular_hours" | "extended_hours" | "all_day_hours";
   /** Optional (back-compat) — the gate is ROBINHOOD_ALLOW_LIVE_WRITE=1, enforced downstream. */
   liveWrite?: boolean;
   /** Force a non-sending preview even when ROBINHOOD_ALLOW_LIVE_WRITE=1 is set. */
@@ -4490,6 +4493,13 @@ export interface EquityOrderResult {
   otcAutoLimit: boolean;
   /** True when the send used the native `dollar_based_amount` fractional body (dollar-notional market order on a fractional-tradable name) rather than a computed quantity. */
   dollarBased: boolean;
+  marketHours: "regular_hours" | "extended_hours" | "all_day_hours";
+  eligibility: {
+    evaluated: boolean;
+    eligible: boolean | null;
+    source: string;
+    reason: string | null;
+  };
   /** Detected US-equity session at send time (`regular`/`pre_market`/`after_hours`/`closed`); undefined if detection was skipped/failed. */
   session?: MarketSession;
   /** Set when the order will QUEUE rather than fill now (e.g. a fractional/market order placed outside regular hours). */
@@ -4558,6 +4568,51 @@ export async function placeEquityOrder(
     .results?.[0];
   if (!inst) throw new Error(`Symbol ${symbol} not found`);
   const iid = inst.id;
+  const marketHours = input.marketHours ?? "regular_hours";
+  let eligibility: EquityOrderResult["eligibility"] = {
+    evaluated: true,
+    eligible: true,
+    source: "regular-hours-default",
+    reason: null,
+  };
+  if (marketHours !== "regular_hours") {
+    if (input.amount != null)
+      throw new Error(`${symbol}: ${marketHours} orders require an explicit share quantity; dollar/notional sizing is not supported.`);
+    if (input.limitPrice == null)
+      throw new Error(`${symbol}: ${marketHours} execution requires an explicit limit price.`);
+    if (marketHours === "all_day_hours") {
+      if (!Number.isInteger(Number(input.shares)))
+        throw new Error(`${symbol}: 24-hour/all-day orders require whole shares.`);
+      const state = inst.all_day_tradability;
+      eligibility = {
+        evaluated: typeof state === "string",
+        eligible: typeof state === "string" ? state === "tradable" : null,
+        source: "instrument.all_day_tradability",
+        reason:
+          typeof state === "string"
+            ? state === "tradable"
+              ? null
+              : `all_day_tradability=${state}`
+            : "all_day_tradability was absent; eligibility was not evaluated",
+      };
+      if (eligibility.eligible !== true)
+        throw new Error(`${symbol}: ${eligibility.reason}; refusing to build a 24-hour order.`);
+    } else {
+      const state = inst.tradability;
+      eligibility = {
+        evaluated: typeof state === "string",
+        eligible: typeof state === "string" ? state === "tradable" : null,
+        source: "instrument.tradability",
+        reason: typeof state === "string" && state !== "tradable" ? `tradability=${state}` : null,
+      };
+      if (eligibility.eligible === false)
+        throw new Error(`${symbol}: ${eligibility.reason}; refusing extended-hours execution.`);
+    }
+    if (execution.live)
+      throw new Error(
+        `${symbol}: live ${marketHours} submission is blocked until the account-scoped order-check contract is captured. The dry-run body is mapped; account/session kill-switch eligibility is not yet evaluated.`,
+      );
+  }
   const otc =
     Boolean(inst.otc_market_tier) || inst.fractional_tradability === "position_closing_only";
   if (input.amount && inst.fractional_tradability && inst.fractional_tradability !== "tradable") {
@@ -4576,6 +4631,22 @@ export async function placeEquityOrder(
     throw new Error(
       `Invalid or missing quote for ${symbol} (last_trade_price=${q?.last_trade_price ?? "none"})`,
     );
+  if (marketHours === "all_day_hours") {
+    const bid = Number(q?.bid_price);
+    const ask = Number(q?.ask_price);
+    const mid = (bid + ask) / 2;
+    const spreadPct = Number.isFinite(mid) && mid > 0 ? ((ask - bid) / mid) * 100 : Number.NaN;
+    const configured = Number(process.env.ROBINHOOD_MAX_ALL_DAY_SPREAD_PCT ?? "5");
+    const maxSpreadPct = Number.isFinite(configured) && configured > 0 ? configured : 5;
+    if (!Number.isFinite(spreadPct) || bid <= 0 || ask <= bid) {
+      throw new Error(`${symbol}: 24-hour quote has no valid two-sided book; refusing the plan.`);
+    }
+    if (spreadPct > maxSpreadPct) {
+      throw new Error(
+        `${symbol}: 24-hour bid/ask spread is ${spreadPct.toFixed(2)}% (${bid.toFixed(2)} / ${ask.toFixed(2)}), above the ${maxSpreadPct.toFixed(2)}% safety cap. Refusing the plan.`,
+      );
+    }
+  }
 
   // 3. Quantity (Robinhood: 4 decimal places for fractional shares).
   const rawShares = input.amount ? Number(input.amount) / last : Number(input.shares);
@@ -4710,6 +4781,8 @@ export async function placeEquityOrder(
       type: "market",
       otcAutoLimit,
       dollarBased,
+      marketHours,
+      eligibility,
       session,
       sessionWarning: reason,
       live: false,
@@ -4732,6 +4805,7 @@ export async function placeEquityOrder(
     side,
     order_form_version: "7",
     ref_id: refId,
+    market_hours: marketHours,
   };
   let body: Record<string, unknown>;
   if (dollarBased) {
@@ -4740,14 +4814,28 @@ export async function placeEquityOrder(
     body = {
       ...baseBody,
       dollar_based_amount: { amount: Number(input.amount).toFixed(2), currency_code: "USD" },
-      market_hours: "regular_hours",
       position_effect: side === "buy" ? "open" : "close",
       ...(Number.isFinite(bid) && bid > 0 ? { bid_price: bid.toFixed(2) } : {}),
       ...(Number.isFinite(ask) && ask > 0 ? { ask_price: ask.toFixed(2) } : {}),
       ...(q?.updated_at ? { bid_ask_timestamp: String(q.updated_at) } : {}),
     };
   } else {
-    body = { ...baseBody, quantity: String(shares), price };
+    const bid = Number(q?.bid_price);
+    const ask = Number(q?.ask_price);
+    body = {
+      ...baseBody,
+      quantity: String(shares),
+      price,
+      ...(marketHours !== "regular_hours" && Number.isFinite(bid) && bid > 0
+        ? { bid_price: bid.toFixed(2) }
+        : {}),
+      ...(marketHours !== "regular_hours" && Number.isFinite(ask) && ask > 0
+        ? { ask_price: ask.toFixed(2) }
+        : {}),
+      ...(marketHours !== "regular_hours" && q?.updated_at
+        ? { bid_ask_timestamp: String(q.updated_at) }
+        : {}),
+    };
   }
 
   // NOTIONAL CAPS: block an oversized LIVE send. Applies only to a genuine live attempt (intent +
@@ -4830,6 +4918,8 @@ export async function placeEquityOrder(
     type: isMarket ? "market" : "limit",
     otcAutoLimit,
     dollarBased,
+    marketHours,
+    eligibility,
     session,
     sessionWarning,
     live: !result.dryRun,
@@ -11095,6 +11185,189 @@ export async function getIpoAccess(
     eligibility: { eligibleAccounts, restrictedAccounts, restrictionReasons: [...reasons].sort() },
     message: openOfferingCount === 0 ? "No open IPO offerings are currently available." : null,
     warnings,
+  };
+}
+
+export interface IpoAccessRequestPlan {
+  symbol: string;
+  instrumentId: string;
+  status: string | null;
+  formStateId: string | null;
+  canRequest: boolean;
+  blockers: string[];
+  enrollment: { evaluated: true; enrolled: boolean };
+  deadline: { evaluated: boolean; passed: boolean | null; at: string | null };
+  buyingPower: { evaluated: boolean; amount: number | null; currencyCode: string | null };
+  existingOrder: { evaluated: true; present: boolean };
+  education: {
+    title: string | null;
+    subtitleMarkdown: string | null;
+    sections: unknown[];
+    startLabel: string | null;
+    suppressLabel: string | null;
+  };
+  acknowledgement: {
+    required: boolean;
+    title: string | null;
+    rows: unknown[];
+    footerMarkdown: string | null;
+    acceptLabel: string | null;
+    dismissLabel: string | null;
+  };
+  notificationDisclosure: {
+    title: string | null;
+    rows: unknown[];
+    disclosureMarkdown: string | null;
+    continueLabel: string | null;
+  };
+  review: {
+    title: string | null;
+    rows: unknown;
+    orderSummaryMarkdown: string | null;
+    disclaimerMarkdown: string | null;
+  };
+  submission: { evaluated: false; status: "not_evaluated"; missingInput: string };
+}
+
+/**
+ * Collapse Robinhood's IPO Access splash, indication-of-interest, notification disclosure, and
+ * account-scoped entry form into one non-mutating plan. The UX cards are returned as structured
+ * acknowledgement content; they are not mistaken for separate product steps. Submission remains
+ * explicitly not_evaluated until a real submit/update HTTP contract is captured.
+ */
+export async function getIpoAccessRequestPlan(
+  input: { symbol: string; accountNumber: string },
+  deps: { getJson?: typeof brokerageGetJson } = {},
+): Promise<IpoAccessRequestPlan> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  await assertAccountOwned(input.accountNumber, { getJson, onLookupFailure: "block" });
+  const symbol = input.symbol.trim().toUpperCase();
+  const instrument = (
+    await getJson("https://api.robinhood.com/instruments/?symbol={symbol}", { symbol })
+  ).results?.[0];
+  if (!instrument?.id) throw new Error(`IPO Access instrument ${symbol} not found`);
+  const instrumentId = String(instrument.id);
+  const [splash, entry, acknowledgement, notification] = await Promise.all([
+    getJson(
+      "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/order_entry_splash/{instrument_id}/",
+      { instrument_id: instrumentId },
+      { endpoint_version: "2021-10-13" },
+    ),
+    getJson(
+      "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/web_order_entry/{instrument_id}/",
+      { instrument_id: instrumentId },
+      { account_number: input.accountNumber },
+    ),
+    getJson(
+      "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/indication_of_interest/{instrument_id}/",
+      { instrument_id: instrumentId },
+    ),
+    getJson(
+      "https://bonfire.robinhood.com/equity_trading/ipo_access/viewmodels/notification_disclosure/{instrument_id}/",
+      { instrument_id: instrumentId },
+    ),
+  ]);
+  const context = entry?.context ?? {};
+  const buyingPowerAmount = Number(context?.available_buying_power?.amount);
+  const deadlineAt =
+    typeof context?.ipo_access_cob_deadline === "string"
+      ? context.ipo_access_cob_deadline
+      : typeof instrument.ipo_access_cob_deadline === "string"
+        ? instrument.ipo_access_cob_deadline
+        : null;
+  const deadlinePassed =
+    typeof context?.has_cob_deadline_passed === "boolean"
+      ? context.has_cob_deadline_passed
+      : deadlineAt
+        ? Date.parse(deadlineAt) <= Date.now()
+        : null;
+  const enrolled = context?.user_is_enrolled === true;
+  const blockers: string[] = [];
+  if (!enrolled) blockers.push("ipo_access_not_enrolled");
+  if (deadlinePassed === true) blockers.push("cob_deadline_passed");
+  if (typeof entry?.ipoa_new_orders_blocked_details === "string" && entry.ipoa_new_orders_blocked_details)
+    blockers.push(entry.ipoa_new_orders_blocked_details);
+  if (entry?.action_required_view_model) blockers.push("action_required");
+  return {
+    symbol: String(instrument.symbol ?? symbol),
+    instrumentId,
+    status:
+      typeof (context?.phase ?? instrument.ipo_access_status) === "string"
+        ? String(context?.phase ?? instrument.ipo_access_status)
+        : null,
+    formStateId:
+      typeof entry?.form_state?.form_state_id === "string" ? entry.form_state.form_state_id : null,
+    canRequest: blockers.length === 0,
+    blockers,
+    enrollment: { evaluated: true, enrolled },
+    deadline: { evaluated: deadlinePassed !== null, passed: deadlinePassed, at: deadlineAt },
+    buyingPower: {
+      evaluated: Number.isFinite(buyingPowerAmount),
+      amount: Number.isFinite(buyingPowerAmount) ? buyingPowerAmount : null,
+      currencyCode:
+        typeof context?.available_buying_power?.currency_code === "string"
+          ? context.available_buying_power.currency_code
+          : null,
+    },
+    existingOrder: { evaluated: true, present: Boolean(context?.existing_order) },
+    education: {
+      title: typeof splash?.title === "string" ? splash.title : null,
+      subtitleMarkdown:
+        typeof splash?.subtitle_markdown === "string" ? splash.subtitle_markdown : null,
+      sections: Array.isArray(splash?.sections) ? splash.sections : [],
+      startLabel:
+        typeof splash?.continue_cta_title === "string" ? splash.continue_cta_title : null,
+      suppressLabel:
+        typeof splash?.dont_show_again_cta_title === "string"
+          ? splash.dont_show_again_cta_title
+          : null,
+    },
+    acknowledgement: {
+      required: Boolean(acknowledgement?.accept_title),
+      title: typeof acknowledgement?.title === "string" ? acknowledgement.title : null,
+      rows: Array.isArray(acknowledgement?.rows) ? acknowledgement.rows : [],
+      footerMarkdown:
+        typeof acknowledgement?.footer_markdown === "string"
+          ? acknowledgement.footer_markdown
+          : null,
+      acceptLabel:
+        typeof acknowledgement?.accept_title === "string" ? acknowledgement.accept_title : null,
+      dismissLabel:
+        typeof acknowledgement?.dismiss_title === "string" ? acknowledgement.dismiss_title : null,
+    },
+    notificationDisclosure: {
+      title: typeof notification?.title === "string" ? notification.title : null,
+      rows: Array.isArray(notification?.rows) ? notification.rows : [],
+      disclosureMarkdown:
+        typeof notification?.disclosure_markdown === "string"
+          ? notification.disclosure_markdown
+          : null,
+      continueLabel:
+        typeof notification?.continue_button?.title === "string"
+          ? notification.continue_button.title
+          : null,
+    },
+    review: {
+      title:
+        typeof entry?.order_entry_view_model?.title === "string"
+          ? entry.order_entry_view_model.title
+          : null,
+      rows: entry?.order_entry_view_model?.rows ?? null,
+      orderSummaryMarkdown:
+        typeof entry?.order_entry_view_model?.order_summary?.description_markdown === "string"
+          ? entry.order_entry_view_model.order_summary.description_markdown
+          : null,
+      disclaimerMarkdown:
+        typeof entry?.order_entry_view_model?.disclaimer?.label_markdown === "string"
+          ? entry.order_entry_view_model.disclaimer.label_markdown
+          : null,
+    },
+    submission: {
+      evaluated: false,
+      status: "not_evaluated",
+      missingInput:
+        "The IPO submit/update/cancel HTTP method, URL, and request body have not been captured from a live review action; no order was built or sent.",
+    },
   };
 }
 

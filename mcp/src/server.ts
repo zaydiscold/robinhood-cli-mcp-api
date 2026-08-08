@@ -121,6 +121,7 @@ import {
   getStockRewardsSummary,
   getInboxSummary,
   getIpoAccess,
+  getIpoAccessRequestPlan,
   type BrokerageRoute,
 } from "@zaydiscold/robinhood-cli/lib";
 
@@ -1410,6 +1411,12 @@ server.registerTool(
         .describe(
           "time in force; omit to let the engine pick (gfd market/OTC, gtc limit). gtc is rejected on a fractional dollar-market order",
         ),
+      market_hours: z
+        .enum(["regular_hours", "extended_hours", "all_day_hours"])
+        .optional()
+        .describe(
+          "explicit execution session; all_day_hours is the 24-hour market and remains dry-run-only until account-scoped order-check capture",
+        ),
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional(),
@@ -1435,6 +1442,7 @@ server.registerTool(
     force,
     overrideCap,
     time_in_force,
+    market_hours,
   }) => {
     try {
       await assertAccountOwned(account_number);
@@ -1446,6 +1454,7 @@ server.registerTool(
         shares,
         limitPrice,
         timeInForce: time_in_force,
+        marketHours: market_hours,
         dryRun,
         liveWrite: resolveLiveFlag(liveWrite, live),
         force: Boolean(force),
@@ -1478,6 +1487,12 @@ server.registerTool(
         .describe(
           "time in force; omit to let the engine pick (gfd market/OTC, gtc limit). gtc is rejected on a fractional dollar-market order",
         ),
+      market_hours: z
+        .enum(["regular_hours", "extended_hours", "all_day_hours"])
+        .optional()
+        .describe(
+          "explicit execution session; all_day_hours is the 24-hour market and remains dry-run-only until account-scoped order-check capture",
+        ),
       dryRun: z.boolean().default(false),
       liveWrite: z.boolean().optional(),
       live: z.boolean().optional(),
@@ -1503,6 +1518,7 @@ server.registerTool(
     force,
     overrideCap,
     time_in_force,
+    market_hours,
   }) => {
     try {
       await assertAccountOwned(account_number);
@@ -1514,6 +1530,7 @@ server.registerTool(
         shares,
         limitPrice,
         timeInForce: time_in_force,
+        marketHours: market_hours,
         dryRun,
         liveWrite: resolveLiveFlag(liveWrite, live),
         force: Boolean(force),
@@ -3759,6 +3776,20 @@ registerCapabilityTool(
     annotations: toolAnnotations(true, "read"),
   },
   async ({ symbol }: { symbol?: string }) => jsonResponse(await getIpoAccess({ symbol })),
+);
+
+registerCapabilityTool(
+  "ipo_access_request_plan",
+  {
+    title: "Robinhood IPO Access Request Plan",
+    description:
+      "Collapse IPO education, indication-of-interest acknowledgement, notification disclosure, account eligibility, buying power, deadline, existing-order state, and review fields into one read-only plan. Never submits, updates, or cancels interest; returns explicit not_evaluated submission state until the write contract is captured.",
+    inputSchema: z.object({ symbol: symbolSchema, account_number: accountNumberSchema }),
+    outputSchema: z.object({}).catchall(z.unknown()),
+    annotations: toolAnnotations(true, "sensitive-read"),
+  },
+  async ({ symbol, account_number }: { symbol: string; account_number: string }) =>
+    jsonResponse(await getIpoAccessRequestPlan({ symbol, accountNumber: account_number })),
 );
 
 // ── MCP Prompts: reusable operating templates ────────────────────────────────────────────────────

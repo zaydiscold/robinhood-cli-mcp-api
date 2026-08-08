@@ -62,7 +62,7 @@ sales entirely — losses there need no window management (see `knowledge/tax.md
 
 ## Lot selection — stable-ID exact units, not implied FIFO
 
-Robinhood's default disposal method remains FIFO when no valid specific-lot selection survives. This CLI/MCP now has a live-verified exact-lot path for US taxable accounts:
+Robinhood's default disposal method remains FIFO when no valid specific-lot selection survives. The CLI/MCP has a **live-verified open-lot inventory path** and an **exact-ID dry-run planner** for eligible US taxable accounts; exact-lot submission is not yet implemented:
 
 ```bash
 node cli/dist/index.js tax-lots list HPE --account <ACCOUNT> --json
@@ -70,9 +70,9 @@ node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> --shares 4 --o
 node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> --lot <OPEN_LOT_ID>:3.5 --lot <OPEN_LOT_ID>:0.5 --json
 ```
 
-Every sale uses stable `open_lot_id` plus exact quantity and re-reads live `quantity_available`. The planner rejects unknown/unselectable IDs, over-allocation, mismatched totals, and missing adjusted tax basis. Never identify execution lots by acquisition date alone.
+Every plan uses stable `open_lot_id` plus exact quantity and re-reads live `quantity_available`. The planner rejects unknown/unselectable IDs, over-allocation, mismatched totals, and missing adjusted tax basis. Never identify execution lots by acquisition date alone.
 
-Robinhood fills multiple selected lots in submitted priority order. If another order consumes selected shares first, unavailable remainder can fall back to the account's default FIFO. Therefore serialize competing sells, verify `tax_lots/order/{order_id}/selected/` after placement and `.../closed/` after fill, and surface Robinhood's correction deadline: support before 9 PM ET on settlement date.
+Robinhood documents that multiple selected lots fill in submitted priority order and that unavailable remainder can fall back to the account's default FIFO. That is broker behavior to preserve when the authenticated exact-lot review/submit contract is eventually captured—not proof that this CLI submits it today. The current product may inspect `tax_lots/order/{order_id}/selected/` or `.../closed/` only when a real existing order ID is supplied.
 
 Full contract and caveats: [`../docs/tax-lot-intelligence-and-exact-lot-selling.md`](../docs/tax-lot-intelligence-and-exact-lot-selling.md).
 

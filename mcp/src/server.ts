@@ -1840,9 +1840,9 @@ server.registerTool(
     );
     const quotes = await fetchQuotes([...new Set([...equityIds.values()].filter(Boolean))]);
     const holdings = all.map((row) => {
-      const meta: any = metadata.get(row.optionInstrumentId) ?? {};
-      const mark: any = marks.get(row.optionInstrumentId) ?? {};
-      const quote: any = quotes.get(equityIds.get(row.symbol) ?? "") ?? {};
+      const meta = metadata.get(row.optionInstrumentId) ?? {};
+      const mark = marks.get(row.optionInstrumentId) ?? {};
+      const quote = quotes.get(equityIds.get(row.symbol) ?? "") ?? {};
       const optionPrice = finiteNumber(mark.adjusted_mark_price ?? mark.mark_price);
       const spot = finiteNumber(
         quote.last_extended_hours_trade_price ?? quote.last_trade_price,

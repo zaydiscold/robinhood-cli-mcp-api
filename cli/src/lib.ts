@@ -8470,6 +8470,134 @@ export function optionReturnPct(averageOpenPrice: number, adjustedMarkPrice: num
   return ((currentValue - averageOpenPrice) / averageOpenPrice) * 100;
 }
 
+export interface OptionExposureAnalyticsInput {
+  type: "call" | "put";
+  strike: number;
+  spot: number;
+  optionPrice: number;
+  entryPremiumPerShare?: number;
+  delta: number;
+  theta?: number;
+  contracts?: number;
+  positionSide?: "long" | "short";
+}
+
+export interface OptionExposureAnalytics {
+  intrinsicValuePerShare: number;
+  extrinsicValuePerShare: number;
+  intrinsicValueUsd: number;
+  extrinsicValueUsd: number;
+  intrinsicPctOfPremium: number;
+  extrinsicPctOfPremium: number;
+  positionValueUsd: number;
+  deltaShares: number;
+  deltaDollars: number;
+  elasticity: number;
+  absoluteElasticity: number;
+  premiumPerDeltaDollar: number;
+  markBreakEvenAtExpiration: number;
+  costBasisBreakEvenAtExpiration: number;
+  underlyingMovePctToMarkBreakEven: number;
+  thetaUsdPerDay: number;
+  thetaPctOfPremiumPerDay: number;
+  warnings: string[];
+}
+
+/**
+ * Local, first-order option exposure diagnostics.
+ *
+ * `elasticity = deltaDollars / |positionValueUsd|` estimates the option's percentage move for a
+ * 1% underlying move if delta and volatility were unchanged. It is not a forecast: gamma changes
+ * delta, while IV, theta, rates, spreads, and discrete jumps move the option independently.
+ * Intrinsic/extrinsic values use the current mark; the optional cost-basis break-even uses the
+ * actual entry premium instead. Missing or stale inputs return explicit NaN fields plus warnings.
+ */
+export function computeOptionExposureAnalytics(
+  input: OptionExposureAnalyticsInput,
+): OptionExposureAnalytics {
+  const round = (value: number, digits = 6): number =>
+    Number.isFinite(value) ? Number(value.toFixed(digits)) : Number.NaN;
+  const contracts = Number.isFinite(input.contracts) && Number(input.contracts) > 0
+    ? Number(input.contracts)
+    : 1;
+  const sign = input.positionSide === "short" ? -1 : 1;
+  const validSpot = Number.isFinite(input.spot) && input.spot > 0;
+  const validStrike = Number.isFinite(input.strike) && input.strike >= 0;
+  const validPrice = Number.isFinite(input.optionPrice) && input.optionPrice > 0;
+  const validDelta = Number.isFinite(input.delta);
+  const warnings: string[] = [];
+  if (!validSpot) warnings.push("spot_unavailable");
+  if (!validStrike) warnings.push("strike_unavailable");
+  if (!validPrice) warnings.push("option_price_unavailable");
+  if (!validDelta) warnings.push("delta_unavailable");
+
+  const intrinsic = validSpot && validStrike
+    ? input.type === "call"
+      ? Math.max(0, input.spot - input.strike)
+      : Math.max(0, input.strike - input.spot)
+    : Number.NaN;
+  const extrinsic = validPrice && Number.isFinite(intrinsic)
+    ? input.optionPrice - intrinsic
+    : Number.NaN;
+  if (Number.isFinite(extrinsic) && extrinsic < -0.01) warnings.push("negative_extrinsic_quote_violation");
+  const positionValueUsd = validPrice ? input.optionPrice * 100 * contracts * sign : Number.NaN;
+  const deltaShares = validDelta ? input.delta * 100 * contracts * sign : Number.NaN;
+  const deltaDollars = validSpot && Number.isFinite(deltaShares)
+    ? deltaShares * input.spot
+    : Number.NaN;
+  const absolutePositionValue = Math.abs(positionValueUsd);
+  const elasticity = absolutePositionValue > 0 && Number.isFinite(deltaDollars)
+    ? deltaDollars / absolutePositionValue
+    : Number.NaN;
+  const entryPremium = Number(input.entryPremiumPerShare);
+  const validEntryPremium = Number.isFinite(entryPremium) && entryPremium >= 0;
+  const markBreakEven = validPrice && validStrike
+    ? input.type === "call"
+      ? input.strike + input.optionPrice
+      : input.strike - input.optionPrice
+    : Number.NaN;
+  const costBasisBreakEven = validEntryPremium && validStrike
+    ? input.type === "call"
+      ? input.strike + entryPremium
+      : input.strike - entryPremium
+    : Number.NaN;
+  const theta = Number(input.theta);
+  const thetaUsdPerDay = Number.isFinite(theta) ? theta * 100 * contracts * sign : Number.NaN;
+
+  return {
+    intrinsicValuePerShare: round(intrinsic),
+    extrinsicValuePerShare: round(extrinsic),
+    intrinsicValueUsd: round(Number.isFinite(intrinsic) ? intrinsic * 100 * contracts * sign : Number.NaN),
+    extrinsicValueUsd: round(Number.isFinite(extrinsic) ? extrinsic * 100 * contracts * sign : Number.NaN),
+    intrinsicPctOfPremium: round(validPrice && Number.isFinite(intrinsic) ? (intrinsic / input.optionPrice) * 100 : Number.NaN),
+    extrinsicPctOfPremium: round(validPrice && Number.isFinite(extrinsic) ? (extrinsic / input.optionPrice) * 100 : Number.NaN),
+    positionValueUsd: round(positionValueUsd),
+    deltaShares: round(deltaShares),
+    deltaDollars: round(deltaDollars),
+    elasticity: round(elasticity),
+    absoluteElasticity: round(Math.abs(elasticity)),
+    premiumPerDeltaDollar: round(
+      Number.isFinite(deltaDollars) && Math.abs(deltaDollars) > 0
+        ? absolutePositionValue / Math.abs(deltaDollars)
+        : Number.NaN,
+    ),
+    markBreakEvenAtExpiration: round(markBreakEven),
+    costBasisBreakEvenAtExpiration: round(costBasisBreakEven),
+    underlyingMovePctToMarkBreakEven: round(
+      validSpot && Number.isFinite(markBreakEven)
+        ? ((markBreakEven - input.spot) / input.spot) * 100
+        : Number.NaN,
+    ),
+    thetaUsdPerDay: round(thetaUsdPerDay),
+    thetaPctOfPremiumPerDay: round(
+      absolutePositionValue > 0 && Number.isFinite(thetaUsdPerDay)
+        ? (thetaUsdPerDay / absolutePositionValue) * 100
+        : Number.NaN,
+    ),
+    warnings,
+  };
+}
+
 /**
  * Generic percent change from a base to a current value: (current - base) / base * 100.
  * Used for equity P/L (avg buy vs last) and day change (prev close vs last). Returns
@@ -10395,6 +10523,7 @@ export interface OptionsSnapshotContract {
   volume: number;
   openInterest: number;
   updatedAt: string;
+  exposureAnalytics: OptionExposureAnalytics;
 }
 
 export interface OptionsSnapshotSummary {
@@ -10580,6 +10709,14 @@ export async function computeOptionsSnapshot(
       volume: Number(mark.volume),
       openInterest: Number(mark.open_interest),
       updatedAt: String(mark.updated_at ?? mark.last_trade_price_source ?? ""),
+      exposureAnalytics: computeOptionExposureAnalytics({
+        type: side,
+        strike,
+        spot,
+        optionPrice: adjustedMark,
+        delta: Number(mark.delta),
+        theta: Number(mark.theta),
+      }),
     };
   });
   contracts.sort((a, b) =>

@@ -52,6 +52,8 @@ import {
   loadOwnedAccounts,
   readAccountPulse,
   fetchOptionMarks,
+  fetchQuotes,
+  computeOptionExposureAnalytics,
   computePortfolioPnl,
   getUnifiedHistory,
   computeDividends,
@@ -1759,7 +1761,7 @@ server.registerTool(
   {
     title: "Robinhood Options Holdings",
     description:
-      "Every held option contract across accounts (or one), each with its option_instrument_id (UUID) + contract link, symbol, qty, average_open_price. The owned-contract map.",
+      "Every held option contract across accounts (or one), enriched with exact contract metadata, live mark/spot, intrinsic and extrinsic value, delta shares, delta dollars, option elasticity (local effective leverage), premium per delta-dollar, expiration break-evens, and theta burn. The owned-contract map; read only.",
     inputSchema: z.object({ account_number: accountNumberOptionalSchema }),
     annotations: toolAnnotations(true, "read"),
   },
@@ -1801,7 +1803,71 @@ server.registerTool(
         });
       }
     }
-    return jsonResponse({ count: all.length, holdings: all });
+    const ids = [...new Set(all.map((row) => row.optionInstrumentId).filter(Boolean))];
+    const marks = await fetchOptionMarks(ids);
+    const metadata = new Map(
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            return [
+              id,
+              await brokerageGetJson("https://api.robinhood.com/options/instruments/{0}/", {
+                "0": id,
+              }),
+            ] as const;
+          } catch {
+            return [id, {}] as const;
+          }
+        }),
+      ),
+    );
+    const symbols = [...new Set(all.map((row) => String(row.symbol ?? "")).filter(Boolean))];
+    const equityIds = new Map(
+      await Promise.all(
+        symbols.map(async (symbol) => {
+          try {
+            const instrument = (
+              await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", {
+                symbol,
+              })
+            ).results?.[0];
+            return [symbol, String(instrument?.id ?? "")] as const;
+          } catch {
+            return [symbol, ""] as const;
+          }
+        }),
+      ),
+    );
+    const quotes = await fetchQuotes([...new Set([...equityIds.values()].filter(Boolean))]);
+    const holdings = all.map((row) => {
+      const meta: any = metadata.get(row.optionInstrumentId) ?? {};
+      const mark: any = marks.get(row.optionInstrumentId) ?? {};
+      const quote: any = quotes.get(equityIds.get(row.symbol) ?? "") ?? {};
+      const optionPrice = finiteNumber(mark.adjusted_mark_price ?? mark.mark_price);
+      const spot = finiteNumber(
+        quote.last_extended_hours_trade_price ?? quote.last_trade_price,
+      );
+      return {
+        ...row,
+        strike: finiteNumber(meta.strike_price),
+        type: meta.type === "put" ? "put" : "call",
+        expiration: String(meta.expiration_date ?? ""),
+        spot,
+        mark: optionPrice,
+        delta: finiteNumber(mark.delta),
+        exposureAnalytics: computeOptionExposureAnalytics({
+          type: meta.type === "put" ? "put" : "call",
+          strike: finiteNumber(meta.strike_price),
+          spot,
+          optionPrice,
+          entryPremiumPerShare: finiteNumber(row.averageOpenPrice) / 100,
+          delta: finiteNumber(mark.delta),
+          theta: finiteNumber(mark.theta),
+          contracts: finiteNumber(row.quantity),
+        }),
+      };
+    });
+    return jsonResponse({ count: holdings.length, holdings });
   },
 );
 
@@ -1810,7 +1876,7 @@ server.registerTool(
   {
     title: "Robinhood Option Inspect",
     description:
-      "Full detail for ONE owned/known option contract by its UUID: metadata, live Greeks/quote, and fill history (side/effect/qty/price/date). Tolerates the web _L1 leg suffix. Read.",
+      "Full detail for ONE owned/known option contract by its UUID: metadata, live Greeks/quote, intrinsic/extrinsic value, delta dollars, option elasticity, break-even and theta analytics, plus fill history. Tolerates the web _L1 leg suffix. Read.",
     inputSchema: z.object({
       option_instrument_id: z
         .string()
@@ -1832,6 +1898,19 @@ server.registerTool(
           ids: id,
         })
       ).results?.[0] ?? {};
+    const equityInstrument = (
+      await brokerageGetJson("https://api.robinhood.com/instruments/?symbol={symbol}", {
+        symbol: String(meta.chain_symbol ?? ""),
+      })
+    ).results?.[0];
+    const equityQuotes = equityInstrument?.id
+      ? await fetchQuotes([String(equityInstrument.id)])
+      : new Map();
+    const equityQuote = equityQuotes.get(String(equityInstrument?.id ?? "")) ?? {};
+    const spot = finiteNumber(
+      equityQuote.last_extended_hours_trade_price ?? equityQuote.last_trade_price,
+    );
+    const optionPrice = finiteNumber(mark.adjusted_mark_price ?? mark.mark_price);
     const fills: any[] = [];
     if (meta.chain_id) {
       const orders =
@@ -1878,6 +1957,15 @@ server.registerTool(
         vega: n(mark.vega),
         rho: n(mark.rho),
       },
+      spot,
+      exposureAnalytics: computeOptionExposureAnalytics({
+        type: meta.type === "put" ? "put" : "call",
+        strike: finiteNumber(meta.strike_price),
+        spot,
+        optionPrice,
+        delta: finiteNumber(mark.delta),
+        theta: finiteNumber(mark.theta),
+      }),
       openInterest: n(mark.open_interest),
       volume: n(mark.volume),
       fills,
@@ -2407,7 +2495,7 @@ server.registerTool(
   {
     title: "Robinhood Options Research Snapshot",
     description:
-      "Research-grade bulk option-chain dataset across one expiration or a bounded all-expiration range. Returns every active contract with bid/ask/mark/mid/last/previous close/spread, delta/gamma/theta/vega/rho, IV, volume, open interest, moneyness, UUID and deep link, plus put/call liquidity ratios and concentration leaders. Shared engine with CLI `options snapshot`; live read only.",
+      "Research-grade bulk option-chain dataset across one expiration or a bounded all-expiration range. Returns every active contract with bid/ask/mark/mid/last/previous close/spread, delta/gamma/theta/vega/rho, IV, volume, open interest, moneyness, UUID and deep link, plus intrinsic/extrinsic value, delta dollars, local option elasticity, premium-per-delta-dollar, break-even and theta analytics. Includes put/call liquidity ratios and concentration leaders. Shared engine with CLI `options snapshot`; live read only.",
     inputSchema: z.object({
       symbol: symbolSchema,
       expiration: z.union([dateSchema, z.literal("all")]).optional(),

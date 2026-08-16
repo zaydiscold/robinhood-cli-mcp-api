@@ -97,6 +97,7 @@ import {
   readOptionsOrderDiagnostics,
   loadOptionsStrategyWorkflows,
   loadRobinhoodRoutes,
+  computeOptionExposureAnalytics,
   optionReturnPct,
   parseParamAssignments,
   percentChange,
@@ -2079,14 +2080,57 @@ options
       return;
     }
     const marks = await fetchOptionMarks(open.map((position) => position.optionId));
+    const metaEntries = await Promise.all(
+      open.map(async (position) => {
+        try {
+          return [
+            position.optionId,
+            await brokerageGetJson(OPTION_INSTRUMENT_URL, { "0": position.optionId }),
+          ] as const;
+        } catch {
+          return [position.optionId, {}] as const;
+        }
+      }),
+    );
+    const metadata = new Map(metaEntries);
+    const symbols = [...new Set(open.map((position) => position.symbol).filter(Boolean))];
+    const equityEntries = await Promise.all(
+      symbols.map(async (symbol) => {
+        try {
+          const instrument = (
+            await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })
+          ).results?.[0];
+          return [symbol, String(instrument?.id ?? "")] as const;
+        } catch {
+          return [symbol, ""] as const;
+        }
+      }),
+    );
+    const equityIds = new Map(equityEntries);
+    const equityQuotes = await fetchQuotes([...new Set([...equityIds.values()].filter(Boolean))]);
     const rows = open
       .map((position) => {
         const m = marks.get(position.optionId) ?? {};
-        const mark = num(m.adjusted_mark_price);
+        const meta = metadata.get(position.optionId) ?? {};
+        const mark = num(m.adjusted_mark_price ?? m.mark_price);
         const prev = num(m.previous_close_price);
         const delta = num(m.delta);
         const valueUsd = Number.isFinite(mark) ? mark * 100 * position.quantity : Number.NaN;
         const entryPer = position.averageOpenPrice / 100;
+        const equityQuote = equityQuotes.get(equityIds.get(position.symbol) ?? "") ?? {};
+        const spot = finiteNumber(
+          equityQuote.last_extended_hours_trade_price ?? equityQuote.last_trade_price,
+        );
+        const analytics = computeOptionExposureAnalytics({
+          type: meta.type === "put" ? "put" : "call",
+          strike: finiteNumber(meta.strike_price),
+          spot,
+          optionPrice: mark,
+          entryPremiumPerShare: entryPer,
+          delta,
+          theta: finiteNumber(m.theta),
+          contracts: position.quantity,
+        });
         return {
           contract: position.name,
           acct: position.accountNumber ? `…${position.accountNumber.slice(-4)}` : "—",
@@ -2102,6 +2146,7 @@ options
               : Number.NaN,
           returnPct: optionReturnPct(position.averageOpenPrice, mark),
           delta,
+          analytics,
         };
       })
       // Dollars, not percents: rank by unrealized $ P&L so a $6 lot can't outrank a $1,600 call.
@@ -2126,6 +2171,12 @@ options
         day_usd: usd(row.dayUsd),
         return: pct(row.returnPct),
         delta: Number.isFinite(row.delta) ? row.delta.toFixed(2) : "—",
+        delta_usd: usd(row.analytics.deltaDollars),
+        elasticity: Number.isFinite(row.analytics.elasticity)
+          ? `${row.analytics.elasticity.toFixed(2)}x`
+          : "—",
+        intrinsic: usd(row.analytics.intrinsicValueUsd),
+        extrinsic: usd(row.analytics.extrinsicValueUsd),
       })),
       [
         "contract",
@@ -2138,6 +2189,10 @@ options
         "day_usd",
         "return",
         "delta",
+        "delta_usd",
+        "elasticity",
+        "intrinsic",
+        "extrinsic",
       ],
     );
     const sum = (xs: number[]) => xs.filter(Number.isFinite).reduce((s, x) => s + x, 0);

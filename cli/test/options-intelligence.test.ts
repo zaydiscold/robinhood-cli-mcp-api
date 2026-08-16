@@ -1,5 +1,76 @@
 import { describe, expect, it } from "vitest";
-import { computeOptionsHistory, computeChainStats, computeOptionsSnapshot } from "../src/lib.js";
+import {
+  computeOptionExposureAnalytics,
+  computeOptionsHistory,
+  computeChainStats,
+  computeOptionsSnapshot,
+} from "../src/lib.js";
+
+describe("computeOptionExposureAnalytics", () => {
+  it("separates intrinsic and extrinsic value and reports delta-dollar capital elasticity", () => {
+    const result = computeOptionExposureAnalytics({
+      type: "call",
+      strike: 55,
+      spot: 100,
+      optionPrice: 50,
+      entryPremiumPerShare: 52,
+      delta: 0.8,
+      theta: -0.1,
+      contracts: 2,
+    });
+
+    expect(result.intrinsicValuePerShare).toBe(45);
+    expect(result.extrinsicValuePerShare).toBe(5);
+    expect(result.intrinsicPctOfPremium).toBe(90);
+    expect(result.extrinsicPctOfPremium).toBe(10);
+    expect(result.positionValueUsd).toBe(10_000);
+    expect(result.deltaShares).toBe(160);
+    expect(result.deltaDollars).toBe(16_000);
+    expect(result.elasticity).toBe(1.6);
+    expect(result.absoluteElasticity).toBe(1.6);
+    expect(result.premiumPerDeltaDollar).toBe(0.625);
+    expect(result.markBreakEvenAtExpiration).toBe(105);
+    expect(result.costBasisBreakEvenAtExpiration).toBe(107);
+    expect(result.underlyingMovePctToMarkBreakEven).toBe(5);
+    expect(result.thetaUsdPerDay).toBe(-20);
+    expect(result.thetaPctOfPremiumPerDay).toBe(-0.2);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("keeps put direction signed while exposing absolute leverage", () => {
+    const result = computeOptionExposureAnalytics({
+      type: "put",
+      strike: 110,
+      spot: 100,
+      optionPrice: 15,
+      delta: -0.6,
+    });
+
+    expect(result.intrinsicValuePerShare).toBe(10);
+    expect(result.extrinsicValuePerShare).toBe(5);
+    expect(result.deltaDollars).toBe(-6_000);
+    expect(result.elasticity).toBe(-4);
+    expect(result.absoluteElasticity).toBe(4);
+    expect(result.markBreakEvenAtExpiration).toBe(95);
+    expect(result.underlyingMovePctToMarkBreakEven).toBe(-5);
+  });
+
+  it("returns explicit not-evaluated warnings instead of fake leverage on stale inputs", () => {
+    const result = computeOptionExposureAnalytics({
+      type: "call",
+      strike: 100,
+      spot: 0,
+      optionPrice: 0,
+      delta: Number.NaN,
+    });
+
+    expect(Number.isNaN(result.deltaDollars)).toBe(true);
+    expect(Number.isNaN(result.elasticity)).toBe(true);
+    expect(result.warnings).toContain("spot_unavailable");
+    expect(result.warnings).toContain("option_price_unavailable");
+    expect(result.warnings).toContain("delta_unavailable");
+  });
+});
 
 // ── Options Contract Historicals ──
 // Test the shared engine behind `options history` CLI + `robinhood_options_history` MCP.
@@ -369,6 +440,15 @@ describe("computeOptionsSnapshot", () => {
       volume: 50,
       openInterest: 200,
       moneyness: "ITM",
+      exposureAnalytics: expect.objectContaining({
+        intrinsicValuePerShare: 1,
+        extrinsicValuePerShare: 4.1,
+        positionValueUsd: 510,
+        deltaShares: 52,
+        deltaDollars: 5252,
+        elasticity: expect.closeTo(10.298039, 5),
+        markBreakEvenAtExpiration: 105.1,
+      }),
     });
   });
 

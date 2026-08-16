@@ -98,6 +98,7 @@ import {
   loadOptionsStrategyWorkflows,
   loadRobinhoodRoutes,
   computeOptionExposureAnalytics,
+  calendarDaysUntil,
   optionReturnPct,
   parseParamAssignments,
   percentChange,
@@ -2127,7 +2128,15 @@ options
           optionPrice: mark,
           entryPremiumPerShare: entryPer,
           delta,
+          gamma: finiteNumber(m.gamma),
           theta: finiteNumber(m.theta),
+          vega: finiteNumber(m.vega),
+          impliedVolatility: finiteNumber(m.implied_volatility),
+          bid: finiteNumber(m.bid_price),
+          ask: finiteNumber(m.ask_price),
+          openInterest: finiteNumber(m.open_interest),
+          volume: finiteNumber(m.volume),
+          daysToExpiration: calendarDaysUntil(String(meta.expiration_date ?? "")),
           contracts: position.quantity,
         });
         return {
@@ -2176,6 +2185,35 @@ options
           : "—",
         intrinsic: usd(row.exposureAnalytics.intrinsicValueUsd),
         extrinsic: usd(row.exposureAnalytics.extrinsicValueUsd),
+        dte: Number.isFinite(row.exposureAnalytics.daysToExpiration)
+          ? row.exposureAnalytics.daysToExpiration
+          : "—",
+        iv: Number.isFinite(row.exposureAnalytics.impliedVolatility)
+          ? pct(row.exposureAnalytics.impliedVolatility * 100)
+          : "—",
+        gamma: Number.isFinite(row.exposureAnalytics.gamma)
+          ? row.exposureAnalytics.gamma.toFixed(4)
+          : "—",
+        vega: Number.isFinite(row.exposureAnalytics.vega)
+          ? row.exposureAnalytics.vega.toFixed(4)
+          : "—",
+        spread_pct: Number.isFinite(row.exposureAnalytics.spreadPctOfMark)
+          ? pct(row.exposureAnalytics.spreadPctOfMark)
+          : "—",
+        open_interest: Number.isFinite(row.exposureAnalytics.openInterest)
+          ? row.exposureAnalytics.openInterest
+          : "—",
+        volume: Number.isFinite(row.exposureAnalytics.volume) ? row.exposureAnalytics.volume : "—",
+        theta_pct_day: Number.isFinite(row.exposureAnalytics.thetaPctOfPremiumPerDay)
+          ? pct(row.exposureAnalytics.thetaPctOfPremiumPerDay)
+          : "—",
+        break_even_move: Number.isFinite(row.exposureAnalytics.underlyingMovePctToMarkBreakEven)
+          ? pct(row.exposureAnalytics.underlyingMovePctToMarkBreakEven)
+          : "—",
+        favorable: row.exposureAnalytics.diagnostics.favorable.join(",") || "—",
+        unfavorable: row.exposureAnalytics.diagnostics.unfavorable.join(",") || "—",
+        not_evaluated: row.exposureAnalytics.diagnostics.notEvaluated.join(",") || "—",
+        warnings: row.exposureAnalytics.warnings.join(",") || "—",
       })),
       [
         "contract",
@@ -2192,6 +2230,19 @@ options
         "elasticity",
         "intrinsic",
         "extrinsic",
+        "dte",
+        "iv",
+        "gamma",
+        "vega",
+        "spread_pct",
+        "open_interest",
+        "volume",
+        "theta_pct_day",
+        "break_even_move",
+        "favorable",
+        "unfavorable",
+        "not_evaluated",
+        "warnings",
       ],
     );
     const sum = (xs: number[]) => xs.filter(Number.isFinite).reduce((s, x) => s + x, 0);

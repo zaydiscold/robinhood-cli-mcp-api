@@ -14,26 +14,26 @@ Let:
 - `N` = contracts
 - multiplier = 100 shares per standard equity-option contract
 
-| Field | Formula | Meaning |
-|---|---|---|
-| `intrinsicValuePerShare` | call: `max(S-K, 0)`; put: `max(K-S, 0)` | Exercise value now |
-| `extrinsicValuePerShare` | `P - intrinsic` | Time + volatility + rate value still embedded in the mark |
-| `intrinsicPctOfPremium` | `intrinsic / P` | How share-like the current premium is |
-| `extrinsicPctOfPremium` | `extrinsic / P` | How much of the mark can decay to zero even without an adverse intrinsic move |
-| `positionValueUsd` | `P × 100 × N` | Current marked premium value |
-| `deltaShares` | `Δ × 100 × N` | Share-equivalent local directional exposure |
-| `deltaDollars` | `Δ × 100 × N × S` | Dollar-equivalent local directional exposure |
-| `elasticity` | `deltaDollars / abs(positionValueUsd)` | Approximate option % move for a 1% underlying move, locally |
-| `absoluteElasticity` | `abs(elasticity)` | Direction-agnostic local effective leverage |
-| `premiumPerDeltaDollar` | `abs(positionValueUsd) / abs(deltaDollars)` | Premium capital tied up per $1 of local delta exposure |
-| `markBreakEvenAtExpiration` | call: `K+P`; put: `K-P` | Expiration break-even if entering at the current mark |
+| Field                            | Formula                                         | Meaning                                                                       |
+| -------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------- |
+| `intrinsicValuePerShare`         | call: `max(S-K, 0)`; put: `max(K-S, 0)`         | Exercise value now                                                            |
+| `extrinsicValuePerShare`         | `P - intrinsic`                                 | Time + volatility + rate value still embedded in the mark                     |
+| `intrinsicPctOfPremium`          | `intrinsic / P`                                 | How share-like the current premium is                                         |
+| `extrinsicPctOfPremium`          | `extrinsic / P`                                 | How much of the mark can decay to zero even without an adverse intrinsic move |
+| `positionValueUsd`               | `P × 100 × N`                                   | Current marked premium value                                                  |
+| `deltaShares`                    | `Δ × 100 × N`                                   | Share-equivalent local directional exposure                                   |
+| `deltaDollars`                   | `Δ × 100 × N × S`                               | Dollar-equivalent local directional exposure                                  |
+| `elasticity`                     | `deltaDollars / abs(positionValueUsd)`          | Approximate option % move for a 1% underlying move, locally                   |
+| `absoluteElasticity`             | `abs(elasticity)`                               | Direction-agnostic local effective leverage                                   |
+| `premiumPerDeltaDollar`          | `abs(positionValueUsd) / abs(deltaDollars)`     | Premium capital tied up per $1 of local delta exposure                        |
+| `markBreakEvenAtExpiration`      | call: `K+P`; put: `K-P`                         | Expiration break-even if entering at the current mark                         |
 | `costBasisBreakEvenAtExpiration` | call: `K+entry premium`; put: `K-entry premium` | Expiration break-even from the actual average opening premium, when available |
-| `thetaUsdPerDay` | `Θ × 100 × N` | Model-implied one-day theta change if other inputs stay fixed |
-| `thetaPctOfPremiumPerDay` | `thetaUsdPerDay / abs(positionValueUsd)` | Theta burn relative to remaining marked premium |
+| `thetaUsdPerDay`                 | `Θ × 100 × N`                                   | Model-implied one-day theta change if other inputs stay fixed                 |
+| `thetaPctOfPremiumPerDay`        | `thetaUsdPerDay / abs(positionValueUsd)`        | Theta burn relative to remaining marked premium                               |
 
 ## The important distinction
 
-**Elasticity is local sensitivity, not guaranteed leverage.** An elasticity of `12x` means the current delta implies roughly a 12% option-price move for a 1% underlying move *at this instant*, if delta, IV, time, rates, and spreads do not change. OTM options can show enormous elasticity because their premium denominator is tiny while their absolute `deltaDollars` remains small. Gamma changes delta; IV can overwhelm the delta move; theta keeps running; wide or stale marks can make every ratio misleading.
+**Elasticity is local sensitivity, not guaranteed leverage.** An elasticity of `12x` means the current delta implies roughly a 12% option-price move for a 1% underlying move _at this instant_, if delta, IV, time, rates, and spreads do not change. OTM options can show enormous elasticity because their premium denominator is tiny while their absolute `deltaDollars` remains small. Gamma changes delta; IV can overwhelm the delta move; theta keeps running; wide or stale marks can make every ratio misleading.
 
 For deep-ITM calls, intrinsic value dominates, delta approaches `1`, and elasticity usually falls toward `S / option price`. That is why a deep-ITM call can behave more linearly and share-like while still giving modest capital leverage. Rolling up and out typically sells some accumulated intrinsic/delta and buys more extrinsic/time: it can restore convexity, but it also raises break-even and reintroduces decay.
 
@@ -48,6 +48,18 @@ For deep-ITM calls, intrinsic value dominates, delta approaches `1`, and elastic
 7. **Then** gamma, IV/vega, event risk, and the full payoff.
 
 Never rank contracts by elasticity alone. A nearly worthless OTM contract can have spectacular elasticity and almost no useful probability-weighted exposure.
+
+## Every-print diagnostics
+
+Every analytics payload now includes `diagnostics.favorable`, `diagnostics.unfavorable`, and `diagnostics.notEvaluated`; the human `options positions` table prints all three **plus the raw DTE, IV, gamma, vega, spread %, open interest, volume, theta %/day, break-even move, and warnings**. A high elasticity number can therefore never appear alone without the facts that make it fragile.
+
+Current deterministic flags:
+
+- favorable: intrinsic backing present; delta at least `0.70`; absolute theta burn at most `0.5%` of premium/day; or local elasticity at least `3x`
+- unfavorable: no intrinsic backing; delta below `0.35`; theta burn at least `1%` of premium/day; expiration break-even move at least `10%`; expired contract or 14 calendar days or fewer; spread at least `10%` of mark; open interest below `100`; volume below `10`; or high elasticity paired with at least `75%` extrinsic premium
+- not evaluated: each missing DTE, spread, IV, gamma, vega, open-interest, or volume input is named explicitly instead of silently disappearing
+
+These thresholds are screeners, not trade rules. The raw values remain in the same payload so operators can audit why each flag fired.
 
 ## Data-quality behavior
 

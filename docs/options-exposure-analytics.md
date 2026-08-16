@@ -26,10 +26,15 @@ Let:
 | `elasticity`                     | `deltaDollars / abs(positionValueUsd)`          | Approximate option % move for a 1% underlying move, locally                   |
 | `absoluteElasticity`             | `abs(elasticity)`                               | Direction-agnostic local effective leverage                                   |
 | `premiumPerDeltaDollar`          | `abs(positionValueUsd) / abs(deltaDollars)`     | Premium capital tied up per $1 of local delta exposure                        |
+| `extrinsicPerDeltaDollar`        | `abs(extrinsicValueUsd) / abs(deltaDollars)`    | Decayable premium paid per $1 of local delta exposure                         |
 | `markBreakEvenAtExpiration`      | call: `K+P`; put: `K-P`                         | Expiration break-even if entering at the current mark                         |
 | `costBasisBreakEvenAtExpiration` | call: `K+entry premium`; put: `K-entry premium` | Expiration break-even from the actual average opening premium, when available |
+| `expectedMovePctToExpiration`    | `IV × sqrt(DTE/365) × 100`                      | One-standard-deviation magnitude approximation implied by current IV          |
+| `breakEvenToExpectedMoveRatio`   | `abs(break-even move %) / expected move %`      | Expiration hurdle expressed in current implied-move units                     |
 | `thetaUsdPerDay`                 | `Θ × 100 × N`                                   | Model-implied one-day theta change if other inputs stay fixed                 |
 | `thetaPctOfPremiumPerDay`        | `thetaUsdPerDay / abs(positionValueUsd)`        | Theta burn relative to remaining marked premium                               |
+| `gammaPnlForOnePctMoveUsd`       | `0.5 × Γ × (0.01S)^2 × 100 × N`                 | Gamma-only convexity contribution for a hypothetical 1% spot move             |
+| `gammaToThetaOnePctMoveRatio`    | `abs(gamma 1% P&L) / abs(theta/day)`            | One-percent-move convexity relative to one modeled day of theta                |
 
 ## The important distinction
 
@@ -37,17 +42,61 @@ Let:
 
 For deep-ITM calls, intrinsic value dominates, delta approaches `1`, and elasticity usually falls toward `S / option price`. That is why a deep-ITM call can behave more linearly and share-like while still giving modest capital leverage. Rolling up and out typically sells some accumulated intrinsic/delta and buys more extrinsic/time: it can restore convexity, but it also raises break-even and reintroduces decay.
 
+`extrinsicPerDeltaDollar` separates two contracts that have similar elasticity but very different quality as stock substitutes. Lower values mean less decayable premium is supporting each local dollar of directional exposure. This does **not** make the contract cheap in valuation terms: rates, dividends, borrow, IV skew, exercise style, and execution still matter.
+
+`breakEvenToExpectedMoveRatio` is a hurdle gauge, not a probability or alpha score. `1.0x` means the current-mark expiration break-even is approximately one current-IV expected move away. The approximation assumes IV stays meaningful over the horizon and uses calendar-time square-root scaling; jumps, skew, drift, dividends, rates, changing IV, and early exits all break the simplification.
+
+`gammaToThetaOnePctMoveRatio` asks a narrow question: how much **second-order** gain would a hypothetical 1% move add relative to one modeled day of theta? It excludes the much larger first-order delta P&L and says nothing about direction or move probability. Use it to compare convexity rent, never as a standalone buy signal.
+
 ## Read order
 
 1. **Quote quality:** bid, ask, spread, update timestamp, volume/open interest.
 2. **Absolute exposure:** `deltaShares` and `deltaDollars`.
 3. **Premium composition:** intrinsic vs extrinsic dollars and percentages.
-4. **Local leverage:** elasticity and premium-per-delta-dollar.
+4. **Local leverage:** elasticity, premium-per-delta-dollar, and extrinsic-per-delta-dollar.
 5. **Time risk:** theta dollars/day, theta %/day, and days to expiration.
-6. **Expiration hurdle:** current-mark and cost-basis break-evens.
-7. **Then** gamma, IV/vega, event risk, and the full payoff.
+6. **Expiration hurdle:** current-mark/cost-basis break-evens and break-even versus expected move.
+7. **Convexity rent:** gamma P&L for a 1% move versus daily theta.
+8. **Then** IV/vega, event risk, scenario P&L, and the full payoff.
 
 Never rank contracts by elasticity alone. A nearly worthless OTM contract can have spectacular elasticity and almost no useful probability-weighted exposure.
+
+## Where a real edge could exist
+
+The chain does not reveal alpha by itself. A potentially lucrative angle exists only when a view about **magnitude, direction, timing, or volatility** is better than what the option price already implies—and survives the spread and theta.
+
+### 1. Intrinsic-backed stock replacement
+
+Look for high delta, high intrinsic percentage, low extrinsic-per-delta-dollar, low theta percentage, and executable spreads. This creates more linear exposure with less premium capital than shares. The tradeoff is finite expiry, no dividend ownership, rate/forward effects, and possible loss of the entire premium. Elasticity often looks less exciting precisely because the position is higher quality and more share-like.
+
+### 2. Catalyst convexity
+
+OTM options can make sense when a dated catalyst can produce a move larger/faster than the market-implied distribution. Require a written catalyst date and directional thesis; compare break-even to expected move; inspect IV and likely post-event IV crush; then include spread cost. High elasticity without that event-specific disagreement is usually a cheap-looking lottery ticket.
+
+### 3. Roll audit instead of automatic roll-up
+
+For the old and proposed contracts, compare:
+
+- delta dollars retained or sold
+- intrinsic dollars surrendered
+- new extrinsic dollars purchased
+- theta %/day before and after
+- expiration break-even and break-even/expected-move ratio
+- spread cost on **both** legs
+- gamma/theta ratio before and after
+
+Rolling up and out is not merely “taking profit while staying bullish.” It converts accumulated share-like exposure back into rented convexity. That can be intentional, but the CLI should make the conversion explicit.
+
+### 4. Relative-value screen, not a trade signal
+
+Compare contracts on the same underlying and catalyst window. A contract with slightly lower elasticity may dominate if it has materially higher delta, less extrinsic per delta-dollar, a tighter spread, and a break-even inside fewer implied moves. The result is a shortlist for scenario analysis—not an order recommendation.
+
+## Official educational grounding
+
+- OIC explains delta as the approximate option-price change for a one-point underlying move, all else equal, and notes that delta changes with moneyness, time, and volatility: https://www.optionseducation.org/referencelibrary/faq/option-price-behavior
+- OIC describes deep-ITM options as having larger delta: https://www.optionseducation.org/advancedconcepts/delta
+- OIC's Rule of 16 material grounds square-root-of-time conversion of annualized IV into an expected daily move: https://www.optionseducation.org/news/understanding-the-rule-of-16-in-plain-terms
+- OIC separates intrinsic and time value and warns that exercising a call requires paying cash for the shares: https://www.optionseducation.org/referencelibrary/faq/options-exercise
 
 ## Every-print diagnostics
 

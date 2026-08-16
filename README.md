@@ -380,7 +380,8 @@ Two read-only convenience commands that join the raw options routes (`aggregate_
 ```bash
 # Every open option position across ALL owned accounts, ranked in DOLLARS:
 # per-contract value, unrealized/day $ P&L, delta shares/$, intrinsic/extrinsic,
-# local option elasticity and expiration break-even — with totals.
+# local option elasticity, extrinsic cost per delta-dollar, implied-move hurdle,
+# gamma/theta convexity rent, and expiration break-even — with totals.
 robinhood-cli options positions
 robinhood-cli options positions --json
 
@@ -400,7 +401,7 @@ TOTAL: value $18825.00 | unrealized $17335.00 | day $375.00
 Best performer: DRAM $50 Call 6/18 at +1334.6%.
 ```
 
-Both are pure reads (no write gate). `--json` emits structured rows for piping into a spreadsheet or an agent. The same `exposureAnalytics` object is included by MCP `robinhood_options_holdings`, `robinhood_options_inspect`, and `robinhood_options_snapshot`. See [`docs/options-exposure-analytics.md`](./docs/options-exposure-analytics.md) for formulas, the intrinsic/extrinsic read order, delta-dollar interpretation, and why a giant OTM elasticity number is not guaranteed leverage.
+Both are pure reads (no write gate). `--json` emits structured rows for piping into a spreadsheet or an agent. The same `exposureAnalytics` object is included by MCP `robinhood_options_holdings`, `robinhood_options_inspect`, and `robinhood_options_snapshot`. See [`docs/options-exposure-analytics.md`](./docs/options-exposure-analytics.md) for formulas, the intrinsic/extrinsic read order, delta-dollar interpretation, roll audit, expected-move hurdle, convexity rent, and why a giant OTM elasticity number is not guaranteed leverage.
 
 ### 6.1 Options strategy planners — Greeks, spreads, quotes, and dry-run bodies
 

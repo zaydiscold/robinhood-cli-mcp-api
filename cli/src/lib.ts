@@ -8538,11 +8538,16 @@ export interface OptionExposureAnalytics {
   elasticity: number;
   absoluteElasticity: number;
   premiumPerDeltaDollar: number;
+  extrinsicPerDeltaDollar: number;
   markBreakEvenAtExpiration: number;
   costBasisBreakEvenAtExpiration: number;
   underlyingMovePctToMarkBreakEven: number;
+  expectedMovePctToExpiration: number;
+  breakEvenToExpectedMoveRatio: number;
   thetaUsdPerDay: number;
   thetaPctOfPremiumPerDay: number;
+  gammaPnlForOnePctMoveUsd: number;
+  gammaToThetaOnePctMoveRatio: number;
   gamma: number;
   vega: number;
   impliedVolatility: number;
@@ -8639,6 +8644,29 @@ export function computeOptionExposureAnalytics(
     validSpot && Number.isFinite(markBreakEven)
       ? ((markBreakEven - input.spot) / input.spot) * 100
       : Number.NaN;
+  const expectedMovePctToExpiration =
+    Number.isFinite(impliedVolatility) &&
+    impliedVolatility >= 0 &&
+    Number.isFinite(daysToExpiration) &&
+    daysToExpiration >= 0
+      ? impliedVolatility * Math.sqrt(daysToExpiration / 365) * 100
+      : Number.NaN;
+  const breakEvenToExpectedMoveRatio =
+    Number.isFinite(expectedMovePctToExpiration) &&
+    expectedMovePctToExpiration > 0 &&
+    Number.isFinite(underlyingMovePctToMarkBreakEven)
+      ? Math.abs(underlyingMovePctToMarkBreakEven) / expectedMovePctToExpiration
+      : Number.NaN;
+  const gammaPnlForOnePctMoveUsd =
+    Number.isFinite(gamma) && validSpot
+      ? 0.5 * gamma * Math.pow(input.spot * 0.01, 2) * 100 * contracts * sign
+      : Number.NaN;
+  const gammaToThetaOnePctMoveRatio =
+    Number.isFinite(gammaPnlForOnePctMoveUsd) &&
+    Number.isFinite(thetaUsdPerDay) &&
+    Math.abs(thetaUsdPerDay) > 0
+      ? Math.abs(gammaPnlForOnePctMoveUsd) / Math.abs(thetaUsdPerDay)
+      : Number.NaN;
 
   const diagnostics: OptionExposureDiagnostics = {
     favorable: [],
@@ -8732,11 +8760,20 @@ export function computeOptionExposureAnalytics(
         ? absolutePositionValue / Math.abs(deltaDollars)
         : Number.NaN,
     ),
+    extrinsicPerDeltaDollar: round(
+      Number.isFinite(extrinsic) && Number.isFinite(deltaDollars) && Math.abs(deltaDollars) > 0
+        ? Math.abs(extrinsic * 100 * contracts) / Math.abs(deltaDollars)
+        : Number.NaN,
+    ),
     markBreakEvenAtExpiration: round(markBreakEven),
     costBasisBreakEvenAtExpiration: round(costBasisBreakEven),
     underlyingMovePctToMarkBreakEven: round(underlyingMovePctToMarkBreakEven),
+    expectedMovePctToExpiration: round(expectedMovePctToExpiration),
+    breakEvenToExpectedMoveRatio: round(breakEvenToExpectedMoveRatio),
     thetaUsdPerDay: round(thetaUsdPerDay),
     thetaPctOfPremiumPerDay: round(thetaPctOfPremiumPerDay),
+    gammaPnlForOnePctMoveUsd: round(gammaPnlForOnePctMoveUsd),
+    gammaToThetaOnePctMoveRatio: round(gammaToThetaOnePctMoveRatio),
     gamma: round(gamma),
     vega: round(vega),
     impliedVolatility: round(impliedVolatility),

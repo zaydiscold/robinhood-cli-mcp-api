@@ -2187,6 +2187,9 @@ options
         elasticity: Number.isFinite(row.exposureAnalytics.elasticity)
           ? `${row.exposureAnalytics.elasticity.toFixed(2)}x`
           : "—",
+        extrinsic_per_delta: Number.isFinite(row.exposureAnalytics.extrinsicPerDeltaDollar)
+          ? row.exposureAnalytics.extrinsicPerDeltaDollar.toFixed(3)
+          : "—",
         intrinsic: usd(row.exposureAnalytics.intrinsicValueUsd),
         extrinsic: usd(row.exposureAnalytics.extrinsicValueUsd),
         dte: Number.isFinite(row.exposureAnalytics.daysToExpiration)
@@ -2214,6 +2217,16 @@ options
         break_even_move: Number.isFinite(row.exposureAnalytics.underlyingMovePctToMarkBreakEven)
           ? pct(row.exposureAnalytics.underlyingMovePctToMarkBreakEven)
           : "—",
+        expected_move: Number.isFinite(row.exposureAnalytics.expectedMovePctToExpiration)
+          ? pct(row.exposureAnalytics.expectedMovePctToExpiration)
+          : "—",
+        be_vs_expected: Number.isFinite(row.exposureAnalytics.breakEvenToExpectedMoveRatio)
+          ? `${row.exposureAnalytics.breakEvenToExpectedMoveRatio.toFixed(2)}x`
+          : "—",
+        gamma_1pct_usd: usd(row.exposureAnalytics.gammaPnlForOnePctMoveUsd),
+        gamma_theta: Number.isFinite(row.exposureAnalytics.gammaToThetaOnePctMoveRatio)
+          ? `${row.exposureAnalytics.gammaToThetaOnePctMoveRatio.toFixed(2)}x`
+          : "—",
         favorable: row.exposureAnalytics.diagnostics.favorable.join(",") || "—",
         unfavorable: row.exposureAnalytics.diagnostics.unfavorable.join(",") || "—",
         not_evaluated: row.exposureAnalytics.diagnostics.notEvaluated.join(",") || "—",
@@ -2232,6 +2245,7 @@ options
         "delta",
         "delta_usd",
         "elasticity",
+        "extrinsic_per_delta",
         "intrinsic",
         "extrinsic",
         "dte",
@@ -2243,6 +2257,10 @@ options
         "volume",
         "theta_pct_day",
         "break_even_move",
+        "expected_move",
+        "be_vs_expected",
+        "gamma_1pct_usd",
+        "gamma_theta",
         "favorable",
         "unfavorable",
         "not_evaluated",

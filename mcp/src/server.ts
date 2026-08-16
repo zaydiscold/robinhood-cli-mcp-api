@@ -1794,7 +1794,7 @@ server.registerTool(
   {
     title: "Robinhood Options Holdings",
     description:
-      "Every held option contract across accounts (or one), enriched with exact contract metadata, live mark/spot, intrinsic and extrinsic value, delta shares, delta dollars, option elasticity (local effective leverage), premium per delta-dollar, expiration break-evens, and theta burn. The owned-contract map; read only.",
+      "Every held option contract across accounts (or one), enriched with exact contract metadata, live mark/spot, intrinsic and extrinsic value, delta shares/dollars, local elasticity, extrinsic cost per delta-dollar, IV expected-move hurdle, gamma/theta convexity rent, expiration break-evens, and theta burn. The owned-contract map; read only.",
     inputSchema: z.object({ account_number: accountNumberOptionalSchema }),
     annotations: toolAnnotations(true, "read"),
   },
@@ -1917,7 +1917,7 @@ server.registerTool(
   {
     title: "Robinhood Option Inspect",
     description:
-      "Full detail for ONE owned/known option contract by its UUID: metadata, live Greeks/quote, intrinsic/extrinsic value, delta dollars, option elasticity, break-even and theta analytics, plus fill history. Tolerates the web _L1 leg suffix. Read.",
+      "Full detail for ONE owned/known option contract by its UUID: metadata, live Greeks/quote, intrinsic/extrinsic value, delta dollars, local elasticity, extrinsic cost per delta-dollar, IV expected-move hurdle, gamma/theta convexity rent, break-even and theta analytics, plus fill history. Tolerates the web _L1 leg suffix. Read.",
     inputSchema: z.object({
       option_instrument_id: z
         .string()
@@ -2546,7 +2546,7 @@ server.registerTool(
   {
     title: "Robinhood Options Research Snapshot",
     description:
-      "Research-grade bulk option-chain dataset across one expiration or a bounded all-expiration range. Returns every active contract with bid/ask/mark/mid/last/previous close/spread, delta/gamma/theta/vega/rho, IV, volume, open interest, moneyness, UUID and deep link, plus intrinsic/extrinsic value, delta dollars, local option elasticity, premium-per-delta-dollar, break-even and theta analytics. Includes put/call liquidity ratios and concentration leaders. Shared engine with CLI `options snapshot`; live read only.",
+      "Research-grade bulk option-chain dataset across one expiration or a bounded all-expiration range. Returns every active contract with bid/ask/mark/mid/last/previous close/spread, delta/gamma/theta/vega/rho, IV, volume, open interest, moneyness, UUID and deep link, plus intrinsic/extrinsic value, delta dollars, local elasticity, extrinsic cost per delta-dollar, IV expected-move hurdle, gamma/theta convexity rent, break-even and theta analytics. Includes put/call liquidity ratios and concentration leaders. Shared engine with CLI `options snapshot`; live read only.",
     inputSchema: z.object({
       symbol: symbolSchema,
       expiration: z.union([dateSchema, z.literal("all")]).optional(),

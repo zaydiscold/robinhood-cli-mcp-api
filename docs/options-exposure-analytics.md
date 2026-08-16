@@ -57,7 +57,7 @@ Current deterministic flags:
 
 - favorable: intrinsic backing present; delta at least `0.70`; absolute theta burn at most `0.5%` of premium/day; or local elasticity at least `3x`
 - unfavorable: no intrinsic backing; delta below `0.35`; theta burn at least `1%` of premium/day; expiration break-even move at least `10%`; expired contract or 14 calendar days or fewer; spread at least `10%` of mark; open interest below `100`; volume below `10`; or high elasticity paired with at least `75%` extrinsic premium
-- not evaluated: each missing DTE, spread, IV, gamma, vega, open-interest, or volume input is named explicitly instead of silently disappearing
+- not evaluated: each missing DTE, theta, spread, IV, gamma, vega, open-interest, or volume input is named explicitly instead of silently disappearing
 
 These thresholds are screeners, not trade rules. The raw values remain in the same payload so operators can audit why each flag fired.
 

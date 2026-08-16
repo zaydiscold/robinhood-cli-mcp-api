@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeOptionExposureAnalytics,
+  optionPositionSide,
   calendarDaysUntil,
   computeOptionsHistory,
   computeChainStats,
@@ -11,6 +12,7 @@ describe("computeOptionExposureAnalytics", () => {
   it("computes calendar days to expiration from a deterministic as-of", () => {
     expect(calendarDaysUntil("2026-08-20", "2026-08-15T20:00:00-07:00")).toBe(5);
     expect(calendarDaysUntil("2026-08-14", "2026-08-15T20:00:00-07:00")).toBe(-1);
+    expect(Number.isNaN(calendarDaysUntil("2026-02-31", "2026-02-15T20:00:00-08:00"))).toBe(true);
     expect(Number.isNaN(calendarDaysUntil("", "2026-08-15T20:00:00-07:00"))).toBe(true);
   });
 
@@ -127,6 +129,85 @@ describe("computeOptionExposureAnalytics", () => {
     expect(result.warnings).toContain("spot_unavailable");
     expect(result.warnings).toContain("option_price_unavailable");
     expect(result.warnings).toContain("delta_unavailable");
+  });
+
+  it("keeps null market-data fields unavailable instead of classifying them as zero", () => {
+    const result = computeOptionExposureAnalytics({
+      type: "call",
+      strike: 100,
+      spot: 100,
+      optionPrice: 2,
+      delta: 0.5,
+      gamma: null as unknown as number,
+      theta: null as unknown as number,
+      vega: null as unknown as number,
+      impliedVolatility: null as unknown as number,
+      bid: null as unknown as number,
+      ask: null as unknown as number,
+      openInterest: null as unknown as number,
+      volume: null as unknown as number,
+      daysToExpiration: null as unknown as number,
+    });
+
+    for (const value of [
+      result.gamma,
+      result.vega,
+      result.impliedVolatility,
+      result.bid,
+      result.ask,
+      result.openInterest,
+      result.volume,
+      result.daysToExpiration,
+      result.thetaUsdPerDay,
+    ]) {
+      expect(Number.isNaN(value)).toBe(true);
+    }
+    expect(result.diagnostics.notEvaluated).toEqual(
+      expect.arrayContaining([
+        "days_to_expiration_unavailable",
+        "theta_unavailable",
+        "bid_ask_spread_unavailable",
+        "implied_volatility_unavailable",
+        "gamma_unavailable",
+        "vega_unavailable",
+        "open_interest_unavailable",
+        "volume_unavailable",
+      ]),
+    );
+    expect(result.diagnostics.unfavorable).not.toEqual(
+      expect.arrayContaining([
+        "near_expiration",
+        "low_open_interest",
+        "low_volume",
+        "low_theta_burn",
+      ]),
+    );
+  });
+
+  it("signs short holdings' value, delta dollars, and theta opposite a long holding", () => {
+    const result = computeOptionExposureAnalytics({
+      type: "call",
+      strike: 100,
+      spot: 110,
+      optionPrice: 12,
+      delta: 0.6,
+      theta: -0.1,
+      contracts: 2,
+      positionSide: "short",
+    });
+
+    expect(result.positionValueUsd).toBe(-2_400);
+    expect(result.deltaDollars).toBe(-13_200);
+    expect(result.thetaUsdPerDay).toBe(20);
+  });
+
+  it("derives holding side from the aggregate-position leg before strategy fallback", () => {
+    expect(optionPositionSide({ legs: [{ position_type: "short" }], strategy: "long_call" })).toBe(
+      "short",
+    );
+    expect(optionPositionSide({ legs: [{}], strategy: "long_call" })).toBe("long");
+    expect(optionPositionSide({ legs: [{}], strategy: "short_put" })).toBe("short");
+    expect(optionPositionSide({ legs: [{}], strategy: "straddle" })).toBeUndefined();
   });
 });
 

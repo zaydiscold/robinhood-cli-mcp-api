@@ -118,6 +118,7 @@ import {
   fetchRecurringSchedules,
   setRecurringState,
   finiteNumber,
+  optionPositionSide,
   optionMoney,
   repositoryRoot,
   appendPortfolioSnapshot,
@@ -1736,6 +1737,7 @@ interface OpenOptionPosition {
   name: string;
   averageOpenPrice: number;
   quantity: number;
+  positionSide?: "long" | "short";
   optionId: string;
   accountNumber: string;
 }
@@ -1782,6 +1784,7 @@ async function loadOpenOptionPositions(): Promise<OpenOptionPosition[]> {
       name: `${position.symbol} ${detail}`,
       averageOpenPrice: num(position.average_open_price),
       quantity,
+      positionSide: optionPositionSide(position),
       optionId,
       accountNumber: String(position.account_number ?? ""),
     });
@@ -2138,6 +2141,7 @@ options
           volume: finiteNumber(m.volume),
           daysToExpiration: calendarDaysUntil(String(meta.expiration_date ?? "")),
           contracts: position.quantity,
+          positionSide: position.positionSide,
         });
         return {
           contract: position.name,

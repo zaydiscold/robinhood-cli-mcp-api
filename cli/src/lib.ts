@@ -8484,9 +8484,19 @@ export function calendarDaysUntil(expiration: string, asOf: string | Date = new 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) return Number.NaN;
   const toUtc = (value: string) => {
     const [year, month, day] = value.split("-").map(Number);
-    return Date.UTC(year, month - 1, day);
+    const timestamp = Date.UTC(year, month - 1, day);
+    const parsed = new Date(timestamp);
+    return parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+      ? timestamp
+      : Number.NaN;
   };
-  return Math.round((toUtc(expiration) - toUtc(asOfDate)) / 86_400_000);
+  const expirationUtc = toUtc(expiration);
+  const asOfUtc = toUtc(asOfDate);
+  return Number.isFinite(expirationUtc) && Number.isFinite(asOfUtc)
+    ? Math.round((expirationUtc - asOfUtc) / 86_400_000)
+    : Number.NaN;
 }
 
 export interface OptionExposureAnalyticsInput {
@@ -8607,24 +8617,24 @@ export function computeOptionExposureAnalytics(
         ? input.strike + entryPremium
         : input.strike - entryPremium
       : Number.NaN;
-  const theta = Number(input.theta);
+  const theta = finiteNumber(input.theta);
   const thetaUsdPerDay = Number.isFinite(theta) ? theta * 100 * contracts * sign : Number.NaN;
   const thetaPctOfPremiumPerDay =
     absolutePositionValue > 0 && Number.isFinite(thetaUsdPerDay)
       ? (thetaUsdPerDay / absolutePositionValue) * 100
       : Number.NaN;
-  const gamma = Number(input.gamma);
-  const vega = Number(input.vega);
-  const impliedVolatility = Number(input.impliedVolatility);
-  const bid = Number(input.bid);
-  const ask = Number(input.ask);
+  const gamma = finiteNumber(input.gamma);
+  const vega = finiteNumber(input.vega);
+  const impliedVolatility = finiteNumber(input.impliedVolatility);
+  const bid = finiteNumber(input.bid);
+  const ask = finiteNumber(input.ask);
   const validBidAsk = Number.isFinite(bid) && bid >= 0 && Number.isFinite(ask) && ask >= bid;
   const spreadUsd = validBidAsk ? ask - bid : Number.NaN;
   const spreadPctOfMark =
     validBidAsk && validPrice ? (spreadUsd / input.optionPrice) * 100 : Number.NaN;
-  const openInterest = Number(input.openInterest);
-  const volume = Number(input.volume);
-  const daysToExpiration = Number(input.daysToExpiration);
+  const openInterest = finiteNumber(input.openInterest);
+  const volume = finiteNumber(input.volume);
+  const daysToExpiration = finiteNumber(input.daysToExpiration);
   const underlyingMovePctToMarkBreakEven =
     validSpot && Number.isFinite(markBreakEven)
       ? ((markBreakEven - input.spot) / input.spot) * 100
@@ -8655,6 +8665,8 @@ export function computeOptionExposureAnalytics(
     } else if (thetaPctOfPremiumPerDay <= -1) {
       diagnostics.unfavorable.push("high_theta_burn");
     }
+  } else {
+    diagnostics.notEvaluated.push("theta_unavailable");
   }
   if (Number.isFinite(elasticity) && Math.abs(elasticity) >= 3) {
     diagnostics.favorable.push("high_local_elasticity");
@@ -8824,8 +8836,26 @@ function finitePrice(value: number | string | null | undefined): number {
 }
 
 export function finiteNumber(value: unknown): number {
+  if (value == null) return Number.NaN;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+/** Determine an aggregate option position's side without guessing from its option type. */
+export function optionPositionSide(position: unknown): "long" | "short" | undefined {
+  const candidate =
+    position && typeof position === "object"
+      ? (position as { legs?: unknown; strategy?: unknown })
+      : {};
+  const firstLeg = Array.isArray(candidate.legs)
+    ? (candidate.legs[0] as { position_type?: unknown } | undefined)
+    : undefined;
+  const legSide = String(firstLeg?.position_type ?? "").toLowerCase();
+  if (legSide === "long" || legSide === "short") return legSide;
+  const strategy = String(candidate.strategy ?? "").toLowerCase();
+  if (strategy.startsWith("long")) return "long";
+  if (strategy.startsWith("short")) return "short";
+  return undefined;
 }
 
 export function quoteLast(quote: any): number {

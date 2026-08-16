@@ -97,6 +97,7 @@ import {
   selectNearStrikes,
   classifyMoneyness,
   finiteNumber,
+  optionPositionSide,
   quoteLast,
   optionMoney,
   buildOptionsStrategyPricingSummary,
@@ -1757,6 +1758,37 @@ server.registerTool(
   },
 );
 
+async function ownedOptionPositionSide(optionId: string): Promise<"long" | "short" | undefined> {
+  try {
+    const owned = await loadOwnedAccounts();
+    if (!owned) return undefined;
+    const positionsByAccount = await Promise.all(
+      [...owned.numbers].map(async (accountNumber) =>
+        brokerageGetJson(
+          "https://api.robinhood.com/options/aggregate_positions/?account_numbers=",
+          {},
+          { account_numbers: accountNumber, nonzero: "true" },
+        ),
+      ),
+    );
+    const sides = new Set<"long" | "short">();
+    for (const response of positionsByAccount) {
+      for (const position of response?.results ?? []) {
+        const hasOption = (position?.legs ?? []).some((leg: unknown) => {
+          const optionIdFromLeg =
+            leg && typeof leg === "object" ? (leg as { option_id?: unknown }).option_id : undefined;
+          return String(optionIdFromLeg ?? "") === optionId;
+        });
+        const side = hasOption ? optionPositionSide(position) : undefined;
+        if (side) sides.add(side);
+      }
+    }
+    return sides.size === 1 ? [...sides][0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 server.registerTool(
   "robinhood_options_holdings",
   {
@@ -1798,6 +1830,7 @@ server.registerTool(
           symbol: p.symbol,
           optionInstrumentId: oid,
           quantity: n(p.quantity),
+          positionSide: optionPositionSide(p),
           averageOpenPrice: n(p.average_open_price),
           strategy: p.strategy,
           link: `https://robinhood.com/options/${oid}?account_number=${acct}`,
@@ -1871,6 +1904,7 @@ server.registerTool(
           volume: finiteNumber(mark.volume),
           daysToExpiration: calendarDaysUntil(String(meta.expiration_date ?? "")),
           contracts: finiteNumber(row.quantity),
+          positionSide: row.positionSide,
         }),
       };
     });
@@ -1918,6 +1952,7 @@ server.registerTool(
       equityQuote.last_extended_hours_trade_price ?? equityQuote.last_trade_price,
     );
     const optionPrice = finiteNumber(mark.adjusted_mark_price ?? mark.mark_price);
+    const positionSide = await ownedOptionPositionSide(id);
     const fills: any[] = [];
     if (meta.chain_id) {
       const orders =
@@ -1980,6 +2015,7 @@ server.registerTool(
         openInterest: finiteNumber(mark.open_interest),
         volume: finiteNumber(mark.volume),
         daysToExpiration: calendarDaysUntil(String(meta.expiration_date ?? "")),
+        positionSide,
       }),
       openInterest: n(mark.open_interest),
       volume: n(mark.volume),

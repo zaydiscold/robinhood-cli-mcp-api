@@ -2097,9 +2097,8 @@ options
     const equityEntries = await Promise.all(
       symbols.map(async (symbol) => {
         try {
-          const instrument = (
-            await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol })
-          ).results?.[0];
+          const instrument = (await brokerageGetJson(INSTRUMENTS_SYMBOL_URL, { symbol }))
+            .results?.[0];
           return [symbol, String(instrument?.id ?? "")] as const;
         } catch {
           return [symbol, ""] as const;
@@ -2121,7 +2120,7 @@ options
         const spot = finiteNumber(
           equityQuote.last_extended_hours_trade_price ?? equityQuote.last_trade_price,
         );
-        const analytics = computeOptionExposureAnalytics({
+        const exposureAnalytics = computeOptionExposureAnalytics({
           type: meta.type === "put" ? "put" : "call",
           strike: finiteNumber(meta.strike_price),
           spot,
@@ -2146,7 +2145,7 @@ options
               : Number.NaN,
           returnPct: optionReturnPct(position.averageOpenPrice, mark),
           delta,
-          analytics,
+          exposureAnalytics,
         };
       })
       // Dollars, not percents: rank by unrealized $ P&L so a $6 lot can't outrank a $1,600 call.
@@ -2171,12 +2170,12 @@ options
         day_usd: usd(row.dayUsd),
         return: pct(row.returnPct),
         delta: Number.isFinite(row.delta) ? row.delta.toFixed(2) : "—",
-        delta_usd: usd(row.analytics.deltaDollars),
-        elasticity: Number.isFinite(row.analytics.elasticity)
-          ? `${row.analytics.elasticity.toFixed(2)}x`
+        delta_usd: usd(row.exposureAnalytics.deltaDollars),
+        elasticity: Number.isFinite(row.exposureAnalytics.elasticity)
+          ? `${row.exposureAnalytics.elasticity.toFixed(2)}x`
           : "—",
-        intrinsic: usd(row.analytics.intrinsicValueUsd),
-        extrinsic: usd(row.analytics.extrinsicValueUsd),
+        intrinsic: usd(row.exposureAnalytics.intrinsicValueUsd),
+        extrinsic: usd(row.exposureAnalytics.extrinsicValueUsd),
       })),
       [
         "contract",

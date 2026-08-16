@@ -8470,6 +8470,25 @@ export function optionReturnPct(averageOpenPrice: number, adjustedMarkPrice: num
   return ((currentValue - averageOpenPrice) / averageOpenPrice) * 100;
 }
 
+export function calendarDaysUntil(expiration: string, asOf: string | Date = new Date()): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiration)) return Number.NaN;
+  const asOfText =
+    typeof asOf === "string"
+      ? asOf
+      : [
+          asOf.getFullYear(),
+          String(asOf.getMonth() + 1).padStart(2, "0"),
+          String(asOf.getDate()).padStart(2, "0"),
+        ].join("-");
+  const asOfDate = asOfText.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) return Number.NaN;
+  const toUtc = (value: string) => {
+    const [year, month, day] = value.split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  };
+  return Math.round((toUtc(expiration) - toUtc(asOfDate)) / 86_400_000);
+}
+
 export interface OptionExposureAnalyticsInput {
   type: "call" | "put";
   strike: number;
@@ -8477,9 +8496,23 @@ export interface OptionExposureAnalyticsInput {
   optionPrice: number;
   entryPremiumPerShare?: number;
   delta: number;
+  gamma?: number;
   theta?: number;
+  vega?: number;
+  impliedVolatility?: number;
+  bid?: number;
+  ask?: number;
+  openInterest?: number;
+  volume?: number;
+  daysToExpiration?: number;
   contracts?: number;
   positionSide?: "long" | "short";
+}
+
+export interface OptionExposureDiagnostics {
+  favorable: string[];
+  unfavorable: string[];
+  notEvaluated: string[];
 }
 
 export interface OptionExposureAnalytics {
@@ -8500,6 +8533,17 @@ export interface OptionExposureAnalytics {
   underlyingMovePctToMarkBreakEven: number;
   thetaUsdPerDay: number;
   thetaPctOfPremiumPerDay: number;
+  gamma: number;
+  vega: number;
+  impliedVolatility: number;
+  bid: number;
+  ask: number;
+  spreadUsd: number;
+  spreadPctOfMark: number;
+  openInterest: number;
+  volume: number;
+  daysToExpiration: number;
+  diagnostics: OptionExposureDiagnostics;
   warnings: string[];
 }
 
@@ -8517,9 +8561,8 @@ export function computeOptionExposureAnalytics(
 ): OptionExposureAnalytics {
   const round = (value: number, digits = 6): number =>
     Number.isFinite(value) ? Number(value.toFixed(digits)) : Number.NaN;
-  const contracts = Number.isFinite(input.contracts) && Number(input.contracts) > 0
-    ? Number(input.contracts)
-    : 1;
+  const contracts =
+    Number.isFinite(input.contracts) && Number(input.contracts) > 0 ? Number(input.contracts) : 1;
   const sign = input.positionSide === "short" ? -1 : 1;
   const validSpot = Number.isFinite(input.spot) && input.spot > 0;
   const validStrike = Number.isFinite(input.strike) && input.strike >= 0;
@@ -8531,46 +8574,142 @@ export function computeOptionExposureAnalytics(
   if (!validPrice) warnings.push("option_price_unavailable");
   if (!validDelta) warnings.push("delta_unavailable");
 
-  const intrinsic = validSpot && validStrike
-    ? input.type === "call"
-      ? Math.max(0, input.spot - input.strike)
-      : Math.max(0, input.strike - input.spot)
-    : Number.NaN;
-  const extrinsic = validPrice && Number.isFinite(intrinsic)
-    ? input.optionPrice - intrinsic
-    : Number.NaN;
-  if (Number.isFinite(extrinsic) && extrinsic < -0.01) warnings.push("negative_extrinsic_quote_violation");
+  const intrinsic =
+    validSpot && validStrike
+      ? input.type === "call"
+        ? Math.max(0, input.spot - input.strike)
+        : Math.max(0, input.strike - input.spot)
+      : Number.NaN;
+  const extrinsic =
+    validPrice && Number.isFinite(intrinsic) ? input.optionPrice - intrinsic : Number.NaN;
+  if (Number.isFinite(extrinsic) && extrinsic < -0.01)
+    warnings.push("negative_extrinsic_quote_violation");
   const positionValueUsd = validPrice ? input.optionPrice * 100 * contracts * sign : Number.NaN;
   const deltaShares = validDelta ? input.delta * 100 * contracts * sign : Number.NaN;
-  const deltaDollars = validSpot && Number.isFinite(deltaShares)
-    ? deltaShares * input.spot
-    : Number.NaN;
+  const deltaDollars =
+    validSpot && Number.isFinite(deltaShares) ? deltaShares * input.spot : Number.NaN;
   const absolutePositionValue = Math.abs(positionValueUsd);
-  const elasticity = absolutePositionValue > 0 && Number.isFinite(deltaDollars)
-    ? deltaDollars / absolutePositionValue
-    : Number.NaN;
+  const elasticity =
+    absolutePositionValue > 0 && Number.isFinite(deltaDollars)
+      ? deltaDollars / absolutePositionValue
+      : Number.NaN;
   const entryPremium = Number(input.entryPremiumPerShare);
   const validEntryPremium = Number.isFinite(entryPremium) && entryPremium >= 0;
-  const markBreakEven = validPrice && validStrike
-    ? input.type === "call"
-      ? input.strike + input.optionPrice
-      : input.strike - input.optionPrice
-    : Number.NaN;
-  const costBasisBreakEven = validEntryPremium && validStrike
-    ? input.type === "call"
-      ? input.strike + entryPremium
-      : input.strike - entryPremium
-    : Number.NaN;
+  const markBreakEven =
+    validPrice && validStrike
+      ? input.type === "call"
+        ? input.strike + input.optionPrice
+        : input.strike - input.optionPrice
+      : Number.NaN;
+  const costBasisBreakEven =
+    validEntryPremium && validStrike
+      ? input.type === "call"
+        ? input.strike + entryPremium
+        : input.strike - entryPremium
+      : Number.NaN;
   const theta = Number(input.theta);
   const thetaUsdPerDay = Number.isFinite(theta) ? theta * 100 * contracts * sign : Number.NaN;
+  const thetaPctOfPremiumPerDay =
+    absolutePositionValue > 0 && Number.isFinite(thetaUsdPerDay)
+      ? (thetaUsdPerDay / absolutePositionValue) * 100
+      : Number.NaN;
+  const gamma = Number(input.gamma);
+  const vega = Number(input.vega);
+  const impliedVolatility = Number(input.impliedVolatility);
+  const bid = Number(input.bid);
+  const ask = Number(input.ask);
+  const validBidAsk = Number.isFinite(bid) && bid >= 0 && Number.isFinite(ask) && ask >= bid;
+  const spreadUsd = validBidAsk ? ask - bid : Number.NaN;
+  const spreadPctOfMark =
+    validBidAsk && validPrice ? (spreadUsd / input.optionPrice) * 100 : Number.NaN;
+  const openInterest = Number(input.openInterest);
+  const volume = Number(input.volume);
+  const daysToExpiration = Number(input.daysToExpiration);
+  const underlyingMovePctToMarkBreakEven =
+    validSpot && Number.isFinite(markBreakEven)
+      ? ((markBreakEven - input.spot) / input.spot) * 100
+      : Number.NaN;
+
+  const diagnostics: OptionExposureDiagnostics = {
+    favorable: [],
+    unfavorable: [],
+    notEvaluated: [],
+  };
+  const extrinsicPct =
+    validPrice && Number.isFinite(extrinsic) ? (extrinsic / input.optionPrice) * 100 : Number.NaN;
+  const intrinsicPct =
+    validPrice && Number.isFinite(intrinsic) ? (intrinsic / input.optionPrice) * 100 : Number.NaN;
+  if (Number.isFinite(intrinsicPct) && intrinsicPct > 0) {
+    diagnostics.favorable.push("intrinsic_backing_present");
+  } else if (Number.isFinite(intrinsicPct)) {
+    diagnostics.unfavorable.push("no_intrinsic_backing");
+  }
+  if (validDelta && Math.abs(input.delta) >= 0.7) {
+    diagnostics.favorable.push("high_delta_response");
+  } else if (validDelta && Math.abs(input.delta) < 0.35) {
+    diagnostics.unfavorable.push("low_delta_response");
+  }
+  if (Number.isFinite(thetaPctOfPremiumPerDay)) {
+    if (Math.abs(thetaPctOfPremiumPerDay) <= 0.5) {
+      diagnostics.favorable.push("low_theta_burn");
+    } else if (thetaPctOfPremiumPerDay <= -1) {
+      diagnostics.unfavorable.push("high_theta_burn");
+    }
+  }
+  if (Number.isFinite(elasticity) && Math.abs(elasticity) >= 3) {
+    diagnostics.favorable.push("high_local_elasticity");
+  }
+  if (
+    Number.isFinite(underlyingMovePctToMarkBreakEven) &&
+    Math.abs(underlyingMovePctToMarkBreakEven) >= 10
+  ) {
+    diagnostics.unfavorable.push("large_expiration_break_even_move");
+  }
+  if (Number.isFinite(daysToExpiration)) {
+    if (daysToExpiration < 0) diagnostics.unfavorable.push("expired_contract");
+    else if (daysToExpiration <= 14) diagnostics.unfavorable.push("near_expiration");
+  } else {
+    diagnostics.notEvaluated.push("days_to_expiration_unavailable");
+  }
+  if (Number.isFinite(spreadPctOfMark)) {
+    if (spreadPctOfMark >= 10) diagnostics.unfavorable.push("wide_bid_ask_spread");
+  } else {
+    diagnostics.notEvaluated.push("bid_ask_spread_unavailable");
+  }
+  if (!Number.isFinite(impliedVolatility))
+    diagnostics.notEvaluated.push("implied_volatility_unavailable");
+  if (!Number.isFinite(gamma)) diagnostics.notEvaluated.push("gamma_unavailable");
+  if (!Number.isFinite(vega)) diagnostics.notEvaluated.push("vega_unavailable");
+  if (Number.isFinite(openInterest)) {
+    if (openInterest < 100) diagnostics.unfavorable.push("low_open_interest");
+  } else {
+    diagnostics.notEvaluated.push("open_interest_unavailable");
+  }
+  if (Number.isFinite(volume)) {
+    if (volume < 10) diagnostics.unfavorable.push("low_volume");
+  } else {
+    diagnostics.notEvaluated.push("volume_unavailable");
+  }
+  if (
+    Number.isFinite(elasticity) &&
+    Math.abs(elasticity) >= 3 &&
+    Number.isFinite(extrinsicPct) &&
+    extrinsicPct >= 75
+  ) {
+    diagnostics.unfavorable.push("high_elasticity_fragile_extrinsic_premium");
+  }
 
   return {
     intrinsicValuePerShare: round(intrinsic),
     extrinsicValuePerShare: round(extrinsic),
-    intrinsicValueUsd: round(Number.isFinite(intrinsic) ? intrinsic * 100 * contracts * sign : Number.NaN),
-    extrinsicValueUsd: round(Number.isFinite(extrinsic) ? extrinsic * 100 * contracts * sign : Number.NaN),
-    intrinsicPctOfPremium: round(validPrice && Number.isFinite(intrinsic) ? (intrinsic / input.optionPrice) * 100 : Number.NaN),
-    extrinsicPctOfPremium: round(validPrice && Number.isFinite(extrinsic) ? (extrinsic / input.optionPrice) * 100 : Number.NaN),
+    intrinsicValueUsd: round(
+      Number.isFinite(intrinsic) ? intrinsic * 100 * contracts * sign : Number.NaN,
+    ),
+    extrinsicValueUsd: round(
+      Number.isFinite(extrinsic) ? extrinsic * 100 * contracts * sign : Number.NaN,
+    ),
+    intrinsicPctOfPremium: round(intrinsicPct),
+    extrinsicPctOfPremium: round(extrinsicPct),
     positionValueUsd: round(positionValueUsd),
     deltaShares: round(deltaShares),
     deltaDollars: round(deltaDollars),
@@ -8583,17 +8722,20 @@ export function computeOptionExposureAnalytics(
     ),
     markBreakEvenAtExpiration: round(markBreakEven),
     costBasisBreakEvenAtExpiration: round(costBasisBreakEven),
-    underlyingMovePctToMarkBreakEven: round(
-      validSpot && Number.isFinite(markBreakEven)
-        ? ((markBreakEven - input.spot) / input.spot) * 100
-        : Number.NaN,
-    ),
+    underlyingMovePctToMarkBreakEven: round(underlyingMovePctToMarkBreakEven),
     thetaUsdPerDay: round(thetaUsdPerDay),
-    thetaPctOfPremiumPerDay: round(
-      absolutePositionValue > 0 && Number.isFinite(thetaUsdPerDay)
-        ? (thetaUsdPerDay / absolutePositionValue) * 100
-        : Number.NaN,
-    ),
+    thetaPctOfPremiumPerDay: round(thetaPctOfPremiumPerDay),
+    gamma: round(gamma),
+    vega: round(vega),
+    impliedVolatility: round(impliedVolatility),
+    bid: round(bid),
+    ask: round(ask),
+    spreadUsd: round(spreadUsd),
+    spreadPctOfMark: round(spreadPctOfMark),
+    openInterest: round(openInterest),
+    volume: round(volume),
+    daysToExpiration: round(daysToExpiration),
+    diagnostics,
     warnings,
   };
 }
@@ -10715,7 +10857,15 @@ export async function computeOptionsSnapshot(
         spot,
         optionPrice: adjustedMark,
         delta: Number(mark.delta),
+        gamma: Number(mark.gamma),
         theta: Number(mark.theta),
+        vega: Number(mark.vega),
+        impliedVolatility: iv,
+        bid,
+        ask,
+        openInterest: Number(mark.open_interest),
+        volume: Number(mark.volume),
+        daysToExpiration: calendarDaysUntil(String(row.expiration_date ?? "")),
       }),
     };
   });

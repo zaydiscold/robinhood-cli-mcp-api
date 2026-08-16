@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   computeOptionExposureAnalytics,
+  calendarDaysUntil,
   computeOptionsHistory,
   computeChainStats,
   computeOptionsSnapshot,
 } from "../src/lib.js";
 
 describe("computeOptionExposureAnalytics", () => {
+  it("computes calendar days to expiration from a deterministic as-of", () => {
+    expect(calendarDaysUntil("2026-08-20", "2026-08-15T20:00:00-07:00")).toBe(5);
+    expect(calendarDaysUntil("2026-08-14", "2026-08-15T20:00:00-07:00")).toBe(-1);
+    expect(Number.isNaN(calendarDaysUntil("", "2026-08-15T20:00:00-07:00"))).toBe(true);
+  });
+
   it("separates intrinsic and extrinsic value and reports delta-dollar capital elasticity", () => {
     const result = computeOptionExposureAnalytics({
       type: "call",
@@ -34,7 +41,58 @@ describe("computeOptionExposureAnalytics", () => {
     expect(result.underlyingMovePctToMarkBreakEven).toBe(5);
     expect(result.thetaUsdPerDay).toBe(-20);
     expect(result.thetaPctOfPremiumPerDay).toBe(-0.2);
+    expect(result.diagnostics).toEqual({
+      favorable: ["intrinsic_backing_present", "high_delta_response", "low_theta_burn"],
+      unfavorable: [],
+      notEvaluated: [
+        "days_to_expiration_unavailable",
+        "bid_ask_spread_unavailable",
+        "implied_volatility_unavailable",
+        "gamma_unavailable",
+        "vega_unavailable",
+        "open_interest_unavailable",
+        "volume_unavailable",
+      ],
+    });
     expect(result.warnings).toEqual([]);
+  });
+
+  it("surfaces why high elasticity can still be a fragile option", () => {
+    const result = computeOptionExposureAnalytics({
+      type: "call",
+      strike: 120,
+      spot: 100,
+      optionPrice: 2,
+      entryPremiumPerShare: 3,
+      delta: 0.25,
+      gamma: 0.03,
+      theta: -0.08,
+      vega: 0.12,
+      impliedVolatility: 0.9,
+      bid: 1.7,
+      ask: 2.3,
+      openInterest: 20,
+      volume: 3,
+      daysToExpiration: 5,
+    });
+
+    expect(result.elasticity).toBe(12.5);
+    expect(result.extrinsicPctOfPremium).toBe(100);
+    expect(result.spreadPctOfMark).toBe(30);
+    expect(result.daysToExpiration).toBe(5);
+    expect(result.diagnostics.favorable).toEqual(["high_local_elasticity"]);
+    expect(result.diagnostics.unfavorable).toEqual([
+      "no_intrinsic_backing",
+      "low_delta_response",
+      "high_theta_burn",
+      "large_expiration_break_even_move",
+      "near_expiration",
+      "wide_bid_ask_spread",
+      "low_open_interest",
+      "low_volume",
+      "high_elasticity_fragile_extrinsic_premium",
+    ]);
+    expect(result.diagnostics.notEvaluated).toEqual([]);
   });
 
   it("keeps put direction signed while exposing absolute leverage", () => {

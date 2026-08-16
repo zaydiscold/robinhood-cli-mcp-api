@@ -24,7 +24,10 @@ describe("computeOptionExposureAnalytics", () => {
       optionPrice: 50,
       entryPremiumPerShare: 52,
       delta: 0.8,
+      gamma: 0.01,
       theta: -0.1,
+      impliedVolatility: 0.4,
+      daysToExpiration: 365,
       contracts: 2,
     });
 
@@ -38,19 +41,21 @@ describe("computeOptionExposureAnalytics", () => {
     expect(result.elasticity).toBe(1.6);
     expect(result.absoluteElasticity).toBe(1.6);
     expect(result.premiumPerDeltaDollar).toBe(0.625);
+    expect(result.extrinsicPerDeltaDollar).toBe(0.0625);
     expect(result.markBreakEvenAtExpiration).toBe(105);
     expect(result.costBasisBreakEvenAtExpiration).toBe(107);
     expect(result.underlyingMovePctToMarkBreakEven).toBe(5);
+    expect(result.expectedMovePctToExpiration).toBe(40);
+    expect(result.breakEvenToExpectedMoveRatio).toBe(0.125);
     expect(result.thetaUsdPerDay).toBe(-20);
     expect(result.thetaPctOfPremiumPerDay).toBe(-0.2);
+    expect(result.gammaPnlForOnePctMoveUsd).toBe(1);
+    expect(result.gammaToThetaOnePctMoveRatio).toBe(0.05);
     expect(result.diagnostics).toEqual({
       favorable: ["intrinsic_backing_present", "high_delta_response", "low_theta_burn"],
       unfavorable: [],
       notEvaluated: [
-        "days_to_expiration_unavailable",
         "bid_ask_spread_unavailable",
-        "implied_volatility_unavailable",
-        "gamma_unavailable",
         "vega_unavailable",
         "open_interest_unavailable",
         "volume_unavailable",
@@ -80,6 +85,11 @@ describe("computeOptionExposureAnalytics", () => {
 
     expect(result.elasticity).toBe(12.5);
     expect(result.extrinsicPctOfPremium).toBe(100);
+    expect(result.extrinsicPerDeltaDollar).toBe(0.08);
+    expect(result.expectedMovePctToExpiration).toBe(10.533703);
+    expect(result.breakEvenToExpectedMoveRatio).toBe(2.088534);
+    expect(result.gammaPnlForOnePctMoveUsd).toBe(1.5);
+    expect(result.gammaToThetaOnePctMoveRatio).toBe(0.1875);
     expect(result.spreadPctOfMark).toBe(30);
     expect(result.daysToExpiration).toBe(5);
     expect(result.diagnostics.favorable).toEqual(["high_local_elasticity"]);
@@ -159,6 +169,10 @@ describe("computeOptionExposureAnalytics", () => {
       result.volume,
       result.daysToExpiration,
       result.thetaUsdPerDay,
+      result.expectedMovePctToExpiration,
+      result.breakEvenToExpectedMoveRatio,
+      result.gammaPnlForOnePctMoveUsd,
+      result.gammaToThetaOnePctMoveRatio,
     ]) {
       expect(Number.isNaN(value)).toBe(true);
     }
@@ -184,13 +198,14 @@ describe("computeOptionExposureAnalytics", () => {
     );
   });
 
-  it("signs short holdings' value, delta dollars, and theta opposite a long holding", () => {
+  it("signs short holdings' value, delta dollars, theta, and gamma P&L opposite a long holding", () => {
     const result = computeOptionExposureAnalytics({
       type: "call",
       strike: 100,
       spot: 110,
       optionPrice: 12,
       delta: 0.6,
+      gamma: 0.02,
       theta: -0.1,
       contracts: 2,
       positionSide: "short",
@@ -199,6 +214,7 @@ describe("computeOptionExposureAnalytics", () => {
     expect(result.positionValueUsd).toBe(-2_400);
     expect(result.deltaDollars).toBe(-13_200);
     expect(result.thetaUsdPerDay).toBe(20);
+    expect(result.gammaPnlForOnePctMoveUsd).toBe(-2.42);
   });
 
   it("derives holding side from the aggregate-position leg before strategy fallback", () => {

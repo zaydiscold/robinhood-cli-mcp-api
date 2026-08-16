@@ -1844,9 +1844,7 @@ server.registerTool(
       const mark = marks.get(row.optionInstrumentId) ?? {};
       const quote = quotes.get(equityIds.get(row.symbol) ?? "") ?? {};
       const optionPrice = finiteNumber(mark.adjusted_mark_price ?? mark.mark_price);
-      const spot = finiteNumber(
-        quote.last_extended_hours_trade_price ?? quote.last_trade_price,
-      );
+      const spot = finiteNumber(quote.last_extended_hours_trade_price ?? quote.last_trade_price);
       return {
         ...row,
         strike: finiteNumber(meta.strike_price),

@@ -254,4 +254,46 @@ describe("computeSentinel — composes risk scan + options-event guardian", () =
     expect(r.events.count).toBe(1);
     expect(r.warnings.some((w: string) => /assignment event/i.test(w))).toBe(true);
   });
+
+  it("does not classify historical events as upcoming", async () => {
+    const future = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+    const getJson = (async (url: string) => {
+      const acc = ownsA1(url);
+      if (acc) return acc;
+      if (url.includes("options/events"))
+        return {
+          results: [
+            {
+              event_date: "2000-01-01",
+              type: "expiration",
+              direction: "credit",
+              quantity: "1",
+              total_cash_amount: "0",
+              state: "confirmed",
+              account_number: "A1",
+              option_id: "oid-past",
+            },
+            {
+              event_date: future,
+              type: "expiration",
+              direction: "credit",
+              quantity: "1",
+              total_cash_amount: "0",
+              state: "confirmed",
+              account_number: "A1",
+              option_id: "oid-future",
+            },
+          ],
+        };
+      if (url.includes("options/instruments")) return { chain_symbol: "AAPL" };
+      return { results: [] };
+    }) as any;
+    const getAll = (async () => []) as any;
+    const r = await computeSentinel(
+      { accountNumber: "A1", eventLookaheadDays: 7 },
+      { getJson, getAll },
+    );
+    expect(r.events.count).toBe(2);
+    expect(r.warnings).toEqual(["1 expiration(s) in the next 7 days."]);
+  });
 });

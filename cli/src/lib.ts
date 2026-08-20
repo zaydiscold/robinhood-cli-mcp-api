@@ -10517,8 +10517,9 @@ export async function computeSentinel(
   if (risk.warnings?.length) warnings.push(...risk.warnings);
   // Flag near-term expirations and assignments
   const lookaheadDays = opts.eventLookaheadDays ?? 7;
+  const today = new Date().toISOString().slice(0, 10);
   const cutoff = new Date(Date.now() + lookaheadDays * 86400000).toISOString().slice(0, 10);
-  const upcoming = events.events.filter((e) => e.date <= cutoff);
+  const upcoming = events.events.filter((e) => e.date >= today && e.date <= cutoff);
   if (upcoming.length > 0) {
     const assignmentEvents = upcoming.filter((e) => e.type === "assignment");
     const expirationEvents = upcoming.filter((e) => e.type === "expiration");

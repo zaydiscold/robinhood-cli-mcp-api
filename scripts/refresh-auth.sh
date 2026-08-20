@@ -75,22 +75,21 @@ export CHROME_BASE
 export BRAVE_BASE
 export EDGE_BASE
 
-# --- CDP-first (live-memory) read -------------------------------------------
-# The disk scan below reads Chrome's on-disk LevelDB, which Chrome flushes
-# LAZILY — so a token that rotated minutes ago (or a fresh login) may not be on
-# disk yet, and the scan finds nothing even though you're logged in. When a
-# debug Chrome is reachable (chrome-debug / --remote-debugging-port=9222) we
-# instead read localStorage["web:auth_state"] straight from the LIVE tab over
-# CDP: authoritative, always current. Populates RH_CDP_JSON for the python
-# below; on any failure we fall through to the disk scan (headless/offline path).
-# Opt out with ROBINHOOD_NO_CDP=1.
-cdp_try() {
-    [ -n "${ROBINHOOD_NO_CDP:-}" ] && return 1
+# --- Collect every available auth source, then choose the furthest expiry ---
+# A stale debug profile can remain reachable while the user has just logged in
+# through normal Chrome or Safari. Never stop at the first valid token: collect
+# private candidate env files, compare JWT exp locally, and write only the winner.
+TARGET_ENV_PATH="$ROBINHOOD_ENV_PATH"
+CANDIDATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/robinhood-auth.XXXXXX")"
+trap 'rm -rf "$CANDIDATE_DIR"' EXIT
+
+cdp_collect() {
+    [ -n "${ROBINHOOD_NO_CDP:-}" ] && return 0
     local helper="$REPO_DIR/scripts/extract-auth-cdp.py"
-    [ -f "$helper" ] || return 1
+    [ -f "$helper" ] || return 0
     "$PYTHON_BIN" -c 'import websockets' >/dev/null 2>&1 || {
-        echo "[refresh-auth] CDP support unavailable: install with '$PYTHON_BIN -m pip install websockets'; trying disk fallback" >&2
-        return 1
+        echo "[refresh-auth] CDP support unavailable; continuing with other sources" >&2
+        return 0
     }
 
     local configured="${ROBINHOOD_CDP_PORTS:-${ROBINHOOD_CDP_PORT:-}}"
@@ -101,14 +100,14 @@ roots = [os.environ.get(k) for k in ("CHROME_BASE", "BRAVE_BASE", "EDGE_BASE")]
 roots += [p for p in os.environ.get("CHROMIUM_BASES", "").split(os.pathsep) if p]
 seen = set()
 for root in filter(None, roots):
-    for path in (os.path.join(root, "DevToolsActivePort"),):
-        try:
-            port = int(open(path, encoding="utf-8").readline().strip())
-        except (OSError, ValueError):
-            continue
-        if port not in seen:
-            seen.add(port)
-            print(port)
+    path = os.path.join(root, "DevToolsActivePort")
+    try:
+        port = int(open(path, encoding="utf-8").readline().strip())
+    except (OSError, ValueError):
+        continue
+    if port not in seen:
+        seen.add(port)
+        print(port)
 PYPORTS
 )
 
@@ -118,156 +117,32 @@ PYPORTS
         case "$port" in *[!0-9]*|'') continue ;; esac
         case "$tried" in *" $port "*) continue ;; esac
         tried="$tried$port "
-        if "$PYTHON_BIN" "$helper" --port "$port" --env "$ROBINHOOD_ENV_PATH"; then
-            return 0
-        fi
+        "$PYTHON_BIN" "$helper" --port "$port" --env "$CANDIDATE_DIR/cdp-$port.env" || true
     done
-    return 1
 }
 
-# Direct CDP is authoritative and already writes the protected .env. Stop here
-# on success. Safari is a macOS-only, stdlib fallback that validates the
-# robinhood.com WebKit origin before reading the exact web:auth_state key.
-if cdp_try; then
-    exit 0
-fi
+cdp_collect
+
 if [ "$(uname -s)" = "Darwin" ] && [ -f "$REPO_DIR/scripts/extract-auth-safari.py" ]; then
-    if "$PYTHON_BIN" "$REPO_DIR/scripts/extract-auth-safari.py" --env "$ROBINHOOD_ENV_PATH"; then
-        exit 0
-    fi
+    "$PYTHON_BIN" "$REPO_DIR/scripts/extract-auth-safari.py" \
+        --env "$CANDIDATE_DIR/safari.env" || true
 fi
 
-# Final fallback: generic on-disk Chromium discovery.
+leveldb_args=()
+[ -n "${CHROME_BASE:-}" ] && leveldb_args+=(--base "$CHROME_BASE")
+[ -n "${BRAVE_BASE:-}" ] && leveldb_args+=(--base "$BRAVE_BASE")
+[ -n "${EDGE_BASE:-}" ] && leveldb_args+=(--base "$EDGE_BASE")
+"$PYTHON_BIN" "$REPO_DIR/scripts/extract-auth-leveldb.py" \
+    "${leveldb_args[@]}" --env "$CANDIDATE_DIR/leveldb.env" || true
 
-# Python prefers RH_CDP_JSON (live) when present; else does the disk scan. It
-# writes .env, chmods it, and prints the status — so the token value never
-# passes through the shell. Heredoc goes straight to python (no nesting inside
-# $(), which trips macOS bash 3.2's paren scanner).
-"$PYTHON_BIN" << 'PYEOF'
-import re, json, glob, os, sys, datetime
-
-env_path = os.environ["ROBINHOOD_ENV_PATH"]
-base = os.environ.get("CHROME_BASE")
-brave = os.environ.get("BRAVE_BASE")
-edge = os.environ.get("EDGE_BASE")
-
-# Live CDP read wins when available — it's the authoritative in-memory token,
-# not the lazily-flushed disk copy. RH_CDP_JSON is the raw web:auth_state JSON.
-cdp_raw = os.environ.get("RH_CDP_JSON")
-cdp_best = None
-if cdp_raw:
-    try:
-        obj = json.loads(cdp_raw)
-        if isinstance(obj, dict) and obj.get("access_token"):
-            cdp_best = obj
-    except Exception:
-        cdp_best = None
-
-# Try Chrome first, then Brave, then Edge
-bases = [b for b in [base, brave, edge] if b]
-if not bases:
-    home = os.path.expanduser("~")
-    if sys.platform == "darwin":
-        base = os.path.join(home, "Library/Application Support/Google/Chrome")
-    elif sys.platform == "win32":
-        base = os.path.join(os.environ.get("LOCALAPPDATA", os.path.join(home, "AppData/Local")),
-                            "Google", "Chrome", "User Data")
-    else:
-        base = os.path.join(home, ".config/google-chrome")
-
-# On Windows, the base IS "User Data" and profiles are direct children.
-# On macOS/Linux, profiles are direct children of the Chrome base.
-# The glob below handles both: "<base>/*/Local Storage/leveldb"
-# Try all browser bases (Chrome, Brave, Edge) in order
-files = []
-for b in bases:
-    for prof in glob.glob(os.path.join(b, "*", "Local Storage", "leveldb")):
-        files += glob.glob(os.path.join(prof, "*.ldb"))
-        files += glob.glob(os.path.join(prof, "*.log"))
-files = sorted(set(files), key=lambda p: os.path.getmtime(p), reverse=True)
-
-candidates = []
-for f in files:
-    try:
-        data = open(f, "rb").read()
-    except OSError:
-        continue
-    for m in re.finditer(rb"access_token", data):
-        start = data.rfind(b"{", max(0, m.start() - 200), m.start())
-        if start == -1:
-            continue
-        depth = 0
-        end = None
-        for i in range(start, min(len(data), start + 8000)):
-            c = data[i:i + 1]
-            if c == b"{":
-                depth += 1
-            elif c == b"}":
-                depth -= 1
-                if depth == 0:
-                    end = i + 1
-                    break
-        if end is None:
-            continue
-        try:
-            obj = json.loads(data[start:end].decode("latin-1"))
-        except Exception:
-            continue
-        if isinstance(obj, dict) and obj.get("access_token") and obj.get("refresh_token"):
-            candidates.append((os.path.getmtime(f), obj))
-
-if cdp_best is not None:
-    best = cdp_best
-    source = "live CDP (localStorage)"
-elif candidates:
-    candidates.sort(key=lambda c: (c[0], len(str(c[1]["access_token"]))), reverse=True)
-    best = candidates[0][1]
-    source = "on-disk localStorage"
-else:
-    sys.stderr.write(
-        "[refresh-auth] no Robinhood auth found via CDP or in any Chrome profile's "
-        "on-disk localStorage. Log in to robinhood.com in Chrome (or start chrome-debug) "
-        "and retry.\n")
-    sys.exit(2)
-
-tok = str(best["access_token"])
-exp = int(best.get("expires_in", 0) or 0)
-ttype = best.get("token_type", "Bearer")
-
-header = (
-    "# Robinhood brokerage auth — " + source + " "
-    + datetime.datetime.utcnow().isoformat() + "Z\n"
-    + "# token_type=" + str(ttype) + " expires_in=" + str(exp)
-    + "s (~%.1fd)\n" % (exp / 86400)
-    + "ROBINHOOD_BROKERAGE_TOKEN=" + tok + "\n"
-)
-# Surgical write: refresh ONLY the token (+ its auto-generated header comments) and
-# PRESERVE every other line (ROBINHOOD_WEB_APP_VERSION, crypto keys, etc.). A full
-# overwrite would clobber sibling keys — the same "refresh one field, destroy others"
-# bug class we're stamping out.
-keep = []
-if os.path.exists(env_path):
-    with open(env_path) as fh:
-        for ln in fh.read().split("\n"):
-            s = ln.strip()
-            if s.startswith("ROBINHOOD_BROKERAGE_TOKEN="):
-                continue
-            if s.startswith("# Robinhood brokerage auth") or s.startswith("# token_type="):
-                continue
-            keep.append(ln)
-while keep and keep[0].strip() == "":
-    keep.pop(0)
-while keep and keep[-1].strip() == "":
-    keep.pop()
-content = header + ("\n".join(keep).rstrip("\n") + "\n" if keep else "")
-with open(env_path, "w") as fh:
-    fh.write(content)
-try:
-    os.chmod(env_path, 0o600)
-except OSError:
-    pass  # chmod on Windows is no-op; ignore
-print("[refresh-auth] wrote %s (OK len=%d type=%s exp_days=%.1f, %d other line(s) preserved)"
-      % (env_path, len(tok), ttype, exp / 86400, len(keep)))
-PYEOF
+shopt -s nullglob
+candidates=("$CANDIDATE_DIR"/*.env)
+shopt -u nullglob
+if [ "${#candidates[@]}" -eq 0 ]; then
+    echo "[refresh-auth] no valid Robinhood auth found via CDP, Safari, or Chromium LevelDB" >&2
+    exit 2
+fi
+"$PYTHON_BIN" "$REPO_DIR/scripts/select-auth-candidate.py" \
+    --target "$TARGET_ENV_PATH" "${candidates[@]}"
 
 # Zayd Khan // cold // www.zayd.wtf

@@ -35,7 +35,7 @@ It drives the account you already have, across the browser-backed brokerage API 
 
 ```bash
 git clone https://github.com/zaydiscold/robinhood-cli-mcp-api.git
-cd robinhood-cli
+cd robinhood-cli-mcp-api
 pnpm install && pnpm build
 node cli/dist/index.js --help
 ```
@@ -168,7 +168,7 @@ This CLI selects routes **by URL _and_ HTTP method**, so a single endpoint can c
 
 ```bash
 git clone https://github.com/zaydiscold/robinhood-cli-mcp-api.git
-cd robinhood-cli
+cd robinhood-cli-mcp-api
 pnpm install
 pnpm build        # builds the CLI and copies the API map into dist (see "rebuild" note below)
 ```
@@ -343,7 +343,7 @@ The MCP server exposes the same engine as tools for Claude, Cursor, or any Model
 pnpm --filter @zaydiscold/robinhood-cli-mcp build
 
 # Register with Claude Code (CLI):
-claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
+claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli-mcp-api/mcp/dist/server.js
 
 # Or run it directly:
 node mcp/dist/server.js

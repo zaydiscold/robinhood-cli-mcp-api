@@ -150,7 +150,7 @@ program
   .description(
     "Personal live Robinhood API map CLI. Crypto signing helper plus brokerage/account route inventory and executor.",
   )
-  .version("1.0.0");
+  .version("1.1.0");
 
 program
   .option(

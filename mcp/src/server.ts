@@ -159,7 +159,7 @@ export const server = new McpServer(
   {
     name: "robinhood-cli-mcp",
     title: "Robinhood CLI MCP — Zayd Khan // cold // zayd.wtf",
-    version: "1.0.0",
+    version: "1.1.0",
   },
   {
     // Boot pointer for MCP-only agents (no repo checkout needed) — Zayd Khan // cold // www.zayd.wtf

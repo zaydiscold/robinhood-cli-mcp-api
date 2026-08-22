@@ -9715,7 +9715,7 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
       const fullyWinged = longCallRatio >= shortCallRatio && longPutRatio >= shortPutRatio;
       const netShortCalls = shortCallRatio - longCallRatio;
       const nakedUnlimitedCall = netShortCalls > 0 && undercovered > 0;
-      let riskClass: "defined" | "defined-spread" | "unlimited" | "not-modeled" =
+      const riskClass: "defined" | "defined-spread" | "unlimited" | "not-modeled" =
         maxLoss !== null
           ? "defined"
           : !hasShort
@@ -9727,9 +9727,14 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
                 : "not-modeled";
       if (riskClass === "defined-spread" && maxLoss === null) {
         const modeled = computeVerticalDefinedMaxLossUsd({
-          legs: p.legs.map((leg: any) => ({
+          legs: p.legs.map((leg: {
+            side: "short" | "long";
+            type: string;
+            strike: number;
+            ratioQuantity: number;
+          }) => ({
             side: leg.side,
-            type: leg.type,
+            type: leg.type === "put" ? "put" : "call",
             strike: leg.strike,
             ratioQuantity: leg.ratioQuantity,
           })),

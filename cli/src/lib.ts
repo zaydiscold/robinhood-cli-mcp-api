@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { computeExpirationPayoff } from "./options-workbench.js";
 import { maybeShareSafe } from "./share-safe.js";
 
 export * from "./capabilities.js";
@@ -221,6 +222,10 @@ export type OptionsStrategyPricingMode = "natural" | "mid" | "safe-sell-probe" |
 export interface OptionsStrategyPricingLegInput {
   id: string;
   action: "buy" | "sell";
+  /** Required for expiration payoff; omitted keeps pricing-only behavior. */
+  optionType?: "call" | "put";
+  /** Required for expiration payoff; omitted keeps pricing-only behavior. */
+  strike?: number | string | null;
   ratioQuantity?: number;
   bid?: number | string | null;
   ask?: number | string | null;
@@ -266,6 +271,19 @@ export interface OptionsStrategyPricingSummary {
     theta: number;
     vega: number;
     rho: number;
+  };
+  /**
+   * Same-expiration payoff envelope when every leg carries strike + optionType.
+   * Scaled by `quantity` (default 1). Probe modes still price the envelope off natural/mid
+   * premiums — not the far probe limit — so max profit/loss stays market-realistic.
+   */
+  payoff?: {
+    maxProfit: number | "unlimited";
+    maxLoss: number | "unlimited";
+    breakevens: number[];
+    quantity: number;
+    pricingBasis: "natural" | "mid";
+    exactForSameExpiration: true;
   };
   warnings: string[];
 }
@@ -8931,6 +8949,10 @@ export function buildOptionsStrategyPricingSummary(input: {
   mode?: OptionsStrategyPricingMode;
   preferredDirection?: "credit" | "debit";
   farLimitOffset?: number;
+  /** Contract quantity for payoff scaling (default 1). Does not change per-unit limit price. */
+  quantity?: number;
+  /** Spot used only as an extra payoff sample point when finite. */
+  underlyingPrice?: number;
 }): OptionsStrategyPricingSummary {
   const mode = input.mode ?? "mid";
   if (!["natural", "mid", "safe-sell-probe", "safe-buy-probe"].includes(mode)) {
@@ -8939,6 +8961,7 @@ export function buildOptionsStrategyPricingSummary(input: {
   if (input.legs.length === 0) throw new Error("at least one option leg is required");
   const warnings: string[] = [];
   const farLimitOffset = input.farLimitOffset ?? 200;
+  const quantity = Math.max(1, Number(input.quantity) || 1);
 
   const legs = input.legs.map((leg): OptionsStrategyPricingLegSummary => {
     const bid = finitePrice(leg.bid);
@@ -9019,6 +9042,55 @@ export function buildOptionsStrategyPricingSummary(input: {
   if (!Number.isFinite(limitPrice))
     warnings.push("limit price could not be computed from available quotes.");
 
+  // Expiration payoff needs strike + call/put on every leg. Probe modes still build the
+  // envelope from natural premiums so max profit/loss stay market-realistic (not the far probe).
+  const premiumBasis: "natural" | "mid" = mode === "mid" ? "mid" : "natural";
+  let payoff: OptionsStrategyPricingSummary["payoff"];
+  const payoffLegs = input.legs.flatMap((leg, index) => {
+    const priced = legs[index];
+    const strike = Number(leg.strike);
+    const optionType = leg.optionType === "put" ? "put" : leg.optionType === "call" ? "call" : null;
+    if (!priced || !optionType || !Number.isFinite(strike)) return [];
+    const premium =
+      premiumBasis === "natural" ? priced.naturalUnitPrice : priced.midUnitPrice;
+    if (!Number.isFinite(premium)) return [];
+    return [
+      {
+        id: leg.id,
+        action: leg.action,
+        type: optionType as "call" | "put",
+        strike,
+        ratioQuantity: priced.ratioQuantity,
+        premium,
+      },
+    ];
+  });
+  if (payoffLegs.length === input.legs.length && payoffLegs.length > 0) {
+    try {
+      const envelope = computeExpirationPayoff({
+        legs: payoffLegs,
+        quantity,
+        underlyingPrice: input.underlyingPrice,
+      });
+      payoff = {
+        maxProfit: envelope.maxProfit,
+        maxLoss: envelope.maxLoss,
+        breakevens: envelope.breakevens,
+        quantity,
+        pricingBasis: premiumBasis,
+        exactForSameExpiration: true,
+      };
+    } catch (error) {
+      warnings.push(
+        `payoff unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  } else if (input.legs.some((leg) => leg.optionType != null || leg.strike != null)) {
+    warnings.push(
+      "payoff omitted: every leg needs optionType, strike, and a usable premium quote.",
+    );
+  }
+
   return {
     mode,
     direction,
@@ -9037,6 +9109,7 @@ export function buildOptionsStrategyPricingSummary(input: {
       vega: signedGreek(input.legs, "vega", 100),
       rho: signedGreek(input.legs, "rho", 100),
     },
+    ...(payoff ? { payoff } : {}),
     warnings,
   };
 }
@@ -9390,6 +9463,48 @@ export async function computePerformance(opts: any = {}, deps: any = {}) {
     warnings,
   };
 }
+
+/**
+ * Max loss in dollars for a simple same-type vertical (one short + one long, equal ratio).
+ * Topology distinguishes credit vs debit:
+ *   call credit: shortStrike < longStrike; put credit: shortStrike > longStrike.
+ * `averageOpenPricePerContract` is Robinhood aggregate per-contract dollars (premium × 100).
+ * Returns null for iron condors, ratio spreads, single legs, or missing inputs.
+ */
+export function computeVerticalDefinedMaxLossUsd(input: {
+  legs: Array<{
+    side: "short" | "long";
+    type: "call" | "put";
+    strike: number;
+    ratioQuantity?: number;
+  }>;
+  averageOpenPricePerContract: number;
+  quantity: number;
+}): number | null {
+  const shorts = input.legs.filter((leg) => leg.side === "short");
+  const longs = input.legs.filter((leg) => leg.side === "long");
+  if (shorts.length !== 1 || longs.length !== 1) return null;
+  const shortLeg = shorts[0]!;
+  const longLeg = longs[0]!;
+  if (shortLeg.type !== longLeg.type) return null;
+  const shortRatio = Math.max(1, Number(shortLeg.ratioQuantity) || 1);
+  const longRatio = Math.max(1, Number(longLeg.ratioQuantity) || 1);
+  if (shortRatio !== longRatio) return null;
+  const width = Math.abs(Number(shortLeg.strike) - Number(longLeg.strike));
+  const net = Math.abs(Number(input.averageOpenPricePerContract));
+  const qty = Number(input.quantity);
+  if (!(width > 0) || !Number.isFinite(net) || !(qty > 0)) return null;
+  const isCredit =
+    shortLeg.type === "call"
+      ? Number(shortLeg.strike) < Number(longLeg.strike)
+      : Number(shortLeg.strike) > Number(longLeg.strike);
+  // width × 100 × ratio = dollars per contract package; avg open is already per-contract $.
+  const widthDollars = width * 100 * shortRatio;
+  const perPackage = isCredit ? widthDollars - net : net;
+  if (!(perPackage >= 0) || !Number.isFinite(perPackage)) return null;
+  return Number((perPackage * qty).toFixed(2));
+}
+
 /**
  * Portfolio risk scanner: max loss across open positions, assignment exposure (ITM shorts),
  * undercovered short legs, margin utilization (borrowed/equity), and concentration warnings (>20% in one symbol).
@@ -9584,23 +9699,23 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
       // (premium × 100; see optionReturnPct), so it is multiplied by the contract count
       // ONLY — never by another 100 — and only after the leg loop, so a multi-leg long
       // (e.g. a long straddle) is not counted once per leg. Any short leg already set
-      // maxLoss = null (spread defined-risk is intentionally left unmodeled here).
+      // maxLoss = null; simple same-type verticals are filled in below from wing width.
       if (maxLoss !== null) {
         const debit = n(p.avgOpenPrice) * p.qty;
         maxLoss = Number.isFinite(debit) ? debit : null;
       }
-      // Honest loss-shape classification for labeling — we do NOT model spread/naked payoff here.
+      // Honest loss-shape classification for labeling.
       // Uses net leg RATIOS (not mere presence) so a ratio spread (e.g. short 2 / long 1 call) is
       // recognized as net-naked, never mislabeled bounded:
       //  • number maxLoss                             → "defined" (long-only debit, modeled)
-      //  • long ratio ≥ short ratio for BOTH types    → "defined-spread" (bounded, not modeled)
+      //  • long ratio ≥ short ratio for BOTH types    → "defined-spread" (bounded; verticals modeled)
       //  • net-excess short CALLS, not share-covered  → "unlimited" (truly unbounded upside)
       //  • else (naked short put = bounded-but-large, covered call, unclassifiable) → "not-modeled"
       const hasShort = shortCallRatio > 0 || shortPutRatio > 0;
       const fullyWinged = longCallRatio >= shortCallRatio && longPutRatio >= shortPutRatio;
       const netShortCalls = shortCallRatio - longCallRatio;
       const nakedUnlimitedCall = netShortCalls > 0 && undercovered > 0;
-      const riskClass: "defined" | "defined-spread" | "unlimited" | "not-modeled" =
+      let riskClass: "defined" | "defined-spread" | "unlimited" | "not-modeled" =
         maxLoss !== null
           ? "defined"
           : !hasShort
@@ -9610,6 +9725,19 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
               : nakedUnlimitedCall
                 ? "unlimited"
                 : "not-modeled";
+      if (riskClass === "defined-spread" && maxLoss === null) {
+        const modeled = computeVerticalDefinedMaxLossUsd({
+          legs: p.legs.map((leg: any) => ({
+            side: leg.side,
+            type: leg.type,
+            strike: leg.strike,
+            ratioQuantity: leg.ratioQuantity,
+          })),
+          averageOpenPricePerContract: p.avgOpenPrice,
+          quantity: p.qty,
+        });
+        if (modeled !== null) maxLoss = modeled;
+      }
       positions.push({
         kind: "option",
         symbol: p.symbol,

@@ -3302,13 +3302,14 @@ server.registerTool(
   {
     title: "Robinhood Options Strategy Quote",
     description:
-      "Multi-leg live pricing for an options strategy (verticals, condors, straddles, etc.). Takes leg inputs (id, action: buy|sell, strike, bid/ask/mark/last, greeks, ratioQuantity) and returns per-leg natural/mid pricing, net credit/debit, direction, and limit-price recommendations by mode (natural/mid/safe-sell-probe/safe-buy-probe). Wraps the shared buildOptionsStrategyPricingSummary() engine — same as the CLI `options strategy-quote` command. Live reads happen BEFORE calling this tool (fetch quotes/greeks separately); this tool does pure math. Read-only; no gate.",
+      "Multi-leg live pricing for an options strategy (verticals, condors, straddles, etc.). Takes leg inputs (id, action: buy|sell, optional optionType/strike, bid/ask/mark/last, greeks, ratioQuantity) and returns per-leg natural/mid pricing, net credit/debit, direction, limit-price recommendations by mode (natural/mid/safe-sell-probe/safe-buy-probe), and — when every leg includes optionType + strike — same-expiration max profit / max loss / breakevens. Wraps the shared buildOptionsStrategyPricingSummary() engine — same as the CLI `options strategy-quote` command. Live reads happen BEFORE calling this tool (fetch quotes/greeks separately); this tool does pure math. Read-only; no gate.",
     inputSchema: z.object({
       legs: z
         .array(
           z.object({
             id: z.string(),
             action: z.enum(["buy", "sell"]),
+            optionType: z.enum(["call", "put"]).optional(),
             strike: z.number().optional(),
             bid: z.number().optional(),
             ask: z.number().optional(),
@@ -3326,15 +3327,18 @@ server.registerTool(
       mode: z.enum(["natural", "mid", "safe-sell-probe", "safe-buy-probe"]).default("mid"),
       preferredDirection: z.enum(["credit", "debit"]).optional(),
       farLimitOffset: z.number().default(200),
+      quantity: z.number().int().positive().default(1),
+      underlyingPrice: z.number().optional(),
     }),
     annotations: toolAnnotations(true, "read"),
   },
-  async ({ legs, mode, preferredDirection, farLimitOffset }) => {
+  async ({ legs, mode, preferredDirection, farLimitOffset, quantity, underlyingPrice }) => {
     try {
       const summary = buildOptionsStrategyPricingSummary({
         legs: legs.map((leg) => ({
           id: leg.id,
           action: leg.action,
+          optionType: leg.optionType,
           strike: leg.strike,
           bid: leg.bid,
           ask: leg.ask,
@@ -3350,6 +3354,8 @@ server.registerTool(
         mode,
         preferredDirection,
         farLimitOffset,
+        quantity,
+        underlyingPrice,
       });
       return jsonResponse(summary);
     } catch (e: any) {

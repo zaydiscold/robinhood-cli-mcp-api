@@ -2995,6 +2995,8 @@ options
         return {
           id: leg.template.id,
           action: leg.template.action,
+          optionType: leg.template.optionType as "call" | "put",
+          strike: leg.strike,
           ratioQuantity: leg.template.ratioQuantity,
           bid: mark.bid_price,
           ask: mark.ask_price,
@@ -3017,6 +3019,7 @@ options
         legs: pricingLegs,
         mode: opts.pricingMode ?? "mid",
         preferredDirection,
+        quantity: Number(quantity) || 1,
       });
       const computedLimitPrice = finiteNumber(opts.limitPrice ?? pricing.limitPrice);
       if (!Number.isFinite(computedLimitPrice) || computedLimitPrice < 0) {
@@ -3152,6 +3155,20 @@ options
         `\nnet natural: ${pricing.direction === "credit" ? "credit" : "debit"} ${usd(pricing.naturalPrice)}  ` +
           `net mid: ${usd(pricing.midPrice)}  limit: ${usd(computedLimitPrice)} (${output.pricing.limitPriceSource})\n`,
       );
+      if (pricing.payoff) {
+        const fmtBound = (value: number | "unlimited") =>
+          value === "unlimited" ? "unlimited" : usd(value);
+        process.stdout.write(
+          `payoff @ expiry (${pricing.payoff.pricingBasis} premiums ×${pricing.payoff.quantity}): ` +
+            `max profit ${fmtBound(pricing.payoff.maxProfit)}  ` +
+            `max loss ${fmtBound(pricing.payoff.maxLoss)}  ` +
+            `breakevens ${
+              pricing.payoff.breakevens.length
+                ? pricing.payoff.breakevens.map((b) => b.toFixed(2)).join(", ")
+                : "—"
+            }\n`,
+        );
+      }
       process.stdout.write(
         `strategy quote: ${strategyQuote ? "returned" : "not returned; using leg math"}\n`,
       );

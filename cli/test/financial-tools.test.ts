@@ -603,7 +603,7 @@ describe("computeRisk — portfolio risk scanner", () => {
     expect(pos.undercoveredShortLegs).toBe(0);
   });
 
-  it("defined-risk credit spread (short call + long call) has maxLoss that does not crash", async () => {
+  it("defined-risk credit spread (short call + long call) models maxLoss from wing width", async () => {
     const fix = buildFixture({
       accounts: { results: [{ type: "rhs", account_number: "333333333", account_name: "SpreadAcct" }] },
       positions: { "333333333": [] },
@@ -611,7 +611,7 @@ describe("computeRisk — portfolio risk scanner", () => {
         "333333333": [
           {
             symbol: "XYZ", strategy: "short call spread", quantity: "1",
-            average_open_price: "1.50", // net credit received
+            average_open_price: "150.00", // net $1.50/sh credit → $150 per contract
             legs: [
               { option_id: "optShort", position_type: "short", option_type: "call", strike_price: "100.0000", expiration_date: "2026-09-19", ratio_quantity: "1" },
               { option_id: "optLong",  position_type: "long",  option_type: "call", strike_price: "105.0000", expiration_date: "2026-09-19", ratio_quantity: "1" }
@@ -629,9 +629,8 @@ describe("computeRisk — portfolio risk scanner", () => {
     const r = await computeRisk({}, fix);
     const pos = r.positions.find(p => p.kind === "option" && p.symbol === "XYZ")!;
     expect(pos).toBeTruthy();
-    // Spread has at least one short leg → maxLoss null (defined-risk left unmodeled), but it must be
-    // positively classified so the CLI renders "defined-risk", never "unlimited".
-    expect(pos.maxLossUsd).toBeNull();
+    // Call credit: width $5 → $500, credit $150 → max loss $350. Still labeled defined-spread.
+    expect(pos.maxLossUsd).toBe(350);
     expect(pos.riskClass).toBe("defined-spread");
   });
 

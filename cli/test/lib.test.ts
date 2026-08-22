@@ -8,6 +8,7 @@ import {
   classifyMoneyness,
   classifyRobinhoodError,
   collarSanity,
+  computeVerticalDefinedMaxLossUsd,
   selectRouteByQueryAndMethod,
   executeBrokerageRequest,
   executeCryptoRequest,
@@ -317,7 +318,102 @@ describe("Robinhood API map", () => {
     expect(pricing.limitPrice).toBeCloseTo(200.7);
     expect(pricing.netGreeks.delta).toBeCloseTo(-20);
     expect(pricing.netGreeks.theta).toBeCloseTo(2);
+    expect(pricing.payoff).toBeUndefined();
     expect(pricing.warnings.join("\n")).toContain("safe-sell-probe");
+  });
+
+  it("attaches same-expiration payoff when every leg has optionType + strike", () => {
+    const pricing = buildOptionsStrategyPricingSummary({
+      mode: "mid",
+      preferredDirection: "credit",
+      quantity: 1,
+      legs: [
+        {
+          id: "short_call",
+          action: "sell",
+          optionType: "call",
+          strike: 105,
+          ratioQuantity: 1,
+          bid: 2.9,
+          ask: 3.1,
+          mark: 3,
+        },
+        {
+          id: "long_call",
+          action: "buy",
+          optionType: "call",
+          strike: 110,
+          ratioQuantity: 1,
+          bid: 0.9,
+          ask: 1.1,
+          mark: 1,
+        },
+      ],
+    });
+
+    expect(pricing.payoff).toBeDefined();
+    expect(pricing.payoff!.maxProfit).toBe(200);
+    expect(pricing.payoff!.maxLoss).toBe(300);
+    expect(pricing.payoff!.breakevens.length).toBeGreaterThan(0);
+    expect(pricing.payoff!.pricingBasis).toBe("mid");
+    expect(pricing.payoff!.exactForSameExpiration).toBe(true);
+  });
+
+  it("marks naked short-call payoff as unlimited loss", () => {
+    const pricing = buildOptionsStrategyPricingSummary({
+      mode: "natural",
+      legs: [
+        {
+          id: "short_call",
+          action: "sell",
+          optionType: "call",
+          strike: 100,
+          bid: 2,
+          ask: 2.1,
+        },
+      ],
+    });
+    expect(pricing.payoff?.maxLoss).toBe("unlimited");
+  });
+
+  it("computeVerticalDefinedMaxLossUsd models call/put credit and debit verticals", () => {
+    expect(
+      computeVerticalDefinedMaxLossUsd({
+        legs: [
+          { side: "short", type: "call", strike: 100 },
+          { side: "long", type: "call", strike: 105 },
+        ],
+        averageOpenPricePerContract: 150,
+        quantity: 1,
+      }),
+    ).toBe(350);
+    expect(
+      computeVerticalDefinedMaxLossUsd({
+        legs: [
+          { side: "short", type: "put", strike: 95 },
+          { side: "long", type: "put", strike: 90 },
+        ],
+        averageOpenPricePerContract: 100,
+        quantity: 2,
+      }),
+    ).toBe(800); // (5*100 - 100) * 2
+    expect(
+      computeVerticalDefinedMaxLossUsd({
+        legs: [
+          { side: "long", type: "call", strike: 100 },
+          { side: "short", type: "call", strike: 105 },
+        ],
+        averageOpenPricePerContract: 200,
+        quantity: 1,
+      }),
+    ).toBe(200); // debit vertical: max loss = debit
+    expect(
+      computeVerticalDefinedMaxLossUsd({
+        legs: [{ side: "short", type: "call", strike: 100 }],
+        averageOpenPricePerContract: 150,
+        quantity: 1,
+      }),
+    ).toBeNull();
   });
 
   it("prices option debit spreads from ask paid and bid received", () => {

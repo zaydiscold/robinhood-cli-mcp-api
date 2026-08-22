@@ -408,7 +408,7 @@ under dynamic intraday margin. (Cash accounts: T+1 / good-faith still apply.)
 ## Quick Start
 
 ```bash
-cd robinhood-cli
+cd robinhood-cli-mcp-api
 pnpm install
 pnpm --filter @zaydiscold/robinhood-cli build
 pnpm --filter @zaydiscold/robinhood-cli-mcp build
@@ -1434,12 +1434,12 @@ The full first-class tool roster (live truth: `tools/list`, never a hardcoded co
 # Hermes (reads + writes gated by ROBINHOOD_ALLOW_LIVE_WRITE=1):
 hermes mcp add robinhood-cli --command node \
   --env ROBINHOOD_ALLOW_LIVE_WRITE=1 \
-  --args /path/to/robinhood-cli/mcp/dist/server.js
+  --args /path/to/robinhood-cli-mcp-api/mcp/dist/server.js
 
 # Or for Claude Code / other MCP clients:
 claude mcp add robinhood-cli -s user \
   -e ROBINHOOD_ALLOW_LIVE_WRITE=1 -- \
-  node /absolute/path/to/robinhood-cli/mcp/dist/server.js
+  node /absolute/path/to/robinhood-cli-mcp-api/mcp/dist/server.js
 ```
 
 ### MCP Tools

@@ -2,6 +2,16 @@
 
 All notable changes to the Robinhood CLI and MCP are documented here.
 
+## [1.1.0] - 2026-08-04
+
+Full notes: [`docs/release-notes-2026-08-04.md`](./docs/release-notes-2026-08-04.md).
+
+### Changed
+
+- Workspace, CLI, and MCP packages move from `1.0.0` to `1.1.0`.
+- Public clone / MCP registration docs use the GitHub slug directory
+  `robinhood-cli-mcp-api` (not the legacy `robinhood-cli` checkout name).
+
 ## [1.0.0] - 2026-07-14
 
 ### Added

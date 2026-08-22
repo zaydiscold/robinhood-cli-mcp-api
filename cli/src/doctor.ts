@@ -59,7 +59,7 @@ export function runDoctor(
       /^ROBINHOOD_WEB_APP_VERSION=.+$/m.test(envText) ? "pass" : "warn",
       /^ROBINHOOD_WEB_APP_VERSION=.+$/m.test(envText)
         ? "web-app version override is present"
-        : "using the baked web-app version; run corepack pnpm version:refresh if the version gate rejects an order",
+        : "using the baked web-app version; run pnpm version:refresh if the version gate rejects an order",
     );
     add(
       "api-version",

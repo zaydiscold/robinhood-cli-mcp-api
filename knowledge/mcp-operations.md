@@ -40,11 +40,11 @@ Register the full, dry-run-by-default personal server with an absolute server pa
 ```bash
 # Claude Code example
 claude mcp add robinhood-cli -s user \
-  node /absolute/path/to/robinhood-cli/mcp/dist/server.js
+  node /absolute/path/to/robinhood-cli-mcp-api/mcp/dist/server.js
 
 # Hermes example
 hermes mcp add robinhood-cli --command node \
-  --args /absolute/path/to/robinhood-cli/mcp/dist/server.js
+  --args /absolute/path/to/robinhood-cli-mcp-api/mcp/dist/server.js
 ```
 
 Keep routine registrations dry-run capable. If the operator deliberately maintains a write-enabled

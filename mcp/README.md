@@ -19,7 +19,7 @@ operator intentionally wants writes to be able to go live.
 
 ```bash
 claude mcp add robinhood-cli -s user -- \
-  node /absolute/path/to/robinhood-cli/mcp/dist/server.js
+  node /absolute/path/to/robinhood-cli-mcp-api/mcp/dist/server.js
 ```
 
 After pulling or rebuilding, restart the server or reload the MCP client. The

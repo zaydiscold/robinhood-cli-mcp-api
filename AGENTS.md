@@ -670,7 +670,7 @@ settings/permissions, never print the token value.
 ## 11. MCP registration
 
 ```bash
-claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli/mcp/dist/server.js
+claude mcp add robinhood-cli -s user -- node /absolute/path/to/robinhood-cli-mcp-api/mcp/dist/server.js
 ```
 
 Tools surface as `mcp__robinhood-cli__*` (the full tool roster incl. accounts/positions/portfolio/buy/sell/cancel/order-status/buying-power/wheel/options-holdings/options-inspect/settings/recurring/quote/history/watchlist + the env-gated watchlist_add/remove/create/items/buy writes/options-enumerate parity: route inspection, browser/account

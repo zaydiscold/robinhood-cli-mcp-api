@@ -24,6 +24,7 @@ folder stays local and is never pushed.
 | `ipo-access-and-24-hour-contract-map-2026-08-08.md` | IPO request-readiness viewmodels and the 24-hour whole-share limit dry-run contract, including explicit missing submit/preflight evidence |
 | `tax-lot-intelligence-and-exact-lot-selling.md`     | Live open-lot inventory, stable-ID planning, selected/closed read contracts, and the fail-closed exact-lot submission boundary            |
 | `tax-lot-strategy-playbook.md`                      | Educational strategy curriculum and tax caveats; never a substitute for the product contract or individualized tax advice                 |
+| `../ROADMAP.md`                                     | Current product goals only; completed work lives in the changelog and old implementation plans live under `archive/`                      |
 
 | `account-settings-capability-map-2026-06-03.md` | Account-page surfaces: funding, recurring, DRIP, cash sweep, stock lending, margin, futures, event contracts |
 | `account-context-routing-2026-06-02.md` | Browser `?account_number=` routing behavior |

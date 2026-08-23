@@ -11,11 +11,13 @@ An unofficial Robinhood API map, CLI, and MCP server for operating a real Robinh
 
 This repo is not the official Robinhood agent sandbox.
 
-this is so much much better. this makes their "agentic" control release whatever look like childs play. seriously. this is how trading is supposed to feel. light years better, this provides a management plane fo your entire robinhood accounts(s) for all their features. own the trade. agent access to the account is freedom and equity of knowledge letting the brainstorming and idea and research to execution pipeline all one pipe.
+This is what agentic account control should feel like: one typed management plane for the Robinhood account you already own, connecting research, planning, execution, evidence, and review without pretending the browser is the product.
 
 robinhood please hire me this is what love for the game produces.
 
 > Robinhood shipped an in-app "Dividend tracker" on 2026-06-16 — four days after this repo's `dividends` engine (2026-06-12, commit `08bb870`). Building in the open means the commit history is the receipt.
+
+[Quickstart](#getting-started) · [Coverage](#coverage) · [Safety](./docs/write-operations.md) · [CLI + MCP](#how-it-fits-together--the-agentic-loop) · [Docs](#documentation) · [Roadmap](./ROADMAP.md)
 
 ---
 
@@ -356,23 +358,6 @@ MCP tools surface as `mcp__robinhood-cli__*` and share the CLI's engine wholesal
 - **Agent-native** — `robinhood_wheel` returns an evidence-based Wheel stage + next leg + the exact dry-run command.
 - **Count** — trust the live `tools/list`, never a hardcoded number.
 
-### Current Update
-
-Full patch notes: [`06-11`](./docs/release-notes-2026-06-11.md) · prior cycles [`06-04`](./docs/release-notes-2026-06-04.md) · [`06-03`](./docs/release-notes-2026-06-03.md).
-
-**06-11 — CLI↔MCP order parity + hardening merge**
-
-- First-class `buy` / `sell` / `cancel` / `order-status` / `buying-power` on **both** surfaces, one shared engine.
-- Engine guards: pending-order dedup (5-min window), `ref_id` idempotency, OTC/fractional guard, dead-quote hard-fail, trade logging.
-- `order-status` resolves UUID → real ticker; adds the `portfolio` P&L + `recipes` intent router (from 06-09/06-10) and an error-code reference.
-
-**06-04 — memory, doctrine, settings, strategy depth**
-
-- Memory layers: signal-sourcing doctrine + Ball Knowledge ledger + Trading log; plus the order-execution-evidence rule.
-- New commands: first-class `settings`, `recurring create/edit/end`, `options inspect` / `holdings`.
-- Knowledge: boot-smart operating-intelligence KB, Wheel + rolling deep-dives (quant appendices), institutional-outlook layer, index-options/§1256 correction.
-- Safety hardening: ambiguity guard, account-ownership validation, verb-floor gate, 429 retry.
-
 ### 6. Options analytics — positions & chains
 
 Two read-only convenience commands that join the raw options routes (`aggregate_positions`, `marketdata/options`, `instruments`, `chains`) into one line each — the kind of thing that's six hand-built `brokerage execute` calls otherwise:
@@ -644,6 +629,7 @@ For the full agent playbook — account discovery, the gate, watchlists, recurri
 | [`SKILL.md`](./SKILL.md)                                                                                                       | Portable skill entry point for agents/Hermes installers (lean operator router) — deep how-to in [`knowledge/`](./knowledge/) and [`docs/`](./docs/) |
 | [`AGENTS.md`](./AGENTS.md)                                                                                                     | In-repo developer/maintainer runbook: repo layout, build/test, shared-engine invariant, route-map editing, MCP registration                         |
 | [`docs/README.md`](./docs/README.md)                                                                                           | Public docs index and naming/release rules                                                                                                          |
+| [`ROADMAP.md`](./ROADMAP.md)                                                                                                   | Current evidence, safety, product-quality, and research goals; completed work stays in the changelog                                                |
 | [`docs/account-settings-capability-map-2026-06-03.md`](./docs/account-settings-capability-map-2026-06-03.md)                   | Funding, recurring, DRIP, cash sweep, stock lending, margin, futures, event-contract capability matrix                                              |
 | [`docs/archive/options-strategy-execution-smoke-2026-06-03.md`](./docs/archive/options-strategy-execution-smoke-2026-06-03.md) | Dry-run options strategy smoke evidence                                                                                                             |
 | [`docs/error-code-reference-2026-06-11.md`](./docs/error-code-reference-2026-06-11.md)                                         | Every known Robinhood API error → meaning → fix (mirrors the engine's error classifier)                                                             |

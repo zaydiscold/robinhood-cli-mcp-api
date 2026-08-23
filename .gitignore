@@ -19,6 +19,7 @@ git-crypt-key
 
 # local safety backups (never commit)
 _local-backups-*/
+/_*.json
 
 # private runtime output (the rest of local/ is intentionally git-crypt tracked)
 local/portfolio-snapshots.jsonl

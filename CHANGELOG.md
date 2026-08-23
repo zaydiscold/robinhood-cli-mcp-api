@@ -2,6 +2,15 @@
 
 All notable changes to the Robinhood CLI and MCP are documented here.
 
+## Unreleased - 2026-08-23
+
+### Public-product cleanup
+
+- Consolidated three conflicting root planning systems into one current [`ROADMAP.md`](./ROADMAP.md); completed work remains in this changelog.
+- Archived the six completed implementation plans under `docs/archive/implementation-plans-2026-07/` and removed stale root planning/personal files after making a verified private backup.
+- Added root scratch JSON ignores, compact README navigation, and removed the dated “Current Update” block that duplicated release notes.
+- Kept `SKILL.md` unchanged and preserved the operator memory files and encrypted `local/` workspace required by existing CLI/MCP features.
+
 ## [1.1.0] - 2026-08-04
 
 Full notes: [`docs/release-notes-2026-08-04.md`](./docs/release-notes-2026-08-04.md).

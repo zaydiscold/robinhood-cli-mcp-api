@@ -1,17 +1,15 @@
 {
   "eslint": {
-    "totalWarnings": 364,
+    "totalWarnings": 362,
     "rules": {
-      "@typescript-eslint/no-explicit-any": 350,
+      "@typescript-eslint/no-explicit-any": 348,
       "@typescript-eslint/no-unused-vars": 12,
       "prefer-const": 2
     }
   },
   "prettier": {
     "unformattedFiles": [
-      "cli/src/index.ts",
       "cli/src/lib.ts",
-      "cli/src/doctor.ts",
       "cli/src/options-workbench.ts",
       "cli/src/order-lifecycle.ts",
       "cli/src/share-safe.ts",

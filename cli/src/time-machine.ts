@@ -57,10 +57,19 @@ export function readPortfolioSnapshots(path: string): PortfolioSnapshot[] {
     });
 }
 
+function finiteNumericValue(value: unknown): number | null {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function numericDelta(after: unknown, before: unknown): number | null {
-  const a = Number(after),
-    b = Number(before);
-  return Number.isFinite(a) && Number.isFinite(b) ? Number((a - b).toFixed(4)) : null;
+  const afterValue = finiteNumericValue(after);
+  const beforeValue = finiteNumericValue(before);
+  return afterValue !== null && beforeValue !== null
+    ? Number((afterValue - beforeValue).toFixed(4))
+    : null;
 }
 
 export function diffPortfolioSnapshots(before: PortfolioSnapshot, after: PortfolioSnapshot) {
@@ -79,30 +88,40 @@ export function diffPortfolioSnapshots(before: PortfolioSnapshot, after: Portfol
   );
   const positions = [...new Set([...beforeDrivers.keys(), ...afterDrivers.keys()])]
     .map((key) => {
-      const a = afterDrivers.get(key) ?? {},
-        b = beforeDrivers.get(key) ?? {};
+      const afterPosition = afterDrivers.get(key) ?? {};
+      const beforePosition = beforeDrivers.get(key) ?? {};
       return {
         key,
-        valueDelta: numericDelta(a.marketValueUsd ?? a.value, b.marketValueUsd ?? b.value),
-        dayUsdDelta: numericDelta(a.dayChangeUsd ?? a.dayUsd, b.dayChangeUsd ?? b.dayUsd),
-        quantityDelta: numericDelta(a.qty, b.qty),
+        valueDelta: numericDelta(
+          afterPosition.marketValueUsd ?? afterPosition.value,
+          beforePosition.marketValueUsd ?? beforePosition.value,
+        ),
+        dayUsdDelta: numericDelta(
+          afterPosition.dayChangeUsd ?? afterPosition.dayUsd,
+          beforePosition.dayChangeUsd ?? beforePosition.dayUsd,
+        ),
+        quantityDelta: numericDelta(afterPosition.qty, beforePosition.qty),
       };
     })
-    .filter((row) => row.valueDelta !== 0 || row.dayUsdDelta !== 0 || row.quantityDelta !== 0);
+    .filter(
+      (row) => row.valueDelta !== 0 || row.dayUsdDelta !== 0 || row.quantityDelta !== 0,
+    );
   const equityBasis = (snapshot: PortfolioSnapshot) => {
     const totals = snapshot.data.totals;
-    if (snapshot.version === 2)
+    if (snapshot.version === 2) {
       return crossVersion
         ? (totals?.regularCloseEquityUsd ?? totals?.equityUsd)
         : totals?.equityUsd;
+    }
     return totals?.equityUsd ?? totals?.equity;
   };
   const dayBasis = (snapshot: PortfolioSnapshot) => {
     const totals = snapshot.data.totals;
-    if (snapshot.version === 1)
+    if (snapshot.version === 1) {
       return (
         snapshot.data.reconciliation?.driverDayChangeUsd ?? totals?.dayChangeUsd ?? totals?.day
       );
+    }
     return totals?.dayChangeUsd;
   };
   return {

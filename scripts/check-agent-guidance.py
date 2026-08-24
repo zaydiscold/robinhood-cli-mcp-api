@@ -91,7 +91,11 @@ REQUIRED_TAX_PHRASES = (
     "primary law",
     "broker-platform",
     "planning inference",
-    "never authorizes",
+)
+
+NO_AUTHORIZATION_PATTERN = re.compile(
+    r"(?:never authoriz|does not authoriz|do not authoriz|never supplies? (?:the )?(?:consent|authorization))",
+    re.IGNORECASE,
 )
 
 
@@ -139,6 +143,8 @@ def main() -> int:
         for phrase in REQUIRED_TAX_PHRASES:
             if phrase not in lowered:
                 errors.append(f"{path}: missing tax evidence contract phrase: {phrase}")
+        if not NO_AUTHORIZATION_PATTERN.search(text):
+            errors.append(f"{path}: must say that tax research does not authorize a trade or sale")
         for pattern, explanation in FORBIDDEN_TAX:
             if pattern.search(text):
                 errors.append(f"{path}: stale tax claim ({explanation}): /{pattern.pattern}/")

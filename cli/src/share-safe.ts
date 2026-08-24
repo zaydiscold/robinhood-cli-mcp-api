@@ -1,5 +1,5 @@
 const SENSITIVE_KEY =
-  /(?:balance|buying[_-]?power|cash|equity|order(?:[_-]?id)?|document(?:[_-]?url)?|private(?:[_-]?note)?|password|passcode|secret|api[_-]?key|token|authorization|cookie|mfa|otp|challenge|device[_-]?id|ssn|tax[_-]?id)/i;
+  /(?:balance|buying[_-]?power|cash|equity|order(?:[_-]?id)?|document(?:[_-]?url)?|private[_-]?(?:note|key)|password|passcode|secret|credential|api[_-]?key|access[_-]?key|token|authorization|bearer|cookie|session[_-]?(?:id|key|token)|mfa|otp|challenge|device[_-]?id|ssn|tax[_-]?id)/i;
 const URL_KEY = /(?:url|uri|href|download|document|link)/i;
 const SIGNED_URL =
   /(?:X-(?:Amz|Goog)-(?:Signature|Credential)|signature=|token=|jwt=|download_url=)/i;
@@ -7,7 +7,8 @@ const SIGNED_URL =
 function normalizedKey(key: string): string {
   return key
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replaceAll("-", "_")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
     .toLowerCase();
 }
 

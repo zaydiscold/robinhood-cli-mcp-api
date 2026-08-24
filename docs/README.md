@@ -1,74 +1,119 @@
-# Robinhood CLI Docs
+# Robinhood CLI documentation index
 
-This directory is public, sanitized, and meant to be read by agents. Do not
-gitignore the whole directory: `SKILL.md`, `AGENTS.md`, the README, and the MCP
-tools all depend on these files as the operational record.
+This directory contains public, sanitized, long-form evidence and implementation notes. It is the
+third progressive-disclosure layer after [`../SKILL.md`](../SKILL.md) and the focused
+[`../knowledge/`](../knowledge/README.md) modules.
 
-Private experiments and S-tier research belong in the gitignored `info/` folder
-at the repo root (e.g. `info/robinhood-research/`, `info/webhook-lab/`). That
-folder stays local and is never pushed.
+Do not load every document into an agent context. Start with the skill, load one focused knowledge
+module, and open a deep document only when the module points here.
 
-## Start Here
+Private captures, credentials, account values, and unsanitized experiments belong outside the public
+repository or in the repository's protected local workflow. Public docs must never contain tokens,
+account numbers, balances, live order IDs, bank details, or private webhook payloads.
 
-| File                                                | Use it for                                                                                                                                |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `cli-mcp-architecture.md`                           | How CLI and MCP share one engine, request flow, route-map rules, maintenance invariants, and improvement backlog                          |
-| `mcp-efficiency-upgrade-2026-07-14.md`              | Usage-backed MCP token audit, target profiles, payload budgets, test plan, failure modes, and implementation criteria                     |
-| `skill-progressive-disclosure-2026-07-14.md`        | Audit trail for restoring the complete 31.5k-token incorporated skill handbook, its integrity floor, and supplemental knowledge map       |
-| `authenticated-api-map-capture-2026-07-14.md`       | Read-only Chrome/CDP coverage, value-free request/response shapes, sanitization contract, and reproducible merge pipeline                 |
-| `auth.md`                                           | Browser-session bearer auth, token refresh, and local `.env` behavior                                                                     |
-| `write-operations.md`                               | The dry-run/live-write gate and mutation rules                                                                                            |
-| `evidence-confidence-ledger.md`                     | Current proof tier for each capability family: live-read, preflight, plan-only, historical mutation, submitted, reconciled, or unverified |
-| `safety-and-workflow-features-2026-07-10.md`        | Doctor, durable order watch, options workbench, portfolio snapshots, share-safe output, MCP schemas/profiles                              |
-| `account-service-reads-2026-08-04.md`               | Privacy-safe rewards/inbox/IPO reads plus cash-sweep rate and Gold-fee recipes, contracts, and live-evidence boundaries                   |
-| `ipo-access-and-24-hour-contract-map-2026-08-08.md` | IPO request-readiness viewmodels and the 24-hour whole-share limit dry-run contract, including explicit missing submit/preflight evidence |
-| `tax-lot-intelligence-and-exact-lot-selling.md`     | Live open-lot inventory, stable-ID planning, selected/closed read contracts, and the fail-closed exact-lot submission boundary            |
-| `tax-lot-strategy-playbook.md`                      | Educational strategy curriculum and tax caveats; never a substitute for the product contract or individualized tax advice                 |
-| `../ROADMAP.md`                                     | Current product goals only; completed work lives in the changelog and old implementation plans live under `archive/`                      |
+## Core operating contracts
 
-| `account-settings-capability-map-2026-06-03.md` | Account-page surfaces: funding, recurring, DRIP, cash sweep, stock lending, margin, futures, event contracts |
-| `account-context-routing-2026-06-02.md` | Browser `?account_number=` routing behavior |
-| `security-research-account-number-context-routing-2026-06-03.md` | Security-research notes for account-number context routing |
-| `options-quantitative-playbook-2026-06-03.md` | Greeks, pricing, spread math, and strategy posture |
-| `options-strategies-knowledge-base-2026-06-03.md` | The strategy catalog (CSP/CC/Wheel/spreads/condors/rolling…) with payoff + Greek posture |
-| `options-strategy-order-templates-2026-06-03.md` | Hard per-strategy leg templates (side/position_effect/ratio) so you can't botch the legs |
-| `options-greeks-strategy-research-2026-06-02.md` | Greeks deep research + the aggressive-vs-defined-risk scoring heuristic |
-| `tax-aware-options-strategies.md` | Tax angles: CC rolling/deferral, qualified-covered-call taint, §1256 60/40, wash sale, constructive sale |
-| `strategy-deep-dive-the-wheel-2026-06-04.md` / `strategy-deep-dive-rolling-options-2026-06-04.md` | Advanced multi-lens deep dives (mechanics/Greeks/tax/sentiment/failure modes) + dissertation-level Quant appendices |
-| `docs/archive/options-strategy-execution-smoke-2026-06-03.md` | Dry-run strategy quote smoke evidence (archived) |
-| `live-write-verification-2026-06-03.md` | Live recurring pause/resume round-trip + DRIP write-method correction (405) |
-| `options-contract-navigation-2026-06-03.md` | Exact-contract API resolution and account-pinned chain navigation |
-| `stock-page-profile-2026-06-03.md` | Stock detail page endpoint mapping |
-| `docs/archive/browser-capture-2026-05-26.md` | Older browser capture notes (archived) |
-| `agent-operating-intelligence-2026-06-04.md` | **Boot-smart KB** — read first: cardinal rule, account/order/signal-sourcing decision frameworks, failure→fix tree, roadmap |
-| `index-options-1256-conclusion-2026-06-04.md` | RH **does** offer cash-settled §1256 index options (SPX/SPXW/XSP/NDX/VIX/RUT) — hidden from search, live under `options/chains/?underlying_symbol=` |
-| `futures-fx-commodities-surface-2026-06-04.md` | Futures read-only (ceres TLS-walled), no spot FX, commodities via ETF proxies only |
-| `institutional-outlook-2026-06-04.md` | Major-firm regime view (BlackRock/Vanguard/JPM/GS/MS year-ahead + 5–10yr CMAs) — info layer that _frames_ attention, not gospel; refresh each cycle |
-| `release-notes-2026-06-04.md` | Changelog: signal-sourcing doctrine, Ball Knowledge ledger, order-evidence rule, and the session's safety/command work |
-| `COMPREHENSIVE-AUDIT-2026-06-18.md` | 2026-06-18 hardening-sprint audit synthesis (38 prioritized fixes, B+ grade). The detailed per-track reports (parity, doc-contradictions, MCP best-practices, financial-tools gaps, master plan) are archived under `docs/archive/`. |
-| `undocumented-surface.md` | Route discoveries that differ from public docs |
-| `tos-notes.md` | Risk and terms notes |
+| File | Use |
+| --- | --- |
+| [`cli-mcp-architecture.md`](cli-mcp-architecture.md) | Shared engine, CLI/MCP adapters, route-map flow, and maintenance invariants |
+| [`write-operations.md`](write-operations.md) | Dry-run and live-write contract |
+| [`evidence-confidence-ledger.md`](evidence-confidence-ledger.md) | Evidence tier for capability families |
+| [`auth.md`](auth.md) | Browser-session auth, local environment loading, and refresh behavior |
+| [`undocumented-surface.md`](undocumented-surface.md) | Route discoveries that differ from public documentation |
+| [`tos-notes.md`](tos-notes.md) | Terms and access-risk notes |
+| [`../ROADMAP.md`](../ROADMAP.md) | Current product goals |
 
-**Repo-root files (not under `docs/`):**
+## Agent and MCP design
 
-| File                                                                                              | Use it for                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `../ball-knowledge.md`                                                                            | **Ball Knowledge** — the operator's living, append-only investing-memory ledger (themes, tickers, sources, hunches). Read on finance tasks; canonical operating rules in `../knowledge/signals.md`. |
-| `../trading-log.md`                                                                               | **Trading log** — append-only execution + **intent** history (the strategy thread / "what we're rolling from"). Canonical operating rules in `../knowledge/signals.md`.                             |
-| `../knowledge/signals.md`                                                                         | Source-quality and due-diligence doctrine: X/Reddit pulse, RH confirmer, institutional/academic validation, Ball Knowledge, and execution-evidence rules                                            |
-| `strategy-deep-dive-the-wheel-2026-06-04.md` / `strategy-deep-dive-rolling-options-2026-06-04.md` | Advanced multi-perspective deep dives (mechanics, Greeks, tax, current sentiment, decision rules, failure modes) extending the strategy KB                                                          |
+| File | Use |
+| --- | --- |
+| [`mcp-efficiency-upgrade-2026-07-14.md`](mcp-efficiency-upgrade-2026-07-14.md) | MCP discovery budgets, profiles, and implementation criteria |
+| [`safety-and-workflow-features-2026-07-10.md`](safety-and-workflow-features-2026-07-10.md) | Doctor, order watch, options workbench, snapshots, share-safe output, and MCP profiles |
+| [`agent-operating-intelligence-2026-06-04.md`](agent-operating-intelligence-2026-06-04.md) | Dated operating-intelligence study and failure-mode framework |
+| [`skill-progressive-disclosure-2026-07-14.md`](skill-progressive-disclosure-2026-07-14.md) | Historical skill-size audit. It is not the current size contract; `scripts/check-skill-integrity.py` is authoritative |
+| [`authenticated-api-map-capture-2026-07-14.md`](authenticated-api-map-capture-2026-07-14.md) | Sanitized CDP capture and merge methodology |
 
-## Naming Rule
+Runtime truth is CLI `--help`, MCP `tools/list`, package exports, and generated maps. Dated documents
+are evidence, not automatically the current interface.
 
-Future docs should use short operational names when possible. Keep dated names
-only when the date is evidence, for example browser captures or smoke-test
-results.
+## Accounts, settings, and service reads
 
-## Release Rule
+| File | Use |
+| --- | --- |
+| [`account-settings-capability-map-2026-06-03.md`](account-settings-capability-map-2026-06-03.md) | Funding, recurring, DRIP, sweep, lending, margin, futures, and event-contract surfaces |
+| [`account-context-routing-2026-06-02.md`](account-context-routing-2026-06-02.md) | Browser `account_number` routing observations |
+| [`security-research-account-number-context-routing-2026-06-03.md`](security-research-account-number-context-routing-2026-06-03.md) | Security notes for account context routing |
+| [`account-service-reads-2026-08-04.md`](account-service-reads-2026-08-04.md) | Rewards, inbox, IPO, sweep-rate, and Gold-fee read contracts |
+| [`ipo-access-and-24-hour-contract-map-2026-08-08.md`](ipo-access-and-24-hour-contract-map-2026-08-08.md) | IPO readiness and 24-hour equity-order evidence boundaries |
+| [`stock-page-profile-2026-06-03.md`](stock-page-profile-2026-06-03.md) | Stock-detail endpoint map |
 
-Public docs must not include account numbers, balances, bearer tokens, cookies,
-live order IDs, bank details, or private webhook payloads. If a doc needs those
-to reproduce a finding, keep the private material in the gitignored `info/`
-folder and link only to sanitized commands or route templates here.
+## Options mechanics and execution
+
+| File | Use |
+| --- | --- |
+| [`options-quantitative-playbook-2026-06-03.md`](options-quantitative-playbook-2026-06-03.md) | Pricing, Greeks, payoff, and scenario math |
+| [`options-strategies-knowledge-base-2026-06-03.md`](options-strategies-knowledge-base-2026-06-03.md) | Strategy catalog and payoff posture |
+| [`options-strategy-order-templates-2026-06-03.md`](options-strategy-order-templates-2026-06-03.md) | Per-strategy leg templates |
+| [`options-greeks-strategy-research-2026-06-02.md`](options-greeks-strategy-research-2026-06-02.md) | Greek research and heuristics |
+| [`options-contract-navigation-2026-06-03.md`](options-contract-navigation-2026-06-03.md) | Exact-contract API resolution and navigation |
+| [`strategy-deep-dive-the-wheel-2026-06-04.md`](strategy-deep-dive-the-wheel-2026-06-04.md) | Wheel mechanics and failure modes |
+| [`strategy-deep-dive-rolling-options-2026-06-04.md`](strategy-deep-dive-rolling-options-2026-06-04.md) | Rolling mechanics, cash-account constraints, and dated research |
+| [`live-write-verification-2026-06-03.md`](live-write-verification-2026-06-03.md) | Historical live mutation evidence |
+
+## Tax research and tax-lot operation
+
+Start every active tax question with the generated
+[`../knowledge/tax-reference.md`](../knowledge/tax-reference.md) or `robinhood-tax`. It is the
+maintained source catalog and separates primary law, IRS guidance, broker behavior, and planning
+inference.
+
+| File | Use |
+| --- | --- |
+| [`tax-aware-options-strategies.md`](tax-aware-options-strategies.md) | Options-tax mechanics and the CLI/API/MCP workflow |
+| [`tax-lot-intelligence-and-exact-lot-selling.md`](tax-lot-intelligence-and-exact-lot-selling.md) | Open-lot inventory, stable-ID planning, selected/closed reads, and live submission boundary |
+| [`tax-lot-strategy-playbook.md`](tax-lot-strategy-playbook.md) | Educational curriculum and planning caveats |
+| [`index-options-1256-conclusion-2026-06-04.md`](index-options-1256-conclusion-2026-06-04.md) | Dated Robinhood index-option product evidence |
+
+Narrative tax docs must not contradict the generated catalog. They also must not hard-code changing
+rate comparisons, convert Robinhood estimates into law, or present box-spread, QCC, wash-sale,
+straddle, or constructive-sale conclusions as automatic.
+
+## Market and research context
+
+| File | Use |
+| --- | --- |
+| [`futures-fx-commodities-surface-2026-06-04.md`](futures-fx-commodities-surface-2026-06-04.md) | Dated asset-class surface findings |
+| [`institutional-outlook-2026-06-04.md`](institutional-outlook-2026-06-04.md) | Dated institutional regime research, not current gospel |
+| [`release-notes-2026-06-04.md`](release-notes-2026-06-04.md) | Historical release notes |
+| [`COMPREHENSIVE-AUDIT-2026-06-18.md`](COMPREHENSIVE-AUDIT-2026-06-18.md) | Historical hardening audit; current issues and roadmap supersede completed items |
+
+Operator memory lives at the repository root:
+
+- [`../ball-knowledge.md`](../ball-knowledge.md): dated theses and source leads
+- [`../trading-log.md`](../trading-log.md): execution and intent history
+- [`../knowledge/signals.md`](../knowledge/signals.md): binding source-quality and memory rules
+
+Memory is context, not current fact, account truth, or standing authorization.
+
+## Archive and naming rules
+
+Use short operational names when a document is maintained. Keep a date in the filename when the date
+is part of the evidence, such as a browser capture, live verification, market outlook, or historical
+audit.
+
+Completed implementation plans and obsolete captures belong under `archive/`. If an archived or dated
+document conflicts with a maintained module, generated contract, or runtime surface, report the
+discrepancy and use the newer authority.
+
+## Release rules
+
+Before publishing documentation changes:
+
+1. verify all local links
+2. remove private identifiers and credentials
+3. distinguish live, captured, generated, inferred, and historical evidence
+4. update review dates for time-sensitive claims
+5. update generated sources rather than hand-editing generated output
+6. run `pnpm quality`
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

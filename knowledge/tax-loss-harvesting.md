@@ -1,155 +1,286 @@
-# Tax-loss harvesting — realize the loss, dodge the wash, keep the exposure
+# Tax-loss harvesting: control the window before realizing the loss
 
-> **When to load this:** the user asks "can I harvest losses?", "sell my losers for taxes,"
-> "offset my gains," or any December "what should I sell before year-end" question. This module
-> is the mechanics plus the live-account procedure. Educational background only — not tax advice;
-> surface the numbers and the flags, the operator (and their tax professional) decide. General
-> tax law lives in `knowledge/tax.md`; this module is the _harvesting workflow_ specifically.
+> **When to load this:** the user asks to harvest losses, offset gains, sell losing lots before
+> year-end, preserve exposure after a loss sale, or evaluate a wash-sale risk. Load the maintained
+> [`tax-reference`](tax-reference.md) first. This module turns the mechanics into a conservative
+> account-control workflow. It does not decide a filing position or authorize a sale.
 
-## The mechanic, in dollars
+## The point of the workflow
 
-Selling a position below basis **realizes a capital loss**. Realized losses are worth real money:
+A loss sale can affect capital-gain netting, the limited deduction against other income, and future
+carryovers. Its value depends on the return year, character of gains and losses, taxable income,
+carryovers, state law, and the investor's future actions. Avoid made-up tax savings based on a single
+marginal rate.
 
-1. **Offset realized capital gains dollar-for-dollar.** Short-term losses net against short-term
-   gains first (the most valuable offset — ST gains are taxed at ordinary rates up to 37%),
-   long-term against long-term, then the nets cross over.
-2. **Up to $3,000/yr against ordinary income** ($1,500 married filing separately) once gains are
-   exhausted.
-3. **Indefinite carryforward** of the excess — a big harvested loss is a multi-year asset.
+The operational goal is narrower:
 
-Rough value math: a $5,000 harvested short-term loss against short-term gains at a 32% marginal
-rate ≈ **$1,600 of tax deferred this year**. Harvesting **defers** tax (the replacement has a
-lower basis → bigger gain later) — it only _eliminates_ tax if you later realize at a lower rate,
-donate the appreciated replacement, or get a step-up. Still usually worth it: deferral is an
-interest-free loan from the IRS.
+1. Identify a real loss in a taxable account.
+2. Identify the exact lots and available quantities.
+3. Review the full 61-day control window.
+4. Stop automatic or cross-account replacement acquisitions.
+5. Decide whether to remain out of the position or use a defensible non-identical exposure.
+6. Dry-run the exact sale and any replacement separately.
+7. Obtain exact approval before a live mutation.
+8. Verify the filled order, closed lots, and year-end reporting.
 
-## The wash sale (IRC §1091) — the rule that un-does the harvest
+## Authority and uncertainty
 
-The loss is **disallowed** if you acquire the same or a **substantially identical** security
-within the **61-day window**: 30 days before the sale, the sale day, and 30 days after. Per IRS
-Pub 550, "acquire" includes buying **a contract or option to acquire** the stock — the window
-cuts **both directions**:
-
-- **Stock → stock:** re-buy the same ticker inside the window → washed.
-- **Stock → option:** sell shares at a loss, then **buy a call** (or sell an ITM-ish put likely
-  to assign) on the same name inside the window → the **stock loss** is disallowed. The classic
-  "hold my spot with a call" trap.
-- **Option → option:** close an option at a loss and re-open a substantially identical one →
-  washed. Closing a losing option then buying the underlying inside the window also washes.
-
-A disallowed loss is normally **deferred, not destroyed** — it's added to the replacement's basis
-and the holding period tacks on. **Exception:** if the repurchase happens in an **IRA** (yours,
-including a Roth), Rev. Rul. 2008-5 makes the disallowance **permanent** — no basis add-back,
-the loss is simply gone. The window spans **all accounts** (taxable, IRA, spouse).
-
-### "Substantially identical" for options — the repo's two readings
-
-The repo's two source docs read the strictness differently. Present both; apply the conservative
-one when the user's money depends on it:
-
-| Reading                              | Source                                                     | Rule                                                                                                                                                    |
-| ------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Strict** (facts-and-circumstances) | `docs/tax-aware-options-strategies.md` §6                  | No bright line. Same underlying with a _near_ strike/expiry generally does **not** escape; only a different underlying clearly does.                    |
-| **Consensus** (practitioner)         | `docs/strategy-deep-dive-rolling-options-2026-06-04.md` §5 | Substantially identical ≈ same underlying AND same strike; **changing strike OR expiration generally breaks it**, so a normal roll-out is usually fine. |
-
-**Conservative rule for harvesting:** when the point of the trade is the _loss_, do not re-touch
-the same underlying — shares **or** options — for 31 days after the sale. The consensus reading
-is reasonable for defending a tested short (rolling); it is the wrong risk posture when the loss
-itself is the asset you're protecting. Flag, don't adjudicate.
-
-**§1256 exemption:** SPX/XSP/NDX/VIX/RUT index options are marked-to-market and exempt from wash
-sales entirely — losses there need no window management (see `knowledge/tax.md`).
-
-## Lot selection — stable-ID exact units, not implied FIFO
-
-Robinhood's default disposal method remains FIFO when no valid specific-lot selection survives. The CLI/MCP has a **live-verified open-lot inventory path** and an **exact-ID dry-run planner** for eligible US taxable accounts; exact-lot submission is not yet implemented:
+Start with:
 
 ```bash
-node cli/dist/index.js tax-lots list HPE --account <ACCOUNT> --json
-node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> --shares 4 --objective harvest_loss --json
-node cli/dist/index.js tax-lots plan-sell HPE --account <ACCOUNT> --lot <OPEN_LOT_ID>:3.5 --lot <OPEN_LOT_ID>:0.5 --json
+node cli/dist/tax-cli.js wash-sales
+node cli/dist/tax-cli.js retirement-account-wash-sales
+node cli/dist/tax-cli.js tax-lots-specific-identification
 ```
 
-Every plan uses stable `open_lot_id` plus exact quantity and re-reads live `quantity_available`. The planner rejects unknown/unselectable IDs, over-allocation, mismatched totals, and missing adjusted tax basis. Never identify execution lots by acquisition date alone.
+The binding evidence distinction is:
 
-Robinhood documents that multiple selected lots fill in submitted priority order and that unavailable remainder can fall back to the account's default FIFO. That is broker behavior to preserve when the authenticated exact-lot review/submit contract is eventually captured—not proof that this CLI submits it today. The current product may inspect `tax_lots/order/{order_id}/selected/` or `.../closed/` only when a real existing order ID is supplied.
+- **Primary law and IRS guidance:** wash-sale window, contracts or options to acquire property,
+  basis and holding-period adjustments, and IRA/Roth IRA treatment.
+- **Broker-platform behavior:** what Robinhood detects, estimates, allows, confirms, or reports.
+- **Planning inference:** conservative controls where “substantially identical” lacks a universal
+  bright-line test.
 
-Full contract and caveats: [`../docs/tax-lot-intelligence-and-exact-lot-selling.md`](../docs/tax-lot-intelligence-and-exact-lot-selling.md).
+Do not merge those layers into one claim.
 
-## The traps, ranked
+## The 61-day control window
 
-1. **Roth/IRA repurchase = permanent loss destruction** (Rev. Rul. 2008-5). Never harvest a name
-   the IRA is also buying — including via recurring schedules or DRIP in the IRA.
-2. **Recurring buys are acquisitions.** A live weekly schedule on the harvested symbol re-buys
-   inside the window automatically. Check `recurring list` and pause before selling.
-3. **DRIP is an acquisition.** A dividend reinvested inside the window washes a slice of the loss
-   (pro-rata to the reinvested shares). Check `settings show`; disable per-instrument DRIP first.
-4. **The 30-days-BEFORE leg.** A buy 3 weeks ago already poisons today's loss sale — look back,
-   not just forward.
-5. **December timing.** Trade date controls the tax year — the sell must execute by the year's
-   last trading day. And the window crosses the boundary: a late-December harvest re-bought in
-   mid-January still washes. Harvesting season is also when a near-1-year lot is worth a look —
-   crossing into long-term _gains_ territory cuts the other way (see `knowledge/tax.md`).
-6. **The Wheel re-establishes identical exposure.** Selling shares at a loss then writing a new
-   CSP on the same name inside the window can wash the share loss (`knowledge/wheel.md`).
+The federal wash-sale window includes:
 
-## Harvesting into correlated-but-not-identical exposure
+```text
+30 days before the loss sale
++ the loss-sale date
++ 30 days after the loss sale
+```
 
-The legal way to keep market exposure during the 31 days: replace with something **correlated
-but not substantially identical** — a _different index_ tracking similar exposure (S&P 500 fund
-→ total-market fund), a single stock → its sector ETF, one semiconductor name → a chip-basket
-ETF. Identical CUSIP is always washed; same index from a different issuer is gray; different
-index is the standard practitioner-safe swap. The IRS has never drawn the ETF line precisely —
-say so. After 31 days the user can swap back (a second taxable event — usually small).
+The review therefore starts **before** the proposed sale. A recent purchase can already affect the
+loss even if the user promises not to repurchase afterward.
 
-## APPLY-IT — from live account to harvest plan
+Potential replacement acquisitions include more than an intentional share purchase:
+
+- the same stock or security
+- a contract or option to acquire substantially identical stock or securities
+- recurring investments
+- dividend reinvestment
+- purchases in another taxable account
+- purchases in an IRA or Roth IRA
+- spouse activity when relevant
+- activity at another broker
+
+The Robinhood repository cannot observe every outside account or spouse transaction. A clean local
+history means “not found here,” not “legally impossible.”
+
+## Options are not governed by a universal strike-and-expiration safe harbor
+
+Do not use a rule such as “change either the strike or expiration and the wash sale is avoided.” The
+authorities do not provide one universal numerical test for whether two option positions are
+substantially identical.
+
+For a same-underlying replacement:
+
+- record the contracts, dates, strikes, expirations, deltas, and economic exposure
+- label the conclusion fact-specific
+- distinguish a conservative control from settled law
+- do not promise that a routine roll is safe
+- recommend qualified review when the loss is material or the replacement is economically close
+
+A different underlying or index may reduce similarity, but “correlated” does not automatically mean
+“not substantially identical.” Same-index funds from different issuers can also require analysis.
+
+## IRA and Roth IRA replacement risk
+
+A taxable-account loss followed by a substantially identical acquisition in the taxpayer's IRA or
+Roth IRA can be permanently disallowed without increasing the retirement account's basis. That is a
+different consequence from the usual taxable-account basis adjustment.
+
+Before a proposed harvest, explicitly inspect:
+
+- recurring purchases in every visible retirement account
+- DRIP settings
+- standing orders
+- recent and planned manual purchases
+- any cross-account automation outside Robinhood that the user discloses
+
+Do not describe retirement-account loss activity as tax-loss harvesting. Losses inside the account
+do not create the same taxable-account deduction.
+
+## Exact-lot workflow
+
+### 1. Identify taxable accounts
 
 ```bash
-# 1. Which accounts are even harvestable? (NEVER harvest the Roth — losses there are tax-dead)
-node cli/dist/index.js accounts --json          # keep only taxable (cash/margin); drop ira_roth
-
-# 2. Find the red lots, in dollars, per taxable account
-node cli/dist/index.js positions --account <N> --json    # qty, avgCost, last → loss $ = qty × (avgCost − last)
-node cli/dist/index.js portfolio --by position --json    # cross-check the dollar view
-node cli/dist/index.js options positions --json          # losing option legs are harvestable too (61-day window applies)
-
-# 3. Wash-window lookback + forward hazards on each candidate symbol
-node cli/dist/index.js history --days 30 --account <N> --json   # any BUY of the symbol inside 30 days?
-grep -i "<SYM>" trading-log.md                                  # agent-side intent/fill history
-node cli/dist/index.js recurring list --json                    # live schedule on the symbol? → pause first
-node cli/dist/index.js settings show --account <N>              # DRIP on? → per-instrument disable below
-
-# 4. Neutralize the automatic re-buyers (env-gated writes; get explicit approval)
-node cli/dist/index.js recurring pause --id <SCHEDULE_ID> --live-write      # + ROBINHOOD_ALLOW_LIVE_WRITE=1
-node cli/dist/index.js settings drip --account <N> --disable --instrument <INSTRUMENT_ID> --live-write
-
-# 5. Dry-run the harvest sells + the correlated replacement buys (dry-run is the default)
-node cli/dist/index.js sell -s <SYM> -a <N> -q <SHARES>          # whole-position sell avoids FIFO surprises
-node cli/dist/index.js buy  -s <CORRELATED_SYM> -a <N> -m <USD>  # replacement exposure, different index/underlying
+node cli/dist/index.js accounts --json
+node cli/dist/index.js account-pulse --json
 ```
 
-**Decision procedure:** (1) taxable accounts only, Roth excluded by construction; (2) rank
-candidates by **realized-loss dollars**, not percent — a −40% on a $50 lot is $20 of loss, a −8%
-on a $20,000 lot is $1,600; (3) for each candidate, clear the 30-day lookback AND kill the
-automatic re-buyers; (4) pick the replacement (correlated-not-identical, or sit in cash 31 days);
-(5) dry-run, echo account + symbol + side + qty, send only with the live-write switch on, verify in order
-history, log to `trading-log.md` with INTENT "tax-loss harvest, $X loss realized, replacement
-<SYM>, re-entry window opens <DATE+31>". Set the re-entry date in the log — future-you needs it.
+Keep taxable and retirement accounts separate. Resolve the account the user means, then preserve it
+explicitly through every lot, history, plan, and order call.
 
-## Deep dives
+### 2. Read open lots
 
-- `knowledge/tax.md` — §1256, LEAPS, QCC taint, IRA nuances, the holding-period edge cases.
-- `docs/tax-aware-options-strategies.md` §6 — harvesting with options, primary-law citations.
-- `docs/strategy-deep-dive-rolling-options-2026-06-04.md` §5 — the consensus wash-sale reading for rolls.
-- `knowledge/rolling.md` — where the wash flag fires when defending positions.
+```bash
+node cli/dist/index.js tax-lots list <SYMBOL> --account <ACCOUNT> --json
+```
 
-## Sources
+Use stable `open_lot_id`, adjusted basis, acquisition date, quantity available, eligibility, and
+provenance. Missing adjusted basis is not zero. An acquisition date alone is not a reliable lot
+identifier.
 
-- [IRS Publication 550 — Investment Income and Expenses](https://www.irs.gov/publications/p550) (wash sales, "contract or option to acquire," basis add-back)
-- [IRS Topic 409 — Capital Gains and Losses](https://www.irs.gov/taxtopics/tc409) ($3,000/$1,500 limit, carryforward)
-- [Rev. Rul. 2008-5](https://www.irs.gov/pub/irs-drop/rr-08-05.pdf) (IRA repurchase = permanent disallowance)
-- [Fidelity — Wash sale rules](https://www.fidelity.com/learning-center/personal-finance/wash-sales-rules-tax)
-- [Investor.gov — Wash Sales](https://www.investor.gov/introduction-investing/investing-basics/glossary/wash-sales)
-- [Robinhood — Tax lots](https://robinhood.com/us/en/support/articles/tax-lots/) (app-side lot selection; FIFO default)
+### 3. Build a non-sending lot plan
 
-<!-- made with love by Zayd Khan / cold @ www.zayd.wtf -->
+```bash
+node cli/dist/index.js tax-lots plan-sell <SYMBOL> \
+  --account <ACCOUNT> \
+  --shares <QUANTITY> \
+  --objective harvest_loss \
+  --json
+```
+
+Or identify exact lots where the command supports them:
+
+```bash
+node cli/dist/index.js tax-lots plan-sell <SYMBOL> \
+  --account <ACCOUNT> \
+  --lot <OPEN_LOT_ID>:<QUANTITY> \
+  --json
+```
+
+The plan must reject unknown IDs, unavailable quantities, mismatched totals, and missing basis. A
+plan is not proof that Robinhood accepted or used the lots.
+
+### 4. Review the lookback
+
+```bash
+node cli/dist/index.js history --account <ACCOUNT> --json
+node cli/dist/index.js orders open --json
+```
+
+Filter and inspect at least the statutory lookback period. Include stock, option, and automated
+activity that could create replacement exposure. Do not rely only on the local trading log.
+
+### 5. Review automatic acquisitions
+
+```bash
+node cli/dist/index.js recurring list --json
+node cli/dist/index.js settings show --account <ACCOUNT>
+```
+
+Flag matching recurring schedules and dividend reinvestment. A pause or settings change is a
+separate account mutation and requires its own dry-run, exact approval, and verification.
+
+### 6. Record outside-account facts
+
+Ask the user to account for:
+
+- other brokers
+- IRA and Roth IRA accounts
+- spouse activity when relevant
+- employer plans or automatic purchases
+- pending transfers
+
+Do not represent the workflow as complete if these facts are unknown.
+
+### 7. Evaluate replacement exposure
+
+The least ambiguous way to avoid a replacement acquisition is to remain out of the substantially
+identical property through the window. A different exposure may preserve some market sensitivity,
+but it introduces tracking difference, market risk, and a fact-specific identity analysis.
+
+Do not recommend a replacement solely to avoid tax. Report:
+
+- the original exposure
+- proposed replacement exposure
+- overlap and differences
+- the evidence lane for the identity conclusion
+- the date the post-sale window closes
+- market and execution consequences
+
+### 8. Dry-run the exact sale
+
+```bash
+node cli/dist/index.js sell \
+  --symbol <SYMBOL> \
+  --account <ACCOUNT> \
+  --shares <QUANTITY> \
+  --dry-run \
+  --json
+```
+
+A lot-aware plan and a generic equity sell are not automatically the same execution contract. If
+exact-lot live submission is unavailable or unverified, fail closed rather than pretending the
+selected-lot plan will control disposal.
+
+### 9. Obtain exact approval
+
+Before a live sale, echo:
+
+- taxable account label and masked tail
+- symbol
+- exact quantity
+- order type and price or maximum notional
+- intended lot IDs and quantities, if the live path supports them
+- estimated loss and basis provenance
+- wash-window start and end dates
+- known automatic and cross-account risks
+- replacement action, if any, as a separate approval item
+
+### 10. Verify execution and lot treatment
+
+After the sale:
+
+1. Read the order from brokerage history.
+2. Confirm fill quantity, price, date, account, and state.
+3. Read selected or closed-lot records when available.
+4. Record the intended lot selection and the broker's observed result.
+5. Preserve warnings if lot evidence is unavailable.
+6. Reconcile the year-end tax form.
+
+An HTTP success, UI estimate, or local plan is not tax-lot execution evidence.
+
+## Ranked failure modes
+
+1. **IRA or Roth IRA replacement:** potential permanent disallowance without basis increase.
+2. **A purchase inside the pre-sale window:** the loss can be affected before the harvest is
+   proposed.
+3. **Recurring or DRIP acquisition:** automation silently creates replacement shares.
+4. **Other accounts or brokers:** local Robinhood data is incomplete.
+5. **Option substitution presented as automatically safe:** no universal strike/expiry safe harbor.
+6. **Default disposal fallback:** unavailable selected shares may be handled by the broker's default
+   method.
+7. **Missing or transferred basis:** a red app position may not equal the filing basis.
+8. **Partial wash sale:** replacement quantity can affect only part of the loss; do not treat the
+   result as all-or-nothing without the actual quantities.
+9. **Year-end timing:** trade execution date, holidays, and a window crossing January matter.
+10. **Tax objective dominating investment risk:** tax deferral does not make a poor sale or
+    replacement economically sound.
+
+## Reporting template
+
+Use this structure for a harvest analysis:
+
+```text
+Jurisdiction/review date:
+Evidence lanes used:
+Account scope:
+Candidate lots and basis provenance:
+Estimated loss by lot:
+30-day lookback findings:
+Automatic-acquisition findings:
+Outside-account facts known/unknown:
+Replacement identity uncertainty:
+Window end date:
+Dry-run status:
+Live authorization: not granted / exact action granted
+Post-trade order evidence:
+Post-trade lot evidence:
+Year-end reconciliation required:
+```
+
+## Sources and deeper material
+
+- [`tax-reference.md`](tax-reference.md): source-backed wash-sale, retirement-account, and lot-identification claims
+- [`tax.md`](tax.md): full tax-aware account router
+- [`execution-safety.md`](execution-safety.md): live-write and evidence contract
+- [`accounts.md`](accounts.md): account discovery and account-class separation
+- [`../docs/tax-aware-options-strategies.md`](../docs/tax-aware-options-strategies.md): options-specific mechanics
+- [`../docs/tax-lot-intelligence-and-exact-lot-selling.md`](../docs/tax-lot-intelligence-and-exact-lot-selling.md): detailed lot API contract

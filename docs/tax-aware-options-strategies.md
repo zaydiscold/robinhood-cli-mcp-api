@@ -1,239 +1,476 @@
-# Tax-Aware Options Strategies (US) — Mechanics, the Tax Angle, and the Catch
+# Tax-aware options mechanics for US federal research
+
+> **Scope:** educational US federal income-tax mechanics for options and related Robinhood
+> workflows. This document does not determine a user's filing position, tax liability, or whether a
+> trade is economically appropriate. State rules, elections, business or dealer status, hedging,
+> cross-account activity, and facts outside Robinhood can change the result.
 
-> **Educational, general information only — not tax, legal, or investment advice.** US federal tax rules referenced here (IRC §§ 1091, 1092, 1233, 1256, 1259, 1271–1275, and Treas. Reg. § 1.1092(c)-1) are intricate, fact-dependent, and change. State treatment differs. Anyone applying these should work from primary sources and a qualified tax professional for their own facts.
+**Reviewed:** 2026-08-24  
+**Authoritative repository source:** [`../knowledge/tax-reference.md`](../knowledge/tax-reference.md)
 
-This doc covers seven interlocking topics, each laid out as **mechanic → tax benefit → the catch/limit**:
+This document explains how the mechanics interact with options workflows. The generated tax
+reference contains the maintained claims, evidence lanes, caveats, and official source URLs. When
+this narrative and the generated reference disagree, stop and reconcile the discrepancy before
+using either one.
 
-1. Deferring gains by rolling covered calls / options across tax years
-2. Qualified vs. unqualified covered calls (holding-period taint)
-3. Section 1256 contracts (broad-based index options: SPX/XSP) — 60/40 + mark-to-market
-4. Box spreads as synthetic financing and a tax tool
-5. LEAPS for long-term capital gains / stock replacement
-6. Tax-loss harvesting with options + wash-sale interactions
-7. Constructive sale rules (§ 1259)
+## How to read a claim
 
-The operator's specific framing — *"owning covered calls while bullish and rolling them to reduce/defer taxable gains for the year, kicking the can down the line"* — is addressed head-on in §1, with the important caveats spread across §§2, 6, and 7.
+Every material tax statement belongs to one of four lanes:
 
----
+| Lane | What it means |
+| --- | --- |
+| Primary law or regulation | Statute or regulation controls, subject to effective dates and the complete facts |
+| IRS guidance or reporting instruction | Official IRS explanation, ruling, publication, form, or instruction |
+| Broker-platform behavior | What Robinhood currently exposes, estimates, allows, confirms, or reports |
+| Planning inference | A conservative workflow or flag where no bright-line answer exists |
 
-## 0. Foundational rule: when does an option actually create a taxable event?
+A Robinhood help article can establish current product or reporting behavior. It cannot decide the
+meaning of the Internal Revenue Code. A planning heuristic can reduce operational risk. It cannot be
+presented as settled law.
 
-For a **short option** (the call you write in a covered call), premium received is **not** income when collected. There is no taxable event until the position is **closed** — by expiration, by a closing purchase (buy-to-close), or by assignment/exercise. This deferral-by-default is the lever the whole "rolling" idea pulls on.
+Query the maintained catalog before relying on a section below:
 
-- **Expires worthless:** the premium becomes a gain in the year of expiration. For a short option this gain is **short-term, regardless of how long the option was open.**
-- **Bought to close:** net gain/loss is realized in the year of the close, and for a short option it is **short-term regardless of duration.**
-- **Assigned (the call is exercised against you):** the premium is *not* a separate item — it is rolled into the stock sale. The sale price of the shares becomes **strike + premium received**, and the character (long vs. short term) follows your *stock* holding period.
+```bash
+node cli/dist/tax-cli.js
+node cli/dist/tax-cli.js option-writer-lifecycle
+node cli/dist/tax-cli.js wash-sales
+node cli/dist/tax-cli.js section-1256
+node cli/dist/tax-cli.js qualified-covered-calls
+node cli/dist/tax-cli.js box-spreads
+```
 
-This asymmetry — "premium is short-term, but assignment folds into the stock's character" — is why covered-call tax planning is really *stock* tax planning with an option bolted on.
+API applications use:
 
-Sources: [Fidelity — Tax implications of covered calls](https://www.fidelity.com/learning-center/investment-products/options/tax-implications-covered-calls), [The Blue Collar Investor — Tax implications of writing covered calls](https://www.thebluecollarinvestor.com/tax-implications-of-writing-covered-calls-against-long-term-holdings/).
+```ts
+import { getTaxReference } from "@zaydiscold/robinhood-cli/tax-reference";
+```
 
----
+MCP clients read the generated `tax-reference` knowledge module with `robinhood_knowledge`.
 
-## 1. Deferring gains by rolling covered calls / options across tax years
+## What this repository can observe and what it cannot decide
 
-### Mechanic
-"Rolling" = simultaneously **buy-to-close** the current short call and **sell-to-open** a new one (usually a later expiration, often a different strike). You stay bullish, keep the shares, and keep collecting premium. The year-end version of the idea: as December approaches with an open short call sitting on an **unrealized loss** (the call went against you because the stock rallied — which a bullish holder is happy about), you defer *recognizing* that buy-to-close loss/gain into the next tax year, or you push the *stock* disposition into the next year by choosing expirations that land in January/February.
+### It can observe or help plan
 
-Two distinct things can be deferred, and they are easy to conflate:
+- owned Robinhood accounts and account class
+- current positions and option contracts
+- order and execution history visible to Robinhood
+- open tax lots, adjusted basis when supplied, and quantity available
+- recurring investments and visible account settings
+- Robinhood documents and year-end forms when available
+- the exact option strategy, legs, prices, position effects, and dates
+- Robinhood's current platform descriptions for supported products
+- dry-run order bodies and post-send order-history evidence
 
-1. **Deferring the option's own realized result.** As long as you don't buy-to-close, the short call is open and nothing is realized. Roll into January and the close happens next year.
-2. **Deferring the underlying stock gain.** If you'd otherwise be assigned (shares called away) this year, writing/rolling to a strike and expiration so that assignment — if it happens — occurs *next* year pushes the stock's capital gain into next year's return. A common pattern: in Nov/Dec, sell or roll to Jan/Feb expirations so an in-the-money call that gets assigned settles the stock sale in the new tax year.
+### It cannot independently decide
 
-### Tax benefit
-- A gain you don't realize this year isn't taxed this year — classic **deferral**, the time-value-of-money win ("kick the can"). You keep the dollars that would have gone to tax working for you for another year.
-- Year-to-year, deferral can also keep you under bracket thresholds, NIIT (3.8%) thresholds, or capital-gains-rate breakpoints in a given year.
-- If you're genuinely bullish, rolling keeps the long stock exposure *and* the premium stream intact while you manage the timing of recognition.
+- complete federal or state tax liability
+- filing status or taxable-income brackets
+- activity at every other broker
+- spouse transactions
+- every retirement or employer-plan acquisition
+- whether two instruments are substantially identical in every fact pattern
+- whether a covered call satisfies every qualified-covered-call requirement
+- whether a box spread or other fixed-return structure receives one particular character treatment
+- whether a position is a hedge, straddle, mixed straddle, conversion transaction, constructive
+  sale, dealer position, or business position under the user's complete facts
+- whether a broker estimate fully reflects transferred basis, corporate actions, or adjustments
 
-### The catch / limits
-- **Deferral is not elimination.** The gain reappears next year (often at a *higher* basis cost if you keep rolling up). You are betting your future tax rate ≤ today's, and that the strategy's frictions (commissions, bid/ask, the time you tie up capital below intrinsic value) cost less than the deferral is worth.
-- **A buy-to-close is a closing event — you can't "not realize" a call you actually closed.** Rolling *does* realize the old call's gain/loss in the year you close it. Deferral only works if the close itself lands in the next year, or if you simply leave the position open across the boundary. Many people wrongly believe rolling itself defers the *already-closed* leg — it does not.
-- **Short-option gains are short-term, period.** You cannot convert a written-call profit into long-term gain by holding the short call longer (§ 1233). Time only helps the *stock* leg.
-- **Wash-sale interaction (the big one for the "loss" version).** If you buy-to-close the short call at a **loss** and re-establish a *substantially identical* short call within the 61-day window (30 days before/after), the loss can be disallowed and deferred into the new position's basis — which may or may not be what you wanted. (See §6.) A rolled short call at a meaningfully different strike *and* expiration is generally not substantially identical, but "substantially identical" has no bright line. Note: it is the **loss** legs that wash-sale touches; rolling a *winning* call has no wash-sale issue.
-- **Don't taint the stock's long-term clock.** The reason a bullish holder rolls — moving to a higher strike as the stock climbs — can push you into *in-the-money* or *deep-ITM* calls that **suspend or reset the stock's holding period** (see §2). Deferring an option gain by a month is a bad trade if it costs you long-term capital-gains rates on a large embedded stock gain.
-- **Constructive-sale risk** only arises with offsetting (e.g., deep-ITM short calls plus protective puts approximating a sale); a plain covered call alone is not a constructive sale (see §7).
+The correct output is often “mechanics known, filing conclusion fact-specific,” not a forced yes or no.
 
-Sources: [JustAnswer — Wash rule for rolling covered calls](https://www.justanswer.com/tax/obckw-need-understanding-wash-rule-applies-rolling.html), [Cash Flow Machine — Covered call tax strategy](https://cashflowmachine.net/covered-call-tax-strategy/), [Fidelity — Tax implications of covered calls](https://www.fidelity.com/learning-center/investment-products/options/tax-implications-covered-calls).
+## 1. Written equity options: recognition follows the lifecycle
 
----
+For a written non-Section-1256 equity option, receiving premium is not by itself the final taxable
+event. The result is generally determined when the option:
 
-## 2. Qualified vs. unqualified covered calls — how deep-ITM CCs taint the LTCG holding period
+- expires
+- is closed in a buy-to-close transaction
+- is exercised or assigned
 
-This is the rule that most often surprises people doing the §1 strategy.
+A closing purchase realizes the closed contract. Opening another contract as part of a roll does not
+erase or postpone the realization of the leg that was closed.
 
-### Mechanic
-Under the **straddle rules** of IRC § 1092 and the **qualified covered call (QCC)** safe harbor of § 1092(c)(4) / Treas. Reg. § 1.1092(c)-1, a covered call on stock you own is either:
+General lifecycle effects described by IRS guidance include:
 
-- **Qualified (QCC):** traded on a national exchange, written **>30 days before expiration**, **not deep-in-the-money**, not written by an options dealer in their dealing activity, and not producing ordinary income/loss. QCCs are *exempt from the harsh straddle loss-deferral rules.*
-- **Unqualified:** fails any QCC test — most commonly because it is **deep-in-the-money** (or has ≤30 days written life). Unqualified calls drag the whole stock+call position into the **straddle rules.**
+| Event | General mechanic |
+| --- | --- |
+| Written option expires | Writer generally recognizes short-term capital gain |
+| Writer buys to close | Difference between premium received and closing cost is generally short-term gain or loss |
+| Written call is exercised | Call premium generally increases the amount realized on the stock sale |
+| Written put is exercised | Put premium generally reduces the basis of stock acquired |
 
-**"Deep-in-the-money" is defined by the "lowest qualified benchmark" (LQB)** — a strike that is too far below the stock price is deep-ITM. The benchmark steps with stock price and time to expiration (Treas. Reg. § 1.1092(c)-1):
+These are starting rules, not universal overrides. Section 1256, straddle, dealer, business, and
+hedging provisions can change the simple equity-option treatment.
 
-- Generally the LQB is the **highest available strike below the applicable stock price** (the prior day's closing/applicable stock price), with adjustments:
-- **Stock ≤ $25:** the LQB can't be treated as lower than **85% of the stock price.**
-- **Stock ≤ $150:** the LQB can't be lower than **stock price − $10** (i.e., a strike more than ~$10 ITM tends to be deep-ITM in this band).
-- **Stock > $50 with the option written >90 days out:** the LQB becomes the **second-highest strike below the applicable stock price** (one extra strike of cushion for longer-dated calls).
+### Rolling across a tax-year boundary
 
-A call struck **at or above** the LQB is qualified; **below** it is deep-ITM/unqualified. Practitioners often shorthand "deep ITM" as roughly $5–$10 in-the-money depending on price/expiration, but the regulation's LQB table is the controlling definition.
+A roll contains two actions:
 
-### Two distinct holding-period effects
-1. **In-the-money QCC → holding period is *suspended*** for the stock while the call is open. Days the call is live don't count toward the >1-year long-term clock. (At-the-money and out-of-the-money QCCs do **not** suspend — the clock keeps running.)
-2. **Deep-ITM / unqualified call → straddle rules apply,** which can **terminate/reset** the stock's holding period and **defer losses** on either leg while there's unrealized gain on the other.
+1. close the existing contract
+2. open a replacement contract
 
-### Tax benefit (when used correctly)
-- Writing **OTM or ATM qualified calls** lets you collect premium **without touching the stock's holding-period clock** — so a near-long-term position keeps marching to the 1-year mark and the preferential LTCG rate.
-- § 1092(f): if you close an **in-the-money QCC at a loss**, that loss is treated as **long-term** if a gain on the underlying would have been long-term at that point — preventing a character mismatch.
+The old leg is recognized when it is actually closed. A trader cannot move that realized result to a
+later year merely by calling the combined trade a roll. Timing may change only if the old contract
+remains open across the boundary or the actual closing transaction occurs later.
 
-### The catch / limits
-- **The whole point of being bullish-and-rolling-up can backfire.** As the stock rallies and you roll the call up to chase it, an aggressive strike can slip in-the-money or deep-ITM, **freezing or resetting** a holding period you needed to reach 1 year. The difference between the LTCG rate (0/15/20%) and ordinary rates (up to 37%) on a large embedded gain dwarfs a month of premium.
-- **Dividend qualification can be lost.** Qualified-dividend treatment needs 61 days held in a 121-day window around the ex-date; an ITM call suspending the holding period can disqualify the dividend, bumping it to ordinary rates.
-- **Straddle loss deferral:** with an unqualified call, a **loss** on either the stock or the call can't be deducted while the other leg has an unrealized gain at year-end — the opposite of the deferral you wanted, and it can strand losses you were counting on.
+Similarly, moving a likely stock disposition into a later year is not guaranteed. Assignment,
+exercise style, ex-dividend behavior, market movement, and the exact contract control the outcome.
+Do not describe a later expiration as certain tax deferral.
 
-Sources: [LII — 26 USC § 1092(c)(4) qualified covered call](https://www.law.cornell.edu/uscode/text/26/1092), [eCFR — 26 CFR 1.1092(c)-1](https://www.ecfr.gov/current/title-26/chapter-I/subchapter-A/part-1/subject-group-ECFR9830aa50671aa9c/section-1.1092(c)-1), [Fidelity](https://www.fidelity.com/learning-center/investment-products/options/tax-implications-covered-calls), [Option Samurai — Qualified covered calls](https://optionsamurai.com/blog/qualified-covered-calls/), [The Blue Collar Investor — LTCG enhanced with covered call writing](https://www.thebluecollarinvestor.com/long-term-capital-gains-enhanced-with-covered-call-writing/).
+## 2. Purchased options, exercise, and holding period
 
----
+The treatment differs depending on whether a purchased option is sold, expires, or is exercised.
+When a call is exercised, its cost generally enters the acquired stock's basis. When a put is
+exercised, the option can affect the amount realized on the underlying disposition. The holding
+period for property acquired through exercise generally starts after exercise rather than inheriting
+the option's holding period.
 
-## 3. Section 1256 contracts (SPX, XSP, broad-based index options) — 60/40 + mark-to-market
+That produces an important distinction:
 
-### Mechanic
-IRC § 1256 covers regulated futures, options on futures, and **non-equity (broad-based index) options**. Cash-settled, broad-based index options qualify: **SPX, XSP, NDX, NQX, RUT, RUI, DJX, VIX, OEX/XEO**, and similar. (Notably, options on a single stock or on a **narrow-based** index/ETF — e.g., SPY options — do **not** qualify; SPY is an ETF and its options are taxed as ordinary equity options.)
+```text
+sell a long option
+!=
+exercise the option and later sell delivered shares
+```
 
-Two defining tax features:
-1. **60/40 rule:** every gain/loss is treated as **60% long-term, 40% short-term**, *regardless of actual holding period* — even a position held five minutes.
-2. **Mark-to-market (MTM) at year-end:** any § 1256 position still open on **December 31** is treated as if **sold at fair market value** that day. Unrealized gains/losses are recognized, and basis resets to the 12/31 close for the new year. Reported on **Form 6781.**
+The disposition method changes both the property being disposed of and the relevant holding period.
+Do not assume a LEAPS holding period automatically transfers to acquired shares.
 
-### Tax benefit
-- The blended **60/40 rate** beats fully short-term treatment for active traders. The max blended federal rate is roughly **~26–28%** vs. up to **37%** for short-term equity-option gains. Worked example widely cited: identical SPX vs. SPY exposure and profit can leave the SPX trader paying ~$23k where the SPY trader pays ~$40.8k — a difference flowing entirely from § 1256.
-- **No holding-period management needed** to get part-LTCG rates — you get the 60% long-term slice instantly. Great for index traders who can't (or don't want to) hold a year.
-- § 1256 losses can be **carried back 3 years** (election on Form 6781) against prior § 1256 gains — a flexibility ordinary capital losses lack.
+Before discussing exercise as a tax tactic, compare:
 
-### The catch / limits
-- **Mark-to-market cuts both ways:** you can owe tax on **unrealized** year-end gains you haven't cashed out, and basis resets mean phantom income timing. Plan liquidity for the 12/31 mark.
-- **The 60% "long-term" is statutory, not real** — it doesn't help you stack a true >1-year position into 0%/15% brackets the way actual LTCG holding does; it's a fixed blend.
-- **Only broad-based, cash-settled index options qualify.** Get the product wrong (SPY instead of SPX, a single-name option, a narrow sector index) and you're back to ordinary equity-option rules. ETF-vs-index confusion is the classic error.
-- **Straddle and offsetting-position rules** still apply when § 1256 and non-1256 legs are combined (mixed straddles); special elections (e.g., mixed-straddle election) may be needed.
+- intrinsic value
+- remaining extrinsic value
+- spread and liquidity
+- dividend and assignment considerations
+- account capability
+- basis and holding-period consequences
+- whether selling the option is operationally available
 
-Sources: [CBOE — Index options tax treatment](https://www.cboe.com/tradable_products/index-options-benefits-tax-treatment/), [tastytrade — Reporting § 1256 contracts](https://support.tastytrade.com/support/s/solutions/articles/43000561348), [Green Trader Tax — § 1256 contracts](https://greentradertax.com/trader-tax-center/tax-treatment/section-1256-contracts/), [Green Trader Tax — Options tax treatment 2026](https://greentradertax.com/tax-treatment-for-trading-options-in-2026-rules-pitfalls-and-planning-strategies/).
+Tax mechanics do not make it sensible to destroy material extrinsic value.
 
----
+## 3. Wash sales involving options
 
-## 4. Box spreads as synthetic financing and a tax tool
+The federal wash-sale window reaches 30 days before and 30 days after a loss sale. IRS guidance
+expressly includes certain contracts or options to acquire substantially identical stock or
+securities and applies wash-sale rules to losses on contracts and options involving stock or
+securities.
 
-### Mechanic
-A **box spread** combines a bull call spread and a bear put spread at the same two strikes/expiration, producing a position whose payoff is **fixed and known at expiration** regardless of where the underlying lands. Built on **SPX** (European-style, cash-settled, broad-based), a long-dated box behaves like a **synthetic zero-coupon loan**:
+### What is clear
 
-- **Sell/short a box** → receive cash today, owe a fixed (larger) amount at expiration. That's a **synthetic loan you take out**; the gap is implied interest.
-- **Buy/long a box** → pay cash today, receive a fixed (larger) amount at expiration. That's **synthetic lending** (a near-risk-free yield, competitive with T-bills).
+- the pre-sale window matters, not only the period after the sale
+- replacement quantity can affect only part of a loss
+- taxable-account replacement purchases can generally produce basis and holding-period adjustments
+- an IRA or Roth IRA replacement can permanently disallow the taxable-account loss without a basis
+  increase in the retirement account
+- recurring investments and dividend reinvestment are acquisitions
+- the taxpayer's obligation can extend beyond what one broker reports
 
-Because SPX options are **§ 1256 contracts**, the implied interest flows through the § 1256 machinery rather than as ordinary loan interest.
+### What is not a universal rule
 
-### Tax benefit
-- **As a borrowing tool (short box):** the implied "interest" cost is realized as a **§ 1256 capital loss split 60/40** — and thanks to mark-to-market, a *portion* of that loss can be recognized **each year the box is outstanding**, even before the box expires and the "interest" is actually paid. For someone with offsetting **capital gains**, this effectively makes borrowing cost **tax-deductible against capital gains** — something a margin loan or SBLOC interest often can't achieve cleanly (investment-interest deductions are limited and require itemizing).
-- **Rates can be attractive** — long-dated SPX boxes have historically priced near or slightly above Treasury yields, often **below** broker margin rates and SBLOCs, with no margin-call-on-the-loan-itself dynamic of a stock-collateralized line (the box's payoff is fixed).
-- **As a lending tool (long box):** a relatively **T-bill-like return taxed at the favorable 60/40 blend** rather than as ordinary interest income.
+There is no universal statutory strike-or-expiration safe harbor saying that changing one option
+term automatically makes the replacement non-identical. A normal roll may be economically different,
+but that does not let the repository adjudicate substantial identity as a bright-line calculation.
 
-### The catch / limits
-- **The "interest" is a capital loss, not an ordinary interest deduction** — it's only useful to the extent you have **capital gains** (or the $3,000/yr net capital-loss allowance) to absorb it. If your gains are mostly long-term, deductions against them save less than deductions against ordinary income would.
-- **Complexity and execution risk:** boxes are multi-leg, can be mispriced/illiquid at the wrong strikes, and **must** use European-style, cash-settled, broad-based options (SPX) to avoid early-assignment risk and to land in § 1256. American-style equity-option boxes can be assigned early and blow up the "fixed" payoff. (There's a cautionary real-world case of a trader wiped out by an American-style box assignment.)
-- **It's still leverage.** A short box is debt; the cash you pull out is borrowed and the obligation is fixed.
-- **Reporting nuance:** characterizing the implied interest correctly (capital vs. interest) on Form 6781 is non-obvious; documentation matters and aggressive characterization invites scrutiny.
+For material same-underlying option losses, report:
 
-Sources: [Kitces — Box spreads vs. margin loans / SBLOCs](https://www.kitces.com/blog/box-spreads-borrowing-alternative-margin-loans-sblocs-heloc/), [CBOE — Long-dated box spreads](https://www.cboe.com/insights/posts/long-dated-box-spreads-a-better-way-to-buy-a-home-updated/), [SyntheticFi — Tax deductibility of box spreads](https://www.syntheticfi.com/blog/tax-deductibility-of-box-spreads), [Schwab — What are box spreads](https://www.schwab.com/learn/story/what-are-box-spreads), [Exceed Investments — Box spread lending](https://exceedinvestments.com/box-spread-lending-a-tax-efficient-way-to-leverage-investment-portfolios/).
+- old and new contract identifiers
+- strike, expiration, type, side, and delta or economic exposure
+- dates inside the control window
+- account and outside-account facts
+- whether the conclusion is primary authority, broker behavior, or planning inference
 
----
+Use [`../knowledge/tax-loss-harvesting.md`](../knowledge/tax-loss-harvesting.md) for the complete
+account-control workflow.
 
-## 5. LEAPS for long-term capital gains / stock replacement
+## 4. Qualified covered calls and the straddle framework
 
-### Mechanic
-**LEAPS** (Long-term Equity AnticiPation Securities) are simply options expiring **>1 year out** (up to ~3 years). A **deep-ITM call LEAP** (delta ~0.80+) tracks the underlying nearly dollar-for-dollar while costing a **fraction of the share price** — a "**stock replacement**" position: most of the upside, far less capital deployed.
+“Covered” is an economic description. “Qualified covered call” is a technical tax classification.
+A call is not qualified merely because the account owns 100 shares.
 
-### Tax benefit
-- **Hold the LEAP itself >12 months and sell it (don't exercise):** the gain is a **long-term capital gain** (0/15/20%), like stock held long-term. You captured most of the equity move using ~25–35% of the capital, freeing cash for diversification.
-- **Capital efficiency** is itself a (non-tax) benefit that compounds the tax one: less capital tied up, same directional exposure.
+The statute and regulation consider requirements including:
 
-### The catch / limits
-- **Exercising RESETS the clock.** If you exercise the LEAP and take delivery of shares, the **shares' holding period starts on the exercise date** — your time holding the option does *not* tack on. To get long-term treatment on the *option's* gain you generally must **sell the option**, not exercise it. This is the single most common LEAP tax mistake.
-- **Options have no dividends and decay (theta).** A stock-replacement LEAP forgoes dividends and bleeds time value; the breakeven requires the stock to move enough to cover the premium. It is *not* a free long-stock substitute.
-- **Rolling a LEAP is a sale.** Rolling (close + reopen) realizes the gain/loss on the closed leg — if you've held <12 months that's short-term, and frequent rolling can keep you perpetually short-term.
-- **Selling a LEAP at a loss** is subject to the **wash-sale rule** vs. the stock and other options on the name (see §6).
-- LEAPS used as the long leg against a short call (a "**poor man's covered call**") import **straddle / QCC** considerations on the short leg (see §2).
+- exchange trading
+- option term
+- relationship between strike and applicable stock price
+- the lowest-qualified-benchmark framework
+- exclusions for certain dealer or ordinary-income positions
+- the complete stock-and-option relationship
 
-Sources: [TradeAlgo — LEAPS options strategy guide](https://www.tradealgo.com/trading-guides/options/leaps-options-strategy-guide), [JustAnswer — LEAP exercise short-term gain rules](https://www.justanswer.com/tax/mzffe-regarding-leap-option-contracts-securities-regards.html), [Achievable — Taxes on options (Series 65)](https://app.achievable.me/study/finra-series-65/learn/investment-vehicle-characteristics-derivatives-options-taxes-on-options).
+Do not reduce the regulation to “no more than $5 or $10 in the money.” Strike grids, stock price,
+term, and regulatory adjustments matter.
 
----
+Potential consequences around covered calls and straddles can include:
 
-## 6. Tax-loss harvesting with options + wash-sale interactions
+- loss deferral
+- holding-period effects
+- dividend holding-period complications
+- different treatment of an in-the-money qualified call and a nonqualified structure
+- interaction with other offsetting positions
 
-### Mechanic
-**Tax-loss harvesting:** sell a losing position to realize a capital loss that offsets capital gains (and up to **$3,000/yr** of ordinary income; excess carries forward). The **wash-sale rule (IRC § 1091)** disallows the loss if you acquire a **"substantially identical"** security within **30 days before or after** the sale (a 61-day window).
+The repository can calculate dates and inspect contracts. It cannot determine QCC status from a
+strategy label alone. For a material appreciated position, surface the regulatory inputs and the
+uncertainty rather than claiming the stock's holding-period clock definitely continues or resets.
 
-Options are squarely inside § 1091, and in **two directions**:
-1. **Options as the harvested security:** selling an option at a loss and re-buying a substantially identical option within the window triggers the wash sale.
-2. **Options as the *replacement* that taints a stock loss:** sell stock at a loss, then **buy a call** (or, by IRS position, even establish certain option exposure) on the same stock within 30 days → the option counts as acquiring a substantially identical interest and **disallows the stock loss.**
+## 5. Section 1256 contracts
 
-### Tax benefit (when done cleanly)
-- Realize losses to **offset realized gains** dollar-for-dollar — short-term losses first offset short-term gains (most valuable, since short-term gains are taxed highest), then cross over.
-- A **disallowed** wash-sale loss isn't destroyed — it's **added to the basis** of the replacement and the old **holding period tacks on**, so it's deferred, not lost. Sometimes deferral into a position you keep is acceptable.
-- Options let you **stay in the market** during the 31-day wait with *non*-substantially-identical exposure (e.g., harvest a single stock's loss, hold a broad sector ETF or a clearly different option for 31 days), preserving the directional bet without triggering the wash.
+Qualifying Section 1256 contracts are generally marked to market at year-end. Gain or loss is
+characterized 60% long-term and 40% short-term regardless of actual holding period.
 
-### The catch / limits
-- **"Substantially identical" has no bright-line definition** — it's facts-and-circumstances, broader than "same CUSIP," and the IRS hasn't drawn clean lines for options (same underlying, similar strike/expiration is risky). Different underlying generally avoids it; same underlying with a near strike/expiry generally doesn't.
-- **The window is 61 days** (30 before + sale day + 30 after) — and it spans **all your accounts**, including IRAs (a wash against an IRA purchase **permanently** disallows the loss, with no basis add-back to the IRA).
-- **Rolling a losing short option can be a wash sale** if the new short option is substantially identical (see §1). Rolling a losing *long* option into a substantially identical one likewise defers the loss.
-- **Buying a call to "hold your spot" after harvesting a stock loss is the classic trap** — it can disallow the very loss you just harvested.
-- Harvesting only **defers** tax (lower basis → bigger gain later) unless you ultimately realize at a lower rate, donate the appreciated replacement, or get a step-up at death.
+### Correction: the 60% component is real long-term capital character
 
-Sources: [Schwab — Primer on wash sales](https://www.schwab.com/learn/story/primer-on-wash-sales), [Fidelity — Wash-sale rules](https://www.fidelity.com/learning-center/personal-finance/wash-sales-rules-tax), [Morningstar — What is "substantially identical"](https://www.morningstar.com/financial-advisors/wash-sale-challenge-what-is-substantially-identical), [ASKramer Law — Tax-loss harvesting & the wash-sale rule](https://www.askramerlaw.com/publications/tax-loss-harvesting-part-ii), [TurboTax — Wash sale rule](https://turbotax.intuit.com/tax-tips/investments-and-taxes/wash-sale-rule-what-is-it-how-does-it-work-and-more/c5ANd7xnJ).
+The 60% component is not merely “long-term-like.” It is statutory long-term capital character. The
+holding period is irrelevant to the allocation, but that does not make the character unreal.
 
----
+Avoid hard-coded statements such as “this always produces a 26% rate.” The actual tax effect depends
+on the return year, taxable income, netting, carryovers, elections, state treatment, and other facts.
 
-## 7. Constructive sale rules (IRC § 1259)
+### Confirm the contract, not just the ticker label
 
-### Mechanic
-Historically, "**short against the box**" — shorting a stock you already own at a gain — locked in the gain *economically* while deferring the *tax* indefinitely. The **Taxpayer Relief Act of 1997** added **IRC § 1259**, which treats certain offsetting transactions on an **appreciated financial position** as a **"constructive sale"** — you're taxed as if you sold, even though you didn't.
+Do not infer Section 1256 status from:
 
-Triggers include, on an appreciated position you hold:
-- a **short sale of the same or substantially identical** property ("short against the box"),
-- an **offsetting notional principal contract**,
-- a **futures/forward contract** to deliver the same/substantially identical property,
-- and (for an already-short or already-derivative position) acquiring the offsetting long.
+- the phrase “index option”
+- a search result
+- a ticker alone
+- cash settlement alone
+- a marketing comparison with an ETF
 
-The effect: gain is recognized at the constructive-sale date as if sold at FMV; basis and a new holding period reset accordingly.
+Confirm the actual contract and reconcile the broker's year-end reporting. Robinhood currently
+describes supported index-option products such as SPX, XSP, NDX, VIX, and RUT as cash-settled index
+options with Section 1256 reporting, but current platform description and final tax treatment remain
+separate evidence lanes.
 
-### Tax benefit / the legitimate use
-- § 1259 is mostly a **limiter**, but it defines the **safe space**: positions that **don't** fully lock in the gain (a *collar* with meaningful spread between put and call strikes, an OTM protective put alone, a non-deep covered call) generally **avoid** constructive-sale treatment, so you can hedge downside while *still deferring* the underlying gain.
-- **The 30-day reopening exception:** a transaction that would be a constructive sale is **not** one if you **close it within 30 days after the end of the tax year** *and* hold the appreciated position **unhedged for the 60 days** following that close. This permits short-term, year-end hedging without triggering recognition.
+### Year-end mark-to-market
 
-### The catch / limits
-- **Get too tight and it's a sale.** A hedge that eliminates substantially all risk of loss *and* opportunity for gain (e.g., a zero-cost collar with put strike ≈ call strike, or a deep-ITM short call paired with a protective put approximating a synthetic short) is a **constructive sale** — instant taxable gain, defeating the deferral.
-- **"Substantially identical" reappears** here with the same fuzziness as the wash-sale rule.
-- The **30-day/60-day exception is narrow** and unforgiving on timing — miss the unhedged 60-day window and the original transaction is retroactively a constructive sale.
-- A plain **covered call by itself is not** a constructive sale — but layering it with deep protection can cross the line, which is why §§2 and 7 must be read together when you're "rolling while bullish" *and* hedging.
+Open qualifying contracts are generally treated as sold at fair market value on the last business
+day of the year, with reporting through Form 6781. This can recognize a gain before the position is
+closed for cash. It can also reset basis for the following year.
 
-Sources: [LII — 26 USC § 1259](https://www.law.cornell.edu/uscode/text/26/1259), [Asset Strategy — Constructive sale rule](https://assetstrategy.com/constructive-sale-rule/), [IRS Rev. Rul. 2002-44 (§ 1259)](https://www.irs.gov/pub/irs-drop/rr-02-44.pdf), [Green Trader Tax — Short selling IRS rules](https://greentradertax.com/short-selling-irs-tax-rules-are-unique/).
+### Mixed positions
 
----
+A structure combining Section 1256 and non-Section-1256 legs can invoke mixed-straddle rules or
+elections. Do not apply the standalone 60/40 summary to the entire package without analyzing every
+leg and election.
 
-## Cross-cutting summary table
+## 6. Box spreads and fixed-return structures
 
-| Strategy | Core mechanic | Tax benefit | The catch |
-|---|---|---|---|
-| **Rolling CCs across years** (§1) | Keep short call open or close it next year; choose Jan/Feb expirations | Defers option gain and/or stock-sale gain into next year | Deferral ≠ elimination; closing leg realizes in year of close; short-option gains stay short-term; can taint stock LTCG clock |
-| **Qualified vs. unqualified CC** (§2) | Strike vs. "lowest qualified benchmark"; >30 days written | OTM/ATM QCC keeps stock holding-period clock running | ITM QCC **suspends**; deep-ITM/unqualified triggers **straddle** rules + holding-period reset + loss deferral; can kill qualified dividends |
-| **§ 1256 (SPX/XSP)** (§3) | Broad-based, cash-settled index options | **60/40** blended rate regardless of holding period; loss carryback | Year-end **mark-to-market** taxes unrealized gains; only broad-based/cash-settled qualify (not SPY/single names) |
-| **Box spread** (§4) | SPX bull-call + bear-put = synthetic fixed loan | Implied interest = **§ 1256 60/40 capital loss**, recognized partly each year; cheap, gain-offsetting financing | Loss only useful vs. capital gains; multi-leg/execution risk; must be European/cash-settled; still leverage |
-| **LEAPS / stock replacement** (§5) | Deep-ITM long call ~0.80 delta, >1yr | **Sell** after >12 mo = LTCG with ~⅓ the capital | **Exercising resets the clock**; no dividends + theta decay; rolling realizes gain; wash-sale on losses |
-| **TLH + options** (§6) | Realize losses; options as harvested *or* replacement | Offset gains + $3k ordinary; disallowed loss adds to basis (deferral) | **Substantially identical** (no bright line); 61-day all-account window incl. IRAs; buying a call after a stock-loss harvest can disallow it |
-| **Constructive sale** (§7) | § 1259 deems offsetting hedges a sale | Defines safe hedges (loose collars, OTM puts) that still defer gain | Tight/full hedges = instant taxable gain; narrow 30/60-day year-end exception |
+A box spread combines offsetting vertical spreads and can create a fixed expiration payoff. On a
+European-style cash-settled product, the economics can resemble borrowing or lending.
 
----
+The economic analogy does **not** produce one automatic tax result.
 
-### Bottom line for the operator's question
+Depending on the contracts and facts, relevant provisions can include:
 
-"Owning covered calls while bullish and rolling them to defer gains" is a real lever, but a *narrow* one: it defers **timing**, not the tax itself, and it only defers what hasn't yet been **closed**. The premium leg is always short-term; the real money is in **not tainting the stock's long-term holding period** (§2) and in respecting the **wash-sale** (§6) and **constructive-sale** (§7) boundaries when you roll up strikes or add protection. For pure index exposure, **§ 1256 products (SPX/XSP)** hand you part-LTCG rates without any holding-period gymnastics — often a cleaner path than managing equity-option timing. None of this is advice; the regulations are dense and fact-specific, and a tax professional should sign off on any actual plan.
+- Section 1256
+- straddle rules
+- mixed-straddle rules and elections
+- conversion-transaction rules
+- other timing and character provisions
 
----
+### Correction: do not call the financing cost automatically deductible
 
-*Compiled June 2026 from the sources hyperlinked inline. Primary law: IRC §§ 1091, 1092, 1233, 1256, 1259, 1271–1275; Treas. Reg. § 1.1092(c)-1; Form 6781.*
+Do not say:
 
-<!-- Zayd Khan // cold // www.zayd.wtf -->
+- a short box's difference is automatically deductible Section 1256 capital loss
+- a long box's return is automatically favorable 60/40 income
+- a fixed payoff removes tax-characterization uncertainty
+
+Instead report:
+
+- exact contracts and product
+- long or short box
+- cash flows and expiration payoff
+- broker reporting evidence
+- whether all legs are Section 1256 contracts
+- possible straddle or conversion-transaction interaction
+- the conclusion as fact-specific
+
+A personalized box-spread financing or tax conclusion belongs in professional-review territory.
+
+## 7. Constructive sales
+
+Section 1259 can recognize gain when an appreciated financial position is offset through specified
+transactions that substantially eliminate continued exposure. The analysis depends on the actual
+appreciated position, offsetting position, dates, and retained risk.
+
+Do not use either shortcut:
+
+```text
+“plain covered calls are always safe”
+“any protective collar is automatically a constructive sale”
+```
+
+Both are too categorical. A strategy name is not the statutory test. The repository should identify
+potentially offsetting positions and dates, then surface the need for a complete analysis.
+
+## 8. Tax lots and specific identification
+
+Specific identification generally requires timely broker instructions and written confirmation.
+Robinhood currently provides lot-selection and disposal-method features for eligible accounts, but
+its app estimates are not tax-reporting documents and unavailable selected shares may be handled
+according to broker fallback behavior.
+
+Use:
+
+```bash
+node cli/dist/index.js tax-lots list <SYMBOL> --account <ACCOUNT> --json
+node cli/dist/index.js tax-lots plan-sell <SYMBOL> \
+  --account <ACCOUNT> \
+  --shares <QUANTITY> \
+  --objective harvest_loss \
+  --json
+```
+
+Maintain these distinctions:
+
+```text
+lot inventory
+!= lot plan
+!= order submission
+!= filled order
+!= broker-selected or closed-lot evidence
+!= year-end tax reporting
+```
+
+If the authenticated exact-lot submission contract is unavailable or unverified, the live path must
+fail closed. A generic sell order cannot be described as an exact-lot sale merely because a separate
+plan selected lots.
+
+## 9. CLI, API, and MCP workflow
+
+### Reference mechanics
+
+```bash
+node cli/dist/tax-cli.js <TOPIC>
+```
+
+### Account facts
+
+```bash
+node cli/dist/index.js accounts --json
+node cli/dist/index.js tax-lots list <SYMBOL> --account <ACCOUNT> --json
+node cli/dist/index.js history --account <ACCOUNT> --json
+node cli/dist/index.js recurring list --json
+node cli/dist/index.js settings show --account <ACCOUNT>
+node cli/dist/index.js documents list --year <YEAR> --json
+```
+
+### Non-sending action plan
+
+```bash
+node cli/dist/index.js sell \
+  --symbol <SYMBOL> \
+  --account <ACCOUNT> \
+  --shares <QUANTITY> \
+  --dry-run \
+  --json
+```
+
+A reference read never supplies the consent required for the sale. Before a live mutation, echo the
+account, exact instrument or lot contract, side, quantity, price or maximum notional, relevant tax
+uncertainty, and the fact that tax treatment is not guaranteed.
+
+### API
+
+```ts
+import { getTaxReference } from "@zaydiscold/robinhood-cli/tax-reference";
+
+const washSaleMechanics = getTaxReference({ topic: "wash-sales" });
+```
+
+### MCP
+
+Use `robinhood_knowledge` to read `tax-reference`, then use account tools separately for tax lots,
+documents, history, recurring schedules, and settings. Preserve the distinction between local
+reference content and live account data in the answer.
+
+## 10. Examples framed as mechanics, not recommendations
+
+### Rolling a losing covered call
+
+Relevant mechanics:
+
+- closing the old call realizes that leg
+- a replacement call can raise wash-sale and QCC or straddle questions
+- stock holding period and dividend treatment may require analysis
+- a later expiration does not guarantee stock deferral or eliminate assignment risk
+
+Required answer posture:
+
+```text
+Here is what closes, what opens, what becomes realized, what remains uncertain, and what account
+facts are missing. This is not a recommendation to roll or a promise of a tax result.
+```
+
+### Comparing SPX and SPY options
+
+Relevant mechanics:
+
+- they are different products with different settlement, exercise, deliverable, liquidity, and tax
+  reporting characteristics
+- qualifying Section 1256 contracts receive 60/40 character and mark-to-market treatment
+- ETF options generally follow ordinary equity-option rules
+- current Robinhood availability and the taxpayer's actual form must be verified
+
+Required answer posture:
+
+```text
+Compare the complete product and strategy economics first. Tax character is one input, not a reason
+to replace one exposure with another automatically.
+```
+
+### Exercising a LEAPS call
+
+Relevant mechanics:
+
+- option cost generally enters delivered-share basis
+- share holding period generally begins after exercise
+- selling the option and exercising it are different dispositions
+- remaining extrinsic value and liquidity matter
+
+Required answer posture:
+
+```text
+Show the option-sale value, intrinsic and extrinsic value, exercise consequences, delivered-share
+basis mechanics, and holding-period reset. Do not present exercise as a tax shortcut.
+```
+
+### Using a box spread for financing
+
+Relevant mechanics:
+
+- fixed expiration payoff
+- execution and liquidity risk
+- contract and settlement details
+- potential Section 1256, straddle, mixed-straddle, and conversion-transaction interaction
+- broker reporting and professional-review need
+
+Required answer posture:
+
+```text
+Describe the cash flows and legal uncertainty. Do not call the financing cost automatically
+interest-deductible or the return automatically tax-advantaged.
+```
+
+## Maintenance and source discipline
+
+The maintained source catalog is [`../knowledge/tax-reference.json`](../knowledge/tax-reference.json).
+To change a tax claim:
+
+1. update the catalog
+2. use a primary or official source where available
+3. assign an evidence lane and certainty
+4. include caveats
+5. run `pnpm generate:tax-reference`
+6. run `pnpm test:tax-reference`
+7. update this narrative only when the operational explanation changes
+
+Do not paste changing tax brackets, contribution limits, rate comparisons, or broker deadlines into
+this document without a return year or review date. Prefer the current official source at query time.
+
+## Related repository material
+
+- [`../knowledge/tax-reference.md`](../knowledge/tax-reference.md): generated claims and official sources
+- [`../knowledge/tax.md`](../knowledge/tax.md): account and document workflow
+- [`../knowledge/tax-loss-harvesting.md`](../knowledge/tax-loss-harvesting.md): 61-day control procedure
+- [`tax-lot-intelligence-and-exact-lot-selling.md`](tax-lot-intelligence-and-exact-lot-selling.md): lot API and execution evidence
+- [`index-options-1256-conclusion-2026-06-04.md`](index-options-1256-conclusion-2026-06-04.md): dated Robinhood product evidence
+- [`strategy-deep-dive-rolling-options-2026-06-04.md`](strategy-deep-dive-rolling-options-2026-06-04.md): rolling mechanics and risks

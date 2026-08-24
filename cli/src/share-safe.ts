@@ -2,7 +2,7 @@ const SENSITIVE_KEY =
   /(?:balance|buying[_-]?power|cash|equity|order(?:[_-]?id)?|document(?:[_-]?url)?|private[_-]?(?:note|key)|password|passcode|secret|credential|api[_-]?key|access[_-]?key|token|authorization|bearer|cookie|session[_-]?(?:id|key|token)|mfa|otp|challenge|device[_-]?id|ssn|tax[_-]?id)/i;
 const URL_KEY = /(?:url|uri|href|download|document|link)/i;
 const SIGNED_URL =
-  /(?:X-(?:Amz|Goog)-(?:Signature|Credential)|signature=|token=|jwt=|download_url=)/i;
+  /(?:X-(?:Amz|Goog)-(?:Signature|Credential)|(?:^|[?&])(?:signature|sig|token|access_token|jwt|download_url)=)/i;
 
 function normalizedKey(key: string): string {
   return key
@@ -42,10 +42,19 @@ function shouldMaskKey(key: string, value: unknown): boolean {
   return isAccountReferenceKey(key) || SENSITIVE_KEY.test(normalizedKey(key));
 }
 
+function looksLikeAccountReference(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) || /(?:^|\/)accounts?\//i.test(value);
+}
+
 function masked(value: unknown, key = ""): string {
   const text = String(value ?? "");
-  if (isAccountIdentifierKey(key) && isScalar(value)) {
-    return text.length >= 4 ? `…${text.slice(-4)}` : "[REDACTED]";
+  if (
+    isAccountIdentifierKey(key) &&
+    isScalar(value) &&
+    !looksLikeAccountReference(text) &&
+    text.length > 4
+  ) {
+    return `…${text.slice(-4)}`;
   }
   return "[REDACTED]";
 }

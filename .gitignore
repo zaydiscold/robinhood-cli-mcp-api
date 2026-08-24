@@ -21,6 +21,9 @@ git-crypt-key
 _local-backups-*/
 /_*.json
 
+# local exact-value denylist for the public portability scan
+.private-portability-values
+
 # private runtime output (the rest of local/ is intentionally git-crypt tracked)
 local/portfolio-snapshots.jsonl
 local/legacy-reports/

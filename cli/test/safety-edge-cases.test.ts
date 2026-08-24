@@ -4,8 +4,8 @@ import {
   buildOptionsWorkbench,
   diffPortfolioSnapshots,
   redactShareSafe,
-  type PortfolioSnapshot,
   watchOrderLifecycle,
+  type PortfolioSnapshot,
 } from "../src/lib.js";
 
 describe("safety edge cases", () => {
@@ -82,15 +82,15 @@ describe("safety edge cases", () => {
     ]);
   });
 
-  it("does not treat null option quotes as executable zero-dollar premiums", () => {
-    const result = buildOptionsWorkbench({
+  it("does not treat missing or negative option quotes as executable premiums", () => {
+    const missingQuote = buildOptionsWorkbench({
       symbol: "AAPL",
       expiration: "2026-12-18",
       underlyingPrice: 100,
       pricingMode: "natural",
       legs: [
         {
-          id: "long-call",
+          id: "missing-ask",
           action: "buy",
           type: "call",
           strike: 105,
@@ -100,9 +100,26 @@ describe("safety edge cases", () => {
         },
       ],
     });
+    const negativeQuote = buildOptionsWorkbench({
+      symbol: "AAPL",
+      expiration: "2026-12-18",
+      underlyingPrice: 100,
+      pricingMode: "natural",
+      legs: [
+        {
+          id: "negative-ask",
+          action: "buy",
+          type: "call",
+          strike: 105,
+          ask: -1,
+          mark: 2,
+        },
+      ],
+    });
 
-    expect(result.contract.legs[0]?.premium).toBe(2);
-    expect(result.package.netPremium).toBe(-200);
+    expect(missingQuote.contract.legs[0]?.premium).toBe(2);
+    expect(missingQuote.package.netPremium).toBe(-200);
+    expect(negativeQuote.contract.legs[0]?.premium).toBe(2);
   });
 
   it("includes a breakeven that lands exactly on the highest strike", () => {
@@ -122,20 +139,28 @@ describe("safety edge cases", () => {
   it("fully redacts credentials while only suffix-masking account identifiers", () => {
     const output = redactShareSafe({
       account_number: "123456789",
+      brokerageAccountNumber: 987654321,
+      accountType: "individual",
+      accountUrl: "https://api.test/accounts/123456789",
       password: "correct-horse-battery-staple",
       otp: "123456",
       apiKey: "api-secret-value",
       token: "987654321",
       deviceId: "device-secret-value",
+      downloadLink: "https://files.test/report?X-Goog-Signature=secret",
     });
 
     expect(output).toEqual({
       account_number: "…6789",
+      brokerageAccountNumber: "…4321",
+      accountType: "individual",
+      accountUrl: "[REDACTED]",
       password: "[REDACTED]",
       otp: "[REDACTED]",
       apiKey: "[REDACTED]",
       token: "[REDACTED]",
       deviceId: "[REDACTED]",
+      downloadLink: "[REDACTED_URL]",
     });
   });
 });

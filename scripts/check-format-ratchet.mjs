@@ -1,5 +1,5 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { relative, resolve } from "node:path";
 import prettier from "prettier";
 
 const root = process.cwd();
@@ -27,15 +27,12 @@ const files = (
   ])
 ).flat();
 const unformatted = [];
-const formatting = new Map();
 
 for (const file of files) {
   const source = await readFile(file, "utf8");
   const options = (await prettier.resolveConfig(file)) ?? {};
   if (!(await prettier.check(source, { ...options, filepath: file }))) {
-    const name = relative(root, file).replaceAll("\\", "/");
-    unformatted.push(name);
-    formatting.set(name, await prettier.format(source, { ...options, filepath: file }));
+    unformatted.push(relative(root, file).replaceAll("\\", "/"));
   }
 }
 
@@ -51,10 +48,5 @@ if (improved.length > 0) console.log(`Formatting debt reduced: ${improved.join("
 
 if (unexpected.length > 0) {
   console.error(`New formatting debt:\n- ${unexpected.join("\n- ")}`);
-  for (const file of unexpected) {
-    const destination = resolve(root, "formatted-output", file);
-    await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, formatting.get(file), "utf8");
-  }
   process.exitCode = 1;
 }

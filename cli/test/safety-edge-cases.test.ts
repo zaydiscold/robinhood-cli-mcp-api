@@ -139,8 +139,10 @@ describe("safety edge cases", () => {
   it("fully redacts credentials while only suffix-masking account identifiers", () => {
     const output = redactShareSafe({
       account_number: "123456789",
+      account_id: "1234",
       brokerageAccountNumber: 987654321,
       accountType: "individual",
+      account: "https://api.robinhood.com/accounts/123456789/",
       accountUrl: "https://api.test/accounts/123456789",
       password: "correct-horse-battery-staple",
       otp: "123456",
@@ -153,12 +155,15 @@ describe("safety edge cases", () => {
       token: "987654321",
       deviceId: "device-secret-value",
       downloadLink: "https://files.test/report?X-Goog-Signature=secret",
+      callbackUrl: "https://app.test/callback?access_token=secret",
     });
 
     expect(output).toEqual({
       account_number: "…6789",
+      account_id: "[REDACTED]",
       brokerageAccountNumber: "…4321",
       accountType: "individual",
+      account: "[REDACTED]",
       accountUrl: "[REDACTED]",
       password: "[REDACTED]",
       otp: "[REDACTED]",
@@ -171,6 +176,7 @@ describe("safety edge cases", () => {
       token: "[REDACTED]",
       deviceId: "[REDACTED]",
       downloadLink: "[REDACTED_URL]",
+      callbackUrl: "[REDACTED_URL]",
     });
   });
 });

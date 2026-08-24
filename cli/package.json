@@ -4,7 +4,8 @@
   "description": "Personal live Robinhood API map plus read/write CLI for Crypto and brokerage/account routes.",
   "type": "module",
   "bin": {
-    "robinhood-cli": "dist/index.js"
+    "robinhood-cli": "dist/index.js",
+    "robinhood-tax": "dist/tax-cli.js"
   },
   "types": "./dist/lib.d.ts",
   "exports": {
@@ -15,6 +16,10 @@
     "./lib": {
       "types": "./dist/lib.d.ts",
       "import": "./dist/lib.js"
+    },
+    "./tax-reference": {
+      "types": "./dist/tax-reference.d.ts",
+      "import": "./dist/tax-reference.js"
     }
   },
   "files": [
@@ -22,8 +27,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-api-map.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-api-map.mjs && node scripts/copy-tax-reference.mjs",
     "cli": "tsx src/index.ts",
+    "tax": "tsx src/tax-cli.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -35,7 +41,7 @@
     "tsx": "^4.22.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "author": "Zayd Khan // cold (www.zayd.wtf)",
   "license": "MIT"

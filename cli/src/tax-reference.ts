@@ -3,10 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type TaxEvidenceLaneId =
-  | "primary-law"
-  | "irs-guidance"
-  | "broker-platform"
-  | "planning-inference";
+  "primary-law" | "irs-guidance" | "broker-platform" | "planning-inference";
 
 export interface TaxEvidenceLane {
   id: TaxEvidenceLaneId;
@@ -168,7 +165,8 @@ function validateCatalog(value: unknown): TaxReferenceCatalog {
         claim.sourceIds,
         `topics[${index}].claims[${claimIndex}].sourceIds`,
       );
-      if (claimSources.length === 0) throw new Error(`Tax reference topic ${id} has an unsourced claim`);
+      if (claimSources.length === 0)
+        throw new Error(`Tax reference topic ${id} has an unsourced claim`);
       for (const sourceId of claimSources) {
         if (!sourceIds.has(sourceId)) {
           throw new Error(`Topic ${id} references unknown source ${sourceId}`);

@@ -1,6 +1,11 @@
-title = "Robinhood CLI secret scanning allowlist"
+title = "Robinhood CLI secret scanning configuration"
 
-[allowlist]
+# A repository-local config replaces Gitleaks' built-in rules unless it explicitly extends them.
+# Keep the full default detector set, then add only narrow project-specific allowlists below.
+[extend]
+useDefault = true
+
+[[allowlists]]
 description = "A public discovery-list UUID is not a credential"
 regexes = [
   '''8ce9f620-5bb0-4b6a-8c61-5a06763f7a8b''',

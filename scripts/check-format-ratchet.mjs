@@ -1,5 +1,5 @@
-import { readdir, readFile } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, relative, resolve } from "node:path";
 import prettier from "prettier";
 
 const root = process.cwd();
@@ -52,7 +52,9 @@ if (improved.length > 0) console.log(`Formatting debt reduced: ${improved.join("
 if (unexpected.length > 0) {
   console.error(`New formatting debt:\n- ${unexpected.join("\n- ")}`);
   for (const file of unexpected) {
-    console.error(`PRETTIER_BASE64 ${file} ${Buffer.from(formatting.get(file)).toString("base64")}`);
+    const destination = resolve(root, ".formatted", file);
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, formatting.get(file), "utf8");
   }
   process.exitCode = 1;
 }

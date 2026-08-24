@@ -154,6 +154,11 @@ describe("safety edge cases", () => {
       sessionId: "session-secret",
       token: "987654321",
       deviceId: "device-secret-value",
+      refId: "AAPL-123456789-1787540000000",
+      ref_id: "AAPL-123456789-1787540000001",
+      referenceId: "reference-with-account-123456789",
+      clientOrderId: "client-order-123456789",
+      idempotencyKey: "idempotency-123456789",
       downloadLink: "https://files.test/report?X-Goog-Signature=secret",
       callbackUrl: "https://app.test/callback?access_token=secret",
     });
@@ -175,6 +180,11 @@ describe("safety edge cases", () => {
       sessionId: "[REDACTED]",
       token: "[REDACTED]",
       deviceId: "[REDACTED]",
+      refId: "[REDACTED]",
+      ref_id: "[REDACTED]",
+      referenceId: "[REDACTED]",
+      clientOrderId: "[REDACTED]",
+      idempotencyKey: "[REDACTED]",
       downloadLink: "[REDACTED_URL]",
       callbackUrl: "[REDACTED_URL]",
     });

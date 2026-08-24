@@ -28,7 +28,7 @@ describe("published package boundary", () => {
 
   it("imports the built package root without parsing the host process arguments", () => {
     const runtimeTarget = manifest.exports["."]?.import;
-    expect(runtimeTarget).toBeDefined();
+    if (!runtimeTarget) throw new Error("Package root is missing a runtime export");
     const runtimePath = join(packageRoot, runtimeTarget.replace(/^\.\//, ""));
 
     // The workspace CI builds before running Vitest. A direct source-only test still validates

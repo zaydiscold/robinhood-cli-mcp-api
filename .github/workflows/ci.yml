@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, master]
 
+# The workflow only reads repository contents. Keep the token least-privileged even if repository
+# defaults are broadened later.
+permissions:
+  contents: read
+
 # Cancel superseded runs on the same ref so stale pushes don't burn CI minutes.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -17,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -28,7 +35,7 @@ jobs:
       # pnpm 10's audit client calls npm's retired legacy endpoint (HTTP 410). Pin a current audit
       # client that uses the supported bulk-advisory endpoint without changing the build/install line.
       # HIGH/CRITICAL advisories still stop the merge.
-      - run: npx --yes pnpm@11.13.0 --pm-on-fail=ignore audit --audit-level high
+      - run: npx --yes pnpm@11.13.1 --pm-on-fail=ignore audit --audit-level high
       - run: pnpm quality
 
   test:
@@ -45,6 +52,8 @@ jobs:
         node: [20, 22] # LTS lines; replaces the non-LTS Node 24 the old CI pinned
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

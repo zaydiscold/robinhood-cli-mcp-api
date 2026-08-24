@@ -59,10 +59,7 @@ export function createTaxProgram(
       writeErr: io.writeErr,
     })
     .action(
-      (
-        topic: string | undefined,
-        options: { query?: string; source?: string; json?: boolean },
-      ) => {
+      (topic: string | undefined, options: { query?: string; source?: string; json?: boolean }) => {
         const catalog = loadCatalog();
         if (!topic && !options.query && !options.source) {
           const topics = listTaxReferenceTopics(catalog);
@@ -115,7 +112,10 @@ export function createTaxProgram(
   return program;
 }
 
-export function isTaxCliMain(metaUrl: string, argvPath: string | undefined = process.argv[1]): boolean {
+export function isTaxCliMain(
+  metaUrl: string,
+  argvPath: string | undefined = process.argv[1],
+): boolean {
   if (!argvPath) return false;
   try {
     return resolve(fileURLToPath(metaUrl)) === resolve(argvPath);

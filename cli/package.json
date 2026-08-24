@@ -4,7 +4,7 @@
   "description": "Personal live Robinhood API map plus read/write CLI for Crypto and brokerage/account routes.",
   "type": "module",
   "bin": {
-    "robinhood-cli": "dist/index.js",
+    "robinhood-cli": "dist/cli-entry.js",
     "robinhood-tax": "dist/tax-cli.js"
   },
   "types": "./dist/lib.d.ts",
@@ -28,7 +28,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-api-map.mjs && node scripts/copy-tax-reference.mjs",
-    "cli": "tsx src/index.ts",
+    "cli": "tsx src/cli-entry.ts",
     "tax": "tsx src/tax-cli.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

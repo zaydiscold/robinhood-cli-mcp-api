@@ -1,0 +1,451 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-08-24",
+  "jurisdiction": "United States federal income tax",
+  "scope": "Educational mechanics and research routing for brokerage, equity-option, index-option, and tax-lot questions. It does not determine a user's filing position or tax liability.",
+  "disclaimer": "General educational information only. Tax treatment is fact-dependent, state rules differ, and broker reporting is not a substitute for the Internal Revenue Code, regulations, IRS guidance, or advice from a qualified tax professional.",
+  "agentRules": [
+    "State the jurisdiction and review date before summarizing a tax rule.",
+    "Separate primary-law or IRS guidance from broker-platform behavior and from planning inference.",
+    "Do not infer a filing result from a ticker, product label, or app estimate alone. Check the broker's year-end tax form and the taxpayer's complete facts.",
+    "Do not calculate personalized liability without filing status, taxable income, basis, carryovers, elections, state, and other relevant accounts.",
+    "For wash-sale, straddle, qualified-covered-call, conversion-transaction, box-spread, or constructive-sale ambiguity, surface the uncertainty and recommend professional review rather than adjudicating it.",
+    "Tax-reference reads never authorize a trade. Account reads may inform a plan, but every mutation remains dry-run by default and separately approved."
+  ],
+  "evidenceLanes": [
+    {
+      "id": "primary-law",
+      "label": "Primary law or regulation",
+      "meaning": "Statute or regulation controls, subject to amendments, effective dates, and the user's facts."
+    },
+    {
+      "id": "irs-guidance",
+      "label": "IRS guidance or reporting instruction",
+      "meaning": "Official IRS explanation, ruling, publication, form, or instruction. Useful and authoritative in context, but not a replacement for the Code or regulations."
+    },
+    {
+      "id": "broker-platform",
+      "label": "Broker-platform behavior",
+      "meaning": "What Robinhood currently exposes, estimates, reports, or allows. Platform behavior does not decide federal tax law."
+    },
+    {
+      "id": "planning-inference",
+      "label": "Planning inference",
+      "meaning": "A conservative workflow or risk flag where the authorities do not provide a bright-line answer. Never present as settled law."
+    }
+  ],
+  "sources": [
+    {
+      "id": "irs-pub-550-2025",
+      "lane": "irs-guidance",
+      "title": "IRS Publication 550 (2025), Investment Income and Expenses",
+      "url": "https://www.irs.gov/publications/p550",
+      "effectiveFor": "2025 federal returns",
+      "notes": "Options, wash sales, basis identification, qualified covered calls, straddles, constructive sales, and Section 1256 reporting."
+    },
+    {
+      "id": "irs-form-6781",
+      "lane": "irs-guidance",
+      "title": "IRS Form 6781, Gains and Losses From Section 1256 Contracts and Straddles",
+      "url": "https://www.irs.gov/forms-pubs/about-form-6781",
+      "effectiveFor": "Current IRS form page; use the revision for the return year",
+      "notes": "Reporting path for Section 1256 contracts and straddles."
+    },
+    {
+      "id": "irs-rev-rul-2008-5",
+      "lane": "irs-guidance",
+      "title": "Revenue Ruling 2008-5",
+      "url": "https://www.irs.gov/pub/irs-drop/rr-08-05.pdf",
+      "effectiveFor": "Published 2008; verify later authority",
+      "notes": "Taxable-account loss followed by an IRA or Roth IRA acquisition of substantially identical property."
+    },
+    {
+      "id": "ecfr-qcc",
+      "lane": "primary-law",
+      "title": "26 CFR 1.1092(c)-1, Qualified covered calls",
+      "url": "https://www.ecfr.gov/current/title-26/chapter-I/subchapter-A/part-1/subject-group-ECFR9830aa50671aa9c/section-1.1092(c)-1",
+      "effectiveFor": "Current eCFR; check the displayed update date",
+      "notes": "Qualified-covered-call requirements and lowest-qualified-benchmark mechanics."
+    },
+    {
+      "id": "usc-1091",
+      "lane": "primary-law",
+      "title": "26 USC 1091, Loss from wash sales of stock or securities",
+      "url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title26-section1091&num=0&edition=prelim",
+      "effectiveFor": "Preliminary current United States Code",
+      "notes": "Statutory wash-sale rule."
+    },
+    {
+      "id": "usc-1092",
+      "lane": "primary-law",
+      "title": "26 USC 1092, Straddles",
+      "url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title26-section1092&num=0&edition=prelim",
+      "effectiveFor": "Preliminary current United States Code",
+      "notes": "Loss deferral, holding-period, mixed-straddle, and qualified-covered-call framework."
+    },
+    {
+      "id": "usc-1233",
+      "lane": "primary-law",
+      "title": "26 USC 1233, Gains and losses from short sales",
+      "url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title26-section1233&num=0&edition=prelim",
+      "effectiveFor": "Preliminary current United States Code",
+      "notes": "Short-sale and option-writer character rules."
+    },
+    {
+      "id": "usc-1256",
+      "lane": "primary-law",
+      "title": "26 USC 1256, Section 1256 contracts marked to market",
+      "url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title26-section1256&num=0&edition=prelim",
+      "effectiveFor": "Preliminary current United States Code",
+      "notes": "Contract definition, annual mark-to-market, and 60/40 character."
+    },
+    {
+      "id": "usc-1258",
+      "lane": "primary-law",
+      "title": "26 USC 1258, Conversion transactions",
+      "url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title26-section1258&num=0&edition=prelim",
+      "effectiveFor": "Preliminary current United States Code",
+      "notes": "Ordinary-income recharacterization and interest-equivalent concepts that can matter for fixed-return structures."
+    },
+    {
+      "id": "usc-1259",
+      "lane": "primary-law",
+      "title": "26 USC 1259, Constructive sales treatment for appreciated financial positions",
+      "url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title26-section1259&num=0&edition=prelim",
+      "effectiveFor": "Preliminary current United States Code",
+      "notes": "Constructive-sale triggers and exceptions."
+    },
+    {
+      "id": "robinhood-index-options",
+      "lane": "broker-platform",
+      "title": "Robinhood Help, Index options",
+      "url": "https://robinhood.com/us/en/support/articles/index-options/",
+      "effectiveFor": "Platform article checked 2026-08-24",
+      "notes": "Current product availability, cash settlement, exercise style, and Robinhood's Section 1256 reporting description."
+    },
+    {
+      "id": "robinhood-tax-lots",
+      "lane": "broker-platform",
+      "title": "Robinhood Help, Tax lots",
+      "url": "https://robinhood.com/us/en/support/articles/tax-lots/",
+      "effectiveFor": "Platform article checked 2026-08-24",
+      "notes": "Specific-lot selection, disposal methods, estimates, availability, priority, and fallback behavior."
+    },
+    {
+      "id": "robinhood-tax-docs",
+      "lane": "broker-platform",
+      "title": "Robinhood Help, How to read your 1099",
+      "url": "https://robinhood.com/us/en/support/articles/how-to-read-your-1099/",
+      "effectiveFor": "Platform article checked 2026-08-24",
+      "notes": "Current consolidated tax-document presentation, including Section 1256 reporting."
+    },
+    {
+      "id": "robinhood-tax-faq",
+      "lane": "broker-platform",
+      "title": "Robinhood Help, Tax documents FAQ",
+      "url": "https://robinhood.com/us/en/support/articles/tax-documents-faq/",
+      "effectiveFor": "Platform article checked 2026-08-24",
+      "notes": "Robinhood's identical-option reporting rule and warning that taxpayer obligations may span accounts and substantially identical securities."
+    }
+  ],
+  "topics": [
+    {
+      "id": "option-writer-lifecycle",
+      "title": "Written equity-option recognition and character",
+      "summary": "A written non-Section-1256 equity option is generally recognized when it expires, is closed, or is exercised, not when premium is first received.",
+      "claims": [
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "If a written equity option expires or is bought back in a closing transaction, the writer's result is generally short-term capital gain or loss.",
+          "sourceIds": [
+            "irs-pub-550-2025"
+          ]
+        },
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "When a written call is exercised, the premium increases the amount realized on the stock sale; when a written put is exercised, the premium reduces the basis of stock acquired.",
+          "sourceIds": [
+            "irs-pub-550-2025"
+          ]
+        }
+      ],
+      "caveats": [
+        "Section 1256, dealer, business, hedging, and straddle rules can override the ordinary equity-option treatment.",
+        "A roll closes one contract and opens another. The closed leg is a realization event even when the overall economic exposure continues."
+      ]
+    },
+    {
+      "id": "wash-sales",
+      "title": "Wash sales involving stock and options",
+      "summary": "The federal wash-sale window reaches 30 days before and 30 days after a loss sale and can include contracts or options to acquire substantially identical stock or securities.",
+      "claims": [
+        {
+          "lane": "primary-law",
+          "certainty": "high",
+          "text": "A loss can be disallowed when substantially identical stock or securities are acquired within the statutory window.",
+          "sourceIds": [
+            "usc-1091",
+            "irs-pub-550-2025"
+          ]
+        },
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "Publication 550 expressly includes acquiring a contract or option to buy substantially identical stock or securities and applies wash-sale rules to losses on contracts and options to acquire or sell stock or securities.",
+          "sourceIds": [
+            "irs-pub-550-2025"
+          ]
+        },
+        {
+          "lane": "planning-inference",
+          "certainty": "uncertain",
+          "text": "The authorities do not provide a universal strike-or-expiration safe harbor for deciding whether two options are substantially identical. Treat same-underlying replacements as a review flag rather than declaring them safe or washed from contract terms alone.",
+          "sourceIds": [
+            "usc-1091",
+            "irs-pub-550-2025",
+            "robinhood-tax-faq"
+          ]
+        }
+      ],
+      "caveats": [
+        "Broker wash-sale reporting is narrower than the taxpayer's complete obligation and may not coordinate every account, broker, spouse transaction, or substantially identical instrument.",
+        "Wash-sale basis and holding-period adjustments are separate from economic gain or loss and may be only partially reflected in app estimates."
+      ]
+    },
+    {
+      "id": "retirement-account-wash-sales",
+      "title": "Taxable losses followed by IRA or Roth IRA acquisitions",
+      "summary": "A substantially identical acquisition in an IRA or Roth IRA can permanently disallow a taxable-account loss.",
+      "claims": [
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "Revenue Ruling 2008-5 concludes that the taxable-account loss is disallowed when the individual's IRA or Roth IRA acquires substantially identical stock or securities in the wash-sale window, and the IRA's basis is not increased.",
+          "sourceIds": [
+            "irs-rev-rul-2008-5",
+            "irs-pub-550-2025"
+          ]
+        }
+      ],
+      "caveats": [
+        "Review automatic acquisitions such as recurring investments, dividend reinvestment, and transactions in other accounts before treating a harvested loss as available.",
+        "The ruling is specific to its facts; substantially identical analysis remains fact-dependent."
+      ]
+    },
+    {
+      "id": "section-1256",
+      "title": "Section 1256 contracts, 60/40 character, and mark-to-market",
+      "summary": "Qualifying Section 1256 contracts are generally marked to market at year-end, with gain or loss characterized 60% long-term and 40% short-term regardless of actual holding period.",
+      "claims": [
+        {
+          "lane": "primary-law",
+          "certainty": "high",
+          "text": "The 60% component is long-term capital character and the 40% component is short-term capital character. The rule is statutory; holding period is irrelevant.",
+          "sourceIds": [
+            "usc-1256",
+            "irs-pub-550-2025"
+          ]
+        },
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "Open positions are generally treated as sold at fair market value on the last business day of the tax year and reported through Form 6781.",
+          "sourceIds": [
+            "irs-pub-550-2025",
+            "irs-form-6781"
+          ]
+        },
+        {
+          "lane": "broker-platform",
+          "certainty": "medium",
+          "text": "Robinhood currently describes supported index options such as SPX, VIX, XSP, RUT, and NDX as cash-settled index options with Section 1256 reporting treatment.",
+          "sourceIds": [
+            "robinhood-index-options",
+            "robinhood-tax-docs"
+          ]
+        }
+      ],
+      "caveats": [
+        "Do not classify a contract from a ticker or the phrase 'index option' alone. Confirm the actual contract and year-end Form 1099-B or other broker reporting.",
+        "Mixed straddles, hedges, and elections can change timing and character. A position consisting only of Section 1256 contracts is not the same as a mixed Section 1256/non-Section-1256 structure.",
+        "Avoid hard-coded rate comparisons. The tax value depends on the return year, taxable income, netting, carryovers, state law, and other facts."
+      ]
+    },
+    {
+      "id": "qualified-covered-calls",
+      "title": "Qualified covered calls and holding-period effects",
+      "summary": "Qualified-covered-call status is a technical safe harbor under the straddle rules, not a generic label for any covered call.",
+      "claims": [
+        {
+          "lane": "primary-law",
+          "certainty": "high",
+          "text": "Qualified status depends on statutory and regulatory requirements, including exchange trading, option term, and the lowest-qualified-benchmark rules.",
+          "sourceIds": [
+            "usc-1092",
+            "ecfr-qcc"
+          ]
+        },
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "Publication 550 explains that certain in-the-money qualified covered calls can exclude days from the stock's holding period and that nonqualified positions can fall under broader straddle rules.",
+          "sourceIds": [
+            "irs-pub-550-2025",
+            "ecfr-qcc"
+          ]
+        }
+      ],
+      "caveats": [
+        "Do not reduce the regulation to a fixed dollar amount in-the-money. Strike grids, applicable stock price, term, and regulatory adjustments matter.",
+        "Dividend holding-period treatment, loss deferral, and stock holding-period effects require the complete position and dates."
+      ]
+    },
+    {
+      "id": "option-exercise-holding-period",
+      "title": "Exercise, basis, proceeds, and the new property's holding period",
+      "summary": "Exercise generally converts the option into basis or proceeds adjustments, and the acquired property's holding period starts after exercise rather than inheriting the option's holding period.",
+      "claims": [
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "The holding period for property acquired by exercising an option begins the day after exercise.",
+          "sourceIds": [
+            "irs-pub-550-2025"
+          ]
+        },
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "A purchased call's cost generally enters the acquired stock's basis; written-put premium reduces basis; written-call premium increases stock-sale proceeds.",
+          "sourceIds": [
+            "irs-pub-550-2025"
+          ]
+        }
+      ],
+      "caveats": [
+        "Employee stock options, Section 1256 contracts, dealer activity, and noncapital property follow additional or different rules.",
+        "Selling a long option can have different character from exercising it; use the actual disposition method."
+      ]
+    },
+    {
+      "id": "tax-lots-specific-identification",
+      "title": "Specific tax-lot identification and broker confirmation",
+      "summary": "Specific identification requires timely instructions to the broker and written confirmation; absent adequate identification, FIFO generally applies for ordinary shares.",
+      "claims": [
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "Publication 550 says adequate identification generally requires telling the broker which particular shares are sold at the time of sale or transfer and receiving written confirmation within a reasonable time.",
+          "sourceIds": [
+            "irs-pub-550-2025"
+          ]
+        },
+        {
+          "lane": "broker-platform",
+          "certainty": "medium",
+          "text": "Robinhood currently supports specific-lot selection for eligible US taxable investing accounts and multiple default disposal methods, but app gain/loss estimates are not tax-reporting documents.",
+          "sourceIds": [
+            "robinhood-tax-lots"
+          ]
+        },
+        {
+          "lane": "broker-platform",
+          "certainty": "medium",
+          "text": "Robinhood says unavailable selected shares can fall back to the account's default disposal method, and adjustments after execution may require contacting support by its stated deadline.",
+          "sourceIds": [
+            "robinhood-tax-lots"
+          ]
+        }
+      ],
+      "caveats": [
+        "A planning screen is not execution evidence. Verify the filled order, selected or closed lots, and year-end tax forms.",
+        "Missing transferred basis, corporate actions, and wash-sale adjustments can make app estimates incomplete."
+      ]
+    },
+    {
+      "id": "box-spreads",
+      "title": "Box spreads and tax-characterization uncertainty",
+      "summary": "A box spread may have a fixed economic payoff, but that does not create one automatic federal tax characterization.",
+      "claims": [
+        {
+          "lane": "primary-law",
+          "certainty": "high",
+          "text": "Depending on the instruments and facts, Section 1256, straddle rules, conversion-transaction rules, and other timing or character provisions may interact.",
+          "sourceIds": [
+            "usc-1092",
+            "usc-1256",
+            "usc-1258",
+            "irs-pub-550-2025",
+            "irs-form-6781"
+          ]
+        },
+        {
+          "lane": "planning-inference",
+          "certainty": "fact-specific",
+          "text": "Do not describe a short box's financing cost as automatically deductible Section 1256 capital loss or a long box's return as automatically favorable 60/40 income. The broker's reporting, contract composition, elections, purpose, and tax authorities must be reviewed together.",
+          "sourceIds": [
+            "usc-1092",
+            "usc-1256",
+            "usc-1258",
+            "irs-form-6781"
+          ]
+        }
+      ],
+      "caveats": [
+        "A fixed payoff does not eliminate execution, liquidity, settlement, leverage, reporting, or tax-characterization risk.",
+        "Treat a personalized box-spread financing or tax conclusion as professional-review territory."
+      ]
+    },
+    {
+      "id": "constructive-sales",
+      "title": "Constructive sales of appreciated financial positions",
+      "summary": "Certain offsetting transactions can trigger gain recognition even though the appreciated position was not conventionally sold.",
+      "claims": [
+        {
+          "lane": "primary-law",
+          "certainty": "high",
+          "text": "Section 1259 covers specified transactions that substantially eliminate continued exposure to an appreciated financial position and contains limited exceptions with precise timing conditions.",
+          "sourceIds": [
+            "usc-1259",
+            "irs-pub-550-2025"
+          ]
+        }
+      ],
+      "caveats": [
+        "Do not declare a collar, covered call, put, short sale, forward, or multi-leg option structure safe from Section 1259 based only on its strategy name.",
+        "The exact appreciated position, offset, dates, and risk retained must be analyzed."
+      ]
+    },
+    {
+      "id": "tax-documents-and-estimates",
+      "title": "Broker estimates, year-end forms, and reconciliation",
+      "summary": "App estimates are planning inputs; federal reporting should be reconciled to official year-end forms and the taxpayer's complete records.",
+      "claims": [
+        {
+          "lane": "broker-platform",
+          "certainty": "medium",
+          "text": "Robinhood says tax-lot gain/loss and cost-per-share figures are estimates and directs customers to year-end tax forms for filing.",
+          "sourceIds": [
+            "robinhood-tax-lots",
+            "robinhood-tax-docs"
+          ]
+        },
+        {
+          "lane": "irs-guidance",
+          "certainty": "high",
+          "text": "Section 1256 and straddle reporting can require Form 6781 adjustments beyond a simple transaction list.",
+          "sourceIds": [
+            "irs-form-6781",
+            "irs-pub-550-2025"
+          ]
+        }
+      ],
+      "caveats": [
+        "Reconcile account transfers, missing basis, corporate actions, wash-sale adjustments, and transactions at other brokers.",
+        "A broker's identical-security reporting logic may be narrower than the taxpayer's substantially-identical analysis."
+      ]
+    }
+  ]
+}

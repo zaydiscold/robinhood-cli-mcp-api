@@ -94,7 +94,7 @@ REQUIRED_TAX_PHRASES = (
 )
 
 NO_AUTHORIZATION_PATTERN = re.compile(
-    r"(?:never authoriz|does not authoriz|do not authoriz|never supplies? (?:the )?(?:consent|authorization))",
+    r"(?:never authoriz|does not[^\n]{0,100}authoriz|do not[^\n]{0,100}authoriz|never supplies? (?:the )?(?:consent|authorization))",
     re.IGNORECASE,
 )
 

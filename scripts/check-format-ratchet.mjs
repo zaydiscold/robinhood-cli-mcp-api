@@ -27,12 +27,15 @@ const files = (
   ])
 ).flat();
 const unformatted = [];
+const formatting = new Map();
 
 for (const file of files) {
   const source = await readFile(file, "utf8");
   const options = (await prettier.resolveConfig(file)) ?? {};
   if (!(await prettier.check(source, { ...options, filepath: file }))) {
-    unformatted.push(relative(root, file).replaceAll("\\", "/"));
+    const name = relative(root, file).replaceAll("\\", "/");
+    unformatted.push(name);
+    formatting.set(name, await prettier.format(source, { ...options, filepath: file }));
   }
 }
 
@@ -48,5 +51,8 @@ if (improved.length > 0) console.log(`Formatting debt reduced: ${improved.join("
 
 if (unexpected.length > 0) {
   console.error(`New formatting debt:\n- ${unexpected.join("\n- ")}`);
+  for (const file of unexpected) {
+    console.error(`PRETTIER_BASE64 ${file} ${Buffer.from(formatting.get(file)).toString("base64")}`);
+  }
   process.exitCode = 1;
 }

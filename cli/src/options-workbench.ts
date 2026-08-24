@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
 
+type QuoteValue = number | string | null;
+
 export interface WorkbenchLeg {
   id: string;
   action: "buy" | "sell";
   type: "call" | "put";
   strike: number;
   ratioQuantity?: number;
-  premium?: number;
-  bid?: number;
-  ask?: number;
-  mark?: number;
-  delta?: number;
-  gamma?: number;
-  theta?: number;
-  vega?: number;
+  premium?: QuoteValue;
+  bid?: QuoteValue;
+  ask?: QuoteValue;
+  mark?: QuoteValue;
+  delta?: QuoteValue;
+  gamma?: QuoteValue;
+  theta?: QuoteValue;
+  vega?: QuoteValue;
 }
 
 export interface ExpirationPayoffSummary {
@@ -29,20 +31,29 @@ function legPayoff(leg: WorkbenchLeg & { premium: number }, spot: number): numbe
   const intrinsic =
     leg.type === "call" ? Math.max(0, spot - leg.strike) : Math.max(0, leg.strike - spot);
   const signed = leg.action === "buy" ? 1 : -1;
-  return signed * (intrinsic - Number(leg.premium)) * (leg.ratioQuantity ?? 1) * 100;
+  return signed * (intrinsic - leg.premium) * (leg.ratioQuantity ?? 1) * 100;
+}
+
+function finiteQuote(value: unknown): number | null {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
 }
 
 export function resolvePremium(leg: WorkbenchLeg, mode: "natural" | "mid"): number {
-  if (Number.isFinite(leg.premium)) return Number(leg.premium);
-  const bid = Number(leg.bid),
-    ask = Number(leg.ask),
-    mark = Number(leg.mark);
+  const premium = finiteQuote(leg.premium);
+  if (premium !== null) return premium;
+
+  const bid = finiteQuote(leg.bid);
+  const ask = finiteQuote(leg.ask);
+  const mark = finiteQuote(leg.mark);
   if (mode === "natural") {
     const natural = leg.action === "buy" ? ask : bid;
-    if (Number.isFinite(natural)) return natural;
+    if (natural !== null) return natural;
   }
-  if (Number.isFinite(bid) && Number.isFinite(ask)) return (bid + ask) / 2;
-  if (Number.isFinite(mark)) return mark;
+  if (bid !== null && ask !== null) return (bid + ask) / 2;
+  if (mark !== null) return mark;
   throw new Error(`Leg ${leg.id} needs premium, mark, or a usable bid/ask`);
 }
 
@@ -84,18 +95,21 @@ export function computeExpirationPayoff(input: {
     rightTailSlope < 0 ? "unlimited" : Math.abs(Math.min(...breakpointValues, 0));
   const breakevens: number[] = [];
   for (let i = 0; i < breakpoints.length - 1; i += 1) {
-    const x1 = breakpoints[i]!,
-      x2 = breakpoints[i + 1]!,
-      y1 = payoffAt(x1),
-      y2 = payoffAt(x2);
+    const x1 = breakpoints[i]!;
+    const x2 = breakpoints[i + 1]!;
+    const y1 = payoffAt(x1);
+    const y2 = payoffAt(x2);
     if (y1 === 0) breakevens.push(x1);
-    if (y1 * y2 < 0)
+    if (y1 * y2 < 0) {
       breakevens.push(Number((x1 + ((0 - y1) * (x2 - x1)) / (y2 - y1)).toFixed(4)));
+    }
   }
-  const lastX = breakpoints.at(-1)!,
-    lastY = payoffAt(lastX);
-  if (rightTailSlope !== 0 && lastY * rightTailSlope < 0)
+  const lastX = breakpoints.at(-1)!;
+  const lastY = payoffAt(lastX);
+  if (lastY === 0) breakevens.push(lastX);
+  if (rightTailSlope !== 0 && lastY * rightTailSlope < 0) {
     breakevens.push(Number((lastX - lastY / rightTailSlope).toFixed(4)));
+  }
   return {
     scenarios,
     maxProfit,
@@ -132,8 +146,8 @@ export function buildOptionsWorkbench(input: {
   });
   const greek = (name: "delta" | "gamma" | "theta" | "vega") =>
     Number(
-      (
-        legs.reduce(
+      legs
+        .reduce(
           (sum, leg) =>
             sum +
             (leg.action === "buy" ? 1 : -1) *
@@ -143,7 +157,7 @@ export function buildOptionsWorkbench(input: {
               100,
           0,
         )
-      ).toFixed(6),
+        .toFixed(6),
     );
   const bodyHash =
     input.orderBody === undefined
@@ -159,7 +173,7 @@ export function buildOptionsWorkbench(input: {
             (sum, leg) =>
               sum +
               (leg.action === "sell" ? 1 : -1) *
-                Number(leg.premium) *
+                leg.premium *
                 (leg.ratioQuantity ?? 1) *
                 100,
             0,

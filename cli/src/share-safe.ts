@@ -1,10 +1,30 @@
-const SENSITIVE_KEY = /(?:account(?:_number)?|balance|buying_power|cash|equity|order(?:_id)?|document(?:_url)?|private(?:_note)?|token|authorization|cookie|ssn|tax_id)/i;
-const URL_KEY = /(?:url|uri|href|download|document)/i;
+const SENSITIVE_KEY = /(?:account(?:[_-]?(?:number|id))?|balance|buying[_-]?power|cash|equity|order(?:[_-]?id)?|document(?:[_-]?url)?|private(?:[_-]?note)?|password|passcode|secret|api[_-]?key|token|authorization|credential|cookie|mfa|otp|challenge|device[_-]?id|ssn|tax[_-]?id)/i;
+const URL_KEY = /(?:url|uri|href|download|document|link)/i;
 const SIGNED_URL = /(?:X-Amz-(?:Signature|Credential)|signature=|token=|jwt=|download_url=)/i;
 
-function masked(value: unknown): string {
+function normalizedKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .toLowerCase();
+}
+
+function isAccountIdentifierKey(key: string): boolean {
+  const normalized = normalizedKey(key);
+  return (
+    normalized === "account_number" ||
+    normalized.endsWith("_account_number") ||
+    normalized === "account_id" ||
+    normalized.endsWith("_account_id")
+  );
+}
+
+function masked(value: unknown, key = ""): string {
   const text = String(value ?? "");
-  if (/account/i.test(text) || /^\d{6,}$/.test(text)) return text.length >= 4 ? `…${text.slice(-4)}` : "[REDACTED]";
+  const scalar = ["string", "number", "bigint"].includes(typeof value);
+  if (isAccountIdentifierKey(key) && scalar) {
+    return text.length >= 4 ? `…${text.slice(-4)}` : "[REDACTED]";
+  }
   return "[REDACTED]";
 }
 
@@ -14,12 +34,12 @@ export function redactShareSafe<T>(value: T): T {
   const visit = (current: unknown, key = ""): unknown => {
     if (current === null || current === undefined) return current;
     if (typeof current === "string") {
-      if (SENSITIVE_KEY.test(key)) return masked(current);
+      if (SENSITIVE_KEY.test(key)) return masked(current, key);
       if (URL_KEY.test(key) && SIGNED_URL.test(current)) return "[REDACTED_URL]";
       return current;
     }
     if (typeof current === "number" || typeof current === "bigint") {
-      return SENSITIVE_KEY.test(key) ? "[REDACTED]" : current;
+      return SENSITIVE_KEY.test(key) ? masked(current, key) : current;
     }
     if (typeof current !== "object") return current;
     if (seen.has(current)) return "[CIRCULAR]";
@@ -33,7 +53,7 @@ export function redactShareSafe<T>(value: T): T {
     seen.set(current, output);
     for (const [childKey, child] of Object.entries(current as Record<string, unknown>)) {
       output[childKey] = SENSITIVE_KEY.test(childKey)
-        ? masked(child)
+        ? masked(child, childKey)
         : visit(child, childKey);
     }
     return output;

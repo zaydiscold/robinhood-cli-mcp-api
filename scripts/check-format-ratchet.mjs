@@ -52,7 +52,7 @@ if (improved.length > 0) console.log(`Formatting debt reduced: ${improved.join("
 if (unexpected.length > 0) {
   console.error(`New formatting debt:\n- ${unexpected.join("\n- ")}`);
   for (const file of unexpected) {
-    const destination = resolve(root, ".formatted", file);
+    const destination = resolve(root, "formatted-output", file);
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, formatting.get(file), "utf8");
   }

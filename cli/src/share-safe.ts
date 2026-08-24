@@ -1,5 +1,5 @@
 const SENSITIVE_KEY =
-  /(?:balance|buying[_-]?power|cash|equity|order(?:[_-]?id)?|document(?:[_-]?url)?|private[_-]?(?:note|key)|password|passcode|secret|credential|api[_-]?key|access[_-]?key|token|authorization|bearer|cookie|session[_-]?(?:id|key|token)|mfa|otp|challenge|device[_-]?id|ssn|tax[_-]?id)/i;
+  /(?:balance|buying[_-]?power|cash|equity|order(?:[_-]?id)?|client[_-]?order[_-]?id|ref(?:erence)?[_-]?id|idempotency[_-]?key|document(?:[_-]?url)?|private[_-]?(?:note|key)|password|passcode|secret|credential|api[_-]?key|access[_-]?key|token|authorization|bearer|cookie|session[_-]?(?:id|key|token)|mfa|otp|challenge|device[_-]?id|ssn|tax[_-]?id)/i;
 const URL_KEY = /(?:url|uri|href|download|document|link)/i;
 const SIGNED_URL =
   /(?:X-(?:Amz|Goog)-(?:Signature|Credential)|(?:^|[?&])(?:signature|sig|token|access_token|jwt|download_url)=)/i;

@@ -57,8 +57,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tax-prettier-output
-          path: .formatted
-          if-no-files-found: ignore
+          path: formatted-output
+          if-no-files-found: error
           retention-days: 1
 
   test:

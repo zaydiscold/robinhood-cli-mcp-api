@@ -243,6 +243,7 @@ export function getTaxReference(
 ): TaxReferenceResult {
   const topicId = input.topic?.trim();
   const query = input.query?.trim().toLowerCase();
+  const sourceId = input.source?.trim();
   let topics = catalog.topics;
 
   if (topicId) {
@@ -260,8 +261,9 @@ export function getTaxReference(
   if (query) {
     topics = topics.filter((topic) => searchableTopic(topic).includes(query));
   }
+  if (sourceId && !topicId && !query) topics = [];
 
-  const sources = selectedSources(catalog, topics, input.source?.trim());
+  const sources = selectedSources(catalog, topics, sourceId);
   return {
     schemaVersion: catalog.schemaVersion,
     reviewedAt: catalog.reviewedAt,
@@ -275,7 +277,7 @@ export function getTaxReference(
     query: {
       topic: topicId ?? null,
       text: input.query?.trim() || null,
-      source: input.source?.trim() || null,
+      source: sourceId || null,
     },
     matchCount: topics.length,
     notPersonalizedAdvice: true,
@@ -296,7 +298,7 @@ export function formatTaxReferenceText(result: TaxReferenceResult): string {
     "",
   ];
 
-  if (result.topics.length === 0) {
+  if (result.topics.length === 0 && result.sources.length === 0) {
     lines.push("No tax reference topic matched the query.");
   }
 

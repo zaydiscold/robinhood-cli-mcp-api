@@ -33,6 +33,27 @@ const positiveNumber = (raw, label) => {
   if (!Number.isFinite(parsed) || parsed <= 0) fail(`${label} must be a positive number`);
   return parsed;
 };
+const parseTimeInForce = (raw) => {
+  if (raw == null) return undefined;
+  const value = String(raw).toLowerCase();
+  if (value !== "gfd" && value !== "gtc") fail("--tif must be gfd or gtc");
+  return value;
+};
+const parseMarketHours = (raw) => {
+  if (raw == null) return undefined;
+  const aliases = {
+    regular: "regular_hours",
+    regular_hours: "regular_hours",
+    extended: "extended_hours",
+    extended_hours: "extended_hours",
+    overnight: "all_day_hours",
+    "24-hour": "all_day_hours",
+    all_day_hours: "all_day_hours",
+  };
+  const resolved = aliases[String(raw).toLowerCase()];
+  if (!resolved) fail("--market-hours must be regular, extended, or overnight");
+  return resolved;
+};
 
 if (!existsSync(LIB_PATH)) {
   fail("cli/dist/lib.js is missing. Run `pnpm build` before using scripts/equity-buy.mjs.");
@@ -113,6 +134,8 @@ const shares = sharesRaw == null ? undefined : positiveNumber(sharesRaw, "--shar
 const explicitPriceRaw = value("price") ?? value("limit");
 const limitPrice =
   explicitPriceRaw == null ? undefined : positiveNumber(explicitPriceRaw, "--price/--limit");
+const timeInForce = parseTimeInForce(value("tif"));
+const marketHours = parseMarketHours(value("market-hours"));
 const delayMsRaw = value("delay") ?? "2500";
 const delayMs = Number(delayMsRaw);
 if (!Number.isFinite(delayMs) || delayMs < 0) fail("--delay must be a non-negative number");
@@ -158,8 +181,8 @@ for (let index = 0; index < jobs.length; index += 1) {
       amount,
       shares,
       limitPrice,
-      timeInForce: value("tif"),
-      marketHours: value("market-hours"),
+      timeInForce,
+      marketHours,
       dryRun: !liveEnabled,
       liveWrite: liveRequested,
       force: has("force"),

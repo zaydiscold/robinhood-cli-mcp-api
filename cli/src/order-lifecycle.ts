@@ -44,7 +44,6 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
       return;
     }
 
-    let timer: ReturnType<typeof setTimeout>;
     const cleanup = () => signal?.removeEventListener("abort", onAbort);
     const onAbort = () => {
       clearTimeout(timer);
@@ -52,7 +51,7 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
       reject(signal?.reason ?? new Error("aborted"));
     };
 
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       cleanup();
       resolve();
     }, ms);

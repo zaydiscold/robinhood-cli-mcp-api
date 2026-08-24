@@ -1,49 +1,121 @@
-# knowledge/ — the per-topic operator library
+# knowledge/: focused operating modules
 
-Topic modules that make any agent — including a cold one — a competent operator of this
-real-money Robinhood CLI/MCP. Each module is operational and command-first: runnable commands
-with placeholders, dollar-denominated payoff math, and the safety gates baked in. Modules
-condense the deep research in `docs/` to the operational core and link back for the rest.
+This directory is the task-specific layer between the concise [`SKILL.md`](../SKILL.md) router and
+the long-form [`docs/`](../docs/README.md) research library. Load the smallest module that matches
+the user's request. Do not ingest every module by default.
 
-## The progressive-disclosure model
+## Progressive disclosure
 
-| Layer | File(s) | Role |
-|---|---|---|
-| **0 — Boot KB** | `docs/agent-operating-intelligence-2026-06-04.md` | **READ FIRST.** Operating intelligence: the "verify the API surface not the UI" cardinal rule, boot checklist, account model + wrong-account trap, order lifecycle, failure-mode→fix decision tree, asset-class reality map, and roadmap. Turns a cold agent into a competent operator. |
-| **1 — Router** | `SKILL.md` (repo root; `CLAUDE.md` symlinks to it) | Trigger + boot doc: quick scan, failure modes, 80/20 commands, intent routing. Read second (after the Boot KB). |
-| **2 — Topic modules** | `knowledge/*.md` (this directory) | Load the ONE module that matches the task. 80–200 lines each; commands + decision rules, no essays. |
-| **3 — Deep research** | `docs/*.md` | Dated, source-backed studies (strategy deep-dives, tax law, live verifications, quant appendices). Load only when a module's link sends you there. |
-| **4 — Full API reference** | `AGENTS.md` (repo root) | The complete self-contained surface: auth, route map, every command, worked raw-API examples. |
+| Layer | Source | Use |
+| --- | --- | --- |
+| 0: operating contract | [`SKILL.md`](../SKILL.md) | Safety invariants, surface selection, and intent routing |
+| 1: focused module | `knowledge/*.md` | Commands, decision rules, and task-specific failure modes |
+| 2: generated reference | [`tax-reference.md`](tax-reference.md) and generated API maps | Versioned claims or machine contracts that prose must not contradict |
+| 3: deep research | [`docs/*.md`](../docs/README.md) | Dated evidence, methodology, and longer analysis |
+| 4: maintainer reference | [`AGENTS.md`](../AGENTS.md) | Auth, route details, implementation, and raw examples |
+| runtime truth | CLI `--help`, MCP `tools/list`, package exports | What the current installed build actually exposes |
 
-Rule of thumb: Boot KB tells you *how to operate*; SKILL.md tells you *which* module; the module tells you *what to run*; docs/ tells you *why it's true*; AGENTS.md tells you *everything else*.
+Use this precedence when sources conflict:
 
-## Module index
+```text
+current runtime
+> generated contract
+> primary evidence
+> focused module
+> dated deep research
+> legacy prose
+```
 
-| Module | What it teaches | When to load it | Deep-dive docs it links |
-|---|---|---|---|
-| [`wheel.md`](wheel.md) | The Wheel loop (CSP → assignment → shares → CC → called away), the `wheel` command + `robinhood_wheel` stage classifier, undercovered-short-call hazard, per-leg dry-run commands, account gating | User mentions the Wheel, CSPs, "got assigned — now what?", covered-call income loops | `docs/strategy-deep-dive-the-wheel-2026-06-04.md`, `docs/options-strategies-knowledge-base-2026-06-03.md` |
-| [`position-building.md`](position-building.md) | Building toward strategies with partial resources: gap math to 100 shares, accumulation paths (fractional/whole/recurring), CSP-as-acquisition, PMCC as the capital-light wheel (LEAPS delta rules, ≤75%-of-width check), laddering, account-class blocks | "I want to wheel X but only have 40 shares," "can't afford 100 shares," any build-me-into-this-position request | `knowledge/wheel.md`, `docs/options-strategies-knowledge-base-2026-06-03.md`, `docs/strategy-deep-dive-the-wheel-2026-06-04.md` |
-| [`rolling.md`](rolling.md) | Roll variants (out/up/down and combos), net-credit math, the cash-account **kosher roll** (`options roll-plan --cash-account`, T+1, GFV), ex-div assignment check, wash-sale flag, when rolling is the wrong move | Any "roll/defend/my short is tested" request — mandatory reading on cash accounts | `docs/strategy-deep-dive-rolling-options-2026-06-04.md`, `docs/tax-aware-options-strategies.md` |
-| [`multi-leg.md`](multi-leg.md) | Leg topology per strategy (side/effect/ratio), payoff formulas per family, exact `options strategy-quote` invocations with the correct leg names, the iron-condor worked build | Pricing/planning any vertical, straddle/strangle, butterfly, condor, calendar/diagonal | `docs/options-strategy-order-templates-2026-06-03.md`, `docs/options-strategies-knowledge-base-2026-06-03.md`, `docs/options-quantitative-playbook-2026-06-03.md` |
-| [`greeks.md`](greeks.md) | Signed net-Greek aggregation (±side × ratio × contracts × 100), scenario P&L math, unit-labeling traps, Black-Scholes sanity baseline, delta ≠ assignment probability | Any options read/plan that should report exposure or scenario P&L | `docs/options-greeks-strategy-research-2026-06-02.md`, `docs/options-quantitative-playbook-2026-06-03.md` |
-| [`tax.md`](tax.md) | §1256 60/40 index options on RH (SPX/SPXW/XSP/NDX/VIX/RUT — hidden from search, live via `options/chains/`), LEAPS, wash sales, QCC taint, IRA nuances, the two rare holding-period edge cases | SPX-vs-SPY choices, rolling losers in taxable accounts, LEAPS near the 1-year line, any tax question | `docs/tax-aware-options-strategies.md`, `docs/index-options-1256-conclusion-2026-06-04.md` |
-| [`tax-loss-harvesting.md`](tax-loss-harvesting.md) | Harvest mechanics ($3,000 offset + carryforward), the 61-day wash window both directions, the two substantially-identical readings + the conservative rule, FIFO lot reality, the IRA poisoning trap, December timing, correlated-not-identical replacements — with the full live-account procedure | "Sell my losers for taxes," "offset my gains," any year-end harvest question | `knowledge/tax.md`, `docs/tax-aware-options-strategies.md`, `docs/strategy-deep-dive-rolling-options-2026-06-04.md` |
-| [`dividend-investing.md`](dividend-investing.md) | Yield vs yield-on-cost, payout sustainability, ex/record/payable dates under T+1, qualified vs ordinary (61-of-121-day rule), dividend traps, DRIP mechanics, QDTE-style weekly payers (ROC, NAV erosion) — wired to the in-engine `dividends` command | Dividend income, yield, "when do I get paid," DRIP, weekly-payer ETF questions | `knowledge/tax.md`, `docs/options-strategies-knowledge-base-2026-06-03.md`, `ball-knowledge.md` |
-| [`accounts.md`](accounts.md) | Cash/margin/Roth capability gating, `transfer/accounts/` as the only complete graph, the `?account_number=` selector, buying-power family (overnight BP gates GTC opens; negative cash = margin loan), PDT lifted | Before ANY account-scoped operation or write; capability and sizing questions | `docs/agent-operating-intelligence-2026-06-04.md`, `SKILL.md`, `TODO.md` |
-| [`cli-routing.md`](cli-routing.md) | First-class command families, auth/build preflight, raw route matching, critical query shapes, portfolio attribution, browser verification, and route-map maintenance | A command/route is unclear, built output or auth looks stale, or an undocumented endpoint needs to be captured and added | `AGENTS.md`, `docs/auth.md`, `docs/cli-mcp-architecture.md`, `docs/undocumented-surface.md` |
-| [`mcp-operations.md`](mcp-operations.md) | Narrow profile selection, safe multi-client registration, runtime tool discovery, token-efficient call patterns, the shared write gate, and missing/stale MCP diagnosis | MCP setup, profile choice, missing tools, excess discovery context, stale server builds, or cross-client parity work | `docs/cli-mcp-architecture.md`, `mcp/README.md`, `AGENTS.md` |
-| [`market-mechanics.md`](market-mechanics.md) | The Investopedia floor: order types + the repo's collar behavior, bid/ask/spread/mark in dollars, OI vs volume, market sessions (what trades when — options don't quote pre-market), T+1, limit-only OTC, halts/stale quotes, OCC split adjustments | "Why is the price weird," "why didn't my order fill," what-trades-when questions, grounding for market-new users | `knowledge/execution-safety.md`, `knowledge/accounts.md`, `docs/error-code-reference-2026-06-11.md` |
-| [`signals.md`](signals.md) | The sourcing ladder (X/Reddit pulse → RH midlands confirmer → institutional outlooks → academic math), Ball Knowledge rules (context not authority, classify entries), trading-log rules (order-history evidence) | Due-diligence/research tasks; whenever the memory ledgers should shape an answer | `docs/institutional-outlook-2026-06-04.md`, `ball-knowledge.md`, `trading-log.md` |
-| [`execution-safety.md`](execution-safety.md) | The 20 failure modes as a checklist, double write gates, `--method` on writes, the account-echo contract, UUID enumeration, min-tick, 429/ref_id idempotency, dedup window, the order-evidence rule | Before ANY write, and when a write path errors | `docs/error-code-reference-2026-06-11.md`, `docs/live-write-verification-2026-06-03.md`, `docs/account-settings-capability-map-2026-06-03.md` |
-| [`playbooks/broker-call.md`](playbooks/broker-call.md) | **The flagship:** the 10-step conversational broker pipeline (parse → account → research → enumerate → dry-run → confirmation contract → gated send → evidence verify → log → aftercare), with a full worked GOOGL transcript and the what-NOT-to-do list | The user shares a trade idea/screenshot and wants it taken from conversation to verified order | All of the above + `SKILL.md` lifecycle sections, `AGENTS.md` §7 |
+Report a discrepancy instead of silently selecting the sentence that makes an action easier.
 
-## Conventions (binding across modules)
+## Start here by intent
 
-- **Dollars, not percents.** Every payoff, loss, and attribution is position-size-weighted and
-  dollar-denominated.
-- **Descriptive, not prescriptive on risk.** Modules surface mechanics, numbers, and flags; the
-  operator chooses risk and sizing.
-- **Reads are free; writes are env-gated.** Nothing in this library overrides the dry-run
-  default, the confirmation contract, or the order-evidence rule.
-- **Link, don't duplicate.** When a module and a deep doc disagree, the dated doc + live API are
-  the tiebreakers — and the discrepancy should be reported, not papered over.
+### Account, portfolio, and execution
+
+| Module | Load when | Main surfaces |
+| --- | --- | --- |
+| [`accounts.md`](accounts.md) | Account discovery, account class, buying power, or capability questions | `accounts`, `account-pulse`, `buying-power` |
+| [`execution-safety.md`](execution-safety.md) | Before any write or when an order path behaves unexpectedly | `buy`, `sell`, `cancel`, `panic`, `orders open`, `order-status` |
+| [`cli-routing.md`](cli-routing.md) | A command, route, build, auth, or raw executor path is unclear | first-class CLI, `brokerage describe/plan/execute` |
+| [`mcp-operations.md`](mcp-operations.md) | MCP setup, profiles, missing tools, or stale server diagnosis | `tools/list`, profile-specific MCP surface |
+| [`market-mechanics.md`](market-mechanics.md) | Order types, spreads, sessions, T+1, halts, OTC, or adjusted options | quote, order, and session reads |
+| [`playbooks/broker-call.md`](playbooks/broker-call.md) | A conversational trade idea must become a verified action | full parse-to-evidence workflow |
+
+### Options and strategy structure
+
+| Module | Load when | Main surfaces |
+| --- | --- | --- |
+| [`multi-leg.md`](multi-leg.md) | Verticals, condors, butterflies, calendars, diagonals, straddles, or strangles | `options strategy-quote`, strategy plan |
+| [`greeks.md`](greeks.md) | Net Greeks, scenario P&L, units, or incomplete Greek inputs | `options workbench`, exposure analytics |
+| [`rolling.md`](rolling.md) | Rolling or defending an option, especially in a cash account | `options roll-plan`, roll ledger |
+| [`wheel.md`](wheel.md) | Wheel, CSP, assignment, covered-call loop, or next-leg state | `wheel` |
+| [`position-building.md`](position-building.md) | Building toward a strategy with partial shares or capital | shares, recurring, CSP, PMCC, laddering |
+
+### Tax mechanics and tax-aware account facts
+
+For **every tax question**, load [`tax-reference.md`](tax-reference.md) first. It is generated from a
+versioned source catalog and separates primary law, IRS guidance, Robinhood behavior, and planning
+inference.
+
+| Module | Load when | Main surfaces |
+| --- | --- | --- |
+| [`tax-reference.md`](tax-reference.md) | Any question about wash sales, Section 1256, QCCs, exercise, boxes, constructive sales, lots, or broker estimates | `robinhood-tax`, importable tax-reference API, MCP knowledge |
+| [`tax.md`](tax.md) | The question combines tax mechanics with live Robinhood accounts, lots, history, settings, or documents | `tax-lots`, `documents`, `history`, `recurring`, `settings` |
+| [`tax-loss-harvesting.md`](tax-loss-harvesting.md) | The user is considering a loss sale or replacement exposure | 61-day control workflow and lot evidence |
+
+Tax reference reads are educational and never authorize a sale. Live account facts and state-changing
+actions remain separate surfaces with separate consent.
+
+### Research, income, and operator context
+
+| Module | Load when | Main surfaces |
+| --- | --- | --- |
+| [`signals.md`](signals.md) | Due diligence, news, sentiment, source quality, or operator memory | news, ratings, earnings, Ball Knowledge |
+| [`dividend-investing.md`](dividend-investing.md) | Dividend cadence, sustainability, dates, DRIP, or income | `dividends`, `income`, `settings` |
+
+## Module contract
+
+Every focused module should:
+
+- say when to load it
+- identify live, local, generated, and inferred evidence separately
+- prefer maintained first-class surfaces over raw routes
+- preserve account scope and timestamps
+- preserve missing, partial, stale, and unverified states
+- use dollar-weighted analysis where position size matters
+- keep mutations dry-run by default
+- require exact user approval for a resolved state-changing action
+- treat order history as the only proof an order happened
+- link to generated or primary sources instead of duplicating changing claims
+
+A module must not:
+
+- create a second order engine
+- hard-code an MCP tool count
+- contradict CLI `--help` or MCP `tools/list`
+- present app estimates as federal tax law
+- turn tax or strategy research into standing trade authorization
+- imply that an HTTP success proves execution
+- erase uncertainty by converting missing values to zero
+
+## Maintenance
+
+When a command or tool changes:
+
+1. update the shared implementation and capability registry
+2. update CLI help and MCP schemas
+3. update the smallest affected module
+4. update deep docs only when the longer explanation changed
+5. run `pnpm quality`, `pnpm build`, and `pnpm test:built`
+
+When a tax claim changes:
+
+1. edit [`tax-reference.json`](tax-reference.json)
+2. assign the correct evidence lane and certainty
+3. use a primary or official source where available
+4. run `pnpm generate:tax-reference`
+5. commit the generated [`tax-reference.md`](tax-reference.md)
+6. update narrative modules only if the operating explanation changed
+
+Do not expand [`SKILL.md`](../SKILL.md) into a second `AGENTS.md`. Keep the skill as the binding router
+and place depth here or in `docs/`.

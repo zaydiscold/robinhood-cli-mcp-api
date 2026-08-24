@@ -52,14 +52,6 @@ jobs:
       # HIGH/CRITICAL advisories still stop the merge.
       - run: npx --yes pnpm@11.13.1 --pm-on-fail=ignore audit --audit-level high
       - run: pnpm quality
-      - name: Upload temporary formatter output
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tax-prettier-output
-          path: formatted-output
-          if-no-files-found: error
-          retention-days: 1
 
   test:
     name: test (node ${{ matrix.node }} · ${{ matrix.os }})

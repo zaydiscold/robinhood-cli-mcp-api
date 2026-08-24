@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 type QuoteValue = number | string | null;
+type GreekName = "delta" | "gamma" | "theta" | "vega";
 
 export interface WorkbenchLeg {
   id: string;
@@ -27,6 +28,14 @@ export interface ExpirationPayoffSummary {
   exactForSameExpiration: true;
 }
 
+export interface GreekCoverage {
+  observedLegs: number;
+  totalLegs: number;
+  complete: boolean;
+  missingLegIds: string[];
+  invalidLegIds: string[];
+}
+
 function legPayoff(leg: WorkbenchLeg & { premium: number }, spot: number): number {
   const intrinsic =
     leg.type === "call" ? Math.max(0, spot - leg.strike) : Math.max(0, leg.strike - spot);
@@ -39,6 +48,17 @@ function finiteQuote(value: unknown): number | null {
   if (typeof value === "string" && value.trim() === "") return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+}
+
+function isMissingNumeric(value: unknown): boolean {
+  return value === null || value === undefined || (typeof value === "string" && value.trim() === "");
+}
+
+function finiteSignedNumber(value: unknown): number | null {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 export function resolvePremium(leg: WorkbenchLeg, mode: "natural" | "mid"): number {
@@ -144,21 +164,46 @@ export function buildOptionsWorkbench(input: {
     quantity,
     underlyingPrice: input.underlyingPrice,
   });
-  const greek = (name: "delta" | "gamma" | "theta" | "vega") =>
-    Number(
-      legs
-        .reduce(
-          (sum, leg) =>
-            sum +
-            (leg.action === "buy" ? 1 : -1) *
-              Number(leg[name] ?? 0) *
-              (leg.ratioQuantity ?? 1) *
-              quantity *
-              100,
-          0,
-        )
-        .toFixed(6),
-    );
+  const greek = (name: GreekName) => {
+    const missingLegIds: string[] = [];
+    const invalidLegIds: string[] = [];
+    let observedLegs = 0;
+    const total = legs.reduce((sum, leg) => {
+      const raw = leg[name];
+      if (isMissingNumeric(raw)) {
+        missingLegIds.push(leg.id);
+        return sum;
+      }
+      const numeric = finiteSignedNumber(raw);
+      if (numeric === null) {
+        invalidLegIds.push(leg.id);
+        return sum;
+      }
+      observedLegs += 1;
+      return (
+        sum +
+        (leg.action === "buy" ? 1 : -1) *
+          numeric *
+          (leg.ratioQuantity ?? 1) *
+          quantity *
+          100
+      );
+    }, 0);
+    return {
+      value: Number(total.toFixed(6)),
+      coverage: {
+        observedLegs,
+        totalLegs: legs.length,
+        complete: observedLegs === legs.length,
+        missingLegIds,
+        invalidLegIds,
+      } satisfies GreekCoverage,
+    };
+  };
+  const delta = greek("delta");
+  const gamma = greek("gamma");
+  const theta = greek("theta");
+  const vega = greek("vega");
   const bodyHash =
     input.orderBody === undefined
       ? null
@@ -183,10 +228,16 @@ export function buildOptionsWorkbench(input: {
     },
     payoff,
     netGreeks: {
-      delta: greek("delta"),
-      gamma: greek("gamma"),
-      theta: greek("theta"),
-      vega: greek("vega"),
+      delta: delta.value,
+      gamma: gamma.value,
+      theta: theta.value,
+      vega: vega.value,
+    },
+    greekCoverage: {
+      delta: delta.coverage,
+      gamma: gamma.coverage,
+      theta: theta.coverage,
+      vega: vega.coverage,
     },
     approvalCard: {
       body: input.orderBody ?? null,

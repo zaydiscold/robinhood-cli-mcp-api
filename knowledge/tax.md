@@ -1,114 +1,236 @@
-# Tax-aware operation — §1256, LEAPS, wash sales, QCC, IRA
+# Tax-aware operation: reference first, account facts second
 
-> **When to load this:** the user picks between SPX and SPY exposure, rolls a losing leg in a
-> taxable account, holds LEAPS near the 1-year line, writes covered calls on appreciated stock,
-> or asks any "what does this do to my taxes" question. Educational background only — not tax
-> advice; surface the mechanics and let the operator (and their tax professional) decide.
-> Default posture: **stay silent on tax unless one of the edge cases below is live.**
+> **When to load this:** any question about wash sales, Section 1256, option exercise or assignment,
+> qualified covered calls, constructive sales, box spreads, holding periods, tax lots, year-end forms,
+> or how a proposed Robinhood action could affect tax reporting. This module is an operating router.
+> The source-backed rules live in [`tax-reference.md`](tax-reference.md).
 
-## §1256 index options — real, on Robinhood, and hidden from search
+## Binding posture
 
-**Verified 2026-06-04:** Robinhood DOES offer true cash-settled, broad-based index options —
-**SPX, SPXW (weeklys/0DTE), XSP, NDX (+NDXP), VIX (+VIXW), RUT (+RUTW)**. The consumer `search`
-bar and `instruments/?symbol=` HIDE them (they return only ETF proxies / empty results). They
-live under the options API:
+Tax content in this repository is educational US federal tax research, not a personalized filing
+conclusion. State rules differ. The complete result can depend on filing status, taxable income,
+basis, holding period, carryovers, elections, spouse activity, retirement accounts, other brokers,
+and facts the Robinhood account cannot expose.
+
+Use four evidence lanes and name the lane when it matters:
+
+1. **Primary law or regulation**
+2. **IRS guidance or reporting instruction**
+3. **Broker-platform behavior**
+4. **Planning inference**
+
+A Robinhood estimate or product label is not federal tax law. A planning inference is not a legal
+conclusion. A tax read never authorizes a trade.
+
+## Start with the maintained reference
 
 ```bash
-node scripts/rh-get.mjs "https://api.robinhood.com/options/chains/?account_number=<N>&underlying_symbol=SPX"
-# fingerprint of a true index option: underlying_type="index" + EMPTY underlying_instruments (cash-settled)
-# SPY control: underlying_type="equity" + a 100-share deliverable
+# List the reviewed topics
+node cli/dist/tax-cli.js
+
+# Read one topic
+node cli/dist/tax-cli.js wash-sales
+node cli/dist/tax-cli.js section-1256
+node cli/dist/tax-cli.js qualified-covered-calls
+node cli/dist/tax-cli.js box-spreads
+
+# Search across claims, caveats, evidence lanes, and source IDs
+node cli/dist/tax-cli.js --query "exercise holding period"
+
+# Structured output for scripts or agents
+node cli/dist/tax-cli.js tax-lots-specific-identification --json
 ```
 
-Why it matters (IRC §1256):
+API applications use:
 
-- **60/40 rule:** every gain/loss is 60% long-term / 40% short-term **regardless of holding
-  period** — blended max federal rate ≈ 26–28% vs up to 37% short-term on equity options.
-- **Mark-to-market:** any §1256 position open on 12/31 is deemed sold at FMV (Form 6781) — you
-  can owe tax on unrealized gains; plan liquidity for the year-end mark.
-- **Loss carryback:** §1256 losses can be carried back 3 years against prior §1256 gains.
-- **No wash-sale rule** on §1256 contracts — rolling a *losing* SPX leg has no wash-sale exposure
-  (the cleanest "roll without tax friction" path; see `knowledge/rolling.md`).
-- **The SPY trap:** SPY/QQQ/IWM are ETF options — American-style, NOT §1256, early-assignable.
-  Picking SPX over SPY is a live platform choice, worth surfacing when the user picks the
-  underlying.
-- European-style SPX also enables the **box-spread** synthetic loan/lend play (implied interest
-  flows through §1256 60/40; American-style boxes can be blown up by early assignment).
-- Caveats: opening index options may need an entitlement tier (`can_open_position:true` on reads
-  is not order-proof); SPX min ticks are 0.05/0.10 with cutoff $3 — read the chain's `min_ticks`.
+```ts
+import { getTaxReference } from "@zaydiscold/robinhood-cli/tax-reference";
+```
 
-## LEAPS — long-term treatment, and the exercise trap
+MCP clients read the generated `tax-reference` module through `robinhood_knowledge`. The generated
+Markdown and the CLI/API catalog are built from the same versioned source.
 
-- Hold the LEAP **>12 months and SELL it** → long-term capital gain with ~25–35% of the capital
-  of share ownership.
-- **Exercising resets the clock:** the delivered shares' holding period starts at exercise; the
-  option's holding time does not tack on. To keep LTCG on the option's gain, sell — don't
-  exercise. (The single most common LEAP tax mistake.)
-- **Rolling a LEAP is a sale** — realizes the closed leg (short-term if held <12 months); frequent
-  rolling keeps you perpetually short-term. PMCC short legs import the QCC/straddle questions.
-- No dividends, pays theta — not a free stock substitute.
+## Then gather live account facts
 
-## Wash sales (IRC §1091) — the rolling-losers flag
+Reference mechanics and account evidence are separate. Use the smallest live surface that answers
+the factual question.
 
-- Selling at a **loss** and acquiring a **substantially identical** position within the 61-day
-  window (30 before + sale day + 30 after) disallows the loss. The loss is **deferred** (added to
-  the replacement's basis, holding period tacks on), not destroyed — with one exception below.
-- Cuts both ways with options: a losing option re-opened near-identically is washed; and **buying
-  a call within 30 days of harvesting a stock loss disallows the stock loss** (the classic trap).
-  The Wheel structurally re-establishes identical exposure — selling shares at a loss then
-  writing a new CSP on the same name within 30 days can wash the share loss.
-- "Substantially identical" has **no bright line** for options. Changing strike and/or expiration
-  helps; rolling a loser at the same strike + near expiration is the danger zone. Flag, don't
-  adjudicate.
-- The window spans **all accounts including IRAs** — a wash against an IRA purchase is
-  **permanently disallowed** (no basis add-back).
-- §1256 contracts are exempt (marked-to-market) — see above.
-- Only the **losing** leg matters; rolling winners has no wash issue.
+### Accounts and eligibility
 
-## Qualified covered calls — the holding-period taint
+```bash
+node cli/dist/index.js accounts --json
+node cli/dist/index.js account-pulse --json
+```
 
-- A covered call is **qualified (QCC)** if exchange-traded, written >30 days before expiration,
-  and **not deep-in-the-money** per the lowest-qualified-benchmark (LQB) table of Treas. Reg.
-  §1.1092(c)-1 (the "$5–10 ITM" shorthand is not the rule; the LQB is).
-- **OTM/ATM QCC:** the stock's LTCG clock keeps running. **ITM QCC:** the clock is **suspended**
-  while the call is open. **Deep-ITM/unqualified:** the straddle rules apply — can reset the
-  holding period, defer losses, and **disqualify dividends** (61-day rule).
-- The bullish roll-up pattern is exactly where this bites: chasing a rally can push the strike
-  ITM and freeze a clock that was about to cross 1 year — a month of premium vs LTCG rates on a
-  large embedded gain.
-- Premium itself is **always short-term** (§1233): a written option's gain can never be aged into
-  LTCG; assignment folds the premium into the *stock* sale (proceeds = strike + premium) and the
-  gain character follows the stock's holding period.
+Identify taxable and retirement accounts explicitly. Do not treat losses inside an IRA or Roth IRA
+as harvestable tax losses. Do not assume a transaction in one account is isolated from activity in
+another account.
 
-## IRA nuances (Roth here)
+### Open tax lots and lot-aware planning
 
-- Premium is not currently taxed; no ST/LT distinction → no holding-period management needed.
-- **No tax-loss harvesting** — losses in the IRA are simply gone as a tax item.
-- No in-account wash-sale tracking; the live risk is **cross-account**: an IRA re-open can
-  permanently disallow a taxable-account loss.
-- Structural limits: CSPs must be fully cash-secured, CCs fully covered; no margin/naked.
+```bash
+node cli/dist/index.js tax-lots list <SYMBOL> --account <ACCOUNT> --json
+node cli/dist/index.js tax-lots plan-sell <SYMBOL> \
+  --account <ACCOUNT> \
+  --shares <QUANTITY> \
+  --objective harvest_loss \
+  --json
+```
 
-## The rare holding-period edge cases (only times to raise tax unprompted)
+A plan is not execution evidence. Specific identification depends on the actual broker instruction,
+availability of the selected shares, the filled order, the broker's selected or closed-lot record,
+and year-end reporting. Preserve stable lot IDs and exact quantities rather than identifying lots by
+acquisition date alone.
 
-1. A position within ~days/weeks of crossing the **1-year short→long-term line** — compute from
-   the fill `timestamp` (`options inspect <uuid>` / `executions[].timestamp`).
-2. Near a **tax-year boundary** — deferring a profitable close into January moves the gain a year
-   out (Nov/Dec: choosing Jan/Feb expirations pushes a likely assignment into next year).
+### History and automatic acquisitions
 
-Everything else: don't volunteer tax commentary on routine quotes, reads, or orders.
+```bash
+node cli/dist/index.js history --account <ACCOUNT> --json
+node cli/dist/index.js recurring list --json
+node cli/dist/index.js settings show --account <ACCOUNT>
+```
 
-## One-liners worth keeping
+For a wash-sale review, inspect purchases before and after the loss sale, recurring investments,
+dividend reinvestment, other taxable accounts, and IRA or Roth IRA activity. The repository cannot
+see every broker, spouse transaction, or outside acquisition, so absence in this account is not proof
+that no replacement acquisition exists.
 
-- Deferral ≠ elimination: rolling defers recognition only for what hasn't been **closed**; a
-  buy-to-close realizes in the year of the close.
-- Constructive sale (§1259): a plain covered call is not one; pairing deep-ITM short calls with
-  protective puts that lock the position in can be — instant recognition.
-- Box spread "interest" is a §1256 **capital** loss — useful against capital gains, not an
-  ordinary interest deduction.
+### Tax documents
 
-## Deep dives
+```bash
+node cli/dist/index.js documents list --year <YEAR> --json
+node cli/dist/index.js documents download --type 1099 --year <YEAR> --json
+```
 
-- `docs/tax-aware-options-strategies.md` — all seven topics in full (rolling-deferral, QCC/LQB, §1256, boxes, LEAPS, wash sale, §1259), with primary-law citations.
-- `docs/index-options-1256-conclusion-2026-06-04.md` — the live evidence that SPX/XSP/NDX/VIX/RUT exist on RH, with reproducible read-only commands.
-- `docs/strategy-deep-dive-rolling-options-2026-06-04.md` §5 — rolling-specific tax angles.
-- `knowledge/rolling.md` — where the wash-sale flag fires in practice.
-- `knowledge/tax-loss-harvesting.md` — the harvesting workflow: red-lot discovery, the 30-day checks, FIFO lot reality, and the dry-run sell/replace procedure.
+Use app and CLI figures for planning. Reconcile filing work to the broker's year-end forms and the
+taxpayer's complete records, including transferred basis, corporate actions, wash adjustments, and
+other brokers.
+
+## Mechanics that deserve an automatic flag
+
+### Written equity options
+
+A written non-Section-1256 equity option is generally recognized when it expires, is closed, or is
+exercised, not merely when cash premium arrives. Buying to close realizes the closed leg even when a
+new leg is opened as part of a roll. Assignment can fold premium into stock proceeds or basis.
+
+Load:
+
+```bash
+node cli/dist/tax-cli.js option-writer-lifecycle
+```
+
+### Exercise and assignment
+
+The disposition method matters. Exercise can move option cost or premium into stock basis or sale
+proceeds, and the acquired property's holding period generally starts after exercise. Do not treat a
+long option's holding period as automatically tacking onto delivered shares.
+
+Load:
+
+```bash
+node cli/dist/tax-cli.js option-exercise-holding-period
+```
+
+### Wash sales
+
+The statutory window includes 30 days before and 30 days after the loss sale. Options and contracts
+to acquire substantially identical property can matter. The authorities do not supply one universal
+strike-or-expiration safe harbor for options, so do not pronounce a same-underlying replacement safe
+from contract terms alone.
+
+An IRA or Roth IRA acquisition can permanently disallow a taxable-account loss without increasing
+the retirement account's basis. Treat automatic purchases as real acquisitions.
+
+Load:
+
+```bash
+node cli/dist/tax-cli.js wash-sales
+node cli/dist/tax-cli.js retirement-account-wash-sales
+```
+
+### Section 1256
+
+Qualifying Section 1256 contracts are generally marked to market at year-end and characterized 60%
+long-term and 40% short-term regardless of holding period. The 60% component is actual statutory
+long-term capital character. Do not replace the statute with a hard-coded blended tax rate.
+
+Confirm the actual contract and broker reporting. A ticker, the phrase “index option,” or an app
+search result is not enough. Mixed straddles and elections can change the simple result.
+
+Load:
+
+```bash
+node cli/dist/tax-cli.js section-1256
+```
+
+### Qualified covered calls and straddles
+
+Qualified-covered-call status is a technical safe harbor. It is not shorthand for every covered
+call and cannot be reduced to a fixed dollar amount in the money. Stock price, available strike grid,
+term, applicable regulatory benchmark, and complete position matter.
+
+Load:
+
+```bash
+node cli/dist/tax-cli.js qualified-covered-calls
+```
+
+### Box spreads and conversion transactions
+
+A fixed economic payoff does not produce one automatic tax characterization. Depending on contract
+composition and facts, Section 1256, straddle, conversion-transaction, and other rules may interact.
+Do not describe short-box financing cost as automatically deductible capital loss or long-box return
+as automatically favorable 60/40 income.
+
+Load:
+
+```bash
+node cli/dist/tax-cli.js box-spreads
+```
+
+### Constructive sales
+
+Do not declare a collar, short sale, put, covered call, forward, or multi-leg structure outside
+constructive-sale treatment based on its strategy name. The appreciated position, offsetting
+transaction, dates, and retained risk must be analyzed.
+
+Load:
+
+```bash
+node cli/dist/tax-cli.js constructive-sales
+```
+
+## Operator decision contract
+
+For a tax-sensitive proposed action:
+
+1. State the jurisdiction and tax-reference review date.
+2. Identify the relevant evidence lane for each material claim.
+3. Gather account, lot, history, recurring, settings, and document facts separately.
+4. State what Robinhood can observe and what it cannot decide.
+5. Preserve unknown or incomplete basis, holding-period, election, and cross-account facts.
+6. Build a dry-run only after the operator asks for an action.
+7. Echo account, symbol or contract, lot IDs, side, quantity, and price before any live mutation.
+8. Verify the filled order and selected or closed lots after execution.
+9. Reconcile year-end forms independently.
+
+## What not to do
+
+- Do not calculate a user's final tax liability from a marginal-rate guess.
+- Do not infer “taxable” or “tax-free” from account or product names alone.
+- Do not claim all index options receive Section 1256 treatment.
+- Do not claim changing an option strike or expiration automatically avoids a wash sale.
+- Do not call a covered call qualified without applying the relevant rules.
+- Do not claim a box-spread loss is automatically deductible financing expense.
+- Do not treat a tax-lot plan, HTTP success, or UI state as execution evidence.
+- Do not recommend a trade merely because one tax outcome might be favorable.
+
+## Focused follow-ups
+
+- [`tax-reference.md`](tax-reference.md): reviewed claims, caveats, and source IDs
+- [`tax-loss-harvesting.md`](tax-loss-harvesting.md): harvesting control workflow
+- [`execution-safety.md`](execution-safety.md): dry-run, approval, and order-evidence contract
+- [`accounts.md`](accounts.md): account discovery and capability gating
+- [`../docs/tax-aware-options-strategies.md`](../docs/tax-aware-options-strategies.md): detailed options-tax mechanics
+- [`../docs/tax-lot-intelligence-and-exact-lot-selling.md`](../docs/tax-lot-intelligence-and-exact-lot-selling.md): lot inventory and execution boundaries

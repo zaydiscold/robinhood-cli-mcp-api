@@ -18,7 +18,7 @@
       "title": "Covered call and buy-write",
       "aliases": ["covered call", "buy-write", "call overwrite", "overwrite"],
       "tags": ["options", "income", "stock", "dividends", "holding-period"],
-      "summary": "Route a stock-plus-short-call structure through option-writer recognition, qualified-covered-call rules, dividend holding-period rules, constructive-sale screening, lot basis, and broker reporting.",
+      "summary": "Route stock plus a written call through option-writer recognition, qualified-covered-call rules, dividend holding periods, lot basis, constructive-sale screening, and broker reporting.",
       "accountContexts": ["taxable", "traditional-ira", "roth-ira", "unknown"],
       "topicIds": [
         "option-writer-lifecycle",
@@ -45,31 +45,31 @@
         {
           "id": "account-context",
           "prompt": "Is the position in a taxable account, traditional IRA, Roth IRA, or another account type?",
-          "why": "Current taxable recognition, retirement-account consequences, and available broker records differ by account.",
+          "why": "Current recognition and available broker records differ by account.",
           "source": "brokerage"
         },
         {
           "id": "stock-lots",
-          "prompt": "Which stock lots are covered, including acquisition dates, quantities, adjusted basis, and any transferred or missing basis?",
-          "why": "Stock holding period, lot selection, assignment proceeds, and dividend qualification depend on the actual lots.",
+          "prompt": "Which stock lots are covered, including acquisition dates, quantities, adjusted basis, and basis provenance?",
+          "why": "Stock holding period, assignment proceeds, dividend qualification, and lot identification depend on the actual lots.",
           "source": "brokerage"
         },
         {
           "id": "call-contract",
-          "prompt": "What are the exact call instrument, strike, expiration, quantity, premium, and open or close dates?",
-          "why": "Qualified-covered-call and option-writer treatment cannot be inferred from the label covered call.",
+          "prompt": "What are the exact call instrument, strike, expiration, quantity, premium, and lifecycle dates?",
+          "why": "Qualified-covered-call and writer treatment cannot be inferred from the label covered call.",
           "source": "brokerage"
         },
         {
           "id": "dividend-dates",
-          "prompt": "Did the stock pay a dividend, and what were the ex-dividend date and stock holding days with diminished risk?",
-          "why": "Dividend qualification has a separate holding-period and risk-of-loss test.",
+          "prompt": "Did the stock pay a dividend, and which holding days involved diminished risk?",
+          "why": "Dividend qualification has a separate holding-period test.",
           "source": "external"
         },
         {
           "id": "offsetting-positions",
-          "prompt": "Were there other calls, puts, short positions, forwards, collars, or substantially related positions?",
-          "why": "Straddle and constructive-sale rules depend on the whole offsetting position, not one leg.",
+          "prompt": "Were there other calls, puts, shorts, forwards, collars, or substantially related positions?",
+          "why": "Straddle and constructive-sale analysis depends on the complete position.",
           "source": "user"
         }
       ],
@@ -81,11 +81,11 @@
         },
         {
           "purpose": "Read exact stock lots and basis availability.",
-          "cli": "robinhood-cli tax-lots --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots list <SYMBOL> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lots"
         },
         {
-          "purpose": "Read held option contracts and position side.",
+          "purpose": "Read the exact short-call contract and position side.",
           "cli": "robinhood-cli options holdings --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_options_holdings"
         },
@@ -95,28 +95,28 @@
           "mcp": "robinhood_history"
         },
         {
-          "purpose": "Reconcile official year-end reporting before a filing conclusion.",
+          "purpose": "Reconcile official year-end reporting.",
           "cli": "robinhood-cli documents list --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_documents"
         }
       ],
       "workflow": [
-        "Classify the exact stock lots and short-call contract.",
-        "Determine whether the call may be qualified, nonqualified, or not evaluable from available facts.",
-        "Analyze option recognition separately from stock basis, assignment proceeds, dividend holding period, and offsetting-position rules.",
+        "Classify the exact stock lots and call contract.",
+        "Determine whether qualified-covered-call status is supported, unsupported, or not evaluable.",
+        "Analyze option recognition, stock basis, assignment proceeds, and dividend holding period separately.",
         "Report broker estimates and federal rule research in separate evidence lanes.",
-        "Leave the filing result unevaluated when contract, lot, dividend, or offsetting-position facts are incomplete."
+        "Leave the filing result unevaluated when contract, lot, dividend, or related-position facts are incomplete."
       ],
       "redFlags": [
         "Deep-in-the-money or long-dated call without a qualified-covered-call analysis.",
-        "Dividend qualification asserted from Form 1099-DIV alone despite short holding period or diminished risk.",
+        "Dividend qualification asserted from Form 1099-DIV alone.",
         "Covered-call label used to dismiss constructive-sale or straddle questions.",
-        "Assignment discussed without identifying the stock lots delivered or the written premium adjustment."
+        "Assignment discussed without identifying delivered stock lots and premium adjustment."
       ],
       "stopConditions": [
-        "The strategy includes additional offsetting positions not represented in the broker read.",
+        "Additional offsetting positions are not represented in the account evidence.",
         "Transferred basis, corporate actions, or selected-lot confirmation is missing.",
-        "The user asks whether a particular dividend, loss, or filing position definitively qualifies."
+        "The user asks for a definitive dividend, loss, or filing conclusion."
       ]
     },
     {
@@ -124,7 +124,7 @@
       "title": "Cash-secured put",
       "aliases": ["cash secured put", "csp", "short put", "secured put"],
       "tags": ["options", "income", "assignment", "basis", "wash-sale"],
-      "summary": "Route a short-put structure through option-writer recognition, assignment basis, substantially-identical replacement review, retirement-account interactions, and year-end reporting.",
+      "summary": "Route a short put through option-writer recognition, assignment basis, replacement-property review, retirement-account interactions, and year-end reporting.",
       "accountContexts": ["taxable", "traditional-ira", "roth-ira", "unknown"],
       "topicIds": [
         "option-writer-lifecycle",
@@ -137,26 +137,26 @@
       "requiredFacts": [
         {
           "id": "account-context",
-          "prompt": "Which account holds the short put, and are substantially identical acquisitions occurring in any taxable or retirement account?",
-          "why": "A replacement acquisition in an IRA or Roth IRA can produce a different wash-sale consequence from an ordinary taxable replacement.",
+          "prompt": "Which account holds the put, and are related acquisitions occurring in any taxable or retirement account?",
+          "why": "Replacement acquisitions in retirement accounts can have different consequences.",
           "source": "user"
         },
         {
           "id": "put-contract",
           "prompt": "What are the exact put instrument, strike, expiration, premium, quantity, and lifecycle events?",
-          "why": "Expiration, closing purchase, and assignment have different recognition mechanics.",
+          "why": "Expiration, closing purchase, and assignment have different mechanics.",
           "source": "brokerage"
         },
         {
           "id": "prior-loss-sales",
           "prompt": "Were substantially identical shares, options, or contracts sold at a loss in the surrounding 61-day window?",
-          "why": "A put or assigned stock may interact with wash-sale rules; option terms do not create a universal safe harbor.",
+          "why": "Assignment or a replacement option may interact with wash-sale rules.",
           "source": "user"
         },
         {
           "id": "assignment-stock",
           "prompt": "If assigned, what shares were acquired and what premium, fees, date, and broker basis were recorded?",
-          "why": "Written-put premium generally reduces the acquired stock basis, and the stock holding period starts after acquisition.",
+          "why": "Written-put premium generally adjusts acquired-stock basis.",
           "source": "brokerage"
         }
       ],
@@ -172,33 +172,33 @@
           "mcp": "robinhood_options_holdings"
         },
         {
-          "purpose": "Read assignments, expirations, exercises, and order history.",
+          "purpose": "Read assignment, expiration, exercise, and option-event evidence.",
           "cli": "robinhood-cli options events --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_options_events"
         },
         {
           "purpose": "Read resulting or replacement stock lots.",
-          "cli": "robinhood-cli tax-lots --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots list <SYMBOL> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lots"
         }
       ],
       "workflow": [
         "Identify whether the put expired, was closed, or was assigned.",
-        "Treat the option result and any acquired-stock basis as separate outputs.",
-        "Scan taxable, retirement, recurring, and dividend-reinvestment activity for substantially identical acquisitions.",
-        "Do not label a replacement option safe or washed solely from strike or expiration differences.",
-        "Reconcile the result to year-end forms before presenting a filing conclusion."
+        "Treat the option result and acquired-stock basis as separate outputs.",
+        "Scan taxable, retirement, recurring, and DRIP activity for replacement acquisitions.",
+        "Do not label a replacement option safe solely from strike or expiration differences.",
+        "Reconcile to year-end forms before a filing conclusion."
       ],
       "redFlags": [
-        "Premium described as taxable when received rather than at the relevant lifecycle event.",
-        "Assignment basis computed without the written premium.",
+        "Premium described as taxable when received rather than at the lifecycle event.",
+        "Assignment basis computed without written premium.",
         "Wash-sale review limited to one account or only identical ticker purchases.",
-        "A Roth or IRA acquisition ignored after a taxable-account loss."
+        "IRA or Roth IRA acquisition ignored after a taxable-account loss."
       ],
       "stopConditions": [
-        "Other brokers, spouse accounts, or automatic acquisitions are not known.",
-        "The substantially-identical question depends on option terms not resolved by existing authority.",
-        "The user asks for a definitive wash-sale or basis filing result from incomplete records."
+        "Other brokers, spouse accounts, or automatic acquisitions are unknown.",
+        "Substantially-identical treatment depends on unresolved option facts.",
+        "The user asks for a definitive wash-sale or basis filing result."
       ]
     },
     {
@@ -206,7 +206,7 @@
       "title": "Wheel strategy",
       "aliases": ["wheel", "options wheel", "csp covered call loop"],
       "tags": ["options", "stock", "assignment", "covered-call", "cash-secured-put"],
-      "summary": "Treat the wheel as a sequence of separate taxable events and stock lots, not one continuous tax object. Route each short put, assignment, stock lot, covered call, roll, and disposition through its own rule set.",
+      "summary": "Treat the wheel as a sequence of separate option events and stock lots, not one continuous tax object.",
       "accountContexts": ["taxable", "traditional-ira", "roth-ira", "unknown"],
       "topicIds": [
         "option-writer-lifecycle",
@@ -222,8 +222,8 @@
       "requiredFacts": [
         {
           "id": "event-ledger",
-          "prompt": "What are the open, close, expiration, assignment, exercise, and stock-sale events for every wheel leg?",
-          "why": "Each leg can realize or defer a different item; the economic loop is not one tax lot.",
+          "prompt": "What are the open, close, expiration, assignment, exercise, and stock-sale events for every leg?",
+          "why": "Each leg can realize or defer a different item.",
           "source": "brokerage"
         },
         {
@@ -235,7 +235,7 @@
         {
           "id": "replacement-activity",
           "prompt": "What same-underlying activity occurred across taxable, retirement, recurring, and DRIP accounts during each loss window?",
-          "why": "Wheel repetition can create replacement acquisitions around loss realizations.",
+          "why": "Repeated cycles can create replacement acquisitions around realized losses.",
           "source": "user"
         },
         {
@@ -257,8 +257,8 @@
           "mcp": "robinhood_history"
         },
         {
-          "purpose": "Read exact remaining and disposed stock lots.",
-          "cli": "robinhood-cli tax-lots --account <ACCOUNT_NUMBER> --json",
+          "purpose": "Read remaining and disposed stock lots.",
+          "cli": "robinhood-cli tax-lots list <SYMBOL> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lots"
         },
         {
@@ -267,23 +267,23 @@
           "mcp": "robinhood_options_events"
         },
         {
-          "purpose": "Check recurring and DRIP activity that may create replacement shares.",
+          "purpose": "Check recurring activity that can create replacement shares.",
           "cli": "robinhood-cli recurring list --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_recurring"
         }
       ],
       "workflow": [
-        "Expand the wheel into a dated event ledger before applying tax rules.",
+        "Expand the wheel into a dated event ledger.",
         "Analyze each closed or expired option separately from assigned or sold shares.",
         "Track stock basis and holding period from the actual assignment or purchase date.",
-        "Run wash-sale and retirement-account checks around every realized loss, not just the final cycle.",
+        "Run wash-sale and retirement-account checks around every realized loss.",
         "Treat projected wheel income as economic analysis, not current taxable income."
       ],
       "redFlags": [
         "Net premium across many legs presented as the taxable result.",
-        "Rolls treated as deferring recognition automatically.",
+        "Rolls treated as automatically deferring recognition.",
         "Assigned shares treated as inheriting the option holding period.",
-        "Covered calls assumed qualified without contract-level analysis.",
+        "Covered calls assumed qualified without contract analysis.",
         "Recurring buys or DRIP ignored during a harvesting window."
       ],
       "stopConditions": [
@@ -297,7 +297,7 @@
       "title": "Equity-option roll",
       "aliases": ["roll", "rolling options", "roll out", "roll up", "roll down"],
       "tags": ["options", "realization", "wash-sale", "covered-call"],
-      "summary": "A roll is a close and a new open. Route the closed contract through recognition and character, then analyze the replacement contract independently for wash-sale, straddle, qualified-covered-call, and account-context issues.",
+      "summary": "A roll is a close and a new open. Analyze the closed contract and replacement contract separately.",
       "accountContexts": ["taxable", "traditional-ira", "roth-ira", "unknown"],
       "topicIds": [
         "option-writer-lifecycle",
@@ -311,25 +311,25 @@
         {
           "id": "close-leg",
           "prompt": "What exact contract, side, position effect, quantity, fill, and date closed?",
-          "why": "The close leg is a separate realization event and must be matched to the correct original contract.",
+          "why": "The close leg is a separate realization event.",
           "source": "brokerage"
         },
         {
           "id": "open-leg",
           "prompt": "What exact replacement contract, strike, expiration, quantity, fill, and date opened?",
-          "why": "Replacement exposure drives wash-sale and straddle review and cannot be inferred from net roll price.",
+          "why": "Replacement exposure drives wash-sale and straddle review.",
           "source": "brokerage"
         },
         {
           "id": "position-context",
-          "prompt": "Was the rolled option long or written, covered or uncovered, and linked to stock or other offsetting positions?",
-          "why": "Recognition, QCC status, collateral, and offsetting-position rules differ by position role.",
+          "prompt": "Was the option long or written, covered or uncovered, and linked to stock or other offsets?",
+          "why": "Recognition, QCC, and offsetting-position rules differ by role.",
           "source": "brokerage"
         },
         {
           "id": "cross-account-replacements",
           "prompt": "Were related contracts or shares acquired in another taxable or retirement account?",
-          "why": "A one-account roll view is not a complete wash-sale analysis.",
+          "why": "One-account evidence is not a complete wash-sale review.",
           "source": "user"
         }
       ],
@@ -340,7 +340,7 @@
           "mcp": "robinhood_history"
         },
         {
-          "purpose": "Read the remaining option holdings after the roll.",
+          "purpose": "Read remaining option holdings after the roll.",
           "cli": "robinhood-cli options holdings --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_options_holdings"
         },
@@ -351,22 +351,22 @@
         }
       ],
       "workflow": [
-        "Decompose net roll price into the closed contract and opened contract.",
-        "Recognize that continuation of economic exposure does not by itself defer the closed leg.",
-        "Classify replacement exposure as a wash-sale, straddle, or QCC review flag only when facts support the flag.",
-        "Keep order evidence separate from the roll ledger or UI description.",
+        "Decompose net roll price into closed and opened contracts.",
+        "Do not infer deferral from continued economic exposure.",
+        "Flag wash-sale, straddle, or QCC review only when facts support the flag.",
+        "Keep order evidence separate from a roll ledger or UI description.",
         "Report missing cross-account facts as not evaluated."
       ],
       "redFlags": [
-        "A roll described as tax-free or deferred merely because it was one broker ticket.",
-        "Net debit or credit used as the tax result without separate leg basis and proceeds.",
+        "Roll described as tax-free or deferred because it was one broker ticket.",
+        "Net debit or credit used as the tax result without separate legs.",
         "Changed strike or expiration treated as a universal wash-sale escape.",
-        "Cash-account staged roll ledger treated as proof the open leg executed."
+        "Roll ledger treated as proof the open leg executed."
       ],
       "stopConditions": [
         "Close and open fills cannot be separated.",
-        "The original contract basis or written premium is missing.",
-        "Substantially-identical or straddle treatment requires a personalized legal conclusion."
+        "Original contract basis or written premium is missing.",
+        "Substantially-identical or straddle treatment requires a personalized conclusion."
       ]
     },
     {
@@ -374,7 +374,7 @@
       "title": "Tax-loss harvesting and replacement exposure",
       "aliases": ["tax loss harvesting", "tlh", "harvest a loss", "loss harvesting"],
       "tags": ["loss", "wash-sale", "tax-lots", "retirement-account", "replacement"],
-      "summary": "Route a proposed loss sale through exact-lot identification, complete 61-day acquisition review, retirement-account checks, replacement-exposure uncertainty, and post-trade reconciliation.",
+      "summary": "Route a loss sale through exact-lot identification, a complete 61-day acquisition review, retirement-account checks, and post-trade reconciliation.",
       "accountContexts": ["taxable", "unknown"],
       "topicIds": [
         "wash-sales",
@@ -387,36 +387,36 @@
         {
           "id": "loss-lot",
           "prompt": "Which exact lot would be sold, with adjusted basis, acquisition date, quantity, and unrealized loss?",
-          "why": "Harvesting is lot-specific; aggregate position loss does not identify the disposed shares.",
+          "why": "Harvesting is lot-specific.",
           "source": "brokerage"
         },
         {
           "id": "acquisition-ledger",
-          "prompt": "What substantially identical stock, option, recurring, DRIP, spouse, and other-broker acquisitions occurred or are scheduled in the 61-day window?",
-          "why": "The statutory window reaches before and after the loss sale and can cross account boundaries.",
+          "prompt": "What related stock, option, recurring, DRIP, spouse, and other-broker acquisitions occurred or are scheduled in the 61-day window?",
+          "why": "The statutory window reaches before and after the sale and can cross accounts.",
           "source": "user"
         },
         {
           "id": "replacement-plan",
-          "prompt": "What replacement exposure is proposed, and what facts support or undermine substantially-identical treatment?",
+          "prompt": "What replacement exposure is proposed, and what supports or undermines substantially-identical treatment?",
           "why": "There is no universal option-strike or expiration safe harbor.",
           "source": "user"
         },
         {
-          "id": "carryovers-and-return-context",
-          "prompt": "What realized gains, capital-loss carryovers, elections, and return-year facts are relevant?",
-          "why": "Economic value from a harvested loss cannot be calculated from the lot alone.",
+          "id": "return-context",
+          "prompt": "What realized gains, carryovers, elections, and return-year facts are relevant?",
+          "why": "The economic value of a loss cannot be calculated from one lot alone.",
           "source": "tax-form"
         }
       ],
       "brokerReads": [
         {
           "purpose": "Read exact available lots and basis provenance.",
-          "cli": "robinhood-cli tax-lots --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots list <SYMBOL> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lots"
         },
         {
-          "purpose": "Read filled sales and acquisitions around the control window.",
+          "purpose": "Read filled sales and acquisitions around the window.",
           "cli": "robinhood-cli history --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_history"
         },
@@ -427,11 +427,11 @@
         },
         {
           "purpose": "Read DRIP and related account settings.",
-          "cli": "robinhood-cli settings --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli settings show --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_settings"
         },
         {
-          "purpose": "Reconcile to official tax documents after year end.",
+          "purpose": "Reconcile official tax documents after year end.",
           "cli": "robinhood-cli documents list --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_documents"
         }
@@ -439,9 +439,9 @@
       "workflow": [
         "Identify the exact loss lot before discussing replacement exposure.",
         "Build a 61-day acquisition ledger across all known accounts and automations.",
-        "Classify each replacement as clearly identical, clearly different, or fact-specific; do not invent a safe harbor.",
-        "Keep estimated tax value unevaluated unless return-year and carryover facts are supplied.",
-        "After execution, verify the filled lot and reconcile broker adjustments and year-end forms."
+        "Classify replacements as clearly identical, clearly different, or fact-specific.",
+        "Leave estimated tax value unevaluated without return-wide facts.",
+        "After execution, verify the filled lot and reconcile broker adjustments."
       ],
       "redFlags": [
         "Position-level loss used instead of a selected lot.",
@@ -453,7 +453,7 @@
       "stopConditions": [
         "The complete acquisition ledger is unavailable.",
         "Transferred basis or corporate-action adjustments are unresolved.",
-        "The user asks for a definitive substantially-identical or personalized tax-savings conclusion."
+        "The user asks for a definitive substantially-identical or tax-savings conclusion."
       ]
     },
     {
@@ -461,40 +461,40 @@
       "title": "Section 1256 index-option structure",
       "aliases": ["section 1256", "1256", "index options", "spx options", "xsp options", "ndx options", "rut options", "vix options"],
       "tags": ["index-options", "mark-to-market", "60-40", "form-6781"],
-      "summary": "Confirm the actual contract before applying Section 1256. Then route year-end mark-to-market, 60/40 capital character, Form 6781, straddles, elections, and broker reporting as separate questions.",
+      "summary": "Confirm the actual contract before applying Section 1256, then analyze mark-to-market, 60/40 character, Form 6781, straddles, elections, and reporting separately.",
       "accountContexts": ["taxable", "traditional-ira", "roth-ira", "unknown"],
       "topicIds": ["section-1256", "tax-documents-and-estimates"],
       "supplementalClaims": [],
       "requiredFacts": [
         {
           "id": "actual-contract",
-          "prompt": "What exact contract, underlying index, exchange product, exercise style, settlement, and broker tax classification are involved?",
-          "why": "The phrase index option or a familiar ticker is not enough to establish statutory contract status.",
+          "prompt": "What exact contract, underlying index, exchange product, exercise style, settlement, and broker classification are involved?",
+          "why": "The phrase index option or a ticker does not establish statutory status.",
           "source": "brokerage"
         },
         {
           "id": "year-end-open-positions",
-          "prompt": "Which contracts remained open on the last business day of the tax year?",
+          "prompt": "Which qualifying contracts remained open on the last business day of the tax year?",
           "why": "Section 1256 generally marks qualifying open contracts to market annually.",
           "source": "brokerage"
         },
         {
           "id": "mixed-position-context",
           "prompt": "Were the contracts part of a mixed straddle, hedge, box, collar, or position with non-Section-1256 legs?",
-          "why": "Mixed positions and elections can change timing and reporting.",
+          "why": "Mixed positions and elections can change the simple result.",
           "source": "user"
         },
         {
           "id": "form-6781-records",
-          "prompt": "What did the broker report for the return year, and were Form 6781 adjustments or elections made?",
-          "why": "Transaction history alone is not the full filing record.",
+          "prompt": "What did the broker report for the return year, and were Form 6781 elections or adjustments made?",
+          "why": "Transaction history alone is not the complete filing record.",
           "source": "tax-form"
         }
       ],
       "brokerReads": [
         {
           "purpose": "Resolve exact option contract and product metadata.",
-          "cli": "robinhood-cli options inspect <OPTION_ID> --json",
+          "cli": "robinhood-cli options inspect <OPTION_ID> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_options_inspect"
         },
         {
@@ -510,21 +510,21 @@
       ],
       "workflow": [
         "Confirm contract identity before applying Section 1256 language.",
-        "Separate statutory 60/40 character from current marginal-rate comparisons.",
+        "Separate 60/40 capital character from marginal-rate comparisons.",
         "Identify year-end open contracts and mark-to-market items.",
         "Screen for mixed straddles, hedges, boxes, and elections.",
-        "Reconcile to the return-year Form 1099-B and Form 6781."
+        "Reconcile to Form 1099-B and Form 6781."
       ],
       "redFlags": [
         "Any index option assumed Section 1256 from ticker alone.",
-        "60/40 described as a tax rate rather than capital character.",
-        "Open year-end contracts omitted from analysis.",
-        "A mixed Section 1256 and equity-option structure treated as pure Section 1256."
+        "60/40 described as a tax rate rather than character.",
+        "Open year-end contracts omitted.",
+        "Mixed equity and Section 1256 legs treated as a pure Section 1256 position."
       ],
       "stopConditions": [
         "Contract classification or broker reporting is unavailable.",
         "A mixed-straddle or election question is material.",
-        "The user asks for a personalized rate advantage without return-year facts."
+        "The user asks for a personalized rate advantage."
       ]
     },
     {
@@ -532,7 +532,7 @@
       "title": "Box spread and fixed-return option structure",
       "aliases": ["box spread", "long box", "short box", "box financing"],
       "tags": ["options", "financing", "section-1256", "straddle", "conversion-transaction"],
-      "summary": "A fixed payoff does not create one automatic tax characterization. Route a box through contract identity, Section 1256 status, straddle rules, conversion transactions, elections, purpose, and broker reporting.",
+      "summary": "A fixed payoff does not create one automatic tax characterization. Analyze contract identity, Section 1256, straddles, conversion transactions, elections, purpose, and reporting.",
       "accountContexts": ["taxable", "traditional-ira", "roth-ira", "unknown"],
       "topicIds": ["box-spreads", "section-1256", "constructive-sales", "tax-documents-and-estimates"],
       "supplementalClaims": [],
@@ -540,37 +540,37 @@
         {
           "id": "leg-contracts",
           "prompt": "What are the exact four contracts, expirations, strikes, quantities, fills, settlement style, and product classifications?",
-          "why": "Contract composition controls whether Section 1256 or mixed-position questions arise.",
+          "why": "Contract composition controls Section 1256 and mixed-position questions.",
           "source": "brokerage"
         },
         {
           "id": "economic-purpose",
-          "prompt": "Was the structure entered for investment, financing, hedging, or another purpose, and what cash flows were expected?",
+          "prompt": "Was the structure entered for investment, financing, hedging, or another purpose?",
           "why": "Conversion-transaction and interest-equivalent analysis can depend on purpose and economics.",
           "source": "user"
         },
         {
           "id": "other-positions",
           "prompt": "Were there related appreciated positions, hedges, straddles, or offsetting contracts?",
-          "why": "The box cannot be analyzed in isolation when other positions alter exposure or tax treatment.",
+          "why": "The box may not be analyzable in isolation.",
           "source": "user"
         },
         {
           "id": "elections-and-forms",
-          "prompt": "What elections and return-year broker reporting apply?",
+          "prompt": "What elections and return-year reporting apply?",
           "why": "Form 6781 and mixed-straddle elections can change timing and character.",
           "source": "tax-form"
         }
       ],
       "brokerReads": [
         {
-          "purpose": "Inspect every exact option contract and settlement characteristic.",
-          "cli": "robinhood-cli options inspect <OPTION_ID> --json",
+          "purpose": "Inspect each exact option contract and settlement characteristic.",
+          "cli": "robinhood-cli options inspect <OPTION_ID> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_options_inspect"
         },
         {
-          "purpose": "Price and verify the full four-leg package without authorizing execution.",
-          "cli": "robinhood-cli options workbench --json",
+          "purpose": "Inspect required inputs for non-sending package analysis.",
+          "cli": "robinhood-cli options workbench --help",
           "mcp": "robinhood_options_workbench"
         },
         {
@@ -580,11 +580,11 @@
         }
       ],
       "workflow": [
-        "Verify the four exact contracts and whether every leg is Section 1256 eligible.",
+        "Verify the four exact contracts and statutory classification of each leg.",
         "Separate fixed economic payoff from federal timing and character.",
         "Screen for straddle, conversion-transaction, constructive-sale, and election issues.",
-        "Treat financing-cost or favorable-character claims as fact-specific planning inferences.",
-        "Require professional review before presenting a personalized deduction or characterization."
+        "Treat financing-cost or favorable-character claims as fact-specific inferences.",
+        "Require professional review before a personalized deduction or characterization."
       ],
       "redFlags": [
         "Short-box cost called automatically deductible interest or capital loss.",
@@ -603,7 +603,7 @@
       "title": "Collar or protective-put structure",
       "aliases": ["collar", "protective put", "married put", "zero cost collar"],
       "tags": ["options", "hedging", "constructive-sale", "holding-period", "dividends"],
-      "summary": "Route stock hedges through actual risk retained, put and call contracts, stock holding period, qualified-covered-call status, straddles, constructive sales, dividends, and year-end reporting.",
+      "summary": "Route stock hedges through actual risk retained, exact contracts, stock lots, constructive sales, straddles, qualified-covered-call status, dividends, and reporting.",
       "accountContexts": ["taxable", "traditional-ira", "roth-ira", "unknown"],
       "topicIds": [
         "constructive-sales",
@@ -624,24 +624,24 @@
         {
           "id": "appreciated-stock",
           "prompt": "What exact stock lots, holding periods, basis, and unrealized appreciation are hedged?",
-          "why": "Constructive-sale and holding-period analysis depend on the appreciated position and lots.",
+          "why": "Constructive-sale and holding-period analysis depends on the appreciated lots.",
           "source": "brokerage"
         },
         {
           "id": "hedge-contracts",
           "prompt": "What are the exact put and call strikes, expirations, quantities, premiums, and exercise styles?",
-          "why": "Strategy labels do not reveal how much upside and downside exposure remains.",
+          "why": "Strategy labels do not show how much market risk remains.",
           "source": "brokerage"
         },
         {
           "id": "risk-retained",
-          "prompt": "What market risk remains after considering all related positions and contractual obligations?",
-          "why": "Constructive-sale and straddle questions turn on actual offset, not marketing terminology.",
+          "prompt": "What market risk remains after considering every related position and obligation?",
+          "why": "Constructive-sale and straddle questions turn on actual offset.",
           "source": "user"
         },
         {
           "id": "dividend-window",
-          "prompt": "Did dividends occur during periods when the hedge diminished risk?",
+          "prompt": "Did dividends occur while the hedge diminished risk?",
           "why": "Qualified-dividend holding days can be affected separately from stock gain recognition.",
           "source": "external"
         }
@@ -649,31 +649,31 @@
       "brokerReads": [
         {
           "purpose": "Read stock lots and unrealized appreciation.",
-          "cli": "robinhood-cli tax-lots --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots list <SYMBOL> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lots"
         },
         {
-          "purpose": "Read every exact option leg and current position side.",
+          "purpose": "Read every exact option leg and position side.",
           "cli": "robinhood-cli options holdings --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_options_holdings"
         },
         {
-          "purpose": "Read dividend dates and current holding-linked payouts.",
+          "purpose": "Read dividend dates and holding-linked payouts.",
           "cli": "robinhood-cli dividends --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_dividends"
         }
       ],
       "workflow": [
-        "Identify the appreciated stock lots and every hedge leg.",
-        "Measure the actual economic risk retained without converting that measurement into a tax conclusion.",
-        "Screen constructive-sale, straddle, QCC, stock holding-period, and dividend holding-period rules separately.",
+        "Identify appreciated stock lots and every hedge leg.",
+        "Measure actual risk retained without converting the measurement into a tax conclusion.",
+        "Screen constructive-sale, straddle, QCC, stock, and dividend holding-period rules separately.",
         "Classify unsupported conclusions as not evaluated or fact-specific.",
         "Keep hedge research separate from trade authorization."
       ],
       "redFlags": [
         "Collar label used as proof that Section 1259 does or does not apply.",
         "Qualified-dividend status assumed despite diminished risk.",
-        "Only one option leg considered while another related position remains open.",
+        "Only one leg considered while another related position remains open.",
         "Tax treatment inferred from net zero premium."
       ],
       "stopConditions": [
@@ -687,7 +687,7 @@
       "title": "Dividend capture or short holding-period dividend trade",
       "aliases": ["dividend capture", "buy before ex dividend", "qualified dividend holding period"],
       "tags": ["dividends", "holding-period", "hedging", "substitute-payment"],
-      "summary": "Route a short holding-period dividend trade through qualified-dividend eligibility, diminished-risk days, payments in lieu, economic price adjustment, stock-lot loss rules, and year-end Form 1099-DIV reconciliation.",
+      "summary": "Route a short holding-period dividend trade through qualified-dividend eligibility, diminished-risk days, payments in lieu, stock-lot results, and Form 1099-DIV reconciliation.",
       "accountContexts": ["taxable", "unknown"],
       "topicIds": ["qualified-covered-calls", "tax-lots-specific-identification", "tax-documents-and-estimates"],
       "supplementalClaims": [
@@ -714,25 +714,25 @@
         {
           "id": "stock-dates",
           "prompt": "What were the stock trade dates, ex-dividend date, record date, and disposition date?",
-          "why": "Qualified-dividend eligibility uses a specific statutory holding window and trade-date counting.",
+          "why": "Qualified-dividend eligibility uses a specific holding window and day count.",
           "source": "brokerage"
         },
         {
           "id": "risk-diminishing-positions",
-          "prompt": "Were puts, calls, short sales, forwards, collars, or related positions open during the holding window?",
-          "why": "Those days may not count toward the required holding period.",
+          "prompt": "Were puts, calls, short sales, forwards, collars, or related positions open during the window?",
+          "why": "Those days may not count toward the holding requirement.",
           "source": "user"
         },
         {
           "id": "payment-classification",
-          "prompt": "Was the payment an issuer dividend or a payment in lieu, and how was it reported on Form 1099-DIV?",
-          "why": "Payment labels and withholding can differ from qualified-dividend treatment.",
+          "prompt": "Was the payment an issuer dividend or a payment in lieu, and how was it reported?",
+          "why": "Payment labels can differ from qualified-dividend treatment.",
           "source": "tax-form"
         },
         {
           "id": "stock-loss-and-distributions",
           "prompt": "Was the stock sold at a loss, and were extraordinary or other distributions received?",
-          "why": "Separate loss-character or basis rules may apply beyond dividend qualification.",
+          "why": "Separate loss-character or basis rules may apply.",
           "source": "tax-form"
         }
       ],
@@ -744,7 +744,7 @@
         },
         {
           "purpose": "Read exact stock lots and holding dates.",
-          "cli": "robinhood-cli tax-lots --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots list <SYMBOL> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lots"
         },
         {
@@ -759,21 +759,21 @@
         }
       ],
       "workflow": [
-        "Build the statutory holding-day timeline using trade dates and ex-dividend date.",
-        "Remove days with diminished risk only when supported by the complete position facts.",
+        "Build the holding-day timeline using trade and ex-dividend dates.",
+        "Exclude diminished-risk days only when supported by complete facts.",
         "Distinguish issuer dividends from payments in lieu and related-payment obligations.",
-        "Separate dividend character from economic profit, stock gain or loss, and filing reconciliation.",
-        "Do not call a trade tax-advantaged from a displayed qualified-dividend amount alone."
+        "Separate dividend character from economic profit and stock gain or loss.",
+        "Do not call a trade tax-advantaged from displayed dividend amounts alone."
       ],
       "redFlags": [
-        "Form 1099-DIV box 1b treated as conclusive despite failure to meet the taxpayer holding period.",
+        "Form 1099-DIV box 1b treated as conclusive despite a failed holding-period test.",
         "Options or hedges ignored while counting holding days.",
         "Payment in lieu described as a qualified dividend.",
-        "Dividend amount discussed without the stock price adjustment and disposition result."
+        "Dividend amount discussed without the stock price and disposition result."
       ],
       "stopConditions": [
         "Trade dates, ex-dividend date, or risk-diminishing positions are incomplete.",
-        "Payment classification cannot be reconciled to the broker tax form.",
+        "Payment classification cannot be reconciled to the tax form.",
         "The user asks for a personalized tax-rate or after-tax-return conclusion."
       ]
     },
@@ -782,7 +782,7 @@
       "title": "Short stock and substantially identical long property",
       "aliases": ["short stock", "short sale", "stock short", "short against the box"],
       "tags": ["short-sale", "holding-period", "constructive-sale", "payments-in-lieu"],
-      "summary": "Route a short sale through closing-property character, substantially identical long positions, holding-period effects, wash sales, related dividend payments, constructive sales, and broker reporting.",
+      "summary": "Route a short sale through closing-property character, substantially identical long positions, holding-period effects, wash sales, payments, constructive sales, and reporting.",
       "accountContexts": ["taxable", "unknown"],
       "topicIds": ["wash-sales", "constructive-sales", "tax-documents-and-estimates"],
       "supplementalClaims": [
@@ -808,42 +808,42 @@
       "requiredFacts": [
         {
           "id": "short-lifecycle",
-          "prompt": "What property was sold short, when was the short opened and closed, and what property was delivered to close it?",
+          "prompt": "What property was sold short, when was it opened and closed, and what property closed it?",
           "why": "Character and timing depend on the short-sale lifecycle and closing property.",
           "source": "brokerage"
         },
         {
           "id": "identical-long-property",
-          "prompt": "What substantially identical stock, securities, futures, or puts were held or acquired, including spouse activity where relevant?",
-          "why": "Section 1233 holding-period and character rules depend on substantially identical property.",
+          "prompt": "What substantially identical stock, securities, futures, or puts were held or acquired?",
+          "why": "Section 1233 rules depend on substantially identical property.",
           "source": "user"
         },
         {
           "id": "appreciated-position",
           "prompt": "Was the short economically offsetting an appreciated financial position?",
-          "why": "Short-against-the-box or similar structures can raise constructive-sale questions.",
+          "why": "Short-against-the-box structures can raise constructive-sale questions.",
           "source": "user"
         },
         {
           "id": "dividend-payments",
-          "prompt": "What dividends, payments in lieu, and related-payment obligations occurred while the short was open?",
-          "why": "Payment character and deductibility are separate from short-sale gain or loss.",
+          "prompt": "What dividends, payments in lieu, and related-payment obligations occurred?",
+          "why": "Payment character is separate from short-sale gain or loss.",
           "source": "tax-form"
         }
       ],
       "brokerReads": [
         {
-          "purpose": "Read short-position and closing transaction history where the product is supported.",
+          "purpose": "Read short-position and closing transaction history where supported.",
           "cli": "robinhood-cli history --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_history"
         },
         {
           "purpose": "Read related long stock lots.",
-          "cli": "robinhood-cli tax-lots --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots list <SYMBOL> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lots"
         },
         {
-          "purpose": "Reconcile dividends, payments, and official tax forms.",
+          "purpose": "Reconcile payments and official tax forms.",
           "cli": "robinhood-cli documents list --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_documents"
         }
@@ -851,19 +851,19 @@
       "workflow": [
         "Build the short-sale open and close timeline.",
         "Inventory substantially identical property held or acquired during the short.",
-        "Apply short-sale character and holding-period rules separately from wash-sale and constructive-sale review.",
-        "Classify dividend-related payments from official records rather than assumptions.",
-        "Leave unsupported deductibility and filing conclusions unevaluated."
+        "Apply Section 1233 separately from wash-sale and constructive-sale review.",
+        "Classify dividend-related payments from official records.",
+        "Leave unsupported deduction and filing conclusions unevaluated."
       ],
       "redFlags": [
         "Short-sale gain assumed long-term from the holding period of delivered shares.",
-        "Existing long position ignored in the character and holding-period analysis.",
-        "Short against the box described as deferring gain without a Section 1259 review.",
+        "Existing long property ignored.",
+        "Short against the box described as deferring gain without Section 1259 review.",
         "Payment in lieu described as an ordinary qualified dividend."
       ],
       "stopConditions": [
         "The closing property or substantially identical holdings are unknown.",
-        "Spouse, other-broker, or derivative activity may be material but is unavailable.",
+        "Spouse, other-broker, or derivative activity may be material but unavailable.",
         "The user asks for a definitive deduction, character, or constructive-sale conclusion."
       ]
     },
@@ -872,27 +872,27 @@
       "title": "Specific-lot stock sale",
       "aliases": ["specific lot", "tax lot sale", "choose tax lots", "highest cost", "fifo sale"],
       "tags": ["tax-lots", "basis", "holding-period", "broker-confirmation", "wash-sale"],
-      "summary": "Route a lot-aware sale through timely broker identification, written confirmation, basis provenance, holding period, unavailable-lot fallback, wash-sale adjustments, and post-fill verification.",
+      "summary": "Route a lot-aware sale through timely identification, written confirmation, basis provenance, holding period, fallback, wash-sale adjustments, and post-fill verification.",
       "accountContexts": ["taxable", "unknown"],
       "topicIds": ["tax-lots-specific-identification", "wash-sales", "tax-documents-and-estimates"],
       "supplementalClaims": [],
       "requiredFacts": [
         {
           "id": "available-lots",
-          "prompt": "Which exact lots are currently available, including quantity, acquisition date, adjusted basis, basis source, and holding period?",
-          "why": "A position-level average cannot substitute for the selected shares.",
+          "prompt": "Which exact lots are available, including quantity, acquisition date, adjusted basis, basis source, and holding period?",
+          "why": "A position-level average cannot substitute for selected shares.",
           "source": "brokerage"
         },
         {
           "id": "selection-timing",
-          "prompt": "When and how will the broker receive the lot instruction, and what written confirmation will be retained?",
-          "why": "Adequate identification depends on timely instructions and confirmation.",
+          "prompt": "When and how will the broker receive the instruction, and what confirmation will be retained?",
+          "why": "Adequate identification depends on timely instruction and confirmation.",
           "source": "brokerage"
         },
         {
           "id": "fallback-method",
-          "prompt": "What default disposal method applies if selected shares are unavailable or the instruction fails?",
-          "why": "The executed lots can differ from the plan when the broker falls back.",
+          "prompt": "What default method applies if selected shares are unavailable or the instruction fails?",
+          "why": "Executed lots can differ from the plan.",
           "source": "brokerage"
         },
         {
@@ -905,17 +905,17 @@
       "brokerReads": [
         {
           "purpose": "Inventory exact open lots and basis provenance.",
-          "cli": "robinhood-cli tax-lots --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots list <SYMBOL> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lots"
         },
         {
           "purpose": "Build a non-sending exact-lot plan.",
-          "cli": "robinhood-cli tax-lot plan --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots plan-sell <SYMBOL> --account <ACCOUNT_NUMBER> --shares <QUANTITY> --objective <OBJECTIVE> --json",
           "mcp": "robinhood_tax_lot_plan"
         },
         {
           "purpose": "Verify the order and selected or closed lots after execution.",
-          "cli": "robinhood-cli tax-lot order <ORDER_ID> --account <ACCOUNT_NUMBER> --json",
+          "cli": "robinhood-cli tax-lots order <ORDER_ID> --account <ACCOUNT_NUMBER> --json",
           "mcp": "robinhood_tax_lot_order"
         },
         {
@@ -927,21 +927,21 @@
       "workflow": [
         "Read current eligible lots immediately before planning.",
         "Preserve selected lot IDs, quantities, basis provenance, and expected fallback.",
-        "Keep the plan non-sending until exact action approval and a verified live contract are available.",
-        "After the fill, verify order history and the broker's selected or closed-lot record.",
+        "Keep the plan non-sending until exact approval and a verified live contract are available.",
+        "After the fill, verify order history and the broker lot record.",
         "Reconcile to year-end forms and external basis records."
       ],
       "redFlags": [
         "Average cost used as if it were a specific lot.",
-        "A planning screen treated as written confirmation or execution evidence.",
+        "A planning screen treated as confirmation or execution evidence.",
         "Unavailable selected shares silently replaced by a different lot.",
         "Transferred or missing basis ignored.",
-        "Lot selection optimized without checking wash-sale or return-wide facts."
+        "Lot selection optimized without return-wide facts."
       ],
       "stopConditions": [
         "The selected lot is unavailable or basis provenance is unresolved.",
-        "The broker cannot provide a retained confirmation of the lot instruction.",
-        "The user asks which lot minimizes tax without return-wide gains, losses, carryovers, and rate facts."
+        "The broker cannot provide retained confirmation of the instruction.",
+        "The user asks which lot minimizes tax without return-wide facts."
       ]
     }
   ]

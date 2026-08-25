@@ -80,6 +80,16 @@ export interface TaxResearchStatus {
   maintenancePolicy: string;
 }
 
+interface CatalogValidationContext {
+  topicIds: ReadonlySet<string>;
+  sourceIds: ReadonlySet<string>;
+  laneIds: ReadonlySet<string>;
+  validContexts: ReadonlySet<TaxAccountContext>;
+  validFactSources: ReadonlySet<TaxFactSource>;
+  strategyIds: Set<string>;
+  normalizedNames: Map<string, string>;
+}
+
 let cachedCatalog: TaxStrategyCatalog | undefined;
 
 function defaultCatalogPath(): string {
@@ -91,7 +101,8 @@ function defaultCatalogPath(): string {
   const found = candidates.find((candidate) => existsSync(candidate));
   if (!found) {
     throw new Error(
-      `Tax strategy catalog was not found. Checked: ${candidates.join(", ")}. Rebuild the CLI package so knowledge/tax-strategies.json is copied into dist.`,
+      `Tax strategy catalog was not found. Checked: ${candidates.join(", ")}. ` +
+        "Rebuild the CLI package so knowledge/tax-strategies.json is copied into dist.",
     );
   }
   return found;
@@ -121,6 +132,148 @@ function requireStringArray(value: unknown, label: string, allowEmpty = false): 
   return value as string[];
 }
 
+function normalizeStrategyName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function validateStrategyNames(
+  strategy: Record<string, unknown>,
+  index: number,
+  context: CatalogValidationContext,
+): { id: string; aliases: string[] } {
+  const id = requireString(strategy.id, `strategies[${index}].id`);
+  if (context.strategyIds.has(id)) {
+    throw new Error(`Duplicate tax strategy id: ${id}`);
+  }
+  context.strategyIds.add(id);
+
+  const aliases = requireStringArray(strategy.aliases, `strategies[${index}].aliases`, true);
+  for (const name of [id, ...aliases]) {
+    const normalized = normalizeStrategyName(name);
+    const prior = context.normalizedNames.get(normalized);
+    if (prior && prior !== id) {
+      throw new Error(`Tax strategy name or alias "${name}" is shared by ${prior} and ${id}`);
+    }
+    context.normalizedNames.set(normalized, id);
+  }
+  return { id, aliases };
+}
+
+function validateStrategyClaims(
+  strategy: Record<string, unknown>,
+  index: number,
+  id: string,
+  context: CatalogValidationContext,
+): void {
+  const claims = Array.isArray(strategy.supplementalClaims)
+    ? strategy.supplementalClaims
+    : [];
+  for (const [claimIndex, rawClaim] of claims.entries()) {
+    const label = `strategies[${index}].supplementalClaims[${claimIndex}]`;
+    const claim = asRecord(rawClaim, label);
+    const lane = requireString(claim.lane, `${label}.lane`);
+    if (!context.laneIds.has(lane as TaxEvidenceLaneId)) {
+      throw new Error(`Tax strategy ${id} references unknown evidence lane ${lane}`);
+    }
+    requireString(claim.certainty, `${label}.certainty`);
+    requireString(claim.text, `${label}.text`);
+    const claimSources = requireStringArray(claim.sourceIds, `${label}.sourceIds`);
+    for (const sourceId of claimSources) {
+      if (!context.sourceIds.has(sourceId)) {
+        throw new Error(`Tax strategy ${id} references unknown source ${sourceId}`);
+      }
+    }
+  }
+}
+
+function validateStrategyFacts(
+  strategy: Record<string, unknown>,
+  index: number,
+  id: string,
+  context: CatalogValidationContext,
+): void {
+  const facts = Array.isArray(strategy.requiredFacts) ? strategy.requiredFacts : [];
+  if (facts.length === 0) {
+    throw new Error(`Tax strategy ${id} has no required facts`);
+  }
+
+  const factIds = new Set<string>();
+  for (const [factIndex, rawFact] of facts.entries()) {
+    const label = `strategies[${index}].requiredFacts[${factIndex}]`;
+    const fact = asRecord(rawFact, label);
+    const factId = requireString(fact.id, `${label}.id`);
+    if (factIds.has(factId)) {
+      throw new Error(`Tax strategy ${id} has duplicate fact ${factId}`);
+    }
+    factIds.add(factId);
+    requireString(fact.prompt, `${label}.prompt`);
+    requireString(fact.why, `${label}.why`);
+    const source = requireString(fact.source, `${label}.source`);
+    if (!context.validFactSources.has(source as TaxFactSource)) {
+      throw new Error(`Tax strategy ${id} fact ${factId} has unknown source ${source}`);
+    }
+  }
+}
+
+function validateStrategyReads(
+  strategy: Record<string, unknown>,
+  index: number,
+  id: string,
+): void {
+  const reads = Array.isArray(strategy.brokerReads) ? strategy.brokerReads : [];
+  if (reads.length === 0) {
+    throw new Error(`Tax strategy ${id} has no broker reads`);
+  }
+
+  for (const [readIndex, rawRead] of reads.entries()) {
+    const label = `strategies[${index}].brokerReads[${readIndex}]`;
+    const read = asRecord(rawRead, label);
+    requireString(read.purpose, `${label}.purpose`);
+    requireString(read.cli, `${label}.cli`);
+    requireString(read.mcp, `${label}.mcp`);
+  }
+}
+
+function validateStrategy(
+  rawStrategy: unknown,
+  index: number,
+  context: CatalogValidationContext,
+): void {
+  const strategy = asRecord(rawStrategy, `strategies[${index}]`);
+  const { id } = validateStrategyNames(strategy, index, context);
+  requireString(strategy.title, `strategies[${index}].title`);
+  requireString(strategy.summary, `strategies[${index}].summary`);
+  requireStringArray(strategy.tags, `strategies[${index}].tags`);
+
+  const contexts = requireStringArray(
+    strategy.accountContexts,
+    `strategies[${index}].accountContexts`,
+  );
+  for (const accountContext of contexts) {
+    if (!context.validContexts.has(accountContext as TaxAccountContext)) {
+      throw new Error(`Tax strategy ${id} has unknown account context ${accountContext}`);
+    }
+  }
+
+  const topicIds = requireStringArray(strategy.topicIds, `strategies[${index}].topicIds`);
+  for (const topicId of topicIds) {
+    if (!context.topicIds.has(topicId)) {
+      throw new Error(`Tax strategy ${id} references unknown topic ${topicId}`);
+    }
+  }
+
+  validateStrategyClaims(strategy, index, id, context);
+  validateStrategyFacts(strategy, index, id, context);
+  validateStrategyReads(strategy, index, id);
+  requireStringArray(strategy.workflow, `strategies[${index}].workflow`);
+  requireStringArray(strategy.redFlags, `strategies[${index}].redFlags`);
+  requireStringArray(strategy.stopConditions, `strategies[${index}].stopConditions`);
+}
+
 function validateCatalog(
   value: unknown,
   referenceCatalog: TaxReferenceCatalog,
@@ -133,144 +286,40 @@ function validateCatalog(
   const reviewedAt = requireString(root.reviewedAt, "reviewedAt");
   if (reviewedAt !== referenceCatalog.reviewedAt) {
     throw new Error(
-      `Tax strategy catalog review date ${reviewedAt} does not match tax reference review date ${referenceCatalog.reviewedAt}`,
+      `Tax strategy catalog review date ${reviewedAt} does not match ` +
+        `tax reference review date ${referenceCatalog.reviewedAt}`,
     );
   }
+
   const jurisdiction = requireString(root.jurisdiction, "jurisdiction");
   if (jurisdiction !== referenceCatalog.jurisdiction) {
     throw new Error(
-      `Tax strategy jurisdiction ${jurisdiction} does not match tax reference jurisdiction ${referenceCatalog.jurisdiction}`,
+      `Tax strategy jurisdiction ${jurisdiction} does not match ` +
+        `tax reference jurisdiction ${referenceCatalog.jurisdiction}`,
     );
   }
+
   requireString(root.scope, "scope");
   requireString(root.disclaimer, "disclaimer");
   requireStringArray(root.agentOutputContract, "agentOutputContract");
-
   const strategies = Array.isArray(root.strategies) ? root.strategies : [];
-  if (strategies.length === 0) throw new Error("Tax strategy catalog has no strategies");
-  const topicIds = new Set(referenceCatalog.topics.map((topic) => topic.id));
-  const sourceIds = new Set(referenceCatalog.sources.map((source) => source.id));
-  const laneIds = new Set(referenceCatalog.evidenceLanes.map((lane) => lane.id));
-  const validContexts = new Set<TaxAccountContext>([
-    "taxable",
-    "traditional-ira",
-    "roth-ira",
-    "unknown",
-  ]);
-  const validFactSources = new Set<TaxFactSource>(["brokerage", "tax-form", "user", "external"]);
-  const strategyIds = new Set<string>();
-  const normalizedNames = new Map<string, string>();
-
-  for (const [index, rawStrategy] of strategies.entries()) {
-    const strategy = asRecord(rawStrategy, `strategies[${index}]`);
-    const id = requireString(strategy.id, `strategies[${index}].id`);
-    if (strategyIds.has(id)) throw new Error(`Duplicate tax strategy id: ${id}`);
-    strategyIds.add(id);
-    requireString(strategy.title, `strategies[${index}].title`);
-    requireString(strategy.summary, `strategies[${index}].summary`);
-    const aliases = requireStringArray(strategy.aliases, `strategies[${index}].aliases`, true);
-    requireStringArray(strategy.tags, `strategies[${index}].tags`);
-
-    for (const name of [id, ...aliases]) {
-      const normalized = normalizeStrategyName(name);
-      const prior = normalizedNames.get(normalized);
-      if (prior && prior !== id) {
-        throw new Error(`Tax strategy name or alias "${name}" is shared by ${prior} and ${id}`);
-      }
-      normalizedNames.set(normalized, id);
-    }
-
-    const contexts = requireStringArray(
-      strategy.accountContexts,
-      `strategies[${index}].accountContexts`,
-    );
-    for (const context of contexts) {
-      if (!validContexts.has(context as TaxAccountContext)) {
-        throw new Error(`Tax strategy ${id} has unknown account context ${context}`);
-      }
-    }
-
-    const linkedTopics = requireStringArray(strategy.topicIds, `strategies[${index}].topicIds`);
-    for (const topicId of linkedTopics) {
-      if (!topicIds.has(topicId)) throw new Error(`Tax strategy ${id} references unknown topic ${topicId}`);
-    }
-
-    const claims = Array.isArray(strategy.supplementalClaims)
-      ? strategy.supplementalClaims
-      : [];
-    for (const [claimIndex, rawClaim] of claims.entries()) {
-      const claim = asRecord(
-        rawClaim,
-        `strategies[${index}].supplementalClaims[${claimIndex}]`,
-      );
-      const lane = requireString(
-        claim.lane,
-        `strategies[${index}].supplementalClaims[${claimIndex}].lane`,
-      );
-      if (!laneIds.has(lane as TaxEvidenceLaneId)) {
-        throw new Error(`Tax strategy ${id} references unknown evidence lane ${lane}`);
-      }
-      requireString(
-        claim.certainty,
-        `strategies[${index}].supplementalClaims[${claimIndex}].certainty`,
-      );
-      requireString(claim.text, `strategies[${index}].supplementalClaims[${claimIndex}].text`);
-      const claimSources = requireStringArray(
-        claim.sourceIds,
-        `strategies[${index}].supplementalClaims[${claimIndex}].sourceIds`,
-      );
-      for (const sourceId of claimSources) {
-        if (!sourceIds.has(sourceId)) {
-          throw new Error(`Tax strategy ${id} references unknown source ${sourceId}`);
-        }
-      }
-    }
-
-    const facts = Array.isArray(strategy.requiredFacts) ? strategy.requiredFacts : [];
-    if (facts.length === 0) throw new Error(`Tax strategy ${id} has no required facts`);
-    const factIds = new Set<string>();
-    for (const [factIndex, rawFact] of facts.entries()) {
-      const fact = asRecord(rawFact, `strategies[${index}].requiredFacts[${factIndex}]`);
-      const factId = requireString(
-        fact.id,
-        `strategies[${index}].requiredFacts[${factIndex}].id`,
-      );
-      if (factIds.has(factId)) throw new Error(`Tax strategy ${id} has duplicate fact ${factId}`);
-      factIds.add(factId);
-      requireString(fact.prompt, `strategies[${index}].requiredFacts[${factIndex}].prompt`);
-      requireString(fact.why, `strategies[${index}].requiredFacts[${factIndex}].why`);
-      const source = requireString(
-        fact.source,
-        `strategies[${index}].requiredFacts[${factIndex}].source`,
-      );
-      if (!validFactSources.has(source as TaxFactSource)) {
-        throw new Error(`Tax strategy ${id} fact ${factId} has unknown source ${source}`);
-      }
-    }
-
-    const reads = Array.isArray(strategy.brokerReads) ? strategy.brokerReads : [];
-    if (reads.length === 0) throw new Error(`Tax strategy ${id} has no broker reads`);
-    for (const [readIndex, rawRead] of reads.entries()) {
-      const read = asRecord(rawRead, `strategies[${index}].brokerReads[${readIndex}]`);
-      requireString(read.purpose, `strategies[${index}].brokerReads[${readIndex}].purpose`);
-      requireString(read.cli, `strategies[${index}].brokerReads[${readIndex}].cli`);
-      requireString(read.mcp, `strategies[${index}].brokerReads[${readIndex}].mcp`);
-    }
-
-    requireStringArray(strategy.workflow, `strategies[${index}].workflow`);
-    requireStringArray(strategy.redFlags, `strategies[${index}].redFlags`);
-    requireStringArray(strategy.stopConditions, `strategies[${index}].stopConditions`);
+  if (strategies.length === 0) {
+    throw new Error("Tax strategy catalog has no strategies");
   }
 
+  const context: CatalogValidationContext = {
+    topicIds: new Set(referenceCatalog.topics.map((topic) => topic.id)),
+    sourceIds: new Set(referenceCatalog.sources.map((source) => source.id)),
+    laneIds: new Set(referenceCatalog.evidenceLanes.map((lane) => lane.id)),
+    validContexts: new Set(["taxable", "traditional-ira", "roth-ira", "unknown"]),
+    validFactSources: new Set(["brokerage", "tax-form", "user", "external"]),
+    strategyIds: new Set(),
+    normalizedNames: new Map(),
+  };
+  for (const [index, strategy] of strategies.entries()) {
+    validateStrategy(strategy, index, context);
+  }
   return value as TaxStrategyCatalog;
-}
-
-function normalizeStrategyName(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function searchableStrategy(strategy: TaxStrategyDefinition): string {
@@ -288,6 +337,7 @@ function searchableStrategy(strategy: TaxStrategyDefinition): string {
       ...claim.sourceIds,
     ]),
     ...strategy.requiredFacts.flatMap((fact) => [fact.id, fact.prompt, fact.why, fact.source]),
+    ...strategy.brokerReads.flatMap((read) => [read.purpose, read.cli, read.mcp]),
     ...strategy.workflow,
     ...strategy.redFlags,
     ...strategy.stopConditions,
@@ -345,11 +395,8 @@ export function resolveTaxStrategy(
       candidate.aliases.some((alias) => normalizeStrategyName(alias) === normalized),
   );
   if (!strategy) {
-    throw new Error(
-      `Unknown tax strategy "${idOrAlias}". Available: ${catalog.strategies
-        .map((candidate) => candidate.id)
-        .join(", ")}`,
-    );
+    const available = catalog.strategies.map((candidate) => candidate.id).join(", ");
+    throw new Error(`Unknown tax strategy "${idOrAlias}". Available: ${available}`);
   }
   return strategy;
 }
@@ -363,7 +410,9 @@ export function getTaxStrategyGuide(
   const accountContext = input.accountContext ?? "unknown";
   const ruleTopics = strategy.topicIds.map((topicId) => {
     const topic = referenceCatalog.topics.find((candidate) => candidate.id === topicId);
-    if (!topic) throw new Error(`Tax strategy ${strategy.id} references missing topic ${topicId}`);
+    if (!topic) {
+      throw new Error(`Tax strategy ${strategy.id} references missing topic ${topicId}`);
+    }
     return topic;
   });
   const sourceIds = new Set([
@@ -414,7 +463,8 @@ export function getTaxResearchStatus(
     reviewYearMatchesCurrentYear,
     reviewRecommended,
     maintenancePolicy:
-      "Internal maintenance signal only: re-review when the filing year changes, controlling authority or broker behavior changes, or 120 days elapse. It is not a legal validity period.",
+      "Internal maintenance signal only: re-review when the filing year changes, controlling " +
+      "authority or broker behavior changes, or 120 days elapse. It is not a legal validity period.",
   };
 }
 
@@ -449,7 +499,8 @@ export function formatTaxStrategyText(guide: TaxStrategyGuide): string {
       "Strategy-specific claims:",
       ...strategy.supplementalClaims.map(
         (claim) =>
-          `  - [${claim.lane}; certainty=${claim.certainty}] ${claim.text}\n    sources: ${claim.sourceIds.join(", ")}`,
+          `  - [${claim.lane}; certainty=${claim.certainty}] ${claim.text}\n` +
+          `    sources: ${claim.sourceIds.join(", ")}`,
       ),
     );
   }

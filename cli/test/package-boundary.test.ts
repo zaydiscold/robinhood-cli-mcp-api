@@ -15,15 +15,30 @@ const manifest = JSON.parse(
   readFileSync(join(packageRoot, "package.json"), "utf8"),
 ) as PackageManifest;
 
+function safeEnvironment(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ROBINHOOD_ALLOW_LIVE_WRITE: "0",
+    ROBINHOOD_BROKERAGE_TOKEN: "",
+    ROBINHOOD_COOKIE: "",
+    ROBINHOOD_CSRF: "",
+  };
+}
+
 describe("published package boundary", () => {
-  it("keeps the executable and library entrypoints separate", () => {
-    expect(manifest.bin["robinhood-cli"]).toBe("dist/index.js");
+  it("keeps executable and importable entrypoints separate", () => {
+    expect(manifest.bin["robinhood-cli"]).toBe("dist/cli-entry.js");
+    expect(manifest.bin["robinhood-tax"]).toBe("dist/tax-cli.js");
     expect(manifest.types).toBe("./dist/lib.d.ts");
     expect(manifest.exports["."]).toEqual({
       types: "./dist/lib.d.ts",
       import: "./dist/lib.js",
     });
     expect(manifest.exports["./lib"]).toEqual(manifest.exports["."]);
+    expect(manifest.exports["./tax-reference"]).toEqual({
+      types: "./dist/tax-reference.d.ts",
+      import: "./dist/tax-reference.js",
+    });
   });
 
   it("imports the built package root without parsing the host process arguments", () => {
@@ -42,12 +57,54 @@ describe("published package boundary", () => {
       {
         cwd: packageRoot,
         encoding: "utf8",
-        env: { ...process.env, ROBINHOOD_ALLOW_LIVE_WRITE: "0" },
+        env: safeEnvironment(),
         timeout: 10_000,
       },
     );
 
     expect(child.error).toBeUndefined();
     expect(child.status, child.stderr).toBe(0);
+  });
+
+  it("routes tax research through the main binary without loading brokerage auth", () => {
+    const binary = join(packageRoot, manifest.bin["robinhood-cli"]);
+    if (!existsSync(binary)) return;
+
+    const child = spawnSync(
+      process.execPath,
+      [binary, "tax", "section-1256", "--json"],
+      {
+        cwd: packageRoot,
+        encoding: "utf8",
+        env: safeEnvironment(),
+        timeout: 10_000,
+      },
+    );
+
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+    const result = JSON.parse(child.stdout) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      matchCount: 1,
+      notPersonalizedAdvice: true,
+      topics: [expect.objectContaining({ id: "section-1256" })],
+    });
+    expect(child.stderr).not.toMatch(/token|auth|brokerage request/i);
+  });
+
+  it("delegates non-tax invocations to the existing CLI", () => {
+    const binary = join(packageRoot, manifest.bin["robinhood-cli"]);
+    if (!existsSync(binary)) return;
+
+    const child = spawnSync(process.execPath, [binary, "--version"], {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: safeEnvironment(),
+      timeout: 10_000,
+    });
+
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout.trim()).toBe("1.1.0");
   });
 });

@@ -169,9 +169,7 @@ function validateStrategyClaims(
   id: string,
   context: CatalogValidationContext,
 ): void {
-  const claims = Array.isArray(strategy.supplementalClaims)
-    ? strategy.supplementalClaims
-    : [];
+  const claims = Array.isArray(strategy.supplementalClaims) ? strategy.supplementalClaims : [];
   for (const [claimIndex, rawClaim] of claims.entries()) {
     const label = `strategies[${index}].supplementalClaims[${claimIndex}]`;
     const claim = asRecord(rawClaim, label);
@@ -219,11 +217,7 @@ function validateStrategyFacts(
   }
 }
 
-function validateStrategyReads(
-  strategy: Record<string, unknown>,
-  index: number,
-  id: string,
-): void {
+function validateStrategyReads(strategy: Record<string, unknown>, index: number, id: string): void {
   const reads = Array.isArray(strategy.brokerReads) ? strategy.brokerReads : [];
   if (reads.length === 0) {
     throw new Error(`Tax strategy ${id} has no broker reads`);

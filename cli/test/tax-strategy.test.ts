@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -9,9 +9,9 @@ import {
   getTaxStrategyGuide,
   listTaxStrategies,
   loadTaxStrategyCatalog,
-  resetTaxStrategyCache,
   resolveTaxStrategy,
   searchTaxStrategies,
+  type TaxStrategyCatalog,
 } from "../src/tax-strategy.js";
 
 const referenceCatalog = loadTaxReferenceCatalog();
@@ -78,9 +78,9 @@ describe("tax strategy catalog", () => {
     expect(searchTaxStrategies("Form 6781", strategyCatalog).map((strategy) => strategy.id)).toEqual(
       expect.arrayContaining(["section-1256-index-options", "box-spread"]),
     );
-    expect(searchTaxStrategies("selected lot", strategyCatalog).map((strategy) => strategy.id)).toContain(
-      "specific-lot-sale",
-    );
+    expect(
+      searchTaxStrategies("selected lot", strategyCatalog).map((strategy) => strategy.id),
+    ).toContain("specific-lot-sale");
     expect(listTaxStrategies(strategyCatalog)[0]).not.toHaveProperty("requiredFacts");
   });
 
@@ -155,18 +155,14 @@ describe("tax strategy catalog", () => {
   });
 
   it("fails closed when strategy data drifts from the reference catalog", () => {
-    const sourcePath = join(
-      process.cwd(),
-      "knowledge",
-      "tax-strategies.json",
-    );
-    const parsed = JSON.parse(readFileSync(sourcePath, "utf8")) as Record<string, unknown>;
+    const parsed = JSON.parse(JSON.stringify(strategyCatalog)) as TaxStrategyCatalog;
     const directory = mkdtempSync(join(tmpdir(), "rh-tax-strategy-"));
     const path = join(directory, "invalid.json");
-    const strategies = parsed.strategies as Array<Record<string, unknown>>;
-    const first = { ...strategies[0], topicIds: ["not-a-real-topic"] };
-    writeFileSync(path, JSON.stringify({ ...parsed, strategies: [first, ...strategies.slice(1)] }));
-    resetTaxStrategyCache();
+    const first = { ...parsed.strategies[0]!, topicIds: ["not-a-real-topic"] };
+    writeFileSync(
+      path,
+      JSON.stringify({ ...parsed, strategies: [first, ...parsed.strategies.slice(1)] }),
+    );
     expect(() => loadTaxStrategyCatalog(path, referenceCatalog)).toThrow(/unknown topic/);
   });
 });

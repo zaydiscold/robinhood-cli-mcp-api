@@ -10,6 +10,8 @@ whether a trade is good, calculate personalized tax liability, choose a filing p
 a mutation. Federal tax treatment depends on the actual contracts, account type, lots, dates,
 elections, other accounts, and facts outside Robinhood.
 
+**Tax research never authorizes a trade or sale.**
+
 ## Three surfaces, one catalog
 
 ### CLI

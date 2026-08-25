@@ -13,7 +13,7 @@ CLAUDE = ROOT / "CLAUDE.md"
 
 MIN_BYTES = 12_000
 MAX_BYTES = 50_000
-MIN_VERSION = (3, 0, 0)
+MIN_VERSION = (3, 1, 0)
 
 REQUIRED_HEADINGS = (
     "## 30-second operating contract",
@@ -24,6 +24,7 @@ REQUIRED_HEADINGS = (
     "## Raw brokerage executor",
     "## Live-write contract",
     "## Tax and legal-mechanics research contract",
+    "## Agent response contracts",
     "## Failure modes that must stop the workflow",
     "## Verification checklist",
     "## Maintainer rules",
@@ -33,17 +34,22 @@ REQUIRED_CONTRACTS = (
     "ROBINHOOD_ALLOW_LIVE_WRITE=1",
     "--query-param key=value",
     "robinhood-tax",
+    "robinhood-cli tax strategy",
     "@zaydiscold/robinhood-cli/tax-reference",
+    "@zaydiscold/robinhood-cli/tax-strategy",
     "tools/list",
     "Order history is the only proof",
     "Dry-run is the resting state",
     "exact user approval",
     "account allow-list",
     "knowledge/tax-reference.md",
+    "knowledge/tax-strategy-routing.md",
     "primary law or regulation",
     "broker-platform behavior",
     "planning inference",
     "A tax-reference read never authorizes",
+    "A tax-strategy guide never determines a filing result",
+    "tradeAuthorized: false",
     "CLI, MCP, scripts, and package APIs must share business logic",
 )
 
@@ -72,6 +78,10 @@ FORBIDDEN_PATTERNS: tuple[tuple[str, str], ...] = (
         r"60%[^\n]{0,40}(?:not real|isn't real) long[- ]term",
         "Section 1256 assigns actual statutory long-term capital character to the 60% component",
     ),
+    (
+        r"payment(?:s)? in lieu[^\n]{0,80}(?:is|are) (?:a )?qualified dividend",
+        "payments in lieu are not automatically qualified dividends",
+    ),
 )
 
 REQUIRED_LINKS = (
@@ -81,6 +91,7 @@ REQUIRED_LINKS = (
     "knowledge/accounts.md",
     "knowledge/mcp-operations.md",
     "knowledge/tax-reference.md",
+    "knowledge/tax-strategy-routing.md",
     "knowledge/tax.md",
     "knowledge/tax-loss-harvesting.md",
     "docs/write-operations.md",

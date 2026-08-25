@@ -70,9 +70,7 @@ function writeStrategyList(
   catalog: TaxStrategyCatalog,
   options: TaxCliOptions,
 ): void {
-  const matches = options.query
-    ? searchTaxStrategies(options.query, catalog)
-    : catalog.strategies;
+  const matches = options.query ? searchTaxStrategies(options.query, catalog) : catalog.strategies;
   const rows = matches.map(({ id, title, summary, aliases, tags }) => ({
     id,
     title,

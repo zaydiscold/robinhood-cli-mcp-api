@@ -2284,7 +2284,7 @@ server.registerTool(
   {
     title: "Robinhood Transaction History",
     description:
-      "Unified transaction history (newest first): equity orders + options orders + crypto (nummus) + ACH transfers over a day window — the SAME shared engine as the CLI `history` command. Order history is the source of truth for whether a trade happened (see the order-evidence rule). Pass `days` to widen the window (default 3) and `account_number` to scope equity orders.",
+      "Unified transaction history (newest first): Wormhole-enriched equity/options orders plus legacy order history, crypto, and ACH. Surfaces symbol/account, realized P&L, `placedBy`, and `forcedLiquidation=true` for `PLACED_BY_RISK` broker liquidations. Order history is the source of truth for whether a trade happened. Pass `days` to widen the window and `account_number` to scope brokerage orders.",
     inputSchema: z.object({
       account_number: accountNumberOptionalSchema,
       days: z.number().int().positive().default(3),
@@ -2627,7 +2627,7 @@ server.registerTool(
   {
     title: "Robinhood Margin Health",
     description:
-      "Margin health per account: am I borrowing, how much, at what rate, billed when — amount borrowed, margin interest rate %, next billing date, margin available, buying power with margin, projected intraday BP. Scans every owned account when account_number is omitted; accounts without margin data degrade silently into `skipped`. Same shared engine as the CLI `margin` command. Live read; no gate.",
+      "Margin-call intelligence per account: amount borrowed/rate, buying power, live equity/market value, true excess-maintenance and excess-margin buffers, maintenance requirement, an explicitly heuristic risk band, and recent broker risk liquidations with realized P&L. Scans every owned account when account_number is omitted. Same shared engine as CLI `margin`. Live read; no gate.",
     inputSchema: z.object({ account_number: accountNumberOptionalSchema }),
     annotations: toolAnnotations(true, "sensitive-read"),
   },

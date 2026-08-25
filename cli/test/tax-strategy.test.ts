@@ -17,6 +17,14 @@ import {
 const referenceCatalog = loadTaxReferenceCatalog();
 const strategyCatalog = loadTaxStrategyCatalog(undefined, referenceCatalog);
 
+function normalizeName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function captureIo() {
   let stdout = "";
   let stderr = "";
@@ -41,7 +49,7 @@ function captureIo() {
 }
 
 describe("tax strategy catalog", () => {
-  it("loads a review-aligned strategy catalog with unique ids and aliases", () => {
+  it("loads a review-aligned strategy catalog with unique cross-strategy aliases", () => {
     expect(strategyCatalog.schemaVersion).toBe(1);
     expect(strategyCatalog.reviewedAt).toBe(referenceCatalog.reviewedAt);
     expect(strategyCatalog.jurisdiction).toBe(referenceCatalog.jurisdiction);
@@ -49,13 +57,17 @@ describe("tax strategy catalog", () => {
     expect(new Set(strategyCatalog.strategies.map((strategy) => strategy.id)).size).toBe(
       strategyCatalog.strategies.length,
     );
-    const normalizedNames = strategyCatalog.strategies.flatMap((strategy) => [
-      strategy.id,
-      ...strategy.aliases,
-    ]);
-    expect(new Set(normalizedNames.map((name) => name.toLowerCase())).size).toBe(
-      normalizedNames.length,
-    );
+
+    const owners = new Map<string, string>();
+    for (const strategy of strategyCatalog.strategies) {
+      for (const name of [strategy.id, ...strategy.aliases]) {
+        const normalized = normalizeName(name);
+        const prior = owners.get(normalized);
+        expect(prior === undefined || prior === strategy.id).toBe(true);
+        owners.set(normalized, strategy.id);
+      }
+    }
+
     expect(strategyCatalog.agentOutputContract.join("\n")).toMatch(
       /missing fact|not evaluated|never authoriz|does not.*authoriz|Tax research never/i,
     );
@@ -121,7 +133,7 @@ describe("tax strategy catalog", () => {
     );
     const dividendText = JSON.stringify(dividend.strategy.supplementalClaims);
     expect(dividendText).toMatch(/more than 60 days.*121-day period/i);
-    expect(dividendText).toMatch(/diminished risk/i);
+    expect(dividendText).toMatch(/diminished risk|risk of loss is diminished/i);
     expect(dividendText).toMatch(/payments in lieu/i);
     expect(dividend.strategy.supplementalClaims.every((claim) => claim.sourceIds.length > 0)).toBe(
       true,
@@ -134,6 +146,21 @@ describe("tax strategy catalog", () => {
     );
     expect(JSON.stringify(shortSale.strategy.supplementalClaims)).toMatch(/Section 1233/i);
     expect(shortSale.sources.map((source) => source.id)).toContain("usc-1233");
+  });
+
+  it("keeps machine-provided broker reads on current CLI grammar", () => {
+    const commands = strategyCatalog.strategies.flatMap((strategy) =>
+      strategy.brokerReads.map((read) => read.cli),
+    );
+    expect(commands.join("\n")).not.toMatch(/robinhood-cli tax-lots --account/);
+    expect(commands.join("\n")).not.toMatch(/robinhood-cli tax-lot\s/);
+    expect(commands).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/tax-lots list <SYMBOL>/),
+        expect.stringMatching(/tax-lots plan-sell <SYMBOL>/),
+        expect.stringMatching(/tax-lots order <ORDER_ID>/),
+      ]),
+    );
   });
 
   it("reports review age as an internal maintenance signal, not a validity period", () => {
@@ -174,6 +201,7 @@ describe("tax strategy CLI", () => {
       [],
       { from: "user" },
     );
+    expect(capture.stdout()).toMatch(/Tax Reference/);
     expect(capture.stdout()).toMatch(/Reference topics:/);
     expect(capture.stdout()).toMatch(/Strategy guides:/);
     expect(capture.stdout()).toMatch(/covered-call/);

@@ -26,6 +26,13 @@ export interface TaxCliIo {
   setExitCode: (code: number) => void;
 }
 
+interface TaxCliOptions {
+  query?: string;
+  source?: string;
+  accountContext?: string;
+  json?: boolean;
+}
+
 const processIo: TaxCliIo = {
   writeOut: (text) => process.stdout.write(text),
   writeErr: (text) => process.stderr.write(text),
@@ -58,6 +65,85 @@ function parseAccountContext(value: string | undefined): TaxAccountContext {
   return context;
 }
 
+function writeStrategyList(
+  io: TaxCliIo,
+  catalog: TaxStrategyCatalog,
+  options: TaxCliOptions,
+): void {
+  const matches = options.query
+    ? searchTaxStrategies(options.query, catalog)
+    : catalog.strategies;
+  const rows = matches.map(({ id, title, summary, aliases, tags }) => ({
+    id,
+    title,
+    summary,
+    aliases,
+    tags,
+  }));
+
+  if (options.json) {
+    io.writeOut(
+      `${JSON.stringify(
+        {
+          reviewedAt: catalog.reviewedAt,
+          jurisdiction: catalog.jurisdiction,
+          strategies: rows,
+          matchCount: rows.length,
+          notPersonalizedAdvice: true,
+          tradeAuthorized: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
+
+  if (rows.length === 0) {
+    io.writeOut("No tax strategy matched the query.\n");
+    io.setExitCode(2);
+    return;
+  }
+
+  io.writeOut(
+    [
+      `Tax Strategy Guides — ${catalog.jurisdiction}`,
+      `Reviewed: ${catalog.reviewedAt}`,
+      "",
+      ...rows.map((entry) => `  ${entry.id} — ${entry.title}`),
+      "",
+      "Show one: robinhood-cli tax strategy <id-or-alias>",
+      "",
+    ].join("\n"),
+  );
+}
+
+function writeTaxStatus(
+  io: TaxCliIo,
+  referenceCatalog: TaxReferenceCatalog,
+  strategyCatalog: TaxStrategyCatalog,
+  json: boolean | undefined,
+): void {
+  const status = getTaxResearchStatus(referenceCatalog, strategyCatalog);
+  if (json) {
+    io.writeOut(`${JSON.stringify(status, null, 2)}\n`);
+    return;
+  }
+  io.writeOut(
+    [
+      `Tax Research Status — ${status.jurisdiction}`,
+      `Reviewed: ${status.reviewedAt}`,
+      `Reference topics: ${status.referenceTopicCount}`,
+      `Strategy guides: ${status.strategyCount}`,
+      `Sources: ${status.sourceCount}`,
+      `Review age: ${status.reviewAgeDays ?? "unknown"} day(s)`,
+      `Review recommended: ${status.reviewRecommended ? "yes" : "no"}`,
+      status.maintenancePolicy,
+      "",
+    ].join("\n"),
+  );
+}
+
 export function createTaxProgram(
   io: TaxCliIo = processIo,
   loadCatalog: () => TaxReferenceCatalog = loadTaxReferenceCatalog,
@@ -71,9 +157,14 @@ export function createTaxProgram(
       "Source-backed US federal tax mechanics and strategy-to-rule research routing for Robinhood, equities, options, index options, and tax lots. Educational reference only.",
     )
     .version("1.1.0")
-    .argument("[topic]", "topic id; omit to list topics and strategy guides")
-    .option("-q, --query <text>", "search claims, caveats, evidence lanes, and source ids")
-    .option("--source <source_id>", "show one source record")
+    .argument("[topic]", "rule topic id, `strategy`, or `status`")
+    .argument("[detail...]", "strategy id or alias after `strategy`")
+    .option("-q, --query <text>", "search rule or strategy research")
+    .option("--source <source_id>", "show one tax-reference source record")
+    .option(
+      "--account-context <type>",
+      "strategy context: taxable, traditional-ira, roth-ira, or unknown",
+    )
     .option("--json", "emit structured JSON")
     .addHelpText(
       "after",
@@ -100,132 +191,22 @@ export function createTaxProgram(
       writeOut: io.writeOut,
       writeErr: io.writeErr,
     })
-    .action(
-      (topic: string | undefined, options: { query?: string; source?: string; json?: boolean }) => {
-        const catalog = loadCatalog();
-        if (!topic && !options.query && !options.source) {
-          const topics = listTaxReferenceTopics(catalog);
-          const strategyCatalog = loadStrategies();
-          const strategies = listTaxStrategies(strategyCatalog);
-          if (options.json) {
-            io.writeOut(
-              `${JSON.stringify(
-                {
-                  reviewedAt: catalog.reviewedAt,
-                  jurisdiction: catalog.jurisdiction,
-                  disclaimer: catalog.disclaimer,
-                  topics,
-                  strategies,
-                  notPersonalizedAdvice: true,
-                  tradeAuthorized: false,
-                },
-                null,
-                2,
-              )}\n`,
-            );
-            return;
-          }
-          io.writeOut(
-            [
-              `Tax Research — ${catalog.jurisdiction}`,
-              `Reviewed: ${catalog.reviewedAt}`,
-              catalog.disclaimer,
-              "",
-              "Reference topics:",
-              ...topics.map((entry) => `  ${entry.id} — ${entry.title}`),
-              "",
-              "Strategy guides:",
-              ...strategies.map((entry) => `  ${entry.id} — ${entry.title}`),
-              "",
-              'Search rules:      robinhood-cli tax --query "wash sale"',
-              "Show rule topic:   robinhood-cli tax section-1256",
-              "Show strategy:     robinhood-cli tax strategy wheel",
-              "Check review age:  robinhood-cli tax status",
-              "",
-            ].join("\n"),
-          );
-          return;
-        }
+    .action((topic: string | undefined, detail: string[], options: TaxCliOptions) => {
+      const referenceCatalog = loadCatalog();
+      const strategyCatalog = loadStrategies();
 
-        const result = getTaxReference(
-          { topic, query: options.query, source: options.source },
-          catalog,
-        );
-        if (options.json) {
-          io.writeOut(`${JSON.stringify(result, null, 2)}\n`);
-          return;
+      if (topic === "strategy") {
+        if (options.source) {
+          throw new Error("--source applies to tax-reference topics, not strategy guides.");
         }
-        io.writeOut(formatTaxReferenceText(result));
-        if (result.matchCount === 0 && !options.source) io.setExitCode(2);
-      },
-    );
-
-  program
-    .command("strategy [strategy]")
-    .description(
-      "Map a named strategy to required facts, Robinhood reads, official rule topics, red flags, and stop conditions. Research only; never authorizes a trade.",
-    )
-    .option("-q, --query <text>", "search strategy ids, aliases, tags, facts, and red flags")
-    .option(
-      "--account-context <type>",
-      "taxable, traditional-ira, roth-ira, or unknown (default: unknown)",
-    )
-    .option("--json", "emit structured JSON")
-    .action(
-      (
-        strategy: string | undefined,
-        options: { query?: string; accountContext?: string; json?: boolean },
-      ) => {
-        const strategyCatalog = loadStrategies();
-        const referenceCatalog = loadCatalog();
+        const strategy = detail.join(" ").trim() || undefined;
         if (strategy && options.query) {
-          throw new Error("Use either a strategy id/alias or --query, not both.");
+          throw new Error("Use either a strategy id or alias or --query, not both.");
         }
         if (!strategy) {
-          const matches = options.query
-            ? searchTaxStrategies(options.query, strategyCatalog)
-            : strategyCatalog.strategies;
-          const rows = matches.map(({ id, title, summary, aliases, tags }) => ({
-            id,
-            title,
-            summary,
-            aliases,
-            tags,
-          }));
-          if (options.json) {
-            io.writeOut(
-              `${JSON.stringify(
-                {
-                  reviewedAt: strategyCatalog.reviewedAt,
-                  jurisdiction: strategyCatalog.jurisdiction,
-                  strategies: rows,
-                  matchCount: rows.length,
-                  notPersonalizedAdvice: true,
-                  tradeAuthorized: false,
-                },
-                null,
-                2,
-              )}\n`,
-            );
-          } else if (rows.length === 0) {
-            io.writeOut("No tax strategy matched the query.\n");
-            io.setExitCode(2);
-          } else {
-            io.writeOut(
-              [
-                `Tax Strategy Guides — ${strategyCatalog.jurisdiction}`,
-                `Reviewed: ${strategyCatalog.reviewedAt}`,
-                "",
-                ...rows.map((entry) => `  ${entry.id} — ${entry.title}`),
-                "",
-                "Show one: robinhood-cli tax strategy <id>",
-                "",
-              ].join("\n"),
-            );
-          }
+          writeStrategyList(io, strategyCatalog, options);
           return;
         }
-
         const guide = getTaxStrategyGuide(
           {
             strategy,
@@ -239,36 +220,79 @@ export function createTaxProgram(
           return;
         }
         io.writeOut(formatTaxStrategyText(guide));
-      },
-    );
-
-  program
-    .command("status")
-    .description(
-      "Show tax research review date, source/topic/strategy counts, and an internal re-review signal. No brokerage initialization or network request.",
-    )
-    .option("--json", "emit structured JSON")
-    .action((options: { json?: boolean }) => {
-      const referenceCatalog = loadCatalog();
-      const strategyCatalog = loadStrategies();
-      const status = getTaxResearchStatus(referenceCatalog, strategyCatalog);
-      if (options.json) {
-        io.writeOut(`${JSON.stringify(status, null, 2)}\n`);
         return;
       }
-      io.writeOut(
-        [
-          `Tax Research Status — ${status.jurisdiction}`,
-          `Reviewed: ${status.reviewedAt}`,
-          `Reference topics: ${status.referenceTopicCount}`,
-          `Strategy guides: ${status.strategyCount}`,
-          `Sources: ${status.sourceCount}`,
-          `Review age: ${status.reviewAgeDays ?? "unknown"} day(s)`,
-          `Review recommended: ${status.reviewRecommended ? "yes" : "no"}`,
-          status.maintenancePolicy,
-          "",
-        ].join("\n"),
+
+      if (topic === "status") {
+        if (detail.length > 0 || options.query || options.source || options.accountContext) {
+          throw new Error("`tax status` accepts only --json.");
+        }
+        writeTaxStatus(io, referenceCatalog, strategyCatalog, options.json);
+        return;
+      }
+
+      if (detail.length > 0) {
+        throw new Error(
+          `Unexpected extra argument after tax topic "${topic ?? ""}": ${detail.join(" ")}`,
+        );
+      }
+      if (options.accountContext) {
+        throw new Error("--account-context is available only with `tax strategy`.");
+      }
+
+      if (!topic && !options.query && !options.source) {
+        const topics = listTaxReferenceTopics(referenceCatalog);
+        const strategies = listTaxStrategies(strategyCatalog);
+        if (options.json) {
+          io.writeOut(
+            `${JSON.stringify(
+              {
+                reviewedAt: referenceCatalog.reviewedAt,
+                jurisdiction: referenceCatalog.jurisdiction,
+                disclaimer: referenceCatalog.disclaimer,
+                topics,
+                strategies,
+                notPersonalizedAdvice: true,
+                tradeAuthorized: false,
+              },
+              null,
+              2,
+            )}\n`,
+          );
+          return;
+        }
+        io.writeOut(
+          [
+            `Tax Reference — ${referenceCatalog.jurisdiction}`,
+            `Reviewed: ${referenceCatalog.reviewedAt}`,
+            referenceCatalog.disclaimer,
+            "",
+            "Reference topics:",
+            ...topics.map((entry) => `  ${entry.id} — ${entry.title}`),
+            "",
+            "Strategy guides:",
+            ...strategies.map((entry) => `  ${entry.id} — ${entry.title}`),
+            "",
+            'Search rules:      robinhood-cli tax --query "wash sale"',
+            "Show rule topic:   robinhood-cli tax section-1256",
+            "Show strategy:     robinhood-cli tax strategy wheel",
+            "Check review age:  robinhood-cli tax status",
+            "",
+          ].join("\n"),
+        );
+        return;
+      }
+
+      const result = getTaxReference(
+        { topic, query: options.query, source: options.source },
+        referenceCatalog,
       );
+      if (options.json) {
+        io.writeOut(`${JSON.stringify(result, null, 2)}\n`);
+        return;
+      }
+      io.writeOut(formatTaxReferenceText(result));
+      if (result.matchCount === 0 && !options.source) io.setExitCode(2);
     });
 
   return program;

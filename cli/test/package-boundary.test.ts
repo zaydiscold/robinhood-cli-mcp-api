@@ -39,6 +39,10 @@ describe("published package boundary", () => {
       types: "./dist/tax-reference.d.ts",
       import: "./dist/tax-reference.js",
     });
+    expect(manifest.exports["./tax-strategy"]).toEqual({
+      types: "./dist/tax-strategy.d.ts",
+      import: "./dist/tax-strategy.js",
+    });
   });
 
   it("imports the built package root without parsing the host process arguments", () => {
@@ -66,6 +70,29 @@ describe("published package boundary", () => {
     expect(child.status, child.stderr).toBe(0);
   });
 
+  it("imports the tax strategy API without initializing brokerage state", () => {
+    const runtimeTarget = manifest.exports["./tax-strategy"]?.import;
+    if (!runtimeTarget) throw new Error("Tax strategy API is missing a runtime export");
+    const runtimePath = join(packageRoot, runtimeTarget.replace(/^\.\//, ""));
+    if (!existsSync(runtimePath)) return;
+
+    const importScript = [
+      `const mod = await import(${JSON.stringify(pathToFileURL(runtimePath).href)});`,
+      `const guide = mod.getTaxStrategyGuide({ strategy: "wheel", accountContext: "taxable" });`,
+      `if (guide.strategy.id !== "wheel" || guide.tradeAuthorized !== false) process.exit(2);`,
+    ].join(" ");
+    const child = spawnSync(process.execPath, ["--input-type=module", "--eval", importScript], {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: safeEnvironment(),
+      timeout: 10_000,
+    });
+
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stderr).not.toMatch(/token|auth|brokerage request/i);
+  });
+
   it("routes tax research through the main binary without loading brokerage auth", () => {
     const binary = join(packageRoot, manifest.bin["robinhood-cli"]);
     if (!existsSync(binary)) return;
@@ -88,6 +115,34 @@ describe("published package boundary", () => {
       matchCount: 1,
       notPersonalizedAdvice: true,
       topics: [expect.objectContaining({ id: "section-1256" })],
+    });
+    expect(child.stderr).not.toMatch(/token|auth|brokerage request/i);
+  });
+
+  it("routes strategy research through the main binary without loading brokerage auth", () => {
+    const binary = join(packageRoot, manifest.bin["robinhood-cli"]);
+    if (!existsSync(binary)) return;
+
+    const child = spawnSync(
+      process.execPath,
+      [binary, "tax", "strategy", "covered call", "--account-context", "taxable", "--json"],
+      {
+        cwd: packageRoot,
+        encoding: "utf8",
+        env: safeEnvironment(),
+        timeout: 10_000,
+      },
+    );
+
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+    const result = JSON.parse(child.stdout) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      accountContext: "taxable",
+      strategy: expect.objectContaining({ id: "covered-call" }),
+      notPersonalizedAdvice: true,
+      tradeAuthorized: false,
+      filingResultDetermined: false,
     });
     expect(child.stderr).not.toMatch(/token|auth|brokerage request/i);
   });

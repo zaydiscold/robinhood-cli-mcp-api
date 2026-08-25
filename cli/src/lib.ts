@@ -7238,6 +7238,15 @@ export interface MarginHealth {
   projectedIntradayBpUsd: number;
   marginUsedIncludingCashHeldUsd: number;
   interestExemptionUsd: number;
+  equityUsd: number;
+  marketValueUsd: number;
+  excessMaintenanceUsd: number;
+  excessMarginUsd: number;
+  maintenanceRequirementUsd: number;
+  maintenanceBufferPctOfEquity: number;
+  riskStatus: "call" | "critical" | "thin" | "watch" | "healthy" | "unknown";
+  recentRiskLiquidationCount: number;
+  recentRiskLiquidationRealizedPnlUsd: number;
 }
 
 /**
@@ -7266,6 +7275,57 @@ export async function getMarginHealth(
           skipped.push("…" + acct.slice(-4));
           return null;
         }
+        let portfolio: any = {};
+        let recent: any = {};
+        try {
+          portfolio = await getJson("https://api.robinhood.com/portfolios/{account_number}/", {
+            account_number: acct,
+          });
+        } catch {
+          // Keep the borrowing read useful even when the portfolio surface flakes.
+        }
+        try {
+          recent = await getJson(
+            "https://api.robinhood.com/wormhole/bw/orders/recent",
+            {},
+            { accountNumber: acct },
+          );
+        } catch {
+          // Recent risk orders are enrichment, not a reason to drop the account.
+        }
+        const equityUsd = finiteNumber(portfolio.equity);
+        const marketValueUsd = finiteNumber(portfolio.market_value);
+        const excessMaintenanceUsd = finiteNumber(portfolio.excess_maintenance);
+        const excessMarginUsd = finiteNumber(portfolio.excess_margin);
+        const maintenanceRequirementUsd =
+          Number.isFinite(equityUsd) && Number.isFinite(excessMaintenanceUsd)
+            ? round2(equityUsd - excessMaintenanceUsd)
+            : Number.NaN;
+        const maintenanceBufferPctOfEquity =
+          equityUsd > 0 && Number.isFinite(excessMaintenanceUsd)
+            ? round2((excessMaintenanceUsd / equityUsd) * 100)
+            : Number.NaN;
+        const riskStatus: MarginHealth["riskStatus"] = !Number.isFinite(excessMaintenanceUsd)
+          ? "unknown"
+          : excessMaintenanceUsd <= 0
+            ? "call"
+            : maintenanceBufferPctOfEquity < 5
+              ? "critical"
+              : maintenanceBufferPctOfEquity < 10
+                ? "thin"
+                : maintenanceBufferPctOfEquity < 20
+                  ? "watch"
+                  : "healthy";
+        const riskRows = (Array.isArray(recent?.results) ? recent.results : []).filter(
+          (row: any) => row?.placedBy === "PLACED_BY_RISK" && row?.derivedState === "FILLED",
+        );
+        const recentRiskLiquidationRealizedPnlUsd = round2(
+          riskRows.reduce(
+            (sum: number, row: any) =>
+              sum + finiteNumber(row?.equityOrder?.realizedPnl?.amount || 0),
+            0,
+          ),
+        );
         return {
           accountNumber: acct,
           label: label || "…" + acct.slice(-4),
@@ -7277,6 +7337,15 @@ export async function getMarginHealth(
           projectedIntradayBpUsd: moneyUsd(m.projected_intraday_buying_power),
           marginUsedIncludingCashHeldUsd: moneyUsd(m.margin_used_including_cash_held),
           interestExemptionUsd: moneyUsd(m.interest_exemption_amount),
+          equityUsd,
+          marketValueUsd,
+          excessMaintenanceUsd,
+          excessMarginUsd,
+          maintenanceRequirementUsd,
+          maintenanceBufferPctOfEquity,
+          riskStatus,
+          recentRiskLiquidationCount: riskRows.length,
+          recentRiskLiquidationRealizedPnlUsd,
         };
       } catch {
         skipped.push("…" + acct.slice(-4)); // 404 / no margin product — silent per-account degrade
@@ -9051,8 +9120,7 @@ export function buildOptionsStrategyPricingSummary(input: {
     const strike = Number(leg.strike);
     const optionType = leg.optionType === "put" ? "put" : leg.optionType === "call" ? "call" : null;
     if (!priced || !optionType || !Number.isFinite(strike)) return [];
-    const premium =
-      premiumBasis === "natural" ? priced.naturalUnitPrice : priced.midUnitPrice;
+    const premium = premiumBasis === "natural" ? priced.naturalUnitPrice : priced.midUnitPrice;
     if (!Number.isFinite(premium)) return [];
     return [
       {
@@ -9727,17 +9795,19 @@ export async function computeRisk(opts: any = {}, deps: any = {}) {
                 : "not-modeled";
       if (riskClass === "defined-spread" && maxLoss === null) {
         const modeled = computeVerticalDefinedMaxLossUsd({
-          legs: p.legs.map((leg: {
-            side: "short" | "long";
-            type: string;
-            strike: number;
-            ratioQuantity: number;
-          }) => ({
-            side: leg.side,
-            type: leg.type === "put" ? "put" : "call",
-            strike: leg.strike,
-            ratioQuantity: leg.ratioQuantity,
-          })),
+          legs: p.legs.map(
+            (leg: {
+              side: "short" | "long";
+              type: string;
+              strike: number;
+              ratioQuantity: number;
+            }) => ({
+              side: leg.side,
+              type: leg.type === "put" ? "put" : "call",
+              strike: leg.strike,
+              ratioQuantity: leg.ratioQuantity,
+            }),
+          ),
           averageOpenPricePerContract: p.avgOpenPrice,
           quantity: p.qty,
         });
@@ -10333,11 +10403,29 @@ export async function computeAutopilot(opts: any = {}, deps: any = {}) {
   };
 }
 
+export interface UnifiedHistoryEvent {
+  time: string;
+  kind: string;
+  summary: string;
+  state: string;
+  orderId?: string;
+  accountLast4?: string;
+  accountLabel?: string;
+  symbol?: string;
+  side?: string;
+  quantity?: number;
+  averagePrice?: number;
+  filledNotionalUsd?: number;
+  realizedPnlUsd?: number;
+  placedBy?: string;
+  forcedLiquidation?: boolean;
+}
+
 /** Unified transaction history: equity + options + crypto orders + ACH transfers, newest first. */
 export async function getUnifiedHistory(
   opts: { days?: number; accountNumber?: string },
   deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {},
-): Promise<Array<{ time: string; kind: string; summary: string; state: string }>> {
+): Promise<UnifiedHistoryEvent[]> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const now = deps.now ?? Date.now;
   const days = Math.max(1, opts.days ?? 3);
@@ -10346,14 +10434,78 @@ export async function getUnifiedHistory(
     const t = Date.parse(String(ts ?? ""));
     return Number.isFinite(t) && t >= cutoffMs;
   };
-  const events: Array<{ time: string; kind: string; summary: string; state: string }> = [];
+  const events: UnifiedHistoryEvent[] = [];
+  const seenOrderIds = new Set<string>();
+  const safeGet = async (
+    url: string,
+    params: Record<string, string> = {},
+    query: Record<string, string> = {},
+  ) => {
+    try {
+      return { ok: true as const, data: await getJson(url, params, query) };
+    } catch (error) {
+      return { ok: false as const, error };
+    }
+  };
 
-  // Equity orders
-  const eq = await tryBrokerageGetJson(
+  // The web History screen uses Wormhole. This surface carries symbol, account-scoped recent
+  // orders, realized P&L, and—critically—`placedBy: PLACED_BY_RISK` for broker liquidations.
+  // The legacy /orders/ endpoint can omit those risk orders entirely.
+  const owned = await listOwnedTradingAccounts(getJson, opts.accountNumber);
+  for (const { acct, label } of owned) {
+    const recent = await safeGet(
+      "https://api.robinhood.com/wormhole/bw/orders/recent",
+      {},
+      { accountNumber: acct },
+    );
+    if (!recent.ok) continue;
+    for (const r of recent.data?.results ?? []) {
+      const t = r.updatedAt ?? r.submittedAt;
+      if (!inWindow(t)) continue;
+      const id = String(r.id ?? "");
+      if (id) seenOrderIds.add(id);
+      const assetType = String(r.assetType ?? "").toUpperCase();
+      const side = String(
+        r.equityOrder?.side ?? r.optionOrder?.legs?.[0]?.side ?? "?",
+      ).toLowerCase();
+      const qty = finiteNumber(r.filledQuantity || r.quantity);
+      const avg = finiteNumber(r.avgFilledPrice?.amount ?? r.limitPrice?.amount);
+      const placedBy = String(r.placedBy ?? "");
+      const forcedLiquidation = placedBy === "PLACED_BY_RISK";
+      const realizedPnlUsd = finiteNumber(r.equityOrder?.realizedPnl?.amount);
+      const filledNotionalUsd = finiteNumber(r.equityOrder?.filledNotional?.amount);
+      events.push({
+        time: String(t),
+        kind:
+          assetType === "EQUITY"
+            ? "equity"
+            : assetType === "OPTION"
+              ? "option"
+              : assetType.toLowerCase(),
+        summary: `${r.symbol ?? "?"} ${side} ${Number.isFinite(qty) ? qty : "?"} @ ${Number.isFinite(avg) ? avg : "?"}${forcedLiquidation ? " · broker risk liquidation" : ""}`,
+        state: String(r.derivedState ?? "?").toLowerCase(),
+        orderId: id || undefined,
+        accountLast4: acct.slice(-4),
+        accountLabel: label,
+        symbol: r.symbol ? String(r.symbol) : undefined,
+        side,
+        quantity: Number.isFinite(qty) ? qty : undefined,
+        averagePrice: Number.isFinite(avg) ? avg : undefined,
+        filledNotionalUsd: Number.isFinite(filledNotionalUsd) ? filledNotionalUsd : undefined,
+        realizedPnlUsd: Number.isFinite(realizedPnlUsd) ? realizedPnlUsd : undefined,
+        placedBy: placedBy || undefined,
+        forcedLiquidation,
+      });
+    }
+  }
+
+  // Legacy equity orders supplement Wormhole for longer windows.
+  const eq = await safeGet(
     `https://api.robinhood.com/orders/${opts.accountNumber ? `?account_number=${encodeURIComponent(opts.accountNumber)}` : ""}`,
   );
   if (eq.ok)
     for (const r of (eq.data as any)?.results ?? []) {
+      if (r.id && seenOrderIds.has(String(r.id))) continue;
       const t = r.updated_at ?? r.created_at;
       if (inWindow(t))
         events.push({
@@ -10365,11 +10517,12 @@ export async function getUnifiedHistory(
     }
 
   // Options orders
-  const op = await tryBrokerageGetJson(
+  const op = await safeGet(
     `https://api.robinhood.com/options/orders/${opts.accountNumber ? `?account_numbers=${encodeURIComponent(opts.accountNumber)}` : ""}`,
   );
   if (op.ok)
     for (const r of (op.data as any)?.results ?? []) {
+      if (r.id && seenOrderIds.has(String(r.id))) continue;
       const t = r.updated_at ?? r.created_at;
       if (inWindow(t))
         events.push({
@@ -10382,7 +10535,7 @@ export async function getUnifiedHistory(
     }
 
   // Crypto orders
-  const cx = await tryBrokerageGetJson("https://nummus.robinhood.com/orders/");
+  const cx = await safeGet("https://nummus.robinhood.com/orders/");
   if (cx.ok)
     for (const r of (cx.data as any)?.results ?? []) {
       const t = r.updated_at ?? r.created_at;
@@ -10396,7 +10549,7 @@ export async function getUnifiedHistory(
     }
 
   // ACH transfers
-  const ach = await tryBrokerageGetJson("https://api.robinhood.com/ach/transfers/");
+  const ach = await safeGet("https://api.robinhood.com/ach/transfers/");
   if (ach.ok)
     for (const r of (ach.data as any)?.results ?? []) {
       const t = r.updated_at ?? r.created_at;

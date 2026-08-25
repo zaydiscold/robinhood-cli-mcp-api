@@ -57,6 +57,7 @@ import {
   listDocuments,
   downloadDocuments,
   getMarginHealth,
+  getUnifiedHistory,
   tryBrokerageGetJson,
   gatedBrokerageWrite,
   watchlistMutateItems,
@@ -3914,66 +3915,8 @@ program
   .option("--json", "emit JSON")
   .action(async (opts: { days?: string; account?: string; json?: boolean }) => {
     const days = Math.max(1, Number(opts.days ?? "3"));
-    const cutoffMs = Date.now() - days * 86400000;
-    const inWindow = (ts: unknown): boolean => {
-      const t = Date.parse(String(ts ?? ""));
-      return Number.isFinite(t) && t >= cutoffMs;
-    };
-    const events: Array<{ time: string; kind: string; summary: string; state: string }> = [];
-    const acctQuery = opts.account ? `?account_numbers=${encodeURIComponent(opts.account)}` : "";
-
-    const eq = await tryBrokerageGetJson(
-      `https://api.robinhood.com/orders/${opts.account ? `?account_number=${encodeURIComponent(opts.account)}` : ""}`,
-    );
-    if (eq.ok)
-      for (const r of (eq.data as any)?.results ?? []) {
-        const t = r.updated_at ?? r.created_at;
-        if (inWindow(t))
-          events.push({
-            time: String(t),
-            kind: "equity",
-            summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`,
-            state: String(r.state ?? "?"),
-          });
-      }
-    const op = await tryBrokerageGetJson(`https://api.robinhood.com/options/orders/${acctQuery}`);
-    if (op.ok)
-      for (const r of (op.data as any)?.results ?? []) {
-        const t = r.updated_at ?? r.created_at;
-        if (inWindow(t))
-          events.push({
-            time: String(t),
-            kind: "option",
-            summary:
-              `${r.chain_symbol ?? "?"} ${r.opening_strategy ?? r.closing_strategy ?? ""} ${r.direction ? `(${r.direction})` : ""} ${r.quantity ?? ""} @ ${r.price ?? "?"}`.trim(),
-            state: String(r.state ?? "?"),
-          });
-      }
-    const cx = await tryBrokerageGetJson("https://nummus.robinhood.com/orders/");
-    if (cx.ok)
-      for (const r of (cx.data as any)?.results ?? []) {
-        const t = r.updated_at ?? r.created_at;
-        if (inWindow(t))
-          events.push({
-            time: String(t),
-            kind: "crypto",
-            summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`,
-            state: String(r.state ?? "?"),
-          });
-      }
-    const ach = await tryBrokerageGetJson("https://api.robinhood.com/ach/transfers/");
-    if (ach.ok)
-      for (const r of (ach.data as any)?.results ?? []) {
-        const t = r.updated_at ?? r.created_at;
-        if (inWindow(t))
-          events.push({
-            time: String(t),
-            kind: "transfer",
-            summary: `${r.direction ?? "?"} ${r.amount ?? "?"}`,
-            state: String(r.state ?? "?"),
-          });
-      }
-    events.sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
+    // Shared engine — same Wormhole-enriched path as MCP robinhood_history.
+    const events = await getUnifiedHistory({ days, accountNumber: opts.account });
     if (opts.json) {
       printJson({ generatedAt: new Date().toISOString(), events });
       return;
@@ -3988,9 +3931,11 @@ program
         when: e.time.slice(0, 19).replace("T", " "),
         type: e.kind,
         state: e.state,
+        origin: e.forcedLiquidation ? "RISK" : (e.placedBy?.replace("PLACED_BY_", "") ?? "—"),
+        realized: Number.isFinite(e.realizedPnlUsd) ? usd(e.realizedPnlUsd as number) : "—",
         detail: e.summary,
       })),
-      ["when", "type", "state", "detail"],
+      ["when", "type", "state", "origin", "realized", "detail"],
     );
     process.stdout.write(`\n${events.length} transaction(s) in the last ${days} day(s).\n`);
   });
@@ -4628,7 +4573,7 @@ program.addCommand(documents);
 program
   .command("margin")
   .description(
-    "Margin health: am I borrowing, how much, at what rate, billed when — plus margin available, buying power with margin, and projected intraday BP, per account. Accounts without margin data are skipped silently. Live read.",
+    "Margin-call intelligence per account: borrowed balance, buying power, true excess-maintenance buffer, operator risk band, and recent broker risk liquidations. Live read.",
   )
   .option("--account <number>", "scope to one account (default: all owned)")
   .option("--json", "emit JSON")
@@ -4658,6 +4603,12 @@ program
         margin_available: usd(a.marginAvailableUsd),
         bp_with_margin: usd(a.buyingPowerWithMarginUsd),
         intraday_bp: usd(a.projectedIntradayBpUsd),
+        excess_maintenance: usd(a.excessMaintenanceUsd),
+        buffer_pct: Number.isFinite(a.maintenanceBufferPctOfEquity)
+          ? `${a.maintenanceBufferPctOfEquity.toFixed(2)}%`
+          : "—",
+        risk: a.riskStatus,
+        risk_sales: a.recentRiskLiquidationCount,
       })),
       [
         "account",
@@ -4667,6 +4618,10 @@ program
         "margin_available",
         "bp_with_margin",
         "intraday_bp",
+        "excess_maintenance",
+        "buffer_pct",
+        "risk",
+        "risk_sales",
       ],
     );
     process.stdout.write("\n");
@@ -4677,6 +4632,11 @@ program
           ? `${who} is borrowing ${usd(a.borrowedUsd)} at ${Number.isFinite(a.marginInterestRatePct) ? a.marginInterestRatePct.toFixed(2) : "?"}%${a.nextBillingDate ? ` — next billed ${a.nextBillingDate}` : ""}.\n`
           : `${who} is not borrowing on margin${Number.isFinite(a.marginAvailableUsd) && a.marginAvailableUsd > 0 ? ` (${usd(a.marginAvailableUsd)} margin available)` : ""}.\n`,
       );
+      if (a.recentRiskLiquidationCount > 0) {
+        process.stdout.write(
+          `${who} has ${a.recentRiskLiquidationCount} recent broker risk liquidation(s), realizing ${usd(a.recentRiskLiquidationRealizedPnlUsd)}.\n`,
+        );
+      }
     }
     if (r.skipped.length)
       process.stdout.write(

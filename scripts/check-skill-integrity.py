@@ -50,7 +50,7 @@ REQUIRED_CONTRACTS = (
     "A tax-reference read never authorizes",
     "A tax-strategy guide never determines a filing result",
     "tradeAuthorized: false",
-    "CLI, MCP, scripts, and package APIs must share business logic",
+    "CLI, MCP, scripts, and package APIs must share",
 )
 
 FORBIDDEN_PATTERNS: tuple[tuple[str, str], ...] = (

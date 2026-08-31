@@ -32,7 +32,17 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export ROBINHOOD_ENV_PATH="$REPO_DIR/.env"
 
-# Detect OS and pick the right Python binary + Chrome base path.
+# Native Python on Windows does not understand MSYS paths such as /c/Users/…
+# (it otherwise receives them as C:\\c\\Users/…). Keep POSIX paths for Bash,
+# but convert every path passed across the Bash → native-Python boundary.
+native_path() {
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) cygpath -w "$1" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+# Detect OS and pick the right Python binary + Chromium base paths.
 case "$(uname -s)" in
     Darwin)
         PYTHON_BIN="python3"
@@ -50,13 +60,16 @@ case "$(uname -s)" in
             echo "ERROR: python not on PATH" >&2
             exit 1
         fi
-        # Windows Chrome profile: %LOCALAPPDATA%\Google\Chrome\User Data
-        # In MSYS/git-bash, LOCALAPPDATA is already set. Fall back to constructing from HOME.
+        # Windows Chromium profiles: %LOCALAPPDATA%\\<browser>\\User Data.
+        # In MSYS/git-bash, LOCALAPPDATA may be native or POSIX; normalize it first.
         if [ -n "${LOCALAPPDATA:-}" ]; then
-            CHROME_BASE="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || echo "$LOCALAPPDATA")/Google/Chrome/User Data"
+            LOCALAPPDATA_POSIX="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || printf '%s' "$LOCALAPPDATA")"
         else
-            CHROME_BASE="$HOME/AppData/Local/Google/Chrome/User Data"
+            LOCALAPPDATA_POSIX="$HOME/AppData/Local"
         fi
+        CHROME_BASE="$LOCALAPPDATA_POSIX/Google/Chrome/User Data"
+        BRAVE_BASE="$LOCALAPPDATA_POSIX/BraveSoftware/Brave-Browser/User Data"
+        EDGE_BASE="$LOCALAPPDATA_POSIX/Microsoft/Edge/User Data"
         ;;
     Linux)
         PYTHON_BIN="python3"
@@ -71,6 +84,13 @@ esac
 # Verify the binary exists.
 command -v "$PYTHON_BIN" >/dev/null || { echo "ERROR: $PYTHON_BIN not on PATH" >&2; exit 1; }
 
+# These values are consumed by native Python scripts below. On Windows they
+# must be native drive paths; Bash still retains REPO_DIR for shell operations.
+PYTHON_REPO_DIR="$(native_path "$REPO_DIR")"
+PYTHON_ENV_PATH="$(native_path "$REPO_DIR/.env")"
+CHROME_BASE="$(native_path "$CHROME_BASE")"
+BRAVE_BASE="$(native_path "${BRAVE_BASE:-}")"
+EDGE_BASE="$(native_path "${EDGE_BASE:-}")"
 export CHROME_BASE
 export BRAVE_BASE
 export EDGE_BASE
@@ -79,14 +99,15 @@ export EDGE_BASE
 # A stale debug profile can remain reachable while the user has just logged in
 # through normal Chrome or Safari. Never stop at the first valid token: collect
 # private candidate env files, compare JWT exp locally, and write only the winner.
-TARGET_ENV_PATH="$ROBINHOOD_ENV_PATH"
-CANDIDATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/robinhood-auth.XXXXXX")"
+TARGET_ENV_PATH="$PYTHON_ENV_PATH"
+CANDIDATE_DIR="$(mktemp -d "/tmp/robinhood-auth.XXXXXX")"
+PYTHON_CANDIDATE_DIR="$(native_path "$CANDIDATE_DIR")"
 trap 'rm -rf "$CANDIDATE_DIR"' EXIT
 
 cdp_collect() {
     [ -n "${ROBINHOOD_NO_CDP:-}" ] && return 0
-    local helper="$REPO_DIR/scripts/extract-auth-cdp.py"
-    [ -f "$helper" ] || return 0
+    local helper="$PYTHON_REPO_DIR/scripts/extract-auth-cdp.py"
+    [ -f "$REPO_DIR/scripts/extract-auth-cdp.py" ] || return 0
     "$PYTHON_BIN" -c 'import websockets' >/dev/null 2>&1 || {
         echo "[refresh-auth] CDP support unavailable; continuing with other sources" >&2
         return 0
@@ -117,23 +138,23 @@ PYPORTS
         case "$port" in *[!0-9]*|'') continue ;; esac
         case "$tried" in *" $port "*) continue ;; esac
         tried="$tried$port "
-        "$PYTHON_BIN" "$helper" --port "$port" --env "$CANDIDATE_DIR/cdp-$port.env" || true
+        "$PYTHON_BIN" "$helper" --port "$port" --env "$PYTHON_CANDIDATE_DIR/cdp-$port.env" || true
     done
 }
 
 cdp_collect
 
 if [ "$(uname -s)" = "Darwin" ] && [ -f "$REPO_DIR/scripts/extract-auth-safari.py" ]; then
-    "$PYTHON_BIN" "$REPO_DIR/scripts/extract-auth-safari.py" \
-        --env "$CANDIDATE_DIR/safari.env" || true
+    "$PYTHON_BIN" "$PYTHON_REPO_DIR/scripts/extract-auth-safari.py" \
+        --env "$PYTHON_CANDIDATE_DIR/safari.env" || true
 fi
 
 leveldb_args=()
 [ -n "${CHROME_BASE:-}" ] && leveldb_args+=(--base "$CHROME_BASE")
 [ -n "${BRAVE_BASE:-}" ] && leveldb_args+=(--base "$BRAVE_BASE")
 [ -n "${EDGE_BASE:-}" ] && leveldb_args+=(--base "$EDGE_BASE")
-"$PYTHON_BIN" "$REPO_DIR/scripts/extract-auth-leveldb.py" \
-    "${leveldb_args[@]}" --env "$CANDIDATE_DIR/leveldb.env" || true
+"$PYTHON_BIN" "$PYTHON_REPO_DIR/scripts/extract-auth-leveldb.py" \
+    "${leveldb_args[@]}" --env "$PYTHON_CANDIDATE_DIR/leveldb.env" || true
 
 shopt -s nullglob
 candidates=("$CANDIDATE_DIR"/*.env)
@@ -142,7 +163,12 @@ if [ "${#candidates[@]}" -eq 0 ]; then
     echo "[refresh-auth] no valid Robinhood auth found via CDP, Safari, or Chromium LevelDB" >&2
     exit 2
 fi
-"$PYTHON_BIN" "$REPO_DIR/scripts/select-auth-candidate.py" \
-    --target "$TARGET_ENV_PATH" "${candidates[@]}"
+
+python_candidates=()
+for candidate in "${candidates[@]}"; do
+    python_candidates+=("$(native_path "$candidate")")
+done
+"$PYTHON_BIN" "$PYTHON_REPO_DIR/scripts/select-auth-candidate.py" \
+    --target "$TARGET_ENV_PATH" "${python_candidates[@]}"
 
 # Zayd Khan // cold // www.zayd.wtf

@@ -1,5 +1,19 @@
 # Robinhood CLI TODO
 
+## 2026-09-03 — postmarket cron
+*Source: scheduled postmarket portfolio brief*
+
+### Completed
+- [x] Verify live America/Los_Angeles timestamp and mothership machine
+- [x] Verify custom CLI dist and parseable authenticated nonempty `accounts --json`: 5 accounts, 4 funded
+- [x] Run `capture_daily.py postmarket`: 23 option rows, 0 capture errors
+- [x] Complete serialized postmarket sweep: portfolio/day/after-hours, positions, options, full Greeks, margin, buying power, risk, open orders, 3-day history, expirations/events, movers, quotes, and audit artifacts
+- [x] Verify strict Telegram render: 0 collection errors, 0 capture errors, 0 material conflicts; far 9mo plus remains CRITICAL at 0.06% excess maintenance/equity
+
+### Follow-up
+- [ ] Establish a supported local Robinhood browser session before the imported bearer expires, then verify `pnpm auth:refresh` locally
+- [ ] Review the live CRITICAL maintenance band on `far 9mo plus` before any new deployment
+
 ## 2026-09-03 — midday cron
 *Source: scheduled midday portfolio brief*
 

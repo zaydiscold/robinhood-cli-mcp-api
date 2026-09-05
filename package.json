@@ -8,12 +8,7 @@
   "type": "module",
   "author": "Zayd Khan // cold (www.zayd.wtf)",
   "packageManager": "pnpm@10.12.1",
-  "pnpm": {
-    "overrides": {
-      "nanoid@<3.3.18": "3.3.18",
-      "fast-uri": "3.1.6"
-    }
-  },
+
   "scripts": {
     "build": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli build && node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli-mcp build",
     "sanitize:cdp": "node scripts/sanitize-cdp-capture.mjs",
@@ -25,7 +20,7 @@
     "test:write-boundaries": "node scripts/check-write-boundaries.mjs",
     "generate:api-map": "node scripts/generate-brokerage-openapi.mjs && node scripts/generate-unified-api-map.mjs && node scripts/generate-brokerage-markdown.mjs && node scripts/generate-brokerage-curl.mjs && node scripts/generate-endpoint-markdown.mjs",
     "generate:tax-reference": "node scripts/generate-tax-reference.mjs",
-    "test": "node scripts/pnpm-portable.mjs build && node scripts/pnpm-portable.mjs test:built && node scripts/test-auth-session.mjs",
+    "test": "node scripts/pnpm-portable.mjs build && node scripts/pnpm-portable.mjs test:built && node scripts/test-auth-session.mjs && python scripts/test_auth_candidate_selection.py",
     "test:built": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli exec vitest run && node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli-mcp exec vitest run",
     "coverage": "node scripts/pnpm-portable.mjs build && node scripts/pnpm-portable.mjs coverage:built",
     "coverage:built": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli test:coverage && node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli-mcp test:coverage",

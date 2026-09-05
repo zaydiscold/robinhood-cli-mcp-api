@@ -5,6 +5,7 @@ import base64
 import datetime
 import json
 import os
+import sys
 from pathlib import Path
 
 
@@ -24,7 +25,15 @@ def jwt_exp(token):
         return 0
 
 
-def select_freshest(paths):
+DEFAULT_MIN_REMAINING_SECONDS = 4 * 86400
+
+
+def select_freshest(paths, *, now=None, min_remaining_seconds=DEFAULT_MIN_REMAINING_SECONDS):
+    now = int(
+        datetime.datetime.now(datetime.timezone.utc).timestamp()
+        if now is None
+        else now
+    )
     candidates = []
     for path in paths:
         token = token_from_env(path)
@@ -34,7 +43,15 @@ def select_freshest(paths):
     if not candidates:
         raise RuntimeError("no valid Robinhood auth candidates")
     candidates.sort(key=lambda item: item[:3], reverse=True)
-    return candidates[0]
+    acceptable = [item for item in candidates if item[0] - now >= min_remaining_seconds]
+    if not acceptable:
+        best_remaining = candidates[0][0] - now
+        raise RuntimeError(
+            "no acceptable Robinhood auth candidates: "
+            + f"best_remaining_seconds={best_remaining} "
+            + f"minimum_remaining_seconds={min_remaining_seconds}"
+        )
+    return acceptable[0]
 
 
 def write_target(target, token, source, exp):
@@ -70,10 +87,21 @@ def write_target(target, token, source, exp):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", type=Path, required=True)
+    parser.add_argument(
+        "--minimum-remaining-seconds",
+        type=int,
+        default=DEFAULT_MIN_REMAINING_SECONDS,
+    )
     parser.add_argument("candidates", nargs="+", type=Path)
     args = parser.parse_args()
     existing = [path for path in args.candidates if path.exists()]
-    exp, _mtime, _length, path, token = select_freshest(existing)
+    try:
+        exp, _mtime, _length, path, token = select_freshest(
+            existing, min_remaining_seconds=args.minimum_remaining_seconds
+        )
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from None
     source = path.stem
     write_target(args.target, token, source, exp)
     now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
@@ -82,7 +110,7 @@ def main():
     print(
         "source="
         + source
-        + " auth_state=yes token_written=yes session_remaining_days="
+        + " auth_state=yes token_selected=yes session_remaining_days="
         + str(remaining)
         + " token_expires_utc="
         + expires

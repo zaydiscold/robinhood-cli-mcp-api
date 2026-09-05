@@ -34,7 +34,9 @@ class AuthCandidateSelectionTests(unittest.TestCase):
             short.write_text("ROBINHOOD_BROKERAGE_TOKEN=" + jwt(100) + "\n")
             long.write_text("ROBINHOOD_BROKERAGE_TOKEN=" + jwt(300) + "\n")
             target.write_text("ROBINHOOD_BROKERAGE_TOKEN=old\nROBINHOOD_WEB_APP_VERSION=keep\n")
-            exp, _mtime, _length, path, token = selector.select_freshest([short, long])
+            exp, _mtime, _length, path, token = selector.select_freshest(
+                [short, long], now=0, min_remaining_seconds=0
+            )
             self.assertEqual(exp, 300)
             self.assertEqual(path, long)
             selector.write_target(target, token, path.stem, exp)
@@ -59,6 +61,39 @@ class AuthCandidateSelectionTests(unittest.TestCase):
     def test_no_candidate_fails_closed(self):
         with self.assertRaises(RuntimeError):
             selector.select_freshest([])
+
+    def test_expired_candidates_never_win(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            expired = root / "expired.env"
+            expired.write_text("ROBINHOOD_BROKERAGE_TOKEN=" + jwt(999) + "\n")
+            with self.assertRaisesRegex(RuntimeError, "no acceptable Robinhood auth candidates"):
+                selector.select_freshest(
+                    [expired], now=1000, min_remaining_seconds=0
+                )
+
+    def test_candidate_must_outlive_the_guard_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            too_short = root / "seven-hours.env"
+            too_short.write_text("ROBINHOOD_BROKERAGE_TOKEN=" + jwt(1000 + 7 * 3600) + "\n")
+            with self.assertRaisesRegex(RuntimeError, "best_remaining_seconds=25200"):
+                selector.select_freshest(
+                    [too_short], now=1000, min_remaining_seconds=4 * 86400
+                )
+
+    def test_installed_token_is_preserved_when_browser_candidate_is_shorter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            installed = root / ".env"
+            browser = root / "cdp-9222.env"
+            installed.write_text("ROBINHOOD_BROKERAGE_TOKEN=" + jwt(1000 + 20 * 86400) + "\n")
+            browser.write_text("ROBINHOOD_BROKERAGE_TOKEN=" + jwt(1000 + 10 * 86400) + "\n")
+            exp, _mtime, _length, path, _token = selector.select_freshest(
+                [installed, browser], now=1000, min_remaining_seconds=4 * 86400
+            )
+            self.assertEqual(exp, 1000 + 20 * 86400)
+            self.assertEqual(path, installed)
 
 
 if __name__ == "__main__":

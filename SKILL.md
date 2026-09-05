@@ -4,9 +4,9 @@ description: >
   Use this skill when the user asks to inspect, research, plan, or operate a Robinhood account through
   the repository's CLI, MCP server, or importable API. It routes account reads, portfolio analysis,
   equities, options, orders, watchlists, recurring investments, settings, tax lots, tax documents,
-  tax-mechanics research, endpoint discovery, and operator knowledge while preserving the dry-run,
-  account-scope, exact-consent, and order-evidence contracts.
-version: 3.0.0
+  tax-rule and tax-strategy research, endpoint discovery, and operator knowledge while preserving
+  account scope, missing-data honesty, dry-run defaults, exact consent, and order-history evidence.
+version: 3.1.0
 author: Zayd (@zaydiscold)
 license: MIT
 platforms: [linux, macos, windows]
@@ -35,97 +35,121 @@ metadata:
 
 > **REAL-MONEY CONTROL PLANE:** this repository can submit trades, cancel orders, alter recurring
 > investments, and change account settings on an account the operator owns. Reads and dry-runs may
-> proceed when they are necessary to answer the request. Every state-changing action requires the
-> user's exact approval for the resolved action and remains subject to the repository's write gate.
+> proceed when necessary to answer the request. Every state-changing action requires exact user
+> approval for the fully resolved action and remains subject to the repository's write policy.
 
-This file is the **router and binding operating contract**. It is deliberately not the full API
-manual. Load one focused module from [`knowledge/`](knowledge/README.md) for the task, use
-[`AGENTS.md`](AGENTS.md) for maintainer-level detail, and use [`docs/`](docs/README.md) only when the
-focused module links to a deeper study.
+This file is the binding router, not the complete manual. Load the smallest focused module from
+[`knowledge/`](knowledge/README.md), use [`AGENTS.md`](AGENTS.md) for maintainer-level detail, and
+open deep research under `docs/` only when the focused module directs you there.
 
 ## 30-second operating contract
 
-1. **Discover, do not assume.** Enumerate accounts at runtime. Never invent or reuse an account
-   number from prose, examples, memory, or another user.
-2. **Prefer a first-class command or MCP tool.** Use raw route execution only when the capability
-   has no maintained wrapper.
-3. **Read before planning.** Resolve the account, instrument, contract, position, live quote, and
-   account capability before constructing an action.
-4. **Classify the exact action.** A sell-to-close, covered call, cash-secured put, credit spread,
-   naked short, recurring-investment edit, and account-setting toggle are not interchangeable.
-5. **Dry-run is the resting state.** `ROBINHOOD_ALLOW_LIVE_WRITE=1` gives the process permission to
-   attempt writes. It does not replace exact user approval. `--dry-run` or `dryRun:true` always wins.
-6. **Echo the resolved action before a live mutation.** Include account tail and label, symbol or
-   exact option contract, side, position effect, quantity, price or maximum notional, time in force,
-   and session.
-7. **Order history is the only proof.** A plan, UI state, HTTP `201`, response body, or tool success
-   message is not execution evidence. Re-read the order from brokerage history.
-8. **Unknown means unknown.** Never label an uncertain order outcome retry-safe and never resend the
+1. **Discover, do not assume.** Enumerate accounts, instruments, contracts, and current capabilities
+   at runtime. Never reuse an account number or contract ID from prose, examples, memory, or another
+   user.
+2. **Prefer maintained first-class surfaces.** Use a CLI command or MCP tool before raw route
+   execution. Raw access is a fallback, not the normal path.
+3. **Read before planning.** Resolve account, asset, position, quote, session, buying power,
+   collateral, and account capability before constructing a possible action.
+4. **Classify the exact structure.** A sell-to-close, covered call, cash-secured put, credit spread,
+   naked short, roll, recurring edit, and setting toggle are materially different operations.
+5. **Dry-run is the resting state.** `ROBINHOOD_ALLOW_LIVE_WRITE=1` makes a process capable of
+   attempting writes. It does not replace exact user approval. `--dry-run` or `dryRun:true` always
+   forces a preview.
+6. **Echo the resolved action.** Before a live mutation, state the account label and masked tail,
+   symbol or exact option instruments, side, position effect, quantity, price or maximum notional,
+   time in force, and session.
+7. **Order history is the only proof.** A plan, app screen, HTTP `201`, response body, or successful
+   tool call is not execution evidence. Re-read the order from brokerage history.
+8. **Unknown stays unknown.** Never label an uncertain order outcome retry-safe. Never resend an
    original order merely because the response was interrupted.
-9. **Research is not authorization.** Tax, market, strategy, and due-diligence reads can inform a
-   plan. They never authorize a trade or account change.
-10. **Use structured output as authority.** Tables and prose help humans. CLI JSON and MCP
-    `structuredContent` are the machine contract.
+9. **Research is not authorization.** Market, strategy, tax, and legal-mechanics research can inform
+   a plan. It never authorizes a trade, roll, exercise, assignment response, lot selection, or
+   account change.
+10. **Structured output is authoritative.** CLI JSON and MCP `structuredContent` are the machine
+    contract. Human tables and prose summarize that contract but must not contradict it.
 
 ## Progressive disclosure
 
-Load the smallest layer that can answer the question:
+Load the smallest layer that can answer the request:
 
 | Layer | Source | Purpose |
 | --- | --- | --- |
 | Router | This `SKILL.md` | Safety contract, surface selection, and intent routing |
 | Focused operation | [`knowledge/*.md`](knowledge/README.md) | Commands, decision rules, and task-specific failure modes |
-| Deep research | [`docs/*.md`](docs/README.md) | Dated evidence, methodology, and long-form analysis |
-| Full maintainer reference | [`AGENTS.md`](AGENTS.md) | Auth, route map, command inventory, write internals, and raw examples |
-| Runtime truth | CLI `--help`, MCP `tools/list`, generated API map | What the installed build actually exposes now |
+| Machine-backed reference | generated catalogs, API maps, and validated JSON | Versioned claims and cross-surface contracts |
+| Deep research | `docs/*.md` | Dated evidence, methodology, and long-form analysis |
+| Maintainer reference | [`AGENTS.md`](AGENTS.md) | Auth, route map, implementation, and raw examples |
+| Runtime truth | CLI `--help`, MCP `tools/list`, package exports | What the installed build exposes now |
 
-When documents disagree, do not choose the most convenient sentence. Report the discrepancy and
-prefer, in order: current runtime behavior, current generated contracts, primary evidence, focused
-module, dated deep research, then legacy prose.
+When sources conflict, do not choose the sentence that makes an action easier. Report the conflict
+and prefer, in order:
+
+```text
+current runtime
+> current machine-backed contract
+> primary evidence
+> focused operating module
+> dated deep research
+> legacy prose
+```
+
+Use [`docs/evidence-confidence-ledger.md`](docs/evidence-confidence-ledger.md) when a capability's
+live verification or confidence level matters.
 
 ## Choose the surface
 
 ### CLI
 
-Use the CLI for human-in-the-loop work, shell automation, readable dry-runs, and reproducible
-commands. The normal executable is:
+Use the CLI for human-in-the-loop work, reproducible shell automation, readable previews, and exact
+commands. Installed use:
 
 ```bash
-node cli/dist/index.js --help
+robinhood-cli --help
 ```
 
-Use the dedicated source-backed tax reference CLI for tax mechanics:
+Source-tree use after `pnpm build`:
 
 ```bash
-node cli/dist/tax-cli.js
-node cli/dist/tax-cli.js wash-sales
-node cli/dist/tax-cli.js --query "qualified covered call"
+node cli/dist/cli-entry.js --help
 ```
 
-Installed package binaries are `robinhood-cli` and `robinhood-tax`.
+Tax mechanics and structure routing use the same main binary:
+
+```bash
+robinhood-cli tax
+robinhood-cli tax wash-sales
+robinhood-cli tax strategy wheel
+robinhood-cli tax strategy "covered call" --account-context taxable --json
+robinhood-cli tax status --json
+```
+
+The dedicated `robinhood-tax` binary accepts the same arguments without the leading `tax`.
 
 ### MCP
 
-Use MCP when an agent client needs typed discovery and structured results. The selected capability
-profile controls the visible tool set. **Call `tools/list`; never rely on a hard-coded tool count.**
-A missing tool may mean the server is stale, the profile excludes it, or the build was not restarted.
-Load [`knowledge/mcp-operations.md`](knowledge/mcp-operations.md) for setup and diagnosis.
+Use MCP when an agent client needs typed discovery and structured results. The selected profile
+controls the visible tool set. **Call `tools/list`; never rely on a hard-coded tool count.** A missing
+tool can mean the server is stale, the profile excludes it, or the build was not restarted. Load
+[`knowledge/mcp-operations.md`](knowledge/mcp-operations.md) for setup and diagnosis.
 
-Tax research is available through the generated `tax-reference` knowledge module using
-`robinhood_knowledge`. Live tax-lot, document, history, recurring, and settings facts remain separate
-account tools.
+For tax strategy questions, read `tax-strategy-routing` and `tax-reference` with
+`robinhood_knowledge`, then collect live facts through the named account tools. A knowledge read and
+a brokerage read are separate operations.
 
 ### Importable API
 
-Use the package API for applications and tests that need the shared engine without parsing CLI text:
+Use package exports when an application or test needs structured data without parsing CLI text:
 
 ```ts
-import { getTaxReference } from "@zaydiscold/robinhood-cli/tax-reference";
 import { placeEquityOrder } from "@zaydiscold/robinhood-cli";
+import { getTaxReference } from "@zaydiscold/robinhood-cli/tax-reference";
+import { getTaxStrategyGuide } from "@zaydiscold/robinhood-cli/tax-strategy";
 ```
 
-Do not recreate order bodies, write gates, account checks, retry policy, or evidence logic in a new
-adapter. CLI, MCP, scripts, and applications must call the same canonical engine functions.
+Do not recreate order bodies, account ownership checks, write gates, retries, caps, deduplication,
+redaction, or evidence logic in another adapter. **CLI, MCP, scripts, and package APIs must share
+business logic.**
 
 ## Intent router
 
@@ -134,286 +158,282 @@ adapter. CLI, MCP, scripts, and applications must call the same canonical engine
 | What accounts exist or what can this account do? | `accounts`, `account-pulse`, `buying-power` | [`knowledge/accounts.md`](knowledge/accounts.md) |
 | What do I own? | `positions`, `options positions`, `options holdings` | [`knowledge/accounts.md`](knowledge/accounts.md) |
 | Why am I up or down today or after hours? | `portfolio --day` or `portfolio --after-hours` | [`knowledge/cli-routing.md`](knowledge/cli-routing.md) |
-| Quote or research a ticker | `quote`, `stock profile`, `news`, `ratings`, `earnings` | [`knowledge/signals.md`](knowledge/signals.md) |
-| Price or analyze an option strategy | `options strategy-quote`, `options workbench` | [`knowledge/multi-leg.md`](knowledge/multi-leg.md), [`knowledge/greeks.md`](knowledge/greeks.md) |
-| Roll or defend an option | `options roll-plan` | [`knowledge/rolling.md`](knowledge/rolling.md) |
-| Build or manage a wheel | `wheel` | [`knowledge/wheel.md`](knowledge/wheel.md) |
+| Quote or research a ticker | `quote`, `stock profile`, `news`, `ratings`, `earnings` | `knowledge/signals.md` |
+| Price or analyze a multi-leg option structure | `options strategy-quote`, `options workbench` | `knowledge/multi-leg.md`, `knowledge/greeks.md` |
+| Roll or defend an option | `options roll-plan` | `knowledge/rolling.md` |
+| Build or manage a wheel | `wheel` | `knowledge/wheel.md` |
 | Buy or sell stock | `buy` or `sell`, dry-run first | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
 | Review open or completed orders | `orders open`, `order-status`, `order-watch` | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
 | Cancel one or all open orders | `cancel` or `panic` | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
-| Manage a watchlist | `watchlist` subcommands | [`knowledge/cli-routing.md`](knowledge/cli-routing.md) |
 | Manage recurring investments | `recurring` subcommands | [`knowledge/accounts.md`](knowledge/accounts.md) |
 | Change DRIP, PDT, lending, sweep, or expiration settings | `settings` subcommands | [`knowledge/accounts.md`](knowledge/accounts.md) |
-| Review tax mechanics or product structure | `robinhood-tax` or `tax-reference` knowledge | [`knowledge/tax-reference.md`](knowledge/tax-reference.md) |
-| Inspect tax lots or plan a lot-aware sale | `tax-lots` | [`knowledge/tax.md`](knowledge/tax.md) |
-| Harvest losses | tax reference first, then live lots/history/automation checks | [`knowledge/tax-loss-harvesting.md`](knowledge/tax-loss-harvesting.md) |
+| Research a tax rule | `robinhood-cli tax <topic>` | [`knowledge/tax-reference.md`](knowledge/tax-reference.md) |
+| Research tax mechanics of a named structure | `robinhood-cli tax strategy <id-or-alias>` | [`knowledge/tax-strategy-routing.md`](knowledge/tax-strategy-routing.md) |
+| Combine tax rules with live account facts | tax research first, then named account reads | [`knowledge/tax.md`](knowledge/tax.md) |
+| Inspect lots or build a non-sending lot-aware plan | `tax-lots list` or `tax-lots plan-sell` | [`knowledge/tax.md`](knowledge/tax.md) |
+| Harvest a loss | strategy guide, exact lots, then 61-day acquisition review | [`knowledge/tax-loss-harvesting.md`](knowledge/tax-loss-harvesting.md) |
 | Download statements or tax forms | `documents list` or `documents download` | [`knowledge/tax.md`](knowledge/tax.md) |
-| Inspect an unwrapped endpoint | `brokerage describe`, `brokerage plan`, then `brokerage execute` | [`knowledge/cli-routing.md`](knowledge/cli-routing.md) |
-| Add or verify a route | generated map and evidence workflow | [`docs/undocumented-surface.md`](docs/undocumented-surface.md) |
+| Inspect an unwrapped endpoint | `brokerage describe`, `brokerage plan`, then `brokerage execute` | `knowledge/cli-routing.md` |
+| Add or verify a route | generated map and evidence workflow | `docs/undocumented-surface.md` |
 
 ## Account discovery and scope
 
-A login can expose multiple taxable, retirement, crypto, or other account classes. The plain
-`accounts/` endpoint can under-report. Use the first-class `accounts` surface, which resolves the
-owned account graph, then preserve the selected account explicitly through every subsequent read,
-plan, and write.
+A login can expose several taxable, retirement, crypto, and other account classes. The plain
+`accounts/` endpoint can under-report. Use the maintained account surface, then preserve the selected
+account explicitly through each subsequent read, plan, and write.
 
 Before an account-scoped mutation:
 
 1. Enumerate owned accounts.
-2. Match the user's description to account type, nickname, and current holdings.
+2. Match the user's description to account type, nickname, and relevant holdings.
 3. Echo the selected account label and masked tail.
 4. Refuse an unowned, malformed, missing, or ambiguous account.
 5. Re-run account capability and buying-power checks when the action depends on them.
+6. Respect any configured account allow-list.
 
-Never infer that the account holding an existing position is also the account intended for a new
-position.
+Never assume that the account holding an existing position is also the intended account for a new
+position. Never expose full account numbers in share-safe output, logs, examples, or client reference
+identifiers.
 
-## Read and planning workflow
+## Read and analysis contract
 
-For a normal account question:
-
-```text
-intent
-  -> choose first-class surface
-  -> discover account or instrument identifiers
-  -> perform live read or local reference lookup
-  -> preserve missing data as missing
-  -> report timestamps, account scope, and limitations
-```
-
-For an equity action:
+For an account question:
 
 ```text
 intent
-  -> account discovery
-  -> ticker resolution
-  -> instrument eligibility
-  -> quote and market session
-  -> account capability and buying power
-  -> dry-run body
-  -> exact approval
-  -> gated send
-  -> order-history evidence
-  -> trading log
+  -> choose maintained surface
+  -> resolve account and instrument identifiers
+  -> perform a live read or local reference lookup
+  -> preserve missing and partial data
+  -> report timestamp, account scope, source, and limitations
 ```
 
-For an option action:
+Use dollar-weighted results when position size matters. A percentage leaderboard can overstate a tiny
+lot and hide the position driving actual P&L.
 
-```text
-intent
-  -> classify strategy and exposure
-  -> discover account
-  -> enumerate exact option UUIDs
-  -> verify expiration, strike, type, side, and position effect
-  -> quote every leg and show Greek-input completeness
-  -> pretrade/collateral review
-  -> dry-run exact body
-  -> exact approval
-  -> gated send
-  -> options-order-history evidence
-```
+Preserve these states distinctly:
 
-Do not use ticker, strike, or human-readable OCC text where an exact option instrument ID is required.
-Do not present a package Greek as complete when one or more leg inputs are missing.
+- observed
+- inferred
+- stale
+- partial
+- missing
+- not evaluated
+- unsupported
+- blocked
+
+Do not turn `null`, an empty string, an absent Greek, or a failed read into numeric zero. Do not turn
+an empty broker response into proof that an outside fact does not exist.
+
+## Options and strategy contract
+
+Before discussing or planning an option action:
+
+1. Classify the economic structure and whether risk is defined or undefined.
+2. Resolve exact option instrument IDs for every leg.
+3. Verify expiration, strike, call or put, side, position effect, ratio, and quantity.
+4. Read current bid, ask, mark, liquidity, and any available Greeks.
+5. Show Greek-input completeness. A partial package Greek is not a complete package Greek.
+6. Check account capability, collateral, buying power, assignment, exercise, and settlement.
+7. Build the exact non-sending body.
+8. Obtain exact approval only after the body and risks are resolved.
+
+Do not infer naked exposure from loose wording. Do not use ticker, strike, or human-readable OCC text
+where an exact option instrument ID is required. Do not treat a strategy label as a tax
+classification.
 
 ## Raw brokerage executor
 
 Prefer maintained commands. When raw execution is necessary:
 
 ```bash
-node cli/dist/index.js brokerage describe "<route substring>" --json
-node cli/dist/index.js brokerage plan "<route substring>" --method GET --json
-node cli/dist/index.js brokerage execute "<route substring>" \
+robinhood-cli brokerage describe "<route substring>" --json
+robinhood-cli brokerage plan "<route substring>" --method GET --json
+robinhood-cli brokerage execute "<route substring>" \
   --method GET \
   --query-param key=value \
   --json
 ```
 
 The raw CLI **does support repeatable `--query-param key=value` flags**. Query values are appended
-after the mapped route is selected. Do not embed arbitrary query text to bypass route selection.
+after the mapped route is selected. Do not embed arbitrary query text to evade route selection.
 
-When the same URL supports multiple verbs, pass `--method`. Method is part of the safety identity.
-A write method must never inherit a read route's risk classification. An inferred mutation remains
-non-sending until the route and request contract have sufficient evidence.
+When one URL supports several verbs, pass `--method`. Method is part of the safety identity. A write
+method must not inherit a read route's risk level. An inferred mutation remains non-sending until the
+route and request contract have sufficient evidence.
 
 ## Live-write contract
 
-`ROBINHOOD_ALLOW_LIVE_WRITE=1` is the process-level switch. The default without it is a dry-run.
-Keep it inline for one CLI invocation rather than permanently exporting it.
+`ROBINHOOD_ALLOW_LIVE_WRITE=1` is the process-level capability switch. Without it, mutations are
+planned but not sent. Keep the switch inline for one CLI invocation rather than permanently exporting
+it.
 
 A live mutation requires all of the following:
 
-- The user explicitly requested this exact action.
-- The owned account was resolved and echoed.
-- Instrument or contract identity was resolved.
-- Side, effect, quantity, price/notional, TIF, and session are known.
-- Account capability, collateral, buying power, and relevant caps were checked.
-- A dry-run of the exact body was shown or summarized.
-- No recent duplicate or unresolved prior outcome blocks the action.
-- The route and method are eligible for live execution.
-- The environment switch is enabled.
+- the user explicitly requested this exact action
+- the owned account is resolved and echoed
+- the exact instrument or contracts are resolved
+- side, position effect, quantity, price or notional, TIF, and session are known
+- account capability, collateral, buying power, and configured caps are checked
+- a dry-run of the exact action is shown or summarized
+- no recent duplicate or unresolved prior outcome blocks the action
+- the route and method are eligible for live execution
+- the process switch is enabled
 
-Useful defense-in-depth environment controls include an account allow-list, per-order maximum, and
-process/session maximum. Run `doctor` before an armed session and treat missing guardrails as a
-warning, not as harmless configuration trivia.
+Defense-in-depth controls should include an account allow-list, a per-order maximum, and a process or
+session maximum. Run `doctor` before an armed session. Missing guardrails are not harmless
+configuration trivia.
 
-After a send:
+After sending:
 
-1. Preserve the generated idempotency reference.
-2. Follow broker-directed retry behavior only where the canonical engine proves retry safety.
-3. Reconcile by reading order history.
-4. Report `confirmed`, state, order ID, and any evidence warning.
-5. Log the action and intent.
-6. If evidence is unavailable, say **unconfirmed** and do not resend the original order.
+1. Preserve the client reference and broker order ID without exposing private identifiers.
+2. Re-read order history.
+3. Report `evidence.confirmed` separately from HTTP status.
+4. If outcome is unknown, do not resend the original order.
+5. Log the action and intent after verification.
+6. For lot-aware sales, verify the selected or closed lots separately.
+
+See [`docs/write-operations.md`](docs/write-operations.md) for the detailed mutation contract.
 
 ## Tax and legal-mechanics research contract
 
-Tax content in this repository is educational research, not a personalized filing conclusion. For
-any tax question, load [`knowledge/tax-reference.md`](knowledge/tax-reference.md) first or query
-`robinhood-tax`. It is generated from a versioned catalog and separates four evidence lanes:
+Tax research has two lanes that must not be collapsed.
 
-1. **Primary law or regulation**
+### Rule lane
+
+Use [`knowledge/tax-reference.md`](knowledge/tax-reference.md), generated from the versioned source
+catalog, for source-backed federal mechanics. Separate:
+
+1. **primary law or regulation**
 2. **IRS guidance or reporting instruction**
-3. **Broker-platform behavior**
-4. **Planning inference**
+3. **broker-platform behavior**
+4. **planning inference**
 
-These lanes are not interchangeable. Robinhood's app estimate, product label, or help article does
-not decide federal tax law. A planning inference must never be phrased as settled law.
+State the jurisdiction and review date. Link material claims to official sources. Do not use a broker
+help page as controlling federal law. Do not hard-code rate comparisons without the return year and
+complete taxpayer facts.
 
-Before giving a personalized numerical tax estimate, the necessary facts may include filing status,
-taxable income, basis, holding period, capital-loss carryovers, elections, state, other brokers,
-retirement accounts, spouse transactions, and automatic acquisitions. If those are absent, explain
-the mechanics and uncertainty rather than inventing a liability.
+### Structure lane
 
-Always flag, rather than adjudicate, ambiguous questions involving:
-
-- substantially identical stock or options
-- wash sales across taxable and IRA or Roth IRA accounts
-- qualified covered calls and straddles
-- mixed Section 1256 and non-Section-1256 positions
-- conversion transactions or box spreads
-- constructive sales
-- missing or transferred basis
-
-Use live account surfaces only to gather facts:
+Use [`knowledge/tax-strategy-routing.md`](knowledge/tax-strategy-routing.md) or:
 
 ```bash
-node cli/dist/tax-cli.js wash-sales
-node cli/dist/index.js tax-lots list <SYMBOL> --account <ACCOUNT> --json
-node cli/dist/index.js history --account <ACCOUNT> --json
-node cli/dist/index.js recurring list --json
-node cli/dist/index.js settings show --account <ACCOUNT>
-node cli/dist/index.js documents list --year <YEAR> --json
+robinhood-cli tax strategy <id-or-alias> --json
 ```
 
-A tax-lot plan is not lot-selection evidence. Verify the filled order, selected or closed lots, and
-year-end tax forms. A tax-reference read never authorizes the sale it discusses.
+The strategy guide returns required facts, maintained broker reads, linked rule topics, red flags,
+and stop conditions. Its output contract must preserve:
 
-## Research and operator memory
+```text
+known broker facts
+user-supplied and external facts
+missing material facts
+official rule topics
+broker-platform behavior
+planning inference
+not evaluated
+sources
+mutation status: not authorized
+```
 
-Research should distinguish signal speed from evidence quality. Load [`knowledge/signals.md`](knowledge/signals.md)
-for the source ladder. Treat `ball-knowledge.md`, the hotlist, trade notes, and prior logs as operator
-context, not as current market fact or authorization.
+### Account-fact lane
 
-Before relying on a memory entry:
+Only after routing should an agent read lots, history, options events, recurring purchases, settings,
+dividends, or documents. Robinhood cannot determine spouse activity, other brokers, elections,
+return-wide carryovers, or every substantially identical position.
 
-- note its date
-- verify current market or account facts
-- distinguish observation from thesis
-- preserve contradictory evidence
-- do not convert a past trade into a standing instruction
+A tax-reference read never authorizes a trade. A tax-strategy guide never determines a filing result.
+Neither supplies consent for a sale, roll, exercise, assignment response, lot selection, or account
+change.
 
-## Output contract
+Automatically stop and recommend qualified professional review when a material question depends on:
 
-- Use dollar-weighted impact for portfolio attribution and risk, not size-blind percentage rankings.
-- Include account scope and `as of` time for live reads.
-- Preserve `null`, unavailable, partial coverage, stale, and inferred states. Do not coerce them to
-  zero or omit the limitation.
-- Use exact units for price, quantity, notional, option multiplier, Greeks, and percentages.
-- Keep raw credentials, account identifiers, signed URLs, order references, and private notes out of
-  shareable output. Use the share-safe surface when output will leave the operator's environment.
-- State whether a result is a live read, local reference, dry-run plan, live send, or post-send
-  evidence.
+- substantially identical property without a clear controlling answer
+- qualified-covered-call status with incomplete contract or stock facts
+- a mixed straddle or election
+- a conversion transaction or box-spread financing characterization
+- a constructive sale
+- missing or transferred basis
+- cross-broker, spouse, IRA, or Roth IRA activity
+- personalized rates, carryovers, netting, state law, or filing positions
 
-## Failure modes that must stop the workflow
+## Agent response contracts
 
-Stop or fail closed when any of these is true:
+### Account read
 
-- Account identity is missing, ambiguous, unowned, or cannot be verified for a live mutation.
-- A ticker or option contract was guessed rather than resolved.
-- A write route or method is inferred, deprecated, or classified as a read.
-- Quantity, price, notional, date, account, or UUID is invalid.
-- A live quote is missing where order construction depends on it.
-- A pending duplicate exists or the duplicate check failed.
-- Buying power, collateral, or account capability cannot be established for a live action.
-- The intended structure could create uncovered or otherwise unintended exposure.
-- The dry-run body differs from the body about to be sent.
-- The user approved a general idea but not the resolved action.
-- A prior order outcome is unknown.
-- A source-backed tax answer is being converted into a personalized filing conclusion without the
-  necessary facts.
+Include account label and masked tail, timestamp, live or local source, known values, missing values,
+and any degraded account reads.
 
-## Verification checklist
+### Strategy analysis
 
-Before considering a task complete:
-
-### Read or analysis
-
-- Correct account, symbol, contract, and time window
-- Current timestamp and data provenance
-- Missing-data and coverage limitations visible
-- Correct units and dollar weighting
-- Structured result preserved
+Include exact position structure, position-weighted dollar exposure, quote timestamp, Greek coverage,
+scenario assumptions, liquidity limitations, and what is not evaluated.
 
 ### Dry-run
 
-- Exact route and method
-- Exact account and instrument IDs
-- Exact body, side, effect, quantity, price/notional, TIF, and session
-- Eligibility, capability, buying power, collateral, duplicate, and cap checks
-- Explicit statement that nothing was sent
+Include exact account, instrument or contracts, side, effect, quantity, price or maximum notional,
+TIF, session, route confidence, and the statement `NOT EXECUTED`.
 
-### Live mutation
+### Live result
 
-- Exact user approval
-- `ROBINHOOD_ALLOW_LIVE_WRITE=1`
-- Canonical shared engine
-- Order-history or account-state evidence
-- No retry of an unknown original action
-- Intent logged
+Include requested action, broker status, order ID in share-safe form, order-history evidence,
+remaining uncertainty, and whether any follow-up read or lot verification is required.
 
 ### Tax research
 
-- Jurisdiction and review date
-- Evidence lane for each material claim
-- Primary or official source IDs
-- Broker behavior separated from law
-- Fact-specific uncertainty visible
-- No implied trade authorization
+Include strategy and account context, jurisdiction, review date, known facts, missing facts, evidence
+lanes, not-evaluated items, official sources, and `tradeAuthorized: false`.
+
+## Failure modes that must stop the workflow
+
+Stop rather than guessing when:
+
+- the account is missing, ambiguous, malformed, or not owned
+- an exact option instrument cannot be resolved
+- quote, book, price, or quantity is invalid
+- a write route is inferred, deprecated, or insufficiently verified
+- account capability, collateral, or buying-power checks fail
+- the pending-order deduplication read fails before a live send
+- a recent same-side duplicate exists and the user has not explicitly overridden it
+- notional caps or account allow-list rules block the action
+- an earlier order outcome is unknown
+- a package Greek is partial but is being presented as complete
+- tax basis, contract classification, related positions, elections, or cross-account facts are
+  material and unavailable
+- the requested conclusion would require financial, legal, or tax facts the repository cannot know
+
+Do not bypass a stop condition because the requested action sounds routine.
+
+## Verification checklist
+
+Before answering or acting, verify:
+
+- [ ] Current CLI or MCP surface was discovered, not assumed.
+- [ ] Account scope is explicit and owned.
+- [ ] Instrument or contract identity is exact.
+- [ ] Read timestamps and degraded states are preserved.
+- [ ] Missing values remain missing.
+- [ ] Strategy and position effect are classified.
+- [ ] Tax rule lane and account-fact lane are separated when relevant.
+- [ ] Mutation remains dry-run unless exact approval and all live gates are satisfied.
+- [ ] No unresolved duplicate or unknown prior outcome exists.
+- [ ] Order history, not HTTP status, is used as evidence.
+- [ ] Share-safe output removes account, credential, signed URL, order-reference, and private-note data.
+- [ ] Any selected or closed tax lots are verified after a fill.
 
 ## Maintainer rules
 
-- CLI, MCP, scripts, and package APIs must share business logic rather than copy it.
-- Add a capability to the registry before exposing it through MCP.
-- Treat CLI `--help`, MCP `tools/list`, package exports, and generated maps as contracts.
-- Update focused modules rather than expanding this router into another encyclopedia.
-- Edit `knowledge/tax-reference.json`, run `pnpm generate:tax-reference`, and commit the generated
-  Markdown when tax research changes.
-- Run `pnpm quality`, `pnpm build`, and `pnpm test:built` before merging.
-- Never weaken dry-run defaults, account ownership checks, notional caps, deduplication, route
-  provenance, or post-send evidence merely to make a workflow easier.
-
-## Canonical references
-
-- [`knowledge/README.md`](knowledge/README.md): focused module index
-- [`knowledge/execution-safety.md`](knowledge/execution-safety.md): mutation failure modes
-- [`knowledge/accounts.md`](knowledge/accounts.md): account discovery and capabilities
-- [`knowledge/mcp-operations.md`](knowledge/mcp-operations.md): MCP profiles and setup
-- [`knowledge/tax-reference.md`](knowledge/tax-reference.md): source-backed tax mechanics
-- [`knowledge/tax.md`](knowledge/tax.md): tax-aware account workflow
-- [`knowledge/tax-loss-harvesting.md`](knowledge/tax-loss-harvesting.md): harvesting control procedure
-- [`docs/write-operations.md`](docs/write-operations.md): write-gate contract
-- [`docs/evidence-confidence-ledger.md`](docs/evidence-confidence-ledger.md): evidence levels
-- [`docs/cli-mcp-architecture.md`](docs/cli-mcp-architecture.md): adapter and engine architecture
-- [`AGENTS.md`](AGENTS.md): full maintainer reference
+1. Keep one canonical implementation for auth, routing, write policy, account ownership, caps,
+   deduplication, idempotency, order construction, redaction, and evidence.
+2. Add functionality to the shared engine before adding adapter-specific behavior.
+3. Keep CLI help, MCP schemas, package exports, capability registry, and focused modules aligned.
+4. Never create a second direct brokerage write client in a script.
+5. Validate external payloads at boundaries and preserve unknown fields honestly.
+6. Make generated API-map and tax-reference drift fail CI.
+7. Treat documentation contradictions as product defects.
+8. Keep this skill between the configured size bounds. Move implementation details into
+   [`AGENTS.md`](AGENTS.md), focused depth into [`knowledge/`](knowledge/README.md), and architecture
+   into [`docs/cli-mcp-architecture.md`](docs/cli-mcp-architecture.md).
+9. Re-run build, quality, full tests, and package-boundary checks after changing a public surface.
+10. Never weaken dry-run, account scope, exact approval, evidence, or privacy invariants to make a
+    new feature easier to demo.

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import re
 import sys
@@ -13,12 +14,14 @@ ACTIVE_FILES = (
     Path("SKILL.md"),
     Path("knowledge/README.md"),
     Path("knowledge/cli-routing.md"),
+    Path("knowledge/tax-strategy-routing.md"),
     Path("knowledge/tax.md"),
     Path("knowledge/tax-loss-harvesting.md"),
     Path("docs/tax-aware-options-strategies.md"),
 )
 
 TAX_FILES = (
+    Path("knowledge/tax-strategy-routing.md"),
     Path("knowledge/tax.md"),
     Path("knowledge/tax-loss-harvesting.md"),
     Path("docs/tax-aware-options-strategies.md"),
@@ -74,6 +77,10 @@ FORBIDDEN_TAX: tuple[tuple[re.Pattern[str], str], ...] = (
         "constructive-sale analysis is fact-specific and strategy names are not the statutory test",
     ),
     (
+        re.compile(r"payment(?:s)? in lieu[^\n]{0,80}(?:is|are) (?:a )?qualified dividend", re.IGNORECASE),
+        "payments in lieu are not automatically qualified dividends",
+    ),
+    (
         re.compile(r"(?:26\s*[–-]\s*28|32|37)%", re.IGNORECASE),
         "active tax guidance must not hard-code rate comparisons without a return year and full facts",
     ),
@@ -117,6 +124,65 @@ def validate_links(path: Path, text: str, errors: list[str]) -> None:
             errors.append(f"{path}: local link escapes repository: {target}")
         elif not resolved.exists():
             errors.append(f"{path}: broken local link: {target}")
+
+
+def validate_strategy_surface(texts: dict[Path, str], errors: list[str]) -> int:
+    catalog_path = ROOT / "knowledge/tax-strategies.json"
+    module_path = Path("knowledge/tax-strategy-routing.md")
+    if not catalog_path.exists():
+        errors.append("missing structured tax strategy catalog: knowledge/tax-strategies.json")
+        return 0
+    try:
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"tax strategy catalog is unreadable: {exc}")
+        return 0
+
+    strategies = catalog.get("strategies")
+    if not isinstance(strategies, list) or not strategies:
+        errors.append("tax strategy catalog must contain a non-empty strategies list")
+        return 0
+    module = texts.get(module_path, "")
+    seen_ids: set[str] = set()
+    aliases: dict[str, str] = {}
+    for entry in strategies:
+        if not isinstance(entry, dict):
+            errors.append("tax strategy catalog contains a non-object entry")
+            continue
+        strategy_id = entry.get("id")
+        if not isinstance(strategy_id, str) or not strategy_id:
+            errors.append("tax strategy catalog contains an entry without an id")
+            continue
+        if strategy_id in seen_ids:
+            errors.append(f"duplicate tax strategy id: {strategy_id}")
+        seen_ids.add(strategy_id)
+        if f"`{strategy_id}`" not in module:
+            errors.append(f"{module_path}: public strategy inventory omits {strategy_id}")
+        for raw_name in [strategy_id, *entry.get("aliases", [])]:
+            if not isinstance(raw_name, str):
+                errors.append(f"tax strategy {strategy_id} has a non-string alias")
+                continue
+            normalized = re.sub(r"[^a-z0-9]+", "-", raw_name.lower()).strip("-")
+            prior = aliases.get(normalized)
+            if prior and prior != strategy_id:
+                errors.append(
+                    f"tax strategy alias collision: {raw_name!r} resolves to {prior} and {strategy_id}"
+                )
+            aliases[normalized] = strategy_id
+        if not entry.get("requiredFacts"):
+            errors.append(f"tax strategy {strategy_id} has no required facts")
+        if not entry.get("brokerReads"):
+            errors.append(f"tax strategy {strategy_id} has no broker reads")
+        if not entry.get("redFlags") or not entry.get("stopConditions"):
+            errors.append(f"tax strategy {strategy_id} must define red flags and stop conditions")
+
+    if "robinhood-cli tax strategy" not in module:
+        errors.append(f"{module_path}: missing canonical CLI strategy route")
+    if "@zaydiscold/robinhood-cli/tax-strategy" not in module:
+        errors.append(f"{module_path}: missing importable API route")
+    if "robinhood_knowledge" not in module:
+        errors.append(f"{module_path}: missing MCP knowledge route")
+    return len(strategies)
 
 
 def main() -> int:
@@ -174,9 +240,11 @@ def main() -> int:
     if not generated.exists() or not catalog.exists():
         errors.append("generated tax-reference Markdown and JSON catalog must both exist")
 
+    strategy_count = validate_strategy_surface(texts, errors)
     print(
         "Agent guidance check: "
         f"{len(texts)} active file(s), {len(TAX_FILES)} tax workflow file(s), "
+        f"{strategy_count} strategy guide(s), "
         f"{sum(len(text.encode('utf-8')) for text in texts.values()):,} bytes reviewed"
     )
     if errors:

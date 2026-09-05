@@ -154,6 +154,16 @@ leveldb_args=()
 [ -n "${CHROME_BASE:-}" ] && leveldb_args+=(--base "$CHROME_BASE")
 [ -n "${BRAVE_BASE:-}" ] && leveldb_args+=(--base "$BRAVE_BASE")
 [ -n "${EDGE_BASE:-}" ] && leveldb_args+=(--base "$EDGE_BASE")
+if [ -n "${ROBINHOOD_CHROMIUM_BASES:-}" ]; then
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) custom_base_separator=';' ;;
+        *) custom_base_separator=':' ;;
+    esac
+    IFS="$custom_base_separator" read -r -a custom_bases <<< "$ROBINHOOD_CHROMIUM_BASES"
+    for custom_base in "${custom_bases[@]}"; do
+        [ -n "$custom_base" ] && leveldb_args+=(--base "$(native_path "$custom_base")")
+    done
+fi
 "$PYTHON_BIN" "$PYTHON_REPO_DIR/scripts/extract-auth-leveldb.py" \
     "${leveldb_args[@]}" --env "$PYTHON_CANDIDATE_DIR/leveldb.env" || true
 

@@ -158,7 +158,7 @@ describe("safety edge cases", () => {
       ref_id: "AAPL-123456789-1787540000001",
       referenceId: "reference-with-account-123456789",
       clientOrderId: "client-order-123456789",
-      idempotencyKey: "idempotency-123456789",
+      idempotencyKey: "fixture",
       downloadLink: "https://files.test/report?X-Goog-Signature=secret",
       callbackUrl: "https://app.test/callback?access_token=secret",
     });

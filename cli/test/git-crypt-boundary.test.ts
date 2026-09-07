@@ -19,7 +19,11 @@ describe("git-crypt local workspace boundary", () => {
       .split("\n")
       .filter(Boolean);
 
-    expect(paths.length).toBeGreaterThan(0);
+    if (paths.length === 0) {
+      // Public source distributions exclude the entire private runtime directory.
+      expect(git(["check-ignore", "--no-index", "local/synthetic-private-state.json"]).toString("utf8").trim()).toBe("local/synthetic-private-state.json");
+      return;
+    }
 
     for (const path of paths) {
       const blob = git(["show", `:${path}`]);

@@ -5,8 +5,8 @@ const accounts = {
   results: [
     {
       type: "rhs",
-      account_number: "873870497",
-      account_name: "far 9mo plus",
+      account_number: "900000003",
+      account_name: "Example margin account",
       state: "active",
     },
   ],
@@ -15,16 +15,16 @@ const accounts = {
 const riskOrder = {
   id: "risk-1",
   assetType: "EQUITY",
-  symbol: "CBRG",
-  submittedAt: "2026-08-25T17:35:11.874354Z",
-  updatedAt: "2026-08-25T17:35:12.168Z",
-  quantity: "239.655003",
-  avgFilledPrice: { amount: "3.0451", currency_code: "USD" },
-  filledQuantity: "239.655003",
+  symbol: "EXMP",
+  submittedAt: "2026-08-25T12:00:00Z",
+  updatedAt: "2026-08-25T12:00:01Z",
+  quantity: "10.5",
+  avgFilledPrice: { amount: "2", currency_code: "USD" },
+  filledQuantity: "10.5",
   equityOrder: {
     side: "SELL",
-    filledNotional: { amount: "729.77", currency_code: "USD" },
-    realizedPnl: { amount: "-824.92", currency_code: "USD" },
+    filledNotional: { amount: "21", currency_code: "USD" },
+    realizedPnl: { amount: "-9", currency_code: "USD" },
   },
   derivedState: "FILLED",
   placedBy: "PLACED_BY_RISK",
@@ -43,22 +43,22 @@ describe("margin-call intelligence", () => {
     };
 
     const events = await getUnifiedHistory(
-      { accountNumber: "873870497", days: 7 },
+      { accountNumber: "900000003", days: 7 },
       { getJson: getJson as never, now: () => Date.parse("2026-08-25T21:00:00Z") },
     );
 
     expect(events).toEqual([
       expect.objectContaining({
         kind: "equity",
-        symbol: "CBRG",
+        symbol: "EXMP",
         side: "sell",
-        quantity: 239.655003,
-        averagePrice: 3.0451,
-        filledNotionalUsd: 729.77,
-        realizedPnlUsd: -824.92,
+        quantity: 10.5,
+        averagePrice: 2,
+        filledNotionalUsd: 21,
+        realizedPnlUsd: -9,
         placedBy: "PLACED_BY_RISK",
         forcedLiquidation: true,
-        accountLast4: "0497",
+        accountLast4: "0003",
         state: "filled",
       }),
     ]);
@@ -69,37 +69,37 @@ describe("margin-call intelligence", () => {
       if (url.includes("transfer/accounts")) return accounts;
       if (url.includes("margin/") && url.includes("investing_info")) {
         return {
-          amount_borrowed: { amount: "4296.97" },
+          amount_borrowed: { amount: "4000" },
           margin_interest_rate: "5.0000",
-          margin_available: { amount: "4615.37" },
-          buying_power_with_margin: { amount: "318.40" },
+          margin_available: { amount: "4500" },
+          buying_power_with_margin: { amount: "500" },
           projected_intraday_buying_power: { amount: "0" },
-          margin_used_including_cash_held: { amount: "4296.97" },
+          margin_used_including_cash_held: { amount: "4000" },
           interest_exemption_amount: { amount: "1000" },
         };
       }
       if (url.includes("portfolios/")) {
         return {
-          equity: "3522.0372",
-          market_value: "7819.0072",
-          excess_maintenance: "79.3916",
-          excess_margin: "-834.5046",
+          equity: "3500",
+          market_value: "7500",
+          excess_maintenance: "70",
+          excess_margin: "-800",
         };
       }
       if (url.includes("wormhole/bw/orders/recent")) return { results: [riskOrder] };
       throw new Error(`unexpected ${url}`);
     };
 
-    const out = await getMarginHealth("873870497", { getJson: getJson as never });
+    const out = await getMarginHealth("900000003", { getJson: getJson as never });
     expect(out.accounts[0]).toMatchObject({
-      equityUsd: 3522.0372,
-      marketValueUsd: 7819.0072,
-      excessMaintenanceUsd: 79.3916,
-      maintenanceRequirementUsd: 3442.65,
-      maintenanceBufferPctOfEquity: 2.25,
+      equityUsd: 3500,
+      marketValueUsd: 7500,
+      excessMaintenanceUsd: 70,
+      maintenanceRequirementUsd: 3430,
+      maintenanceBufferPctOfEquity: 2,
       riskStatus: "critical",
       recentRiskLiquidationCount: 1,
-      recentRiskLiquidationRealizedPnlUsd: -824.92,
+      recentRiskLiquidationRealizedPnlUsd: -9,
     });
   });
 });

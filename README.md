@@ -1,5 +1,7 @@
 # Robinhood CLI (MCP + API)
 
+
+[Consolidation and verification report](./docs/consolidation-2026-09-07.md)
 > Trading at the speed of inference.
 
 > made in the name of equity (pun intended)

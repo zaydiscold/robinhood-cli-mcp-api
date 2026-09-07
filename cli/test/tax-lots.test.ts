@@ -320,6 +320,8 @@ describe("exact-lot sell planning", () => {
   });
 
   it("routes exact-lot submission through the shared gated write and remains dry-run by default", async () => {
+    const previousGate = process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+    process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1";
     const writes: any[] = [];
     const d = deps({
       write: async (request: any) => {
@@ -335,6 +337,7 @@ describe("exact-lot sell planning", () => {
     expect(writes[0]).toMatchObject({
       url: "https://api.robinhood.com/orders/",
       method: "POST",
+      dryRun: true,
       liveWrite: false,
       body: {
         quantity: "1",
@@ -343,6 +346,8 @@ describe("exact-lot sell planning", () => {
       },
     });
     expect(result).toMatchObject({ live: false, dryRun: true, state: null, orderId: null });
+    if (previousGate === undefined) delete process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
+    else process.env.ROBINHOOD_ALLOW_LIVE_WRITE = previousGate;
   });
 
   it("fails closed before the write chokepoint when live exact-lot submission is requested", async () => {

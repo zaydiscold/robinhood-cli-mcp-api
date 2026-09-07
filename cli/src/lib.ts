@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 import {
   appendFileSync,
@@ -2512,6 +2512,41 @@ export function refreshBrokerageToken(
   return undefined;
 }
 
+const authRefreshes = new Map<string, Promise<string | undefined>>();
+
+/** Non-blocking recovery shared by concurrent requests. Credentials never enter output. */
+export async function refreshBrokerageTokenAsync(
+  current?: string,
+  opts: { scrape?: boolean; envPath?: string } = {},
+): Promise<string | undefined> {
+  const envPath = opts.envPath ?? join(repoRoot(), ".env");
+  const disk = tokenFromEnvFile(envPath);
+  if (disk && disk !== current) return disk;
+  if (opts.scrape === false) return undefined;
+  let pending = authRefreshes.get(envPath);
+  if (!pending) {
+    pending = new Promise<string | undefined>((resolve) => {
+      try {
+        execFile(
+          resolveBash(),
+          [join(repoRoot(), "scripts", "refresh-auth.sh")],
+          {
+            timeout: 90_000,
+            maxBuffer: 64 * 1024,
+            env: { ...process.env, ROBINHOOD_ENV_PATH: envPath },
+          },
+          (error) => resolve(error ? undefined : tokenFromEnvFile(envPath)),
+        );
+      } catch {
+        resolve(undefined);
+      }
+    }).finally(() => authRefreshes.delete(envPath));
+    authRefreshes.set(envPath, pending);
+  }
+  const refreshed = await pending;
+  return refreshed !== current ? refreshed : undefined;
+}
+
 export type RobinhoodErrorKind =
   | "rate_limited"
   | "overnight_buying_power"
@@ -2693,7 +2728,7 @@ export async function executeBrokerageRequest(
   // Cold start: no token at all — try a browser-free disk refresh before giving up,
   // so a fresh MCP/CLI process self-arms without any manual setup.
   if (plan.requiresAuth && !token && !cookie && options.autoRefresh !== false) {
-    const fresh = refreshBrokerageToken(undefined, {
+    const fresh = await refreshBrokerageTokenAsync(undefined, {
       scrape: options.fetchImpl === undefined,
       envPath: options.envPath,
     });
@@ -2755,14 +2790,13 @@ export async function executeBrokerageRequest(
   let currentToken = token;
   let response = await send(currentToken);
 
-  // A 401 means the token expired and the request was rejected (never executed),
-  // so retrying after a refresh is safe even for writes. Only self-heal real token
-  // auth — skip for cookie-only or injected test fetch impls.
-  if (response.status === 401 && token && options.autoRefresh !== false) {
+  // Recover reads only. Mutations require reconciliation and a new ownership check
+  // before any attempt under refreshed credentials.
+  if (response.status === 401 && !plan.mutatesAccount && token && options.autoRefresh !== false) {
     // Re-read the .env file first — an out-of-band refresh / peer sync may have written a
     // fresh token that this long-running process never loaded — then fall back to a local
     // Chrome scrape. The disk re-read runs even with an injected fetch; the scrape does not.
-    const fresh = refreshBrokerageToken(token, {
+    const fresh = await refreshBrokerageTokenAsync(token, {
       scrape: options.fetchImpl === undefined,
       envPath: options.envPath,
     });
@@ -2910,7 +2944,12 @@ export interface OwnedAccounts {
   labels: Map<string, string>;
 }
 
-let _ownedAccountsCache: OwnedAccounts | null = null;
+let _ownedAccountsCache: {
+  value: OwnedAccounts;
+  expiresAt: number;
+  authKey: string;
+  getJson: typeof brokerageGetJson;
+} | null = null;
 
 /** Test-only: clear the process-global owned-accounts cache between cases. */
 export function __resetOwnedAccountsCache(): void {
@@ -2923,10 +2962,22 @@ export function __resetOwnedAccountsCache(): void {
  * so a transient/offline read WARNS rather than wedging every write.
  */
 export async function loadOwnedAccounts(
-  deps: { getJson?: typeof brokerageGetJson } = {},
+  deps: { getJson?: typeof brokerageGetJson; forceRefresh?: boolean } = {},
 ): Promise<OwnedAccounts | null> {
-  if (_ownedAccountsCache) return _ownedAccountsCache;
   const getJson = deps.getJson ?? brokerageGetJson;
+  const authKey = createHash("sha256")
+    .update(JSON.stringify(authFromEnv({})))
+    .digest("hex");
+  if (
+    !deps.forceRefresh &&
+    _ownedAccountsCache &&
+    _ownedAccountsCache.expiresAt > Date.now() &&
+    _ownedAccountsCache.authKey === authKey &&
+    _ownedAccountsCache.getJson === getJson
+  ) {
+    return _ownedAccountsCache.value;
+  }
+  _ownedAccountsCache = null;
   try {
     const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
     const rows: any[] = Array.isArray(graph?.results)
@@ -2943,8 +2994,9 @@ export async function loadOwnedAccounts(
       labels.set(String(a.account_number), a.account_name || a.display_title || "");
     }
     if (numbers.size === 0) return null;
-    _ownedAccountsCache = { numbers, labels };
-    return _ownedAccountsCache;
+    const value = { numbers, labels };
+    _ownedAccountsCache = { value, expiresAt: Date.now() + 30_000, authKey, getJson };
+    return value;
   } catch {
     return null;
   }
@@ -2963,7 +3015,10 @@ export async function assertAccountOwned(
   deps: { getJson?: typeof brokerageGetJson; onLookupFailure?: "warn" | "block" } = {},
 ): Promise<string | undefined> {
   if (!accountNumber) return undefined; // account-less call (e.g. panic across all accounts) — nothing to validate
-  const owned = await loadOwnedAccounts(deps);
+  let owned = await loadOwnedAccounts({ ...deps, forceRefresh: deps.onLookupFailure === "block" });
+  if (owned && !owned.numbers.has(String(accountNumber))) {
+    owned = await loadOwnedAccounts({ ...deps, forceRefresh: true });
+  }
   if (!owned) {
     if (deps.onLookupFailure === "block") {
       throw new Error(
@@ -3815,6 +3870,8 @@ export interface GatedBrokerageWriteResult extends ExecuteBrokerageResult {
   dryRun: boolean;
   reason?: string;
   verificationStatus: RouteVerificationStatus;
+  /** Transport acceptance alone does not verify the resulting account state. */
+  mutationVerified?: false;
 }
 
 export async function gatedBrokerageWrite(opts: {
@@ -3869,9 +3926,19 @@ export async function gatedBrokerageWrite(opts: {
     reason = `Route ${opts.method.toUpperCase()} ${route.url} is ${verificationStatus}; live execution requires verificationStatus=captured or live_verified. Forced to dry-run.`;
   }
 
+  const authSnapshot = authFromEnv(opts.executeOptions ?? {});
+  const executeOptions = {
+    ...opts.executeOptions,
+    token: authSnapshot.token ?? "",
+    cookie: authSnapshot.cookie ?? "",
+    csrfToken: authSnapshot.csrfToken ?? "",
+    autoRefresh: false,
+  };
   if (!effectiveDryRun && accountNumber) {
     await assertAccountOwned(accountNumber, {
-      getJson: opts.ownershipGetJson,
+      getJson:
+        opts.ownershipGetJson ??
+        ((url, params, query) => brokerageGetJson(url, params, query, executeOptions)),
       onLookupFailure: "block",
     });
   }
@@ -3887,7 +3954,7 @@ export async function gatedBrokerageWrite(opts: {
     dryRun: effectiveDryRun,
   });
   const result = await executeBrokerageRequest(plan, {
-    ...opts.executeOptions,
+    ...executeOptions,
     dryRun: effectiveDryRun,
     body: opts.body,
     fullBody: opts.fullBody ?? true,
@@ -3914,7 +3981,13 @@ export async function gatedBrokerageWrite(opts: {
       responseHead: bodyStr ? bodyStr.slice(0, 500) : null,
     });
   }
-  return { ...result, dryRun: effectiveDryRun, reason, verificationStatus };
+  return {
+    ...result,
+    dryRun: effectiveDryRun,
+    reason,
+    verificationStatus,
+    mutationVerified: false,
+  };
 }
 
 /** Append a trade to the local trading log (JSONL, one line per order). Best-effort. */
@@ -4228,7 +4301,7 @@ export async function buyWatchlistBasket(
     });
   }
 
-  // BP-aware sizing: read buying power once and only attempt what fits.
+  // Initial sizing is a preview estimate. Live legs re-read buying power before each send.
   let buyingPower: number | undefined;
   try {
     const bp = await getJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", {
@@ -4258,10 +4331,49 @@ export async function buyWatchlistBasket(
   }
 
   let placed = 0;
+  let attempted = 0;
+  let uncertain = false;
   for (let idx = 0; idx < affordable.length; idx++) {
     const sym = affordable[idx].symbol as string;
     let res: EquityOrderResult;
+    if (execution.live) {
+      if (uncertain) {
+        legs.push({
+          symbol: sym,
+          status: "blocked",
+          reason: "Prior submission needs reconciliation before continuing the basket",
+        });
+        continue;
+      }
+      try {
+        const latest = await getJson(
+          "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
+          { num: input.accountNumber },
+        );
+        const available = latest?.buying_power;
+        if (
+          available == null ||
+          !Number.isFinite(Number(available)) ||
+          Number(available) < amount
+        ) {
+          legs.push({
+            symbol: sym,
+            status: "blocked",
+            reason: "Fresh buying power is unavailable or insufficient for this leg",
+          });
+          continue;
+        }
+      } catch {
+        legs.push({
+          symbol: sym,
+          status: "blocked",
+          reason: "Fresh buying power lookup failed; nothing submitted for this leg",
+        });
+        continue;
+      }
+    }
     try {
+      attempted++;
       res = await placeOrder({
         symbol: sym,
         accountNumber: input.accountNumber,
@@ -4275,6 +4387,7 @@ export async function buyWatchlistBasket(
     } catch (e: any) {
       const msg = String(e?.message ?? e);
       const nonBuyable = /fractional|otc/i.test(msg);
+      if (execution.live && !nonBuyable) uncertain = true;
       legs.push({ symbol: sym, status: nonBuyable ? "skipped" : "failed", reason: msg });
       continue;
     }
@@ -4305,6 +4418,7 @@ export async function buyWatchlistBasket(
       });
       placed++;
     } else {
+      uncertain = true;
       legs.push({
         symbol: sym,
         status: "failed",
@@ -4329,7 +4443,7 @@ export async function buyWatchlistBasket(
     counts: {
       items: items.length,
       tradable: tradable.length,
-      attempted: affordable.length,
+      attempted,
       placed,
       skipped: legs.filter((l) => l.status === "skipped").length,
       failed: legs.filter((l) => l.status === "failed").length,
@@ -4917,7 +5031,10 @@ export async function placeEquityOrder(
     const sentId = (rb as any)?.id ?? null;
     const status = Number(result.status);
     if (status >= 200 && status < 300 && sentId) {
-      evidence = await verifyOrderEvidence(String(sentId), "equity", { getJson });
+      evidence = await verifyOrderEvidence(String(sentId), "equity", {
+        getJson,
+        expectedAccountNumber: input.accountNumber,
+      });
     } else {
       evidence = {
         confirmed: false,
@@ -5009,7 +5126,7 @@ export interface OrderEvidence {
 export async function verifyOrderEvidence(
   idOrUrl: string,
   kind: OrderKind = "equity",
-  deps: { getJson?: typeof brokerageGetJson } = {},
+  deps: { getJson?: typeof brokerageGetJson; expectedAccountNumber?: string } = {},
 ): Promise<OrderEvidence> {
   const getJson = deps.getJson ?? brokerageGetJson;
   const id = extractOrderId(idOrUrl);
@@ -5019,7 +5136,14 @@ export async function verifyOrderEvidence(
       : "https://api.robinhood.com/orders/{0}/";
   try {
     const order = await getJson(url, { "0": id });
-    if (order && (order.id || order.state)) {
+    const observedAccount =
+      order?.account_number ??
+      (typeof order?.account === "string"
+        ? order.account.replace(/\/$/, "").split("/").pop()
+        : undefined);
+    const accountMatches =
+      !deps.expectedAccountNumber || observedAccount === deps.expectedAccountNumber;
+    if (order && String(order.id ?? "") === id && accountMatches) {
       return { confirmed: true, id: order.id ?? id, state: order.state ?? null };
     }
     return {
@@ -5157,7 +5281,10 @@ export async function cancelOrder(
   if (!result.dryRun) {
     const status = Number(result.status);
     if (status >= 200 && status < 300) {
-      evidence = await verifyOrderEvidence(id, kind, deps);
+      evidence = await verifyOrderEvidence(id, kind, {
+        ...deps,
+        expectedAccountNumber: cancelAccount,
+      });
       if (evidence.confirmed && evidence.state && !/cancel/i.test(evidence.state)) {
         evidence = {
           ...evidence,
@@ -12167,7 +12294,7 @@ export async function submitTaxLotSale(
     method: "POST",
     body: plan.orderBody,
     accountNumber: input.accountNumber,
-    dryRun: input.dryRun,
+    dryRun: true,
     liveWrite: input.liveWrite ?? false,
   });
   let response: any = null;

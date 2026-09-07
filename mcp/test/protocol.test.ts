@@ -68,7 +68,7 @@ describe("MCP protocol conformance", () => {
       expect.objectContaining({
         isError: true,
         structuredContent: {
-          error: expect.objectContaining({ retryable: true, message: "temporary timeout" }),
+          error: expect.objectContaining({ retryable: false, message: "temporary timeout" }),
         },
       }),
     );

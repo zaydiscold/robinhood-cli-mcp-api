@@ -31,7 +31,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export ROBINHOOD_ENV_PATH="$REPO_DIR/.env"
+export ROBINHOOD_ENV_PATH="${ROBINHOOD_ENV_PATH:-$REPO_DIR/.env}"
 
 # Native Python on Windows does not understand MSYS paths such as /c/Users/…
 # (it otherwise receives them as C:\\c\\Users/…). Keep POSIX paths for Bash,
@@ -88,7 +88,7 @@ command -v "$PYTHON_BIN" >/dev/null || { echo "ERROR: $PYTHON_BIN not on PATH" >
 # These values are consumed by native Python scripts below. On Windows they
 # must be native drive paths; Bash still retains REPO_DIR for shell operations.
 PYTHON_REPO_DIR="$(native_path "$REPO_DIR")"
-PYTHON_ENV_PATH="$(native_path "$REPO_DIR/.env")"
+PYTHON_ENV_PATH="$(native_path "$ROBINHOOD_ENV_PATH")"
 CHROME_BASE="$(native_path "$CHROME_BASE")"
 BRAVE_BASE="$(native_path "${BRAVE_BASE:-}")"
 EDGE_BASE="$(native_path "${EDGE_BASE:-}")"
@@ -170,7 +170,7 @@ fi
 shopt -s nullglob
 candidates=("$CANDIDATE_DIR"/*.env)
 shopt -u nullglob
-if [ "${#candidates[@]}" -eq 0 ] && [ ! -f "$REPO_DIR/.env" ]; then
+if [ "${#candidates[@]}" -eq 0 ] && [ ! -f "$ROBINHOOD_ENV_PATH" ]; then
     echo "[refresh-auth] no Robinhood auth found via installed state, CDP, Safari, or Chromium LevelDB" >&2
     exit 2
 fi
@@ -180,64 +180,45 @@ fi
 # guardian window. No production file is touched before the staged bearer works.
 STAGED_ENV="$CANDIDATE_DIR/selected.env"
 PYTHON_STAGED_ENV="$(native_path "$STAGED_ENV")"
-if [ -f "$REPO_DIR/.env" ]; then
-    cp "$REPO_DIR/.env" "$STAGED_ENV"
+if [ -f "$ROBINHOOD_ENV_PATH" ]; then
+    cp "$ROBINHOOD_ENV_PATH" "$STAGED_ENV"
 else
     : > "$STAGED_ENV"
 fi
 
 python_candidates=()
-if [ -f "$REPO_DIR/.env" ]; then
+if [ -f "$ROBINHOOD_ENV_PATH" ]; then
     python_candidates+=("$TARGET_ENV_PATH")
 fi
 for candidate in "${candidates[@]}"; do
     [ "$candidate" = "$STAGED_ENV" ] && continue
     python_candidates+=("$(native_path "$candidate")")
 done
-minimum_remaining="${ROBINHOOD_AUTH_MIN_REMAINING_SECONDS:-345600}"
+minimum_remaining="${ROBINHOOD_AUTH_MIN_REMAINING_SECONDS:-60}"
 selection_output="$($PYTHON_BIN "$PYTHON_REPO_DIR/scripts/select-auth-candidate.py" \
-    --target "$PYTHON_STAGED_ENV" \
+    --target "$PYTHON_STAGED_ENV" --verify \
     --minimum-remaining-seconds "$minimum_remaining" \
     "${python_candidates[@]}")" || {
     echo "[refresh-auth] no acceptable bearer; production .env preserved" >&2
     exit 2
 }
 
-# Live validation uses the staged bearer through the environment. dotenv does
-# not override it, so the repo's current .env remains untouched during proof.
-set -a
-# shellcheck disable=SC1090
-source "$STAGED_ENV"
-set +a
-VERIFY_JSON="$CANDIDATE_DIR/accounts.json"
-VERIFY_ERR="$CANDIDATE_DIR/accounts.err"
-if ! node "$REPO_DIR/cli/dist/index.js" accounts --json >"$VERIFY_JSON" 2>"$VERIFY_ERR"; then
-    echo "[refresh-auth] staged bearer failed live accounts read; production .env preserved" >&2
-    exit 3
-fi
-"$PYTHON_BIN" - "$PYTHON_CANDIDATE_DIR/accounts.json" <<'PYVERIFY' || {
-import json
-import sys
-
-path = sys.argv[1]
-try:
-    value = json.load(open(path, encoding="utf-8"))
-except (OSError, json.JSONDecodeError) as exc:
-    raise SystemExit(f"invalid accounts verification: {type(exc).__name__}")
-if not isinstance(value, list) or not value:
-    raise SystemExit("accounts verification returned no accounts")
-print(f"accounts_verified={len(value)}")
-PYVERIFY
-    echo "[refresh-auth] staged bearer returned invalid account data; production .env preserved" >&2
-    exit 3
-}
-
+# Selection verifies the exact bearer without fallback auth or inherited cookies.
 "$PYTHON_BIN" - "$PYTHON_STAGED_ENV" "$TARGET_ENV_PATH" <<'PYPROMOTE'
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 staged, target = sys.argv[1:]
-os.replace(staged, target)
+with tempfile.NamedTemporaryFile(dir=Path(target).parent, delete=False) as output:
+    temporary = output.name
+    output.write(Path(staged).read_bytes())
+try:
+    os.replace(temporary, target)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
 try:
     os.chmod(target, 0o600)
 except OSError:

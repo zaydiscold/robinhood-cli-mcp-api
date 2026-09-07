@@ -6,6 +6,7 @@ import datetime
 import json
 import os
 import sys
+import urllib.request
 from pathlib import Path
 
 
@@ -25,7 +26,7 @@ def jwt_exp(token):
         return 0
 
 
-DEFAULT_MIN_REMAINING_SECONDS = 4 * 86400
+DEFAULT_MIN_REMAINING_SECONDS = 60
 
 
 def select_freshest(paths, *, now=None, min_remaining_seconds=DEFAULT_MIN_REMAINING_SECONDS):
@@ -54,6 +55,44 @@ def select_freshest(paths, *, now=None, min_remaining_seconds=DEFAULT_MIN_REMAIN
     return acceptable[0]
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def verify_token(token):
+    """Verify this exact candidate. Never refresh, inherit cookies, or follow redirects."""
+    request = urllib.request.Request(
+        "https://api.robinhood.com/accounts/?default_to_all_accounts=true",
+        headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(request, timeout=5) as response:
+            payload = response.read(2_000_001)
+            if len(payload) > 2_000_000:
+                return False
+            data = json.loads(payload)
+            rows = data.get("results") if isinstance(data, dict) else None
+            return isinstance(rows, list) and any(
+                isinstance(row, dict) and row.get("account_number") for row in rows
+            )
+    except Exception:
+        return False
+
+
+def select_verified(paths, *, verify=verify_token, **kwargs):
+    remaining = list(paths)
+    rejected = set()
+    while remaining:
+        candidate = select_freshest(remaining, **kwargs)
+        token = candidate[4]
+        if token not in rejected and verify(token):
+            return candidate
+        rejected.add(token)
+        remaining.remove(candidate[3])
+    raise RuntimeError("no candidate passed exact-token account verification")
+
+
 def write_target(target, token, source, exp):
     old = target.read_text(encoding="utf-8") if target.exists() else ""
     keep = []
@@ -66,7 +105,7 @@ def write_target(target, token, source, exp):
         keep.append(line)
     now = datetime.datetime.now(datetime.timezone.utc)
     header = (
-        "# Robinhood brokerage auth — freshest verified candidate "
+        "# Robinhood brokerage auth: selected candidate "
         + now.isoformat()
         + "\n# token_type=Bearer jwt_exp="
         + str(exp)
@@ -92,11 +131,13 @@ def main():
         type=int,
         default=DEFAULT_MIN_REMAINING_SECONDS,
     )
+    parser.add_argument("--verify", action="store_true")
     parser.add_argument("candidates", nargs="+", type=Path)
     args = parser.parse_args()
     existing = [path for path in args.candidates if path.exists()]
     try:
-        exp, _mtime, _length, path, token = select_freshest(
+        select = select_verified if args.verify else select_freshest
+        exp, _mtime, _length, path, token = select(
             existing, min_remaining_seconds=args.minimum_remaining_seconds
         )
     except RuntimeError as exc:

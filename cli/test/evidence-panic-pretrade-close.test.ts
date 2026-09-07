@@ -91,7 +91,7 @@ describe("placeEquityOrder — post-send evidence", () => {
     enableLiveWrites();
     const d = deps({
       writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-1", state: "unconfirmed" }) },
-      rereadOrder: { id: "ord-1", state: "queued" }
+      rereadOrder: { id: "ord-1", state: "queued", account_number: "A1" }
     });
     const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, d);
     expect(r.evidence).toMatchObject({ confirmed: true, id: "ord-1", state: "queued" });
@@ -332,8 +332,8 @@ describe("panicCancelAll — dry-run default, per-cancel gating, evidence", () =
     enableLiveWrites();
     const { getJson: baseGetJson } = fixtures();
     const getJson = async (url: string, params: any = {}, query: any = {}) => {
-      if (url === "https://api.robinhood.com/orders/{0}/") return { id: params["0"], state: "cancelled" };
-      if (url === "https://api.robinhood.com/options/orders/{0}/") return { id: params["0"], state: "cancelled" };
+      if (url === "https://api.robinhood.com/orders/{0}/") return { id: params["0"], state: "cancelled", account_number: "111100001111" };
+      if (url === "https://api.robinhood.com/options/orders/{0}/") return { id: params["0"], state: "cancelled", account_number: "222200002222" };
       return baseGetJson(url, params, query);
     };
     let first = true;

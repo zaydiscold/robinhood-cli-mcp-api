@@ -4,7 +4,7 @@
 *Source: scheduled postmarket portfolio brief*
 
 ### Completed
-- [x] Recover an independently verified brokerage session from frostbyte CDP and import it without printing the bearer
+- [x] Recover an independently verified brokerage session from operator-laptop CDP and import it without printing the bearer
 - [x] Verify live `accounts --json`: 5 parseable authenticated accounts, 4 funded
 - [x] Run `capture_daily.py postmarket`: 23 option rows, 0 capture errors
 - [x] Complete the serialized postmarket sweep: portfolio/day/after-hours, positions, options, Greeks, margin, buying power, risk, orders, history, expirations, events, quotes, and audit artifacts

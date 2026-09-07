@@ -80,6 +80,10 @@ jobs:
         run: pnpm build
       - name: Test built workspace (vitest — incl. cross-platform .env, resolveBash, gate/cap guards)
         run: pnpm test:built
+      - name: Authentication recovery regressions
+        run: |
+          node scripts/test-auth-session.mjs
+          python scripts/test_auth_candidate_selection.py
       - name: Coverage ratchet (canonical Linux/Node 20 job)
         if: matrix.os == 'ubuntu-latest' && matrix.node == 20
         run: pnpm coverage:built

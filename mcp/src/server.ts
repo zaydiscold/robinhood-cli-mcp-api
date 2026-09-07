@@ -265,7 +265,8 @@ export function mcpError(e: unknown) {
           .replace(/([a-z])([A-Z])/g, "$1_$2")
           .toUpperCase()
       : "ROBINHOOD_ERROR";
-  const retryable = /(?:429|rate.?limit|timeout|temporar|ECONNRESET|fetch failed)/i.test(message);
+  // A lost response can follow a successful mutation. Reconcile before retrying.
+  const retryable = false;
   const error = { code, message, retryable };
   return {
     isError: true as const,
@@ -3714,13 +3715,14 @@ registerCapabilityTool(
     outputSchema: lifecycleOutputSchema,
     annotations: toolAnnotations(true, "read"),
   },
-  async ({ id, interval_ms, timeout_ms }: any) =>
+  async ({ id, interval_ms, timeout_ms }: any, extra: { signal: AbortSignal }) =>
     jsonResponse(
       await watchOrderLifecycle({
         id,
         poll: getOrderStatus,
         intervalMs: interval_ms,
         timeoutMs: timeout_ms,
+        signal: extra.signal,
       }),
     ),
 );

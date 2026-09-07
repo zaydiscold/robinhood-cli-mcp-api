@@ -149,7 +149,7 @@ const program = new Command();
 program
   .name("robinhood-cli")
   .description(
-    "Personal live Robinhood API map CLI. Crypto signing helper plus brokerage/account route inventory and executor.",
+    "Unofficial Robinhood CLI for account data, options analytics, and controlled account workflows.",
   )
   .version("1.1.0");
 

@@ -58,6 +58,28 @@ class AuthCandidateSelectionTests(unittest.TestCase):
             self.assertEqual(exp, 900)
             self.assertEqual(token, jwt(900))
 
+    def test_recovery_accepts_a_valid_one_day_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "candidate.env"
+            path.write_text("ROBINHOOD_BROKERAGE_TOKEN=" + jwt(1000 + 86400) + "\n")
+            candidate = selector.select_verified([path], now=1000, verify=lambda token: True)
+            self.assertEqual(candidate[3], path)
+
+    def test_revoked_longer_candidate_falls_back_without_promoting_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = [Path(tmp) / "revoked.env", Path(tmp) / "working.env"]
+            for path, exp in zip(paths, [100000, 50000]):
+                path.write_text("ROBINHOOD_BROKERAGE_TOKEN=" + jwt(exp) + "\n")
+            seen = []
+            def verify(token):
+                seen.append(token)
+                return token == jwt(50000)
+            chosen = selector.select_verified(paths, now=1000, verify=verify)
+            self.assertEqual(chosen[3], paths[1])
+            self.assertEqual(len(seen), 2)
+            with self.assertRaises(RuntimeError):
+                selector.select_verified(paths, now=1000, verify=lambda token: False)
+
     def test_no_candidate_fails_closed(self):
         with self.assertRaises(RuntimeError):
             selector.select_freshest([])

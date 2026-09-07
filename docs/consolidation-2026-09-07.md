@@ -41,7 +41,7 @@ Packaging proof: packed CLI and MCP tarballs installed into a separate empty dir
 
 ## Privacy and remaining limits
 
-Replaced captured account identifiers, nickname, and financial fixture amounts with synthetic data. Exact-value checks of five active account numbers found no matches in current tracked files. Gitleaks scanned all 327 historical commits: two findings were the same deliberately synthetic redaction-test string, not live credentials. Historical commits still contain previously committed personal identifiers and fixture data. Current-file cleanup does not erase that history; the existing public history is not cleared for promotion by this report.
+Replaced captured account identifiers, nickname, and financial fixture amounts with synthetic data. Exact-value checks of five active account numbers found no matches in current tracked files. Gitleaks scanned all 328 historical commits: two findings were the same deliberately synthetic redaction-test string, not live credentials. Historical commits still contain previously committed personal identifiers and fixture data. Current-file cleanup does not erase that history; the existing public history is not cleared for promotion by this report.
 
 Raw browser tokens, cookies, account responses, and review text were not included in this document or source changes. Private captures remain local and ignored. No credentials were copied to another machine.
 
@@ -52,3 +52,9 @@ Watchlist/settings/recurring transport receipts without exact readback remain un
 ## Expanded live read sweep
 
 Twenty additional command invocations covered exposure/Greeks, risk, performance, dividends, option events and positions, calendar, sweep interest, Gold fees, rewards, inbox aggregates, expirations, chain statistics, earnings, ratings, and repeat portfolio/margin checks. Nineteen returned JSON successfully. Portfolio explicitly reported complete=true with no warnings. Income and calendar returned one warning each and are not counted as fully complete data. The default 90-day trade review exceeded a 45-second test budget; this is recorded as incomplete evidence, not a failed authentication diagnosis. Raw personal results were not retained in public artifacts.
+
+## Installed local runtime proof
+
+The clean source checkout was fast-forwarded to e515301 and rebuilt at the configured Hermes MCP path. `hermes mcp test robinhood-cli` connected and discovered 93 tools. A separate client launched that exact path without inherited brokerage token/cookie environment values and successfully read five accounts. The session was refreshed from the authorized Chrome and independently verified before promotion. This verifies a new local MCP process, not an existing cached Hermes process or the remote host.
+
+A narrower `review --days 7 --json` retry completed in 14.8 seconds with no warnings. The original 90-day query remains outside the completed live evidence.

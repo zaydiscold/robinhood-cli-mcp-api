@@ -20,6 +20,10 @@
     "./tax-reference": {
       "types": "./dist/tax-reference.d.ts",
       "import": "./dist/tax-reference.js"
+    },
+    "./tax-strategy": {
+      "types": "./dist/tax-strategy.d.ts",
+      "import": "./dist/tax-strategy.js"
     }
   },
   "files": [

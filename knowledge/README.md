@@ -10,7 +10,7 @@ the user's request. Do not ingest every module by default.
 | --- | --- | --- |
 | 0: operating contract | [`SKILL.md`](../SKILL.md) | Safety invariants, surface selection, and intent routing |
 | 1: focused module | `knowledge/*.md` | Commands, decision rules, and task-specific failure modes |
-| 2: generated reference | [`tax-reference.md`](tax-reference.md) and generated API maps | Versioned claims or machine contracts that prose must not contradict |
+| 2: machine-backed reference | [`tax-reference.md`](tax-reference.md), [`tax-strategy-routing.md`](tax-strategy-routing.md), and generated API maps | Versioned claims, strategy-to-rule contracts, or machine contracts that prose must not contradict |
 | 3: deep research | [`docs/*.md`](../docs/README.md) | Dated evidence, methodology, and longer analysis |
 | 4: maintainer reference | [`AGENTS.md`](../AGENTS.md) | Auth, route details, implementation, and raw examples |
 | runtime truth | CLI `--help`, MCP `tools/list`, package exports | What the current installed build actually exposes |
@@ -19,7 +19,7 @@ Use this precedence when sources conflict:
 
 ```text
 current runtime
-> generated contract
+> generated or validated machine contract
 > primary evidence
 > focused module
 > dated deep research
@@ -53,18 +53,24 @@ Report a discrepancy instead of silently selecting the sentence that makes an ac
 
 ### Tax mechanics and tax-aware account facts
 
-For **every tax question**, load [`tax-reference.md`](tax-reference.md) first. It is generated from a
+For **every material tax claim**, load [`tax-reference.md`](tax-reference.md). It is generated from a
 versioned source catalog and separates primary law, IRS guidance, Robinhood behavior, and planning
 inference.
 
+When the user names a **strategy or structure**, load [`tax-strategy-routing.md`](tax-strategy-routing.md)
+first. It maps the strategy to required facts, maintained Robinhood reads, linked rule topics, red
+flags, and stop conditions without selecting a trade or determining a filing result.
+
 | Module | Load when | Main surfaces |
 | --- | --- | --- |
-| [`tax-reference.md`](tax-reference.md) | Any question about wash sales, Section 1256, QCCs, exercise, boxes, constructive sales, lots, or broker estimates | `robinhood-tax`, importable tax-reference API, MCP knowledge |
+| [`tax-strategy-routing.md`](tax-strategy-routing.md) | Covered call, CSP, wheel, roll, loss harvest, Section 1256 index option, box, collar, dividend capture, short sale, or specific-lot structure | `robinhood-cli tax strategy`, importable tax-strategy API, MCP knowledge plus named account reads |
+| [`tax-reference.md`](tax-reference.md) | Any question about wash sales, Section 1256, QCCs, exercise, boxes, constructive sales, lots, dividend holding periods, short sales, or broker estimates | `robinhood-cli tax`, importable tax-reference API, MCP knowledge |
 | [`tax.md`](tax.md) | The question combines tax mechanics with live Robinhood accounts, lots, history, settings, or documents | `tax-lots`, `documents`, `history`, `recurring`, `settings` |
 | [`tax-loss-harvesting.md`](tax-loss-harvesting.md) | The user is considering a loss sale or replacement exposure | 61-day control workflow and lot evidence |
 
-Tax reference reads are educational and never authorize a sale. Live account facts and state-changing
-actions remain separate surfaces with separate consent.
+Tax research reads are educational and never authorize a sale, roll, assignment response, exercise,
+lot selection, or account change. Live account facts and state-changing actions remain separate
+surfaces with separate consent.
 
 ### Research, income, and operator context
 
@@ -81,7 +87,7 @@ Every focused module should:
 - identify live, local, generated, and inferred evidence separately
 - prefer maintained first-class surfaces over raw routes
 - preserve account scope and timestamps
-- preserve missing, partial, stale, and unverified states
+- preserve missing, partial, stale, unverified, and not-evaluated states
 - use dollar-weighted analysis where position size matters
 - keep mutations dry-run by default
 - require exact user approval for a resolved state-changing action
@@ -95,6 +101,7 @@ A module must not:
 - contradict CLI `--help` or MCP `tools/list`
 - present app estimates as federal tax law
 - turn tax or strategy research into standing trade authorization
+- infer a filing result from a strategy name or product label
 - imply that an HTTP success proves execution
 - erase uncertainty by converting missing values to zero
 
@@ -115,7 +122,16 @@ When a tax claim changes:
 3. use a primary or official source where available
 4. run `pnpm generate:tax-reference`
 5. commit the generated [`tax-reference.md`](tax-reference.md)
-6. update narrative modules only if the operating explanation changed
+6. align [`tax-strategies.json`](tax-strategies.json) when a linked strategy is affected
+7. update narrative modules only if the operating explanation changed
+
+When a tax strategy workflow changes:
+
+1. edit [`tax-strategies.json`](tax-strategies.json)
+2. link only source-backed topic and source IDs from the tax-reference catalog
+3. preserve required facts, broker reads, red flags, and stop conditions
+4. update [`tax-strategy-routing.md`](tax-strategy-routing.md) when the public inventory or contract changes
+5. add focused API and CLI tests
 
 Do not expand [`SKILL.md`](../SKILL.md) into a second `AGENTS.md`. Keep the skill as the binding router
 and place depth here or in `docs/`.

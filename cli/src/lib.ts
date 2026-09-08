@@ -2974,7 +2974,7 @@ export async function brokerageGetAllResults(
     }
     if (!cursor) return all; // unparseable/missing cursor — stop rather than loop forever
   }
-  return all; // hit maxPages guard; return what we have (caller decides if that's suspicious)
+  throw new Error(`pagination limit (${maxPages} pages) reached for ${url}; refusing to return a truncated result`);
 }
 
 /** Non-throwing brokerageGetJson — returns {ok:false,error} instead of throwing. */
@@ -10615,9 +10615,30 @@ export interface UnifiedHistoryEvent {
 /** Unified transaction history: equity + options + crypto orders + ACH transfers, newest first. */
 export async function getUnifiedHistory(
   opts: { days?: number; accountNumber?: string },
-  deps: { getJson?: typeof brokerageGetJson; now?: () => number } = {},
+  deps: {
+    getJson?: typeof brokerageGetJson;
+    getAll?: typeof brokerageGetAllResults;
+    now?: () => number;
+  } = {},
 ): Promise<UnifiedHistoryEvent[]> {
   const getJson = deps.getJson ?? brokerageGetJson;
+  const getAll = deps.getAll
+    ? deps.getAll
+    : deps.getJson
+      ? async (url: string, params: Record<string, string> = {}, query: Record<string, string> = {}) => {
+          const all: any[] = [];
+          let cursor: string | undefined;
+          for (let page = 0; page < 50; page++) {
+            const data = await getJson(url, params, cursor ? { ...query, cursor } : query);
+            if (Array.isArray(data?.results)) all.push(...data.results);
+            const next = String(data?.next ?? "");
+            if (!next) return all;
+            cursor = new URL(next).searchParams.get("cursor") ?? undefined;
+            if (!cursor) return all;
+          }
+          throw new Error(`pagination limit (50 pages) reached for ${url}; refusing to return a truncated result`);
+        }
+      : brokerageGetAllResults;
   const now = deps.now ?? Date.now;
   const days = Math.max(1, opts.days ?? 3);
   const cutoffMs = now() - days * 86400000;
@@ -10635,6 +10656,18 @@ export async function getUnifiedHistory(
     try {
       return { ok: true as const, data: await getJson(url, params, query) };
     } catch (error) {
+      return { ok: false as const, error };
+    }
+  };
+  const safeGetAll = async (
+    url: string,
+    params: Record<string, string> = {},
+    query: Record<string, string> = {},
+  ) => {
+    try {
+      return { ok: true as const, data: await getAll(url, params, query) };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("pagination limit")) throw error;
       return { ok: false as const, error };
     }
   };
@@ -10691,28 +10724,46 @@ export async function getUnifiedHistory(
   }
 
   // Legacy equity orders supplement Wormhole for longer windows.
-  const eq = await safeGet(
-    `https://api.robinhood.com/orders/${opts.accountNumber ? `?account_number=${encodeURIComponent(opts.accountNumber)}` : ""}`,
-  );
-  if (eq.ok)
-    for (const r of (eq.data as any)?.results ?? []) {
-      if (r.id && seenOrderIds.has(String(r.id))) continue;
+  for (const { acct } of owned) {
+    const eq = await safeGetAll(
+      "https://api.robinhood.com/orders/",
+      {},
+      { account_number: acct },
+    );
+    if (!eq.ok) continue;
+    for (const r of eq.data) {
+      const id = String(r.id ?? "");
+      if (id && seenOrderIds.has(id)) continue;
       const t = r.updated_at ?? r.created_at;
-      if (inWindow(t))
+      if (inWindow(t)) {
+        if (id) seenOrderIds.add(id);
+        const side = String(r.side ?? "?").toLowerCase();
+        const quantity = finiteNumber(r.quantity);
+        const averagePrice = finiteNumber(r.average_price ?? r.price);
         events.push({
           time: String(t),
           kind: "equity",
           summary: `${r.side ?? "?"} ${r.quantity ?? "?"} @ ${r.average_price ?? r.price ?? "?"}`,
-          state: String(r.state ?? "?"),
+          state: String(r.state ?? "?").toLowerCase(),
+          orderId: id || undefined,
+          accountLast4: acct.slice(-4),
+          accountLabel: owned.find((account) => account.acct === acct)?.label || undefined,
+          side,
+          quantity: Number.isFinite(quantity) ? quantity : undefined,
+          averagePrice: Number.isFinite(averagePrice) ? averagePrice : undefined,
         });
+      }
     }
+  }
 
   // Options orders
-  const op = await safeGet(
-    `https://api.robinhood.com/options/orders/${opts.accountNumber ? `?account_numbers=${encodeURIComponent(opts.accountNumber)}` : ""}`,
+  const op = await safeGetAll(
+    "https://api.robinhood.com/options/orders/",
+    {},
+    opts.accountNumber ? { account_numbers: opts.accountNumber } : {},
   );
   if (op.ok)
-    for (const r of (op.data as any)?.results ?? []) {
+    for (const r of op.data) {
       if (r.id && seenOrderIds.has(String(r.id))) continue;
       const t = r.updated_at ?? r.created_at;
       if (inWindow(t))
@@ -10726,9 +10777,9 @@ export async function getUnifiedHistory(
     }
 
   // Crypto orders
-  const cx = await safeGet("https://nummus.robinhood.com/orders/");
+  const cx = await safeGetAll("https://nummus.robinhood.com/orders/");
   if (cx.ok)
-    for (const r of (cx.data as any)?.results ?? []) {
+    for (const r of cx.data) {
       const t = r.updated_at ?? r.created_at;
       if (inWindow(t))
         events.push({
@@ -10740,9 +10791,9 @@ export async function getUnifiedHistory(
     }
 
   // ACH transfers
-  const ach = await safeGet("https://api.robinhood.com/ach/transfers/");
+  const ach = await safeGetAll("https://api.robinhood.com/ach/transfers/");
   if (ach.ok)
-    for (const r of (ach.data as any)?.results ?? []) {
+    for (const r of ach.data) {
       const t = r.updated_at ?? r.created_at;
       if (inWindow(t))
         events.push({

@@ -56,6 +56,33 @@ robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --dry-run 
 
 Live execution is personal-side behavior. Writes are env-gated by `ROBINHOOD_ALLOW_LIVE_WRITE=1` — the single master switch; without it, every write is a dry-run. `--dry-run` is accepted but no longer the gate; the environment variable is the sole live-write control.
 
+## Recovering a browser-session bearer
+
+This is an **operator recovery procedure**, not a promise that every installed copy can refresh itself. `pnpm auth:refresh` discovers local Chromium state and configured CDP endpoints, ranks existing candidates by JWT expiry, validates a staged candidate with a read-only `accounts --json` request, and then atomically promotes it to `.env`. It does not log in, complete MFA, call an OAuth refresh-token grant, or mint a new 30-day browser session.
+
+1. Start with the local sources. A LevelDB scan can legitimately find no usable token while a logged-in Chrome debug target still has `localStorage["web:auth_state"]` in memory. The refresh script checks CDP (including port 9222) as well as supported Chromium storage; a successful extractor must report `auth_state=yes token_written=yes`.
+2. Do not infer that a remote browser or laptop is asleep or logged out from a Tailscale/SSH timeout. Check an independently authorized LAN route when one is available, then evaluate the browser state there. Do not put hostnames, addresses, account details, or copied credentials in public docs or tickets.
+3. Run the supported recovery command from the repository root:
+
+   ```bash
+   pnpm auth:refresh
+   ```
+
+   The current implementation stages the candidate, enforces its configured minimum remaining lifetime, performs a live read-only account check, and only then uses an atomic replace. If selection or verification fails, it preserves the existing `.env`; do not overwrite a still-valid credential by hand.
+4. For a recovery proof, require the account read to run with automatic refresh disabled: it proves the staged candidate itself, rather than a retry that discovered another credential. The engine supports this through its `autoRefresh: false` execution option, but the public CLI does **not** currently expose that switch and `scripts/refresh-auth.sh` does not set it. Therefore the script's built-in check is a supported read-only safeguard, not proof that automatic refresh was disabled; use an operator verifier that sets the option before declaring that stricter proof complete.
+5. Treat browser-token expiry as observed metadata, not a fresh 30-day guarantee. A browser can already be partway through its session lifetime. Check the candidate's reported expiry and verify the live read rather than relying on the age of a file or prior login date.
+6. Keep CLI, custom MCP, and cron on the same credential source. The custom MCP must launch with the repository as its working directory so its engine reads the same gitignored `.env`; cron should invoke the built CLI from that repository rather than copying a token into its definition. After a recovery, use read-only health checks such as `node cli/dist/index.js accounts --json` and the MCP's account-read tool. Do not use order, transfer, or other write commands as an auth test.
+
+Useful safe inspection commands:
+
+```bash
+bash -n scripts/refresh-auth.sh
+node cli/dist/index.js accounts --help
+node cli/dist/index.js --help
+```
+
+For the public documentation map and its redaction rules, see the [documentation index](README.md).
+
 <!-- Zayd Khan // cold // www.zayd.wtf -->
 
 ## Recovery across CLI and MCP

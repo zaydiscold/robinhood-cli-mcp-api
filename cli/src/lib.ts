@@ -2958,23 +2958,58 @@ export async function brokerageGetAllResults(
   query: Record<string, string> = {},
   options: ExecuteBrokerageOptions & { maxPages?: number } = {},
 ): Promise<any[]> {
-  const maxPages = options.maxPages ?? 50;
+  return collectBrokeragePages(
+    (pageQuery) => brokerageGetJson(url, params, pageQuery, options),
+    query,
+    options.maxPages ?? 50,
+  );
+}
+
+class PaginationError extends Error {}
+
+async function collectBrokeragePages(
+  read: (query: Record<string, string>) => Promise<any>,
+  query: Record<string, string>,
+  maxPages: number,
+): Promise<any[]> {
+  if (!(Number.isInteger(maxPages) && maxPages > 0)) {
+    throw new RangeError("maxPages must be a positive integer");
+  }
   const all: any[] = [];
+  const seen = new Set<string>();
+  if (query.cursor) seen.add(query.cursor);
   let cursor: string | undefined;
   for (let page = 0; page < maxPages; page++) {
-    const pageQuery = cursor ? { ...query, cursor } : query;
-    const data = await brokerageGetJson(url, params, pageQuery, options);
-    if (Array.isArray(data?.results)) all.push(...data.results);
-    const next: string | undefined = data?.next ?? undefined;
-    if (!next) return all;
+    let data: any;
     try {
-      cursor = new URL(next).searchParams.get("cursor") ?? undefined;
+      data = await read(cursor ? { ...query, cursor } : query);
+    } catch (error) {
+      if (page === 0) throw error;
+      throw new PaginationError(
+        "pagination failed after the first page; refusing incomplete results",
+      );
+    }
+    if (!Array.isArray(data?.results)) {
+      throw new PaginationError(
+        "pagination response has no results array; refusing incomplete results",
+      );
+    }
+    all.push(...data.results);
+    if (data.next == null || data.next === "") return all;
+    try {
+      cursor = new URL(data.next).searchParams.get("cursor") ?? undefined;
     } catch {
       cursor = undefined;
     }
-    if (!cursor) return all; // unparseable/missing cursor — stop rather than loop forever
+    if (!cursor)
+      throw new PaginationError("pagination next cursor is malformed; refusing incomplete results");
+    if (seen.has(cursor))
+      throw new PaginationError("pagination cursor repeated; refusing incomplete results");
+    seen.add(cursor);
   }
-  throw new Error(`pagination limit (${maxPages} pages) reached for ${url}; refusing to return a truncated result`);
+  throw new PaginationError(
+    `pagination limit (${maxPages} pages) reached; refusing incomplete results`,
+  );
 }
 
 /** Non-throwing brokerageGetJson — returns {ok:false,error} instead of throwing. */
@@ -4666,6 +4701,8 @@ export interface EquityOrderDeps {
   write?: typeof gatedBrokerageWrite;
   log?: typeof logTrade;
   now?: () => number;
+  /** Opaque reference factory for deterministic tests. */
+  refIdFactory?: () => string;
   /** Injectable session detector (tests pass a fake; default reads RH's live hours). */
   getMarketSession?: typeof computeMarketSession;
 }
@@ -4730,9 +4767,23 @@ export async function placeEquityOrder(
   const getMarketSession = deps.getMarketSession ?? computeMarketSession;
   const symbol = input.symbol.toUpperCase();
   const side = input.side;
-  if (!input.amount && !input.shares)
+  const hasAmount = input.amount !== undefined;
+  const hasShares = input.shares !== undefined;
+  if (!hasAmount && !hasShares)
     throw new Error("Must specify amount (dollars) or shares (quantity)");
-  if (input.amount && input.shares) throw new Error("Specify amount OR shares, not both");
+  if (hasAmount && hasShares) throw new Error("Specify amount OR shares, not both");
+  for (const [name, value] of [
+    ["amount", input.amount],
+    ["shares", input.shares],
+    ["limitPrice", input.limitPrice],
+  ] as const) {
+    if (
+      value !== undefined &&
+      (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    ) {
+      throw new Error(`${name} must be finite and greater than zero`);
+    }
+  }
 
   // 0. Resolve the write policy up front so the ownership & dedup defenses can key on whether this
   // is a real LIVE send (a live send must fail CLOSED; a dry-run stays previewable).
@@ -4921,7 +4972,7 @@ export async function placeEquityOrder(
   }
 
   // 5. Send (ref_id = broker-level idempotency; a 429 retries the SAME ref_id safely).
-  const refId = `${symbol}-${input.accountNumber}-${now()}`;
+  const refId = (deps.refIdFactory ?? randomUUID)();
 
   // Body shape — two faithful forms, matching what robinhood.com itself sends:
   //   • Dollar-notional MARKET order on a fractional-tradable (non-OTC) name → the NATIVE fractional
@@ -10614,31 +10665,27 @@ export interface UnifiedHistoryEvent {
 
 /** Unified transaction history: equity + options + crypto orders + ACH transfers, newest first. */
 export async function getUnifiedHistory(
-  opts: { days?: number; accountNumber?: string },
+  opts: { days?: number; accountNumber?: string; maxPages?: number },
   deps: {
     getJson?: typeof brokerageGetJson;
     getAll?: typeof brokerageGetAllResults;
     now?: () => number;
   } = {},
 ): Promise<UnifiedHistoryEvent[]> {
+  if (opts.maxPages !== undefined && (!Number.isInteger(opts.maxPages) || opts.maxPages <= 0)) {
+    throw new RangeError("maxPages must be a positive integer");
+  }
   const getJson = deps.getJson ?? brokerageGetJson;
-  const getAll = deps.getAll
-    ? deps.getAll
-    : deps.getJson
-      ? async (url: string, params: Record<string, string> = {}, query: Record<string, string> = {}) => {
-          const all: any[] = [];
-          let cursor: string | undefined;
-          for (let page = 0; page < 50; page++) {
-            const data = await getJson(url, params, cursor ? { ...query, cursor } : query);
-            if (Array.isArray(data?.results)) all.push(...data.results);
-            const next = String(data?.next ?? "");
-            if (!next) return all;
-            cursor = new URL(next).searchParams.get("cursor") ?? undefined;
-            if (!cursor) return all;
-          }
-          throw new Error(`pagination limit (50 pages) reached for ${url}; refusing to return a truncated result`);
-        }
-      : brokerageGetAllResults;
+  // Do not infer ordering from one old page: later pages can contain recently
+  // updated orders. History must exhaust the cursor chain before date filtering.
+  const getAll =
+    deps.getAll ??
+    ((url: string, params: Record<string, string> = {}, query: Record<string, string> = {}) =>
+      collectBrokeragePages(
+        (pageQuery) => getJson(url, params, pageQuery),
+        query,
+        opts.maxPages ?? 50,
+      ));
   const now = deps.now ?? Date.now;
   const days = Math.max(1, opts.days ?? 3);
   const cutoffMs = now() - days * 86400000;
@@ -10667,7 +10714,11 @@ export async function getUnifiedHistory(
     try {
       return { ok: true as const, data: await getAll(url, params, query) };
     } catch (error) {
-      if (error instanceof Error && error.message.includes("pagination limit")) throw error;
+      if (
+        error instanceof PaginationError ||
+        (error instanceof Error && error.message.includes("pagination limit"))
+      )
+        throw error;
       return { ok: false as const, error };
     }
   };
@@ -10725,11 +10776,7 @@ export async function getUnifiedHistory(
 
   // Legacy equity orders supplement Wormhole for longer windows.
   for (const { acct } of owned) {
-    const eq = await safeGetAll(
-      "https://api.robinhood.com/orders/",
-      {},
-      { account_number: acct },
-    );
+    const eq = await safeGetAll("https://api.robinhood.com/orders/", {}, { account_number: acct });
     if (!eq.ok) continue;
     for (const r of eq.data) {
       const id = String(r.id ?? "");

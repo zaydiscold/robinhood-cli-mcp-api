@@ -18,12 +18,14 @@ export function runDoctor(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   dataRoot: string = root,
+  nodeVersion: string = process.versions.node,
 ) {
   const checks: DoctorCheck[] = [];
   const add = (id: string, status: DoctorStatus, message: string) =>
     checks.push({ id, status, message });
-  const major = Number(process.versions.node.split(".")[0]);
-  add("node", major >= 20 ? "pass" : "fail", `Node ${process.versions.node}; requires >=20`);
+  const [major, minor] = nodeVersion.split(".").map(Number);
+  const supportedNode = major > 20 || (major === 20 && minor >= 19);
+  add("node", supportedNode ? "pass" : "fail", `Node ${nodeVersion}; requires >=20.19`);
 
   const envPath = env.ROBINHOOD_ENV_PATH || join(dataRoot, ".env");
   if (!existsSync(envPath))

@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 describe("workspace package scripts", () => {
+  it("keeps package runtime requirements and Node types on the supported minimum", () => {
+    for (const relative of ["../../package.json", "../../cli/package.json", "../../mcp/package.json"]) {
+      const manifest = JSON.parse(readFileSync(new URL(relative, import.meta.url), "utf8"));
+      expect(manifest.engines?.node, relative).toBe(">=20.19");
+      if (manifest.devDependencies?.["@types/node"])
+        expect(manifest.devDependencies["@types/node"]).toMatch(/^\^?20\./);
+    }
+  });
+
   it("use Corepack for nested pnpm calls so clean Windows hosts do not require a global shim", () => {
     for (const relative of ["../../package.json", "../../mcp/package.json"]) {
       const manifest = JSON.parse(readFileSync(new URL(relative, import.meta.url), "utf8"));

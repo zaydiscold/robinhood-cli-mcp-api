@@ -8,7 +8,6 @@
   "type": "module",
   "author": "Zayd Khan // cold (www.zayd.wtf)",
   "packageManager": "pnpm@10.12.1",
-
   "scripts": {
     "build": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli build && node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli-mcp build",
     "sanitize:cdp": "node scripts/sanitize-cdp-capture.mjs",
@@ -40,7 +39,7 @@
     "deadcode": "knip --dependencies --reporter compact --no-progress"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
+    "@types/node": "^20.19.43",
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
     "@vitest/coverage-v8": "^4.1.10",

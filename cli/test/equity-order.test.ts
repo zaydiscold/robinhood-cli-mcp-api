@@ -10,7 +10,7 @@ import {
   placeEquityOrder,
   NotionalCapError,
   __resetOwnedAccountsCache,
-  type MarketSession
+  type MarketSession,
 } from "../src/lib.js";
 
 // Keep the suite independent from the developer's .env. Tests that exercise a live path explicitly
@@ -24,7 +24,9 @@ afterAll(() => {
   if (originalLiveWriteEnv === undefined) delete process.env.ROBINHOOD_ALLOW_LIVE_WRITE;
   else process.env.ROBINHOOD_ALLOW_LIVE_WRITE = originalLiveWriteEnv;
 });
-const enableLiveWrites = () => { process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1"; };
+const enableLiveWrites = () => {
+  process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1";
+};
 
 // Golden-behavior tests for the shared equity-order engine — the single code path behind the CLI
 // `buy`/`sell` commands AND the MCP robinhood_buy/robinhood_sell tools (alignment invariant). These
@@ -48,28 +50,44 @@ interface Fix {
 
 function makeDeps(overrides: Partial<Fix> = {}) {
   const fix: Fix = {
-    instrument: { id: "iid-123", symbol: "AAPL", fractional_tradability: "tradable", otc_market_tier: null },
+    instrument: {
+      id: "iid-123",
+      symbol: "AAPL",
+      fractional_tradability: "tradable",
+      otc_market_tier: null,
+    },
     quote: { last_trade_price: "100.00", instrument_id: "iid-123" },
     pendingOrders: [],
     writeResult: { status: 0, dryRun: true, body: "{}" },
     session: "regular",
     ownedAccounts: [
       { type: "rhs", account_number: "A1", account_name: "Individual" },
-      { type: "rhs", account_number: "A2", account_name: "Individual 2" }
+      { type: "rhs", account_number: "A2", account_name: "Individual 2" },
     ],
-    ...overrides
+    ...overrides,
   };
-  const calls = { writes: [] as any[], logs: [] as any[], orderListQueries: 0, accountGraphQueries: 0 };
+  const calls = {
+    writes: [] as any[],
+    logs: [] as any[],
+    orderListQueries: 0,
+    accountGraphQueries: 0,
+  };
   const deps = {
     now: () => NOW,
-    getMarketSession: async () => ({ session: fix.session, isTradingDay: fix.session !== "closed", authoritative: true }),
+    refIdFactory: () => "8ec0e3e7-67a3-47bb-8fb9-fbf63b152a7e",
+    getMarketSession: async () => ({
+      session: fix.session,
+      isTradingDay: fix.session !== "closed",
+      authoritative: true,
+    }),
     getJson: async (url: string) => {
       if (url.includes("transfer/accounts")) {
         calls.accountGraphQueries++;
         if (fix.ownedAccounts === "throw") throw new Error("account graph unavailable");
         return { results: fix.ownedAccounts };
       }
-      if (url.includes("instruments/?symbol")) return { results: fix.instrument ? [fix.instrument] : [] };
+      if (url.includes("instruments/?symbol"))
+        return { results: fix.instrument ? [fix.instrument] : [] };
       if (url.includes("marketdata/quotes")) return { results: fix.quote ? [fix.quote] : [] };
       if (url === "https://api.robinhood.com/orders/") {
         calls.orderListQueries++;
@@ -84,7 +102,7 @@ function makeDeps(overrides: Partial<Fix> = {}) {
     },
     log: async (entry: any) => {
       calls.logs.push(entry);
-    }
+    },
   };
   return { deps, calls, fix };
 }
@@ -100,17 +118,29 @@ describe("extractOrderId", () => {
 });
 
 describe("filterRecentPending — the 5-minute dedup window", () => {
-  const pending = (over: any = {}) => ({ side: "buy", state: "queued", created_at: minutesAgo(1), id: "o1", ...over });
+  const pending = (over: any = {}) => ({
+    side: "buy",
+    state: "queued",
+    created_at: minutesAgo(1),
+    id: "o1",
+    ...over,
+  });
 
   it("keeps a fresh same-side pending order", () => {
     expect(filterRecentPending([pending()], "buy", NOW)).toHaveLength(1);
   });
   it("drops stale pending orders (older than the window) — a forgotten GTC is not a duplicate", () => {
-    expect(filterRecentPending([pending({ created_at: minutesAgo(6) })], "buy", NOW)).toHaveLength(0);
-    expect(filterRecentPending([pending({ created_at: minutesAgo(4.9) })], "buy", NOW)).toHaveLength(1);
+    expect(filterRecentPending([pending({ created_at: minutesAgo(6) })], "buy", NOW)).toHaveLength(
+      0,
+    );
+    expect(
+      filterRecentPending([pending({ created_at: minutesAgo(4.9) })], "buy", NOW),
+    ).toHaveLength(1);
   });
   it("still blocks a future-dated pending order (server clock skew)", () => {
-    expect(filterRecentPending([pending({ created_at: minutesAgo(-0.5) })], "buy", NOW)).toHaveLength(1);
+    expect(
+      filterRecentPending([pending({ created_at: minutesAgo(-0.5) })], "buy", NOW),
+    ).toHaveLength(1);
   });
   it("drops terminal states and the other side", () => {
     for (const state of ["filled", "cancelled", "rejected"]) {
@@ -130,88 +160,212 @@ describe("filterRecentPending — the 5-minute dedup window", () => {
 describe("placeEquityOrder — validation & guards", () => {
   it("requires amount XOR shares", async () => {
     const { deps } = makeDeps();
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy" }, deps))
-      .rejects.toThrow(/amount.*or shares/i);
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, shares: 1 }, deps))
-      .rejects.toThrow(/not both/i);
+    await expect(
+      placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy" }, deps),
+    ).rejects.toThrow(/amount.*or shares/i);
+    await expect(
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, shares: 1 },
+        deps,
+      ),
+    ).rejects.toThrow(/not both/i);
   });
 
   it("throws on an unknown symbol", async () => {
     const { deps } = makeDeps({ instrument: null });
-    await expect(placeEquityOrder({ symbol: "ZZZZ", accountNumber: "A1", side: "buy", amount: 10 }, deps))
-      .rejects.toThrow(/not found/);
+    await expect(
+      placeEquityOrder({ symbol: "ZZZZ", accountNumber: "A1", side: "buy", amount: 10 }, deps),
+    ).rejects.toThrow(/not found/);
   });
 
   it("blocks dollar orders on non-fractional/OTC names (failure mode #4), but allows shares", async () => {
-    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
+    const otc = {
+      id: "iid-otc",
+      symbol: "RNECY",
+      fractional_tradability: "position_closing_only",
+      otc_market_tier: "otc",
+    };
     const blocked = makeDeps({ instrument: otc });
-    await expect(placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", amount: 25 }, blocked.deps))
-      .rejects.toThrow(/fractional_tradability=position_closing_only/);
+    await expect(
+      placeEquityOrder(
+        { symbol: "RNECY", accountNumber: "A1", side: "buy", amount: 25 },
+        blocked.deps,
+      ),
+    ).rejects.toThrow(/fractional_tradability=position_closing_only/);
 
     const allowed = makeDeps({ instrument: otc });
-    const r = await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", shares: 2, limitPrice: 5 }, allowed.deps);
+    const r = await placeEquityOrder(
+      { symbol: "RNECY", accountNumber: "A1", side: "buy", shares: 2, limitPrice: 5 },
+      allowed.deps,
+    );
     expect(r.dryRun).toBe(true);
     expect(allowed.calls.writes).toHaveLength(1);
   });
 
   it("OTC dollar orders reject in BOTH directions — '$X of RNECY' is impossible buying OR selling", async () => {
-    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
+    const otc = {
+      id: "iid-otc",
+      symbol: "RNECY",
+      fractional_tradability: "position_closing_only",
+      otc_market_tier: "otc",
+    };
     const buy = makeDeps({ instrument: otc });
-    await expect(placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", amount: 25 }, buy.deps))
-      .rejects.toThrow(/dollar\/fractional buy order.*auto-limits at the ask/);
+    await expect(
+      placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", amount: 25 }, buy.deps),
+    ).rejects.toThrow(/dollar\/fractional buy order.*auto-limits at the ask/);
     const sell = makeDeps({ instrument: otc });
-    await expect(placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "sell", amount: 25 }, sell.deps))
-      .rejects.toThrow(/dollar\/fractional sell order.*auto-limits at the bid/);
+    await expect(
+      placeEquityOrder(
+        { symbol: "RNECY", accountNumber: "A1", side: "sell", amount: 25 },
+        sell.deps,
+      ),
+    ).rejects.toThrow(/dollar\/fractional sell order.*auto-limits at the bid/);
     expect(buy.calls.writes).toHaveLength(0);
     expect(sell.calls.writes).toHaveLength(0);
   });
 
   it("OTC whole-share BUY with no limit auto-limits at the ASK (marketable limit, gfd)", async () => {
-    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
-    const { deps, calls } = makeDeps({ instrument: otc, quote: { last_trade_price: "5.00", bid_price: "4.90", ask_price: "5.10", instrument_id: "iid-otc" } });
-    const r = await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", shares: 2 }, deps);
-    expect(calls.writes[0].body).toMatchObject({ type: "limit", price: "5.10", time_in_force: "gfd", side: "buy", quantity: "2" });
+    const otc = {
+      id: "iid-otc",
+      symbol: "RNECY",
+      fractional_tradability: "position_closing_only",
+      otc_market_tier: "otc",
+    };
+    const { deps, calls } = makeDeps({
+      instrument: otc,
+      quote: {
+        last_trade_price: "5.00",
+        bid_price: "4.90",
+        ask_price: "5.10",
+        instrument_id: "iid-otc",
+      },
+    });
+    const r = await placeEquityOrder(
+      { symbol: "RNECY", accountNumber: "A1", side: "buy", shares: 2 },
+      deps,
+    );
+    expect(calls.writes[0].body).toMatchObject({
+      type: "limit",
+      price: "5.10",
+      time_in_force: "gfd",
+      side: "buy",
+      quantity: "2",
+    });
     expect(r.type).toBe("limit");
     expect(r.otcAutoLimit).toBe(true);
   });
 
   it("OTC whole-share SELL with no limit auto-limits at the BID (never the ask, never market)", async () => {
-    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
-    const { deps, calls } = makeDeps({ instrument: otc, quote: { last_trade_price: "5.00", bid_price: "4.90", ask_price: "5.10", instrument_id: "iid-otc" } });
-    const r = await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1 }, deps);
-    expect(calls.writes[0].body).toMatchObject({ type: "limit", price: "4.90", time_in_force: "gfd", side: "sell", quantity: "1" });
+    const otc = {
+      id: "iid-otc",
+      symbol: "RNECY",
+      fractional_tradability: "position_closing_only",
+      otc_market_tier: "otc",
+    };
+    const { deps, calls } = makeDeps({
+      instrument: otc,
+      quote: {
+        last_trade_price: "5.00",
+        bid_price: "4.90",
+        ask_price: "5.10",
+        instrument_id: "iid-otc",
+      },
+    });
+    const r = await placeEquityOrder(
+      { symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1 },
+      deps,
+    );
+    expect(calls.writes[0].body).toMatchObject({
+      type: "limit",
+      price: "4.90",
+      time_in_force: "gfd",
+      side: "sell",
+      quantity: "1",
+    });
     expect(r.otcAutoLimit).toBe(true);
   });
 
   it("OTC auto-limit falls back to last on a one-sided book; explicit limits stay untouched (gtc)", async () => {
-    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
-    const oneSided = makeDeps({ instrument: otc, quote: { last_trade_price: "5.00", bid_price: "0.00", ask_price: null, instrument_id: "iid-otc" } });
-    await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1 }, oneSided.deps);
-    expect(oneSided.calls.writes[0].body).toMatchObject({ type: "limit", price: "5.00", time_in_force: "gfd" });
+    const otc = {
+      id: "iid-otc",
+      symbol: "RNECY",
+      fractional_tradability: "position_closing_only",
+      otc_market_tier: "otc",
+    };
+    const oneSided = makeDeps({
+      instrument: otc,
+      quote: {
+        last_trade_price: "5.00",
+        bid_price: "0.00",
+        ask_price: null,
+        instrument_id: "iid-otc",
+      },
+    });
+    await placeEquityOrder(
+      { symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1 },
+      oneSided.deps,
+    );
+    expect(oneSided.calls.writes[0].body).toMatchObject({
+      type: "limit",
+      price: "5.00",
+      time_in_force: "gfd",
+    });
 
-    const explicit = makeDeps({ instrument: otc, quote: { last_trade_price: "5.00", bid_price: "4.90", ask_price: "5.10", instrument_id: "iid-otc" } });
-    const r = await placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 5.25 }, explicit.deps);
-    expect(explicit.calls.writes[0].body).toMatchObject({ type: "limit", price: "5.25", time_in_force: "gtc" });
+    const explicit = makeDeps({
+      instrument: otc,
+      quote: {
+        last_trade_price: "5.00",
+        bid_price: "4.90",
+        ask_price: "5.10",
+        instrument_id: "iid-otc",
+      },
+    });
+    const r = await placeEquityOrder(
+      { symbol: "RNECY", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 5.25 },
+      explicit.deps,
+    );
+    expect(explicit.calls.writes[0].body).toMatchObject({
+      type: "limit",
+      price: "5.25",
+      time_in_force: "gtc",
+    });
     expect(r.otcAutoLimit).toBe(false);
   });
 
   it("OTC names trade in WHOLE shares only — fractional share quantities reject", async () => {
-    const otc = { id: "iid-otc", symbol: "RNECY", fractional_tradability: "position_closing_only", otc_market_tier: "otc" };
+    const otc = {
+      id: "iid-otc",
+      symbol: "RNECY",
+      fractional_tradability: "position_closing_only",
+      otc_market_tier: "otc",
+    };
     const { deps, calls } = makeDeps({ instrument: otc });
-    await expect(placeEquityOrder({ symbol: "RNECY", accountNumber: "A1", side: "buy", shares: 1.5, limitPrice: 5 }, deps))
-      .rejects.toThrow(/WHOLE shares only/);
+    await expect(
+      placeEquityOrder(
+        { symbol: "RNECY", accountNumber: "A1", side: "buy", shares: 1.5, limitPrice: 5 },
+        deps,
+      ),
+    ).rejects.toThrow(/WHOLE shares only/);
     expect(calls.writes).toHaveLength(0);
   });
 
   it("hard-fails on a dead or missing quote — never qty=Infinity", async () => {
     const dead = makeDeps({ quote: { last_trade_price: "0.00" } });
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 }, dead.deps))
-      .rejects.toThrow(/Invalid or missing quote/);
+    await expect(
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 },
+        dead.deps,
+      ),
+    ).rejects.toThrow(/Invalid or missing quote/);
     expect(dead.calls.writes).toHaveLength(0);
 
     const missing = makeDeps({ quote: null });
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 }, missing.deps))
-      .rejects.toThrow(/Invalid or missing quote/);
+    await expect(
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 },
+        missing.deps,
+      ),
+    ).rejects.toThrow(/Invalid or missing quote/);
   });
   it("builds a true 24-hour whole-share limit body and rejects ineligible variants", async () => {
     const eligible = {
@@ -233,7 +387,14 @@ describe("placeEquityOrder — validation & guards", () => {
       session: "closed",
     });
     const result = await placeEquityOrder(
-      { symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 20.55, marketHours: "all_day_hours" },
+      {
+        symbol: "NBIL",
+        accountNumber: "A1",
+        side: "sell",
+        shares: 1,
+        limitPrice: 20.55,
+        marketHours: "all_day_hours",
+      },
       ok.deps,
     );
     expect(ok.calls.writes[0].body).toMatchObject({
@@ -249,40 +410,119 @@ describe("placeEquityOrder — validation & guards", () => {
       ask_price: "20.64",
       bid_ask_timestamp: "2026-08-08T06:00:00Z",
     });
-    expect(result).toMatchObject({ marketHours: "all_day_hours", eligibility: { evaluated: true, eligible: true } });
+    expect(result).toMatchObject({
+      marketHours: "all_day_hours",
+      eligibility: { evaluated: true, eligible: true },
+    });
 
-    const wide = makeDeps({ instrument: eligible, quote: { last_trade_price: "19.67", bid_price: "18.90", ask_price: "21.00", instrument_id: "iid-nbil" } });
-    await expect(placeEquityOrder({ symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 20.55, marketHours: "all_day_hours" }, wide.deps)).rejects.toThrow(/spread is 10\.53%.*above the 5\.00% safety cap/i);
+    const wide = makeDeps({
+      instrument: eligible,
+      quote: {
+        last_trade_price: "19.67",
+        bid_price: "18.90",
+        ask_price: "21.00",
+        instrument_id: "iid-nbil",
+      },
+    });
+    await expect(
+      placeEquityOrder(
+        {
+          symbol: "NBIL",
+          accountNumber: "A1",
+          side: "sell",
+          shares: 1,
+          limitPrice: 20.55,
+          marketHours: "all_day_hours",
+        },
+        wide.deps,
+      ),
+    ).rejects.toThrow(/spread is 10\.53%.*above the 5\.00% safety cap/i);
     expect(wide.calls.writes).toHaveLength(0);
 
     const fractional = makeDeps({ instrument: eligible });
-    await expect(placeEquityOrder({ symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1.5, limitPrice: 20.55, marketHours: "all_day_hours" }, fractional.deps)).rejects.toThrow(/whole shares/i);
+    await expect(
+      placeEquityOrder(
+        {
+          symbol: "NBIL",
+          accountNumber: "A1",
+          side: "sell",
+          shares: 1.5,
+          limitPrice: 20.55,
+          marketHours: "all_day_hours",
+        },
+        fractional.deps,
+      ),
+    ).rejects.toThrow(/whole shares/i);
     const noLimit = makeDeps({ instrument: eligible });
-    await expect(placeEquityOrder({ symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1, marketHours: "all_day_hours" }, noLimit.deps)).rejects.toThrow(/limit/i);
+    await expect(
+      placeEquityOrder(
+        {
+          symbol: "NBIL",
+          accountNumber: "A1",
+          side: "sell",
+          shares: 1,
+          marketHours: "all_day_hours",
+        },
+        noLimit.deps,
+      ),
+    ).rejects.toThrow(/limit/i);
     const blocked = makeDeps({ instrument: { ...eligible, all_day_tradability: "untradable" } });
-    await expect(placeEquityOrder({ symbol: "NBIL", accountNumber: "A1", side: "sell", shares: 1, limitPrice: 20.55, marketHours: "all_day_hours" }, blocked.deps)).rejects.toThrow(/all_day_tradability=untradable/);
+    await expect(
+      placeEquityOrder(
+        {
+          symbol: "NBIL",
+          accountNumber: "A1",
+          side: "sell",
+          shares: 1,
+          limitPrice: 20.55,
+          marketHours: "all_day_hours",
+        },
+        blocked.deps,
+      ),
+    ).rejects.toThrow(/all_day_tradability=untradable/);
   });
 });
 
 describe("placeEquityOrder — owned-account guard (WSF-02: the #1 money-loss defense)", () => {
   it("REFUSES a write to an account the token doesn't own — nothing is sent", async () => {
-    const { deps, calls } = makeDeps({ ownedAccounts: [{ type: "rhs", account_number: "REAL-1", account_name: "Indiv" }] });
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "TYPO-9", side: "buy", amount: 100 }, deps))
-      .rejects.toThrow(/not one of your trading accounts/i);
+    const { deps, calls } = makeDeps({
+      ownedAccounts: [{ type: "rhs", account_number: "REAL-1", account_name: "Indiv" }],
+    });
+    await expect(
+      placeEquityOrder({ symbol: "AAPL", accountNumber: "TYPO-9", side: "buy", amount: 100 }, deps),
+    ).rejects.toThrow(/not one of your trading accounts/i);
     expect(calls.writes).toHaveLength(0);
   });
 
   it("guards the canonical engine for BOTH a live send and a dry-run (the gate is account-ownership, not the write switch)", async () => {
-    const live = { writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "x", state: "queued" }) } };
-    const liveBad = makeDeps({ ...live, ownedAccounts: [{ type: "rhs", account_number: "REAL-1" }] });
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "WRONG", side: "buy", amount: 100, liveWrite: true }, liveBad.deps))
-      .rejects.toThrow(/not one of your trading accounts/i);
+    const live = {
+      writeResult: {
+        status: 201,
+        dryRun: false,
+        body: JSON.stringify({ id: "x", state: "queued" }),
+      },
+    };
+    const liveBad = makeDeps({
+      ...live,
+      ownedAccounts: [{ type: "rhs", account_number: "REAL-1" }],
+    });
+    await expect(
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "WRONG", side: "buy", amount: 100, liveWrite: true },
+        liveBad.deps,
+      ),
+    ).rejects.toThrow(/not one of your trading accounts/i);
     expect(liveBad.calls.writes).toHaveLength(0);
   });
 
   it("allows a write to an owned account (incl. a Roth IRA — type ira_roth)", async () => {
-    const { deps, calls } = makeDeps({ ownedAccounts: [{ type: "ira_roth", account_number: "ROTH-7", account_name: "Roth" }] });
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "ROTH-7", side: "buy", amount: 100 }, deps);
+    const { deps, calls } = makeDeps({
+      ownedAccounts: [{ type: "ira_roth", account_number: "ROTH-7", account_name: "Roth" }],
+    });
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "ROTH-7", side: "buy", amount: 100 },
+      deps,
+    );
     expect(calls.writes).toHaveLength(1);
     expect(r.account).toBe("ROTH-7");
   });
@@ -290,7 +530,10 @@ describe("placeEquityOrder — owned-account guard (WSF-02: the #1 money-loss de
   it("a FAILED ownership lookup WARNS but does not wedge the write (a transient read can't block trading)", async () => {
     const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const { deps, calls } = makeDeps({ ownedAccounts: "throw" });
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 100 }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 100 },
+      deps,
+    );
     expect(calls.writes).toHaveLength(1);
     expect(r.dryRun).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Could not verify account A1/));
@@ -301,8 +544,19 @@ describe("placeEquityOrder — owned-account guard (WSF-02: the #1 money-loss de
 describe("placeEquityOrder — order body & dry-run semantics", () => {
   it("dollar-notional market buy uses the NATIVE dollar_based_amount body + live collar (web parity, not a computed quantity)", async () => {
     // Fractional-tradable name, dollar sizing, market → the body robinhood.com itself posts.
-    const { deps, calls } = makeDeps({ quote: { last_trade_price: "100.00", bid_price: "99.98", ask_price: "100.02", updated_at: "2026-06-14T20:00:00Z", instrument_id: "iid-123" } });
-    const r = await placeEquityOrder({ symbol: "aapl", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+    const { deps, calls } = makeDeps({
+      quote: {
+        last_trade_price: "100.00",
+        bid_price: "99.98",
+        ask_price: "100.02",
+        updated_at: "2026-06-14T20:00:00Z",
+        instrument_id: "iid-123",
+      },
+    });
+    const r = await placeEquityOrder(
+      { symbol: "aapl", accountNumber: "A1", side: "buy", amount: 250 },
+      deps,
+    );
 
     expect(calls.writes).toHaveLength(1);
     const w = calls.writes[0];
@@ -324,26 +578,61 @@ describe("placeEquityOrder — order body & dry-run semantics", () => {
       ask_price: "100.02",
       bid_ask_timestamp: "2026-06-14T20:00:00Z",
       order_form_version: "7",
-      ref_id: `AAPL-A1-${NOW}`
+      ref_id: "8ec0e3e7-67a3-47bb-8fb9-fbf63b152a7e",
     });
     // The native dollar body carries NO computed quantity/price — the broker derives the fill.
     expect(w.body).not.toHaveProperty("quantity");
     expect(w.body).not.toHaveProperty("price");
     // The result still reports the informational share estimate for display.
-    expect(r).toMatchObject({ symbol: "AAPL", shares: 2.5, estimatedTotal: 250, type: "market", dollarBased: true, dryRun: true, live: false, refId: `AAPL-A1-${NOW}` });
+    expect(r).toMatchObject({
+      symbol: "AAPL",
+      shares: 2.5,
+      estimatedTotal: 250,
+      type: "market",
+      dollarBased: true,
+      dryRun: true,
+      live: false,
+      refId: "8ec0e3e7-67a3-47bb-8fb9-fbf63b152a7e",
+    });
   });
 
   it("a dollar-notional sell uses position_effect:close", async () => {
-    const { deps, calls } = makeDeps({ quote: { last_trade_price: "100.00", bid_price: "99.98", ask_price: "100.02", updated_at: "2026-06-14T20:00:00Z", instrument_id: "iid-123" } });
+    const { deps, calls } = makeDeps({
+      quote: {
+        last_trade_price: "100.00",
+        bid_price: "99.98",
+        ask_price: "100.02",
+        updated_at: "2026-06-14T20:00:00Z",
+        instrument_id: "iid-123",
+      },
+    });
     await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", amount: 50 }, deps);
-    expect(calls.writes[0].body).toMatchObject({ dollar_based_amount: { amount: "50.00", currency_code: "USD" }, position_effect: "close", side: "sell" });
+    expect(calls.writes[0].body).toMatchObject({
+      dollar_based_amount: { amount: "50.00", currency_code: "USD" },
+      position_effect: "close",
+      side: "sell",
+    });
   });
 
   it("the dollar body omits collar fields on a one-sided/dead book rather than sending 0/NaN", async () => {
-    const { deps, calls } = makeDeps({ quote: { last_trade_price: "100.00", bid_price: "0.00", ask_price: null, instrument_id: "iid-123" } });
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+    const { deps, calls } = makeDeps({
+      quote: {
+        last_trade_price: "100.00",
+        bid_price: "0.00",
+        ask_price: null,
+        instrument_id: "iid-123",
+      },
+    });
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 },
+      deps,
+    );
     const b = calls.writes[0].body;
-    expect(b).toMatchObject({ dollar_based_amount: { amount: "250.00", currency_code: "USD" }, market_hours: "regular_hours", position_effect: "open" });
+    expect(b).toMatchObject({
+      dollar_based_amount: { amount: "250.00", currency_code: "USD" },
+      market_hours: "regular_hours",
+      position_effect: "open",
+    });
     expect(b).not.toHaveProperty("bid_price");
     expect(b).not.toHaveProperty("ask_price");
     expect(b).not.toHaveProperty("bid_ask_timestamp");
@@ -352,30 +641,53 @@ describe("placeEquityOrder — order body & dry-run semantics", () => {
 
   it("SHARE sizing keeps the quantity+price body (no dollar form), gfd market", async () => {
     const { deps, calls } = makeDeps();
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 2.5 }, deps);
-    expect(calls.writes[0].body).toMatchObject({ type: "market", time_in_force: "gfd", quantity: "2.5", price: "100.00", order_form_version: "7" });
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 2.5 },
+      deps,
+    );
+    expect(calls.writes[0].body).toMatchObject({
+      type: "market",
+      time_in_force: "gfd",
+      quantity: "2.5",
+      price: "100.00",
+      order_form_version: "7",
+    });
     expect(calls.writes[0].body).not.toHaveProperty("dollar_based_amount");
     expect(r.dollarBased).toBe(false);
   });
 
   it("limit orders use gtc and the 2dp limit price (quantity body, never dollar)", async () => {
     const { deps, calls } = makeDeps();
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", shares: 3, limitPrice: 95.5 }, deps);
-    expect(calls.writes[0].body).toMatchObject({ type: "limit", time_in_force: "gtc", price: "95.50", side: "sell", quantity: "3" });
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "sell", shares: 3, limitPrice: 95.5 },
+      deps,
+    );
+    expect(calls.writes[0].body).toMatchObject({
+      type: "limit",
+      time_in_force: "gtc",
+      price: "95.50",
+      side: "sell",
+      quantity: "3",
+    });
     expect(calls.writes[0].body).not.toHaveProperty("dollar_based_amount");
     expect(r.dollarBased).toBe(false);
   });
 
   it("a dollar-notional LIMIT order stays on the quantity+price body (dollar form is market-only)", async () => {
     const { deps, calls } = makeDeps();
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250, limitPrice: 99 }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250, limitPrice: 99 },
+      deps,
+    );
     expect(calls.writes[0].body).toMatchObject({ type: "limit", quantity: "2.5", price: "99.00" });
     expect(calls.writes[0].body).not.toHaveProperty("dollar_based_amount");
     expect(r.dollarBased).toBe(false);
   });
 
   it("dry-run never queries the pending-order list and never logs a trade", async () => {
-    const { deps, calls } = makeDeps({ pendingOrders: [{ side: "buy", state: "queued", created_at: minutesAgo(1) }] });
+    const { deps, calls } = makeDeps({
+      pendingOrders: [{ side: "buy", state: "queued", created_at: minutesAgo(1) }],
+    });
     await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10 }, deps);
     expect(calls.orderListQueries).toBe(0);
     expect(calls.logs).toHaveLength(0);
@@ -385,13 +697,26 @@ describe("placeEquityOrder — order body & dry-run semantics", () => {
 describe("placeEquityOrder — time-in-force (--tif / timeInForce)", () => {
   it("an explicit limit order defaults to gtc when no tif is given", async () => {
     const { deps, calls } = makeDeps();
-    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 1, limitPrice: 100 }, deps);
+    await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 1, limitPrice: 100 },
+      deps,
+    );
     expect(calls.writes[0].body.time_in_force).toBe("gtc");
   });
 
   it("honors an explicit timeInForce=gfd on a limit order (day-limit — the new capability)", async () => {
     const { deps, calls } = makeDeps();
-    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 1, limitPrice: 100, timeInForce: "gfd" }, deps);
+    await placeEquityOrder(
+      {
+        symbol: "AAPL",
+        accountNumber: "A1",
+        side: "buy",
+        shares: 1,
+        limitPrice: 100,
+        timeInForce: "gfd",
+      },
+      deps,
+    );
     expect(calls.writes[0].body.time_in_force).toBe("gfd");
   });
 
@@ -403,59 +728,140 @@ describe("placeEquityOrder — time-in-force (--tif / timeInForce)", () => {
 
   it("REJECTS timeInForce=gtc on a market order (RH market orders are day/gfd) — nothing sent", async () => {
     const { deps, calls } = makeDeps();
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 50, timeInForce: "gtc" }, deps))
-      .rejects.toThrow(/gtc is invalid for a market order/);
+    await expect(
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 50, timeInForce: "gtc" },
+        deps,
+      ),
+    ).rejects.toThrow(/gtc is invalid for a market order/);
     expect(calls.writes).toHaveLength(0);
   });
 });
 
 describe("placeEquityOrder — live-send dedup & logging", () => {
-  const live = { writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-1", state: "queued" }) } };
+  const live = {
+    writeResult: {
+      status: 201,
+      dryRun: false,
+      body: JSON.stringify({ id: "ord-1", state: "queued" }),
+    },
+  };
   beforeEach(enableLiveWrites);
 
   it("blocks a live send when a fresh same-side pending order exists — nothing is sent", async () => {
-    const { deps, calls } = makeDeps({ ...live, pendingOrders: [{ id: "ord-dup-1", side: "buy", state: "queued", created_at: minutesAgo(2) }] });
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, deps))
-      .rejects.toThrow(/^DEDUP: 1 pending buy/);
+    const { deps, calls } = makeDeps({
+      ...live,
+      pendingOrders: [{ id: "ord-dup-1", side: "buy", state: "queued", created_at: minutesAgo(2) }],
+    });
+    await expect(
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true },
+        deps,
+      ),
+    ).rejects.toThrow(/^DEDUP: 1 pending buy/);
     expect(calls.writes).toHaveLength(0);
   });
 
   it("force skips the dedup check; other-side and stale pendings never block", async () => {
-    const forced = makeDeps({ ...live, pendingOrders: [{ side: "buy", state: "queued", created_at: minutesAgo(2) }] });
-    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true, force: true }, forced.deps);
+    const forced = makeDeps({
+      ...live,
+      pendingOrders: [{ side: "buy", state: "queued", created_at: minutesAgo(2) }],
+    });
+    await placeEquityOrder(
+      {
+        symbol: "AAPL",
+        accountNumber: "A1",
+        side: "buy",
+        amount: 10,
+        liveWrite: true,
+        force: true,
+      },
+      forced.deps,
+    );
     expect(forced.calls.writes).toHaveLength(1);
 
-    const otherSide = makeDeps({ ...live, pendingOrders: [{ side: "sell", state: "queued", created_at: minutesAgo(1) }, { side: "buy", state: "queued", created_at: minutesAgo(10) }] });
-    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, otherSide.deps);
+    const otherSide = makeDeps({
+      ...live,
+      pendingOrders: [
+        { side: "sell", state: "queued", created_at: minutesAgo(1) },
+        { side: "buy", state: "queued", created_at: minutesAgo(10) },
+      ],
+    });
+    await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true },
+      otherSide.deps,
+    );
     expect(otherSide.calls.writes).toHaveLength(1);
   });
 
   it("a broken dedup read BLOCKS a live send (fail closed) — nothing is sent", async () => {
     const { deps, calls } = makeDeps({ ...live, orderListThrows: true });
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, deps))
-      .rejects.toThrow(/^DEDUP-PREFLIGHT-FAILED/);
+    await expect(
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true },
+        deps,
+      ),
+    ).rejects.toThrow(/^DEDUP-PREFLIGHT-FAILED/);
     expect(calls.writes).toHaveLength(0);
   });
 
   it("force bypasses a broken dedup read and sends anyway", async () => {
     const { deps, calls } = makeDeps({ ...live, orderListThrows: true });
-    await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true, force: true }, deps);
+    await placeEquityOrder(
+      {
+        symbol: "AAPL",
+        accountNumber: "A1",
+        side: "buy",
+        amount: 10,
+        liveWrite: true,
+        force: true,
+      },
+      deps,
+    );
     expect(calls.writes).toHaveLength(1);
   });
 
   it("logs live sends to the trading log with refId + broker order id", async () => {
     const { deps, calls } = makeDeps(live);
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true },
+      deps,
+    );
     expect(calls.logs).toHaveLength(1);
-    expect(calls.logs[0]).toMatchObject({ symbol: "AAPL", account: "A1", side: "buy", refId: `AAPL-A1-${NOW}`, orderId: "ord-1", httpStatus: 201 });
-    expect(r).toMatchObject({ live: true, dryRun: false, orderId: "ord-1", state: "queued", httpStatus: 201 });
+    expect(calls.logs[0]).toMatchObject({
+      symbol: "AAPL",
+      account: "A1",
+      side: "buy",
+      refId: "8ec0e3e7-67a3-47bb-8fb9-fbf63b152a7e",
+      orderId: "ord-1",
+      httpStatus: 201,
+    });
+    expect(r).toMatchObject({
+      live: true,
+      dryRun: false,
+      orderId: "ord-1",
+      state: "queued",
+      httpStatus: 201,
+    });
   });
 });
 
 describe("placeEquityOrder — session awareness", () => {
   it("regular hours: no queue warning, session attached", async () => {
-    const { deps } = makeDeps({ session: "regular", quote: { last_trade_price: "100.00", bid_price: "99.98", ask_price: "100.02", updated_at: "t", instrument_id: "iid-123" } });
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+    const { deps } = makeDeps({
+      session: "regular",
+      quote: {
+        last_trade_price: "100.00",
+        bid_price: "99.98",
+        ask_price: "100.02",
+        updated_at: "t",
+        instrument_id: "iid-123",
+      },
+    });
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 },
+      deps,
+    );
     expect(r.session).toBe("regular");
     expect(r.sessionWarning).toBeUndefined();
   });
@@ -465,7 +871,10 @@ describe("placeEquityOrder — session awareness", () => {
     // (it does NOT queue). The engine pre-empts the doomed send instead of eating a raw 500.
     for (const session of ["pre_market", "after_hours", "closed"] as MarketSession[]) {
       const { deps, calls } = makeDeps({ session });
-      const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+      const r = await placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 },
+        deps,
+      );
       expect(r.preflightBlocked).toBe(true);
       expect(r.live).toBe(false);
       expect(r.dryRun).toBe(false);
@@ -478,30 +887,47 @@ describe("placeEquityOrder — session awareness", () => {
 
   it("force bypasses the off-session pre-flight guard and sends anyway (for capture/research)", async () => {
     const { deps, calls } = makeDeps({ session: "after_hours" });
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250, force: true }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250, force: true },
+      deps,
+    );
     expect(r.preflightBlocked).toBeFalsy();
-    expect(calls.writes[0].body).toMatchObject({ market_hours: "regular_hours", dollar_based_amount: { amount: "250.00", currency_code: "USD" } });
+    expect(calls.writes[0].body).toMatchObject({
+      market_hours: "regular_hours",
+      dollar_based_amount: { amount: "250.00", currency_code: "USD" },
+    });
     expect(r.sessionWarning).toMatch(/QUEUE to the next regular session/);
   });
 
   it("off-session whole-share MARKET order warns it will queue (suggests a limit for extended hours)", async () => {
     const { deps } = makeDeps({ session: "after_hours" });
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 3 }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 3 },
+      deps,
+    );
     expect(r.sessionWarning).toMatch(/market order will QUEUE/);
     expect(r.sessionWarning).toMatch(/limit order for extended-hours/);
   });
 
   it("off-session LIMIT order gets NO queue warning (a limit can rest/execute extended)", async () => {
     const { deps } = makeDeps({ session: "after_hours" });
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "sell", shares: 3, limitPrice: 95.5 }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "sell", shares: 3, limitPrice: 95.5 },
+      deps,
+    );
     expect(r.session).toBe("after_hours");
     expect(r.sessionWarning).toBeUndefined();
   });
 
   it("a failed session detection never blocks the send (session undefined, no warning)", async () => {
     const { deps, calls } = makeDeps({ session: "closed" });
-    (deps as any).getMarketSession = async () => { throw new Error("hours endpoint down"); };
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 }, deps);
+    (deps as any).getMarketSession = async () => {
+      throw new Error("hours endpoint down");
+    };
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 250 },
+      deps,
+    );
     expect(r.session).toBeUndefined();
     expect(r.sessionWarning).toBeUndefined();
     expect(calls.writes).toHaveLength(1); // order still planned
@@ -510,7 +936,13 @@ describe("placeEquityOrder — session awareness", () => {
 
 describe("computeMarketSession — authoritative RH hours classification", () => {
   // 2026-06-12 hours (real shape): regular 13:30Z–20:00Z, extended 11:00Z–00:00Z(+1).
-  const HOURS = { is_open: true, opens_at: "2026-06-12T13:30:00Z", closes_at: "2026-06-12T20:00:00Z", extended_opens_at: "2026-06-12T11:00:00Z", extended_closes_at: "2026-06-13T00:00:00Z" };
+  const HOURS = {
+    is_open: true,
+    opens_at: "2026-06-12T13:30:00Z",
+    closes_at: "2026-06-12T20:00:00Z",
+    extended_opens_at: "2026-06-12T11:00:00Z",
+    extended_closes_at: "2026-06-13T00:00:00Z",
+  };
   const at = (iso: string) => ({ getJson: (async () => HOURS) as any, now: () => Date.parse(iso) });
 
   it("classifies regular / pre_market / after_hours / closed from the live window", async () => {
@@ -521,12 +953,20 @@ describe("computeMarketSession — authoritative RH hours classification", () =>
   });
 
   it("a non-trading day (is_open:false) is closed and not a trading day", async () => {
-    const r = await computeMarketSession({ getJson: (async () => ({ is_open: false })) as any, now: () => Date.parse("2026-06-14T15:00:00Z") });
+    const r = await computeMarketSession({
+      getJson: (async () => ({ is_open: false })) as any,
+      now: () => Date.parse("2026-06-14T15:00:00Z"),
+    });
     expect(r).toMatchObject({ session: "closed", isTradingDay: false, authoritative: true });
   });
 
   it("falls back to the ET clock (non-authoritative) when the hours read fails", async () => {
-    const r = await computeMarketSession({ getJson: (async () => { throw new Error("down"); }) as any, now: () => Date.parse("2026-06-12T15:00:00Z") });
+    const r = await computeMarketSession({
+      getJson: (async () => {
+        throw new Error("down");
+      }) as any,
+      now: () => Date.parse("2026-06-12T15:00:00Z"),
+    });
     expect(r.authoritative).toBe(false);
     expect(r.session).toBe("regular"); // 15:00Z Fri = 11:00 ET → regular
   });
@@ -534,17 +974,24 @@ describe("computeMarketSession — authoritative RH hours classification", () =>
 
 describe("etClockSession — fallback heuristic", () => {
   it("maps ET wall-clock windows and treats weekends as closed", () => {
-    expect(etClockSession(Date.parse("2026-06-12T15:00:00Z"))).toBe("regular");    // Fri 11:00 ET
+    expect(etClockSession(Date.parse("2026-06-12T15:00:00Z"))).toBe("regular"); // Fri 11:00 ET
     expect(etClockSession(Date.parse("2026-06-12T12:00:00Z"))).toBe("pre_market"); // Fri 08:00 ET
-    expect(etClockSession(Date.parse("2026-06-12T22:30:00Z"))).toBe("after_hours");// Fri 18:30 ET
-    expect(etClockSession(Date.parse("2026-06-14T16:00:00Z"))).toBe("closed");     // Sunday
+    expect(etClockSession(Date.parse("2026-06-12T22:30:00Z"))).toBe("after_hours"); // Fri 18:30 ET
+    expect(etClockSession(Date.parse("2026-06-14T16:00:00Z"))).toBe("closed"); // Sunday
   });
 });
 
 describe("getOrderStatus — ticker resolution", () => {
-  const order = { id: "ord-9", side: "buy", state: "filled", instrument: "https://api.robinhood.com/instruments/9f6b6e9e-1111-2222-3333-444455556666/" };
+  const order = {
+    id: "ord-9",
+    side: "buy",
+    state: "filled",
+    instrument: "https://api.robinhood.com/instruments/9f6b6e9e-1111-2222-3333-444455556666/",
+  };
 
-  function statusDeps(opts: { order?: any; symbol?: string | null; instrumentsThrow?: boolean } = {}) {
+  function statusDeps(
+    opts: { order?: any; symbol?: string | null; instrumentsThrow?: boolean } = {},
+  ) {
     const calls = { instrumentLookups: 0 };
     return {
       calls,
@@ -557,8 +1004,8 @@ describe("getOrderStatus — ticker resolution", () => {
             return { results: [{ symbol: opts.symbol === undefined ? "MRVL" : opts.symbol }] };
           }
           throw new Error(`unexpected url in test fake: ${url}`);
-        }
-      }
+        },
+      },
     };
   }
 
@@ -593,11 +1040,20 @@ describe("WSF-01: brokerage buy routes through placeEquityOrder — dedup + log 
 
   it("dedup: a live buy with a fresh pending same-side order is BLOCKED by placeEquityOrder", async () => {
     const { deps, calls } = makeDeps({
-      writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-wsf01", state: "queued" }) },
-      pendingOrders: [{ id: "ord-dup-wsf01", side: "buy", state: "queued", created_at: minutesAgo(2) }]
+      writeResult: {
+        status: 201,
+        dryRun: false,
+        body: JSON.stringify({ id: "ord-wsf01", state: "queued" }),
+      },
+      pendingOrders: [
+        { id: "ord-dup-wsf01", side: "buy", state: "queued", created_at: minutesAgo(2) },
+      ],
     });
     await expect(
-      placeEquityOrder({ symbol: "MSFT", accountNumber: "A1", side: "buy", amount: 50, liveWrite: true }, deps)
+      placeEquityOrder(
+        { symbol: "MSFT", accountNumber: "A1", side: "buy", amount: 50, liveWrite: true },
+        deps,
+      ),
     ).rejects.toThrow(/^DEDUP: 1 pending buy/);
     expect(calls.writes).toHaveLength(0); // NOTHING was sent
     expect(calls.logs).toHaveLength(0);
@@ -605,14 +1061,33 @@ describe("WSF-01: brokerage buy routes through placeEquityOrder — dedup + log 
 
   it("logging: a live buy without pending orders logs + sends and carries ref_id + broker order id", async () => {
     const { deps, calls } = makeDeps({
-      writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-wsf01-live", state: "filled" }) },
-      pendingOrders: []
+      writeResult: {
+        status: 201,
+        dryRun: false,
+        body: JSON.stringify({ id: "ord-wsf01-live", state: "filled" }),
+      },
+      pendingOrders: [],
     });
-    const r = await placeEquityOrder({ symbol: "MSFT", accountNumber: "A1", side: "buy", amount: 50, liveWrite: true }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "MSFT", accountNumber: "A1", side: "buy", amount: 50, liveWrite: true },
+      deps,
+    );
     expect(calls.writes).toHaveLength(1);
     expect(calls.logs).toHaveLength(1);
-    expect(calls.logs[0]).toMatchObject({ symbol: "MSFT", account: "A1", side: "buy", refId: `MSFT-A1-${NOW}`, orderId: "ord-wsf01-live", httpStatus: 201 });
-    expect(r).toMatchObject({ live: true, dryRun: false, orderId: "ord-wsf01-live", state: "filled" });
+    expect(calls.logs[0]).toMatchObject({
+      symbol: "MSFT",
+      account: "A1",
+      side: "buy",
+      refId: "8ec0e3e7-67a3-47bb-8fb9-fbf63b152a7e",
+      orderId: "ord-wsf01-live",
+      httpStatus: 201,
+    });
+    expect(r).toMatchObject({
+      live: true,
+      dryRun: false,
+      orderId: "ord-wsf01-live",
+      state: "filled",
+    });
   });
 });
 
@@ -622,17 +1097,20 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
 
   it("placeEquityOrder throws when the account is not in the owned accounts graph", async () => {
     const { deps, calls } = makeDeps({
-      ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }]
+      ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
     });
     await expect(
-      placeEquityOrder({ symbol: "AAPL", accountNumber: "A9", side: "buy", amount: 10 }, deps)
+      placeEquityOrder({ symbol: "AAPL", accountNumber: "A9", side: "buy", amount: 10 }, deps),
     ).rejects.toThrow(/Account A9 is not one of your trading accounts/);
     expect(calls.writes).toHaveLength(0); // NOTHING was sent
   });
 
   it("a DRY-RUN with a failed ownership lookup warns but still previews (dry never wedges)", async () => {
     const { deps, calls } = makeDeps({ ownedAccounts: "throw" });
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10 }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10 },
+      deps,
+    );
     expect(r.dryRun).toBe(true);
     expect(r.live).toBe(false);
   });
@@ -642,7 +1120,7 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
     // Simulate: owned accounts has A1, but the order belongs to A9.
     const { deps, calls } = makeDeps({
       ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
-      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) }
+      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) },
     });
     // The cancelOrder pre-read will return an order with account URL pointing to A9.
     deps.getJson = async (url: string) => {
@@ -660,9 +1138,9 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
       }
       throw new Error(`unexpected: ${url}`);
     };
-    await expect(
-      cancelOrder({ idOrUrl: "ord-9", liveWrite: true }, deps)
-    ).rejects.toThrow(/Account A9 is not one of your trading accounts/);
+    await expect(cancelOrder({ idOrUrl: "ord-9", liveWrite: true }, deps)).rejects.toThrow(
+      /Account A9 is not one of your trading accounts/,
+    );
     // The write must never have been reached.
   });
 
@@ -670,7 +1148,10 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
     enableLiveWrites();
     const { deps, calls } = makeDeps({ ownedAccounts: "throw" });
     await expect(
-      placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true }, deps)
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "buy", amount: 10, liveWrite: true },
+        deps,
+      ),
     ).rejects.toThrow(/could not verify it against your owned accounts/);
     expect(calls.writes).toHaveLength(0);
   });
@@ -679,16 +1160,17 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
     enableLiveWrites();
     const { deps, calls } = makeDeps({
       ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
-      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) }
+      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) },
     });
     deps.getJson = async (url: string) => {
-      if (url.includes("transfer/accounts")) return { results: [{ type: "rhs", account_number: "A1", account_name: "Individual" }] };
+      if (url.includes("transfer/accounts"))
+        return { results: [{ type: "rhs", account_number: "A1", account_name: "Individual" }] };
       if (url.includes("/orders/")) throw new Error("order pre-read 503"); // pre-read cannot determine the account
       throw new Error(`unexpected: ${url}`);
     };
-    await expect(
-      cancelOrder({ idOrUrl: "ord-x", liveWrite: true }, deps)
-    ).rejects.toThrow(/could not verify the order's account/);
+    await expect(cancelOrder({ idOrUrl: "ord-x", liveWrite: true }, deps)).rejects.toThrow(
+      /could not verify the order's account/,
+    );
     expect(calls.writes).toHaveLength(0); // cancel never sent
   });
 
@@ -697,10 +1179,11 @@ describe("WSF-02: owned-account guard in canonical order paths", () => {
     const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const { deps, calls } = makeDeps({
       ownedAccounts: [{ type: "rhs", account_number: "A1", account_name: "Individual" }],
-      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) }
+      writeResult: { status: 200, dryRun: false, body: JSON.stringify({ state: "cancelled" }) },
     });
     deps.getJson = async (url: string) => {
-      if (url.includes("transfer/accounts")) return { results: [{ type: "rhs", account_number: "A1", account_name: "Individual" }] };
+      if (url.includes("transfer/accounts"))
+        return { results: [{ type: "rhs", account_number: "A1", account_name: "Individual" }] };
       if (url.includes("/orders/")) throw new Error("order pre-read 503"); // pre-read + evidence re-read both fail
       throw new Error(`unexpected: ${url}`);
     };
@@ -717,29 +1200,56 @@ describe("placeEquityOrder — notional-cap override threading (N4 / --override-
   // so the documented `--override-cap` flag / `overrideCap` param (CLI buy/sell/watchlist + MCP
   // buy/sell/watchlist_buy) can actually bypass a cap the user set — matching what NotionalCapError
   // tells them to do. Live, share-based: 10 sh × $100 = $1,000 notional vs a $100 per-order cap.
-  const live = { writeResult: { status: 201, dryRun: false, body: JSON.stringify({ id: "ord-cap", state: "queued" }) } };
+  const live = {
+    writeResult: {
+      status: 201,
+      dryRun: false,
+      body: JSON.stringify({ id: "ord-cap", state: "queued" }),
+    },
+  };
   const savedEnv: Record<string, string | undefined> = {};
   beforeEach(() => {
-    for (const k of ["ROBINHOOD_ALLOW_LIVE_WRITE", "ROBINHOOD_MAX_ORDER_DOLLARS", "ROBINHOOD_MAX_SESSION_DOLLARS", "ROBINHOOD_ALLOWED_ACCOUNT"]) savedEnv[k] = process.env[k];
+    for (const k of [
+      "ROBINHOOD_ALLOW_LIVE_WRITE",
+      "ROBINHOOD_MAX_ORDER_DOLLARS",
+      "ROBINHOOD_MAX_SESSION_DOLLARS",
+      "ROBINHOOD_ALLOWED_ACCOUNT",
+    ])
+      savedEnv[k] = process.env[k];
     process.env.ROBINHOOD_ALLOW_LIVE_WRITE = "1";
     process.env.ROBINHOOD_MAX_ORDER_DOLLARS = "100";
     delete process.env.ROBINHOOD_MAX_SESSION_DOLLARS; // isolate the per-order cap from the session accumulator
     delete process.env.ROBINHOOD_ALLOWED_ACCOUNT; // no account lock → the cap is the only gate under test
   });
   afterEach(() => {
-    for (const [k, v] of Object.entries(savedEnv)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+    for (const [k, v] of Object.entries(savedEnv))
+      v === undefined ? delete process.env[k] : (process.env[k] = v);
   });
 
   it("a live order over the per-order cap throws NotionalCapError — nothing sent", async () => {
     const { deps, calls } = makeDeps(live);
-    await expect(placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10, liveWrite: true }, deps))
-      .rejects.toThrow(NotionalCapError);
+    await expect(
+      placeEquityOrder(
+        { symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10, liveWrite: true },
+        deps,
+      ),
+    ).rejects.toThrow(NotionalCapError);
     expect(calls.writes).toHaveLength(0);
   });
 
   it("overrideCap:true bypasses the cap — the order is sent", async () => {
     const { deps, calls } = makeDeps(live);
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10, liveWrite: true, overrideCap: true }, deps);
+    const r = await placeEquityOrder(
+      {
+        symbol: "AAPL",
+        accountNumber: "A1",
+        side: "buy",
+        shares: 10,
+        liveWrite: true,
+        overrideCap: true,
+      },
+      deps,
+    );
     expect(calls.writes).toHaveLength(1);
     expect(r.live).toBe(true);
     expect(r.orderId).toBe("ord-cap");
@@ -747,10 +1257,35 @@ describe("placeEquityOrder — notional-cap override threading (N4 / --override-
 
   it("a dry-run over the cap is never blocked (caps gate live sends only)", async () => {
     const { deps, calls } = makeDeps();
-    const r = await placeEquityOrder({ symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10, dryRun: true }, deps);
+    const r = await placeEquityOrder(
+      { symbol: "AAPL", accountNumber: "A1", side: "buy", shares: 10, dryRun: true },
+      deps,
+    );
     expect(r.dryRun).toBe(true);
     expect(calls.writes).toHaveLength(1);
   });
 });
 
 // Zayd Khan // cold // www.zayd.wtf
+
+describe("opaque order references", () => {
+  it("uses a fresh UUID without account or symbol data by default", async () => {
+    const { deps } = makeDeps();
+    const { refIdFactory: _factory, ...runtimeDeps } = deps;
+    const input = {
+      symbol: "AAPL",
+      side: "buy" as const,
+      accountNumber: "A1",
+      shares: 1,
+      dryRun: true,
+    };
+    const first = await placeEquityOrder(input, runtimeDeps);
+    const second = await placeEquityOrder(input, runtimeDeps);
+    expect(first.refId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(first.refId).not.toBe(second.refId);
+    expect(first.refId).not.toContain("A1");
+    expect(first.refId).not.toContain("AAPL");
+  });
+});

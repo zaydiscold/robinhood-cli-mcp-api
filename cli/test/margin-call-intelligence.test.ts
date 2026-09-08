@@ -73,7 +73,11 @@ describe("margin-call intelligence", () => {
       state: "filled",
       updated_at: "2026-09-03T15:58:44.978Z",
     };
-    const getJson = async (url: string, _params?: Record<string, string>, query?: Record<string, string>) => {
+    const getJson = async (
+      url: string,
+      _params?: Record<string, string>,
+      query?: Record<string, string>,
+    ) => {
       if (url.includes("transfer/accounts")) return accounts;
       if (url.includes("wormhole/bw/orders/recent")) return { results: [] };
       if (url === "https://api.robinhood.com/orders/") {
@@ -88,7 +92,7 @@ describe("margin-call intelligence", () => {
     };
 
     const events = await getUnifiedHistory(
-      { accountNumber: "873870497", days: 7 },
+      { accountNumber: "900000003", days: 7 },
       { getJson: getJson as never, now: () => Date.parse("2026-09-04T21:00:00Z") },
     );
 
@@ -99,7 +103,7 @@ describe("margin-call intelligence", () => {
         side: "sell",
         quantity: 1.25,
         averagePrice: 28,
-        accountLast4: "0497",
+        accountLast4: "0003",
         state: "filled",
         summary: "sell 1.25 @ 28.00",
       }),
@@ -107,21 +111,52 @@ describe("margin-call intelligence", () => {
   });
 
   it("reads legacy equity pages separately for every owned account", async () => {
-    const getJson = async (url: string, _params?: Record<string, string>, query?: Record<string, string>) => {
+    const getJson = async (
+      url: string,
+      _params?: Record<string, string>,
+      query?: Record<string, string>,
+    ) => {
       if (url.includes("transfer/accounts"))
         return {
           results: [
             ...accounts.results,
-            { type: "ira_roth", account_number: "710276346", account_name: "Roth IRA", state: "active" },
+            {
+              type: "ira_roth",
+              account_number: "900000004",
+              account_name: "Roth IRA",
+              state: "active",
+            },
           ],
         };
       if (url.includes("wormhole/bw/orders/recent")) return { results: [] };
       if (url === "https://api.robinhood.com/orders/") {
         const updated_at = "2026-09-03T15:58:44.978Z";
-        if (query?.account_number === "873870497")
-          return { results: [{ id: "far-sale", side: "sell", quantity: "1", average_price: "10", state: "filled", updated_at }] };
-        if (query?.account_number === "710276346")
-          return { results: [{ id: "roth-sale", side: "sell", quantity: "2", average_price: "20", state: "filled", updated_at }] };
+        if (query?.account_number === "900000003")
+          return {
+            results: [
+              {
+                id: "far-sale",
+                side: "sell",
+                quantity: "1",
+                average_price: "10",
+                state: "filled",
+                updated_at,
+              },
+            ],
+          };
+        if (query?.account_number === "900000004")
+          return {
+            results: [
+              {
+                id: "roth-sale",
+                side: "sell",
+                quantity: "2",
+                average_price: "20",
+                state: "filled",
+                updated_at,
+              },
+            ],
+          };
         return { results: [] };
       }
       if (url.includes("options/orders")) return { results: [] };
@@ -135,10 +170,12 @@ describe("margin-call intelligence", () => {
       { getJson: getJson as never, now: () => Date.parse("2026-09-04T21:00:00Z") },
     );
 
-    expect(events.filter((event) => event.kind === "equity" && event.state === "filled")).toHaveLength(2);
+    expect(
+      events.filter((event) => event.kind === "equity" && event.state === "filled"),
+    ).toHaveLength(2);
   });
 
-  it("does not silently return a truncated legacy order history at the pagination guard", async () => {
+  it("rejects repeated cursors rather than returning truncated history", async () => {
     const getJson = async (url: string) => {
       if (url.includes("transfer/accounts")) return accounts;
       if (url.includes("wormhole/bw/orders/recent")) return { results: [] };
@@ -151,8 +188,8 @@ describe("margin-call intelligence", () => {
     };
 
     await expect(
-      getUnifiedHistory({ accountNumber: "873870497", days: 7 }, { getJson: getJson as never }),
-    ).rejects.toThrow("pagination limit");
+      getUnifiedHistory({ accountNumber: "900000003", days: 7 }, { getJson: getJson as never }),
+    ).rejects.toThrow("pagination cursor repeated");
   });
 
   it("reports the true maintenance buffer and recent risk-sale totals", async () => {

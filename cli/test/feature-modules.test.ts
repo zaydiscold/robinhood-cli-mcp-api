@@ -170,6 +170,22 @@ describe("options workbench", () => {
 });
 
 describe("doctor", () => {
+  it.each([
+    ["18.20.8", "fail"],
+    ["20.18.3", "fail"],
+    ["20.19.0", "pass"],
+    ["20.19.4", "pass"],
+    ["22.0.0", "pass"],
+  ])("checks the minimum supported Node version: %s", (version, status) => {
+    const root = repositoryRoot();
+    const result = runDoctor(root, {}, process.platform, root, version);
+    expect(result.checks.find((check) => check.id === "node")).toEqual({
+      id: "node",
+      status,
+      message: `Node ${version}; requires >=20.19`,
+    });
+  });
+
   it("resolves the repository from the module location instead of the caller cwd", () => {
     const originalCwd = process.cwd();
     const unrelatedCwd = mkdtempSync(join(tmpdir(), "rh-cwd-"));

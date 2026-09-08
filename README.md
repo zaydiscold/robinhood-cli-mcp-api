@@ -179,7 +179,7 @@ This CLI selects routes **by URL _and_ HTTP method**, so a single endpoint can c
 
 ### Requirements
 
-- **Node.js 20+** and **pnpm** (`npm i -g pnpm`).
+- **Node.js 20.19+** and **pnpm** (`npm i -g pnpm`).
 - A **Robinhood account** you own, logged in via the Robinhood web app in a Chromium-based browser (Chrome/Brave/Edge) on the same machine — that's where auth is read from.
 
 ### 1. Install & build

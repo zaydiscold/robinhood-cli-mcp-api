@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { computeExpirationPayoff } from "./options-workbench.js";
 import { maybeShareSafe } from "./share-safe.js";
@@ -47,11 +48,35 @@ export function ascendToRepoRoot(
   return undefined;
 }
 
-// Resolve the repo root (where .env and the operator-memory files live). Lenient: falls
-// back to the legacy fixed depth only if no marker is found (e.g. installed as a dep with
-// no .git / workspace file), so resolution never gets worse than before.
+// Resolve only from the installed package's own layout. Do not walk toward the
+// caller's cwd: a consumer checkout can have a .git or pnpm workspace above
+// node_modules, but that must never become this product's data/source root.
 function repoRoot(): string {
-  return ascendToRepoRoot() ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const sourceRoot = dirname(packageRoot);
+  return (
+    // The monorepo's published CLI package is specifically ./cli. A package
+    // installed under node_modules is never named cli, so this is a local
+    // source-layout invariant rather than an upward marker search.
+    (packageRoot.endsWith("/cli") || packageRoot.endsWith("\\cli")) &&
+      existsSync(join(sourceRoot, "pnpm-workspace.yaml"))
+      ? sourceRoot
+      : packageRoot
+  );
+}
+
+export function operatorDataRoot(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.ROBINHOOD_DATA_DIR) return env.ROBINHOOD_DATA_DIR;
+  const root = repoRoot();
+  if (existsSync(join(root, "pnpm-workspace.yaml")) || existsSync(join(root, ".git"))) return root;
+  const configHome =
+    env.XDG_CONFIG_HOME || (process.platform === "win32" ? env.APPDATA : undefined);
+  return join(configHome || join(homedir(), ".config"), "robinhood-cli");
+}
+
+export function defaultBrokerageEnvPath(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.ROBINHOOD_ENV_PATH) return env.ROBINHOOD_ENV_PATH;
+  return join(operatorDataRoot(env), ".env");
 }
 
 /**
@@ -67,7 +92,7 @@ export function repositoryRoot(): string {
 // Runs once at module load; a missing/garbled file is non-fatal.
 function loadRepoEnv(): void {
   try {
-    const path = join(repoRoot(), ".env");
+    const path = defaultBrokerageEnvPath();
     if (!existsSync(path)) return;
     for (const line of readFileSync(path, "utf8").split("\n")) {
       const t = line.trim();
@@ -2465,7 +2490,7 @@ export function resolveBash(
 // running server (the MCP) loads .env once at import; if the file is refreshed out-of-band
 // — a peer sync, a separate `auth:refresh`, another process — only a disk re-read sees it.
 // Optional path for testability; defaults to the repo .env.
-export function tokenFromEnvFile(envPath: string = join(repoRoot(), ".env")): string | undefined {
+export function tokenFromEnvFile(envPath: string = defaultBrokerageEnvPath()): string | undefined {
   try {
     if (!existsSync(envPath)) return undefined;
     for (const line of readFileSync(envPath, "utf8").split("\n")) {
@@ -2491,18 +2516,50 @@ export function tokenFromEnvFile(envPath: string = join(repoRoot(), ".env")): st
 //   2) mint one from THIS machine's logged-in Chrome via refresh-auth.sh, then re-read.
 // Returns undefined when nothing fresher exists (caller keeps the 401 + surfaces the hint).
 // scrape:false (tests / injected-fetch paths) skips the Chrome subprocess but still re-reads disk.
+/** Import and validate a local browser session without returning its credentials. */
+export async function refreshBrokerageSession(
+  envPath: string = defaultBrokerageEnvPath(),
+): Promise<void> {
+  const script = join(repoRootFromCli(), "scripts", "refresh-auth.sh");
+  if (!existsSync(script))
+    throw new Error("Auth helper is missing. Rebuild or reinstall robinhood-cli.");
+  await new Promise<void>((resolve, reject) => {
+    execFile(
+      resolveBash(),
+      [script],
+      {
+        timeout: 150_000,
+        maxBuffer: 64 * 1024,
+        env: { ...process.env, ROBINHOOD_ENV_PATH: envPath },
+      },
+      (error) =>
+        error
+          ? reject(
+              new Error(
+                "Session import failed. Run the auth helper locally for diagnostics; the existing credential was retained.",
+              ),
+            )
+          : resolve(),
+    );
+  });
+}
+
 export function refreshBrokerageToken(
   current?: string,
   opts: { scrape?: boolean; envPath?: string } = {},
 ): string | undefined {
-  const envPath = opts.envPath ?? join(repoRoot(), ".env");
+  const envPath = opts.envPath ?? defaultBrokerageEnvPath();
   const onDisk = tokenFromEnvFile(envPath);
   if (onDisk && onDisk !== current) return onDisk;
   if (opts.scrape === false) return undefined;
   try {
-    const script = join(repoRoot(), "scripts", "refresh-auth.sh");
+    const script = join(repoRootFromCli(), "scripts", "refresh-auth.sh");
     if (!existsSync(script)) return undefined;
-    execFileSync(resolveBash(), [script], { stdio: "ignore", timeout: 30000 });
+    execFileSync(resolveBash(), [script], {
+      stdio: "ignore",
+      timeout: 30000,
+      env: { ...process.env, ROBINHOOD_ENV_PATH: envPath },
+    });
     const minted = tokenFromEnvFile(envPath);
     if (minted && minted !== current) return minted;
   } catch {
@@ -2519,7 +2576,7 @@ export async function refreshBrokerageTokenAsync(
   current?: string,
   opts: { scrape?: boolean; envPath?: string } = {},
 ): Promise<string | undefined> {
-  const envPath = opts.envPath ?? join(repoRoot(), ".env");
+  const envPath = opts.envPath ?? defaultBrokerageEnvPath();
   const disk = tokenFromEnvFile(envPath);
   if (disk && disk !== current) return disk;
   if (opts.scrape === false) return undefined;
@@ -2529,7 +2586,7 @@ export async function refreshBrokerageTokenAsync(
       try {
         execFile(
           resolveBash(),
-          [join(repoRoot(), "scripts", "refresh-auth.sh")],
+          [join(repoRootFromCli(), "scripts", "refresh-auth.sh")],
           {
             timeout: 90_000,
             maxBuffer: 64 * 1024,
@@ -3134,7 +3191,7 @@ export async function computePortfolioPnl(
   const localLabels = new Map<string, string>();
   for (const rel of ["local/accounts.local.json", "accounts.local.json"]) {
     try {
-      const obj = JSON.parse(readFileSync(join(repoRoot(), rel), "utf8"));
+      const obj = JSON.parse(readFileSync(join(operatorDataRoot(), rel), "utf8"));
       for (const [k, v] of Object.entries(obj)) localLabels.set(String(k), String(v));
       break;
     } catch {
@@ -3995,7 +4052,7 @@ export async function logTrade(entry: Record<string, unknown>) {
   try {
     const { appendFileSync, existsSync, mkdirSync } = await import("fs");
     const { join } = await import("path");
-    const logDir = join(repoRoot(), "local");
+    const logDir = join(operatorDataRoot(), "local");
     if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
     appendFileSync(join(logDir, "trading-log.jsonl"), JSON.stringify(entry) + "\n");
   } catch {
@@ -7307,7 +7364,7 @@ export async function downloadDocuments(
   );
   const docs =
     opts.limit && opts.limit > 0 ? listing.documents.slice(0, opts.limit) : listing.documents;
-  const directory = deps.outDir ?? join(repoRoot(), "local", "documents");
+  const directory = deps.outDir ?? join(operatorDataRoot(), "local", "documents");
   mkdirSync(directory, { recursive: true });
   const token = process.env.ROBINHOOD_BROKERAGE_TOKEN;
   const headers: Record<string, string> = {
@@ -7525,9 +7582,10 @@ export function addTradeNote(
       "A trade note needs both a ref (order id / symbol / symbol+date) and the note text.",
     );
   }
-  const file = deps.file ?? join(repoRoot(), TRADE_NOTES_FILE);
+  const file = deps.file ?? join(operatorDataRoot(), TRADE_NOTES_FILE);
   const entry = formatTradeNote({ ref: input.ref, note: input.note, now: deps.now });
-  appendFileSync(file, entry);
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  appendFileSync(file, entry, { mode: 0o600 });
   return { file, entry };
 }
 
@@ -7561,7 +7619,7 @@ export function parseTradeNotes(content: string): TradeNote[] {
 }
 
 export function loadTradeNotes(deps: { file?: string } = {}): TradeNote[] {
-  const file = deps.file ?? join(repoRoot(), TRADE_NOTES_FILE);
+  const file = deps.file ?? join(operatorDataRoot(), TRADE_NOTES_FILE);
   try {
     return parseTradeNotes(readFileSync(file, "utf8"));
   } catch {
@@ -8056,7 +8114,7 @@ export function parseHotlist(content: string): HotlistEntry[] {
 }
 
 export function loadHotlist(deps: { file?: string } = {}): HotlistEntry[] {
-  const file = deps.file ?? join(repoRoot(), HOTLIST_FILE);
+  const file = deps.file ?? join(operatorDataRoot(), HOTLIST_FILE);
   try {
     return parseHotlist(readFileSync(file, "utf8"));
   } catch {
@@ -8193,7 +8251,9 @@ function whenToLoadBlock(content: string): string | null {
  * deep docs stay progressive-disclosure; load one via readKnowledge(id) when a module links there).
  */
 export function listKnowledge(deps: { root?: string } = {}): KnowledgeEntry[] {
-  const root = deps.root ?? repoRoot();
+  const root =
+    deps.root ??
+    (existsSync(join(repoRoot(), "pnpm-workspace.yaml")) ? repoRoot() : repoRootFromCli());
   const out: KnowledgeEntry[] = [];
   const seen = new Set<string>();
   const scan = (dir: string, kind: KnowledgeEntry["kind"], withHints: boolean) => {
@@ -8256,7 +8316,9 @@ export function readKnowledge(
   id: string,
   deps: { root?: string } = {},
 ): { id: string; path: string; title: string; kind: KnowledgeEntry["kind"]; content: string } {
-  const root = deps.root ?? repoRoot();
+  const root =
+    deps.root ??
+    (existsSync(join(repoRoot(), "pnpm-workspace.yaml")) ? repoRoot() : repoRootFromCli());
   const entries = listKnowledge(deps);
   const want = id.trim().toLowerCase().replace(/\.md$/i, "");
   const hit = entries.find((e) => e.id === want);
@@ -8381,14 +8443,15 @@ export function addPendingRoll(
   deps: { file?: string; now?: Date } = {},
 ): { file: string; entry: string } {
   if (!input.symbol?.trim()) throw new Error("A pending roll needs at least a symbol.");
-  const file = deps.file ?? join(repoRoot(), ROLLS_FILE);
+  const file = deps.file ?? join(operatorDataRoot(), ROLLS_FILE);
   const entry = formatPendingRoll({ ...input, now: deps.now });
-  appendFileSync(file, entry);
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  appendFileSync(file, entry, { mode: 0o600 });
   return { file, entry };
 }
 
 export function listPendingRolls(deps: { file?: string } = {}): PendingRoll[] {
-  const file = deps.file ?? join(repoRoot(), ROLLS_FILE);
+  const file = deps.file ?? join(operatorDataRoot(), ROLLS_FILE);
   try {
     return parsePendingRolls(readFileSync(file, "utf8"));
   } catch {
@@ -8406,7 +8469,7 @@ export function completePendingRoll(
   symbolOrId: string,
   deps: { file?: string } = {},
 ): { file: string; removed: PendingRoll; remaining: number } {
-  const file = deps.file ?? join(repoRoot(), ROLLS_FILE);
+  const file = deps.file ?? join(operatorDataRoot(), ROLLS_FILE);
   let content: string;
   try {
     content = readFileSync(file, "utf8");
@@ -8441,7 +8504,7 @@ export function appendRollCompletionLog(
   removed: PendingRoll,
   deps: { file?: string; now?: Date } = {},
 ): { file: string; entry: string } {
-  const file = deps.file ?? join(repoRoot(), "trading-log.md");
+  const file = deps.file ?? join(operatorDataRoot(), "trading-log.md");
   const d = deps.now ?? new Date();
   const pad = (x: number) => String(x).padStart(2, "0");
   const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} local`;
@@ -8458,7 +8521,8 @@ export function appendRollCompletionLog(
     "=== END",
     "",
   ].join("\n");
-  appendFileSync(file, entry);
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  appendFileSync(file, entry, { mode: 0o600 });
   return { file, entry };
 }
 

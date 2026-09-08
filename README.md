@@ -1,4 +1,4 @@
-# Robinhood CLI (MCP + API)
+# Robinhood CLI
 
 
 [Consolidation and verification report](./docs/consolidation-2026-09-07.md)
@@ -43,6 +43,20 @@ cd robinhood-cli-mcp-api
 pnpm install && pnpm build
 node cli/dist/index.js --help
 ```
+
+## Commands built around the task
+
+| Task | Command | What it does |
+| --- | --- | --- |
+| Inspect the emergency cancel list | `robinhood-cli panic --dry-run --json` | Scans open equity and options orders across accounts. Each live cancellation has an independent order-history readback. |
+| Explain portfolio movement | `robinhood-cli portfolio --json` | Reconciles account totals and position-level dollar contributions. |
+| Understand borrowing pressure | `robinhood-cli margin --json` | Reports maintenance buffers, borrowing, and recent risk liquidations. |
+| Review trading behavior | `robinhood-cli review --help` | Pairs fills into round trips, holding times, realized results, and trade notes. |
+| Follow an uncertain order | `robinhood-cli order-watch --id <order-id>` | Polls and reconciles history without resubmitting the order. |
+| Research tax treatment | `robinhood-cli tax --help` | Opens the bundled reference and strategy research surface. |
+| Recover a browser session | `robinhood-cli auth refresh` | Imports an existing local browser session, validates it, and stores it without displaying credentials. |
+
+The CLI is the primary interface. The optional MCP adapter calls the same core operations. A normal npm installation stores operator data under `~/.config/robinhood-cli` (Windows uses `%APPDATA%`); `ROBINHOOD_DATA_DIR` and `ROBINHOOD_ENV_PATH` select explicit locations. Source checkouts retain their repository-local layout.
 
 ## What This Includes
 

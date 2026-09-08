@@ -97,7 +97,7 @@ assert.notEqual(
 const mergeDir = await mkdtemp(join(tmpdir(), "robinhood-cdp-merge-"));
 try {
   const routesPath = join(mergeDir, "routes.json");
-  const browserRoutesPath = join(mergeDir, "browser-routes.json");
+  const browserRoutesPath = join(mergeDir, "browser-cdp-routes-2026-07-16.json");
   const capturePath = join(mergeDir, "capture-2026-07-16.json");
   const baseRoute = {
     host: "api.robinhood.com",
@@ -147,6 +147,13 @@ try {
     ].sort(),
     "the actual merge path must preserve base, ids, and symbol route variants",
   );
+  const narrower = {schemaVersion:2,sanitized:true,capturedAt:"2026-07-16T12:00:00.000Z",captureId:"second-same-day",routeIndex:[{method:"GET",type:"XHR",url:{origin:"https://api.robinhood.com",path:"/new-surface/",queryKeys:[]}}]};
+  await writeFile(capturePath,JSON.stringify(narrower));
+  const again=spawnSync(process.execPath,["scripts/merge-cdp-capture.mjs",capturePath],{cwd:new URL("..",import.meta.url),env:{...process.env,ROBINHOOD_ROUTES_PATH:routesPath,ROBINHOOD_BROWSER_ROUTES_PATH:browserRoutesPath},encoding:"utf8"});
+  assert.equal(again.status,0,again.stderr);
+  const cumulative=JSON.parse(await readFile(browserRoutesPath,"utf8"));
+  assert.equal(cumulative.length,4,"a narrower same-day capture must retain the earlier three browser operations");
+  assert.ok(cumulative.some(r=>r.url.includes("?symbol={symbol}")));
 } finally {
   await rm(mergeDir, { recursive: true, force: true });
 }

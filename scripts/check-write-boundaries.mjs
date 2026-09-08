@@ -12,12 +12,29 @@ if (!equityBatch.includes("placeEquityOrder")) {
 if (/\bfetch\s*\(/.test(equityBatch) || /api\.robinhood\.com\/orders\//.test(equityBatch)) {
   findings.push("scripts/equity-buy.mjs must not contain a direct brokerage write client");
 }
-if (/\bfetch\s*\(/.test(optionSmoke) || /api\.robinhood\.com\/options\/orders\//.test(optionSmoke)) {
+if (
+  /\bfetch\s*\(/.test(optionSmoke) ||
+  /api\.robinhood\.com\/options\/orders\//.test(optionSmoke)
+) {
   findings.push("scripts/live-order-smoke.mjs must not contain a direct brokerage write client");
 }
 if (!optionSmoke.includes("has been retired")) {
   findings.push("scripts/live-order-smoke.mjs must remain a non-sending retirement shim");
 }
+
+const strategyValidation = readFileSync(
+  new URL("./validate-strategies.mjs", import.meta.url),
+  "utf8",
+);
+if (
+  !strategyValidation.includes("gatedBrokerageWrite") ||
+  !strategyValidation.includes("cancelOrder")
+)
+  findings.push("Strategy validation must use the shared write and cancellation paths");
+if (/api\([^;]*method\s*:\s*["']POST/s.test(strategyValidation))
+  findings.push("Strategy validation must not send direct POST requests");
+if (!strategyValidation.includes('cancelled.evidence.state === "cancelled"'))
+  findings.push("Strategy validation must verify the final cancellation state");
 
 if (findings.length) {
   console.error("Shared write-boundary check failed:");

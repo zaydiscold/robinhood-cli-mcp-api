@@ -211,6 +211,7 @@ import tempfile
 from pathlib import Path
 
 staged, target = sys.argv[1:]
+Path(target).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 with tempfile.NamedTemporaryFile(dir=Path(target).parent, delete=False) as output:
     temporary = output.name
     output.write(Path(staged).read_bytes())

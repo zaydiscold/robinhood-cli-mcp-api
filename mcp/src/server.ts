@@ -108,6 +108,7 @@ import {
   detectAccountClass,
   buildAtomicRollOrderBody,
   resolveRollModel,
+  operatorDataRoot,
   repositoryRoot,
   appendPortfolioSnapshot,
   buildOptionsWorkbench,
@@ -3698,7 +3699,8 @@ registerCapabilityTool(
     outputSchema: doctorOutputSchema,
     annotations: toolAnnotations(true, "read"),
   },
-  async () => jsonResponse(runDoctor(repositoryRoot())),
+  async () =>
+    jsonResponse(runDoctor(repositoryRoot(), process.env, process.platform, operatorDataRoot())),
 );
 
 registerCapabilityTool(
@@ -3804,7 +3806,7 @@ registerCapabilityTool(
     inputSchema: z.object({
       action: z.enum(["capture", "list", "diff"]).default("capture"),
       account_number: z.string().optional(),
-      path: z.string().default(resolve(repositoryRoot(), "local/portfolio-snapshots.jsonl")),
+      path: z.string().default(resolve(operatorDataRoot(), "local/portfolio-snapshots.jsonl")),
     }),
     outputSchema: z.object({}).catchall(z.unknown()),
     annotations: toolAnnotations(true, "read"),

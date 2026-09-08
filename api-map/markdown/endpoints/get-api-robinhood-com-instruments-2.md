@@ -4,14 +4,14 @@ Mutation: no
 Risk: read
 
 Host: api.robinhood.com
-Categories: instruments, reference
-Source: self-extension 2026-05-28: bulk ids= resolution for holdings → tickers/quotes
+Categories: marketdata
+Source: cdp-2026-09-07-authenticated-sanitized-v2
 Operation ID: n/a
 
 Route template:
 
 ```text
-https://api.robinhood.com/instruments/?ids={ids}
+https://api.robinhood.com/instruments/?active_instruments_only={active_instruments_only}&ids={ids}
 ```
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

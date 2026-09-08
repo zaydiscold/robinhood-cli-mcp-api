@@ -1,5 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -43,6 +53,38 @@ describe("published package boundary", () => {
       types: "./dist/tax-strategy.d.ts",
       import: "./dist/tax-strategy.js",
     });
+  });
+
+  it("isolates an installed package from a consuming repository and uses its configured data directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rh-installed-"));
+    try {
+      mkdirSync(join(dir, ".git"));
+      writeFileSync(join(dir, ".env"), "ROBINHOOD_CONSUMER_SENTINEL=wrong-root\n");
+      const installed = join(dir, "node_modules", "@zaydiscold", "robinhood-cli");
+      mkdirSync(installed, { recursive: true });
+      cpSync(join(packageRoot, "dist"), join(installed, "dist"), { recursive: true });
+      cpSync(join(packageRoot, "package.json"), join(installed, "package.json"));
+      const data = join(dir, "operator-data");
+      const script = `const m=await import(${JSON.stringify(pathToFileURL(join(installed, "dist/lib.js")).href)}); m.addTradeNote({ref:"synthetic",note:"installation check"}); console.log(JSON.stringify({knowledge:m.listKnowledge().length>0,doctorOk:m.runDoctor(m.repositoryRoot(),process.env,process.platform,m.operatorDataRoot()).ok,root:m.repositoryRoot(),data:m.operatorDataRoot(),env:m.defaultBrokerageEnvPath(),consumer:process.env.ROBINHOOD_CONSUMER_SENTINEL??null}));`;
+      const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...safeEnvironment(), ROBINHOOD_DATA_DIR: data, ROBINHOOD_ENV_PATH: "" },
+        timeout: 10000,
+      });
+      expect(child.status, child.stderr).toBe(0);
+      expect(JSON.parse(child.stdout)).toEqual({
+        knowledge: true,
+        doctorOk: true,
+        root: realpathSync(installed),
+        data,
+        env: join(data, ".env"),
+        consumer: null,
+      });
+      expect(existsSync(join(installed, "dist/scripts/refresh-auth.sh"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("imports the built package root without parsing the host process arguments", () => {
@@ -97,16 +139,12 @@ describe("published package boundary", () => {
     const binary = join(packageRoot, manifest.bin["robinhood-cli"]);
     if (!existsSync(binary)) return;
 
-    const child = spawnSync(
-      process.execPath,
-      [binary, "tax", "section-1256", "--json"],
-      {
-        cwd: packageRoot,
-        encoding: "utf8",
-        env: safeEnvironment(),
-        timeout: 10_000,
-      },
-    );
+    const child = spawnSync(process.execPath, [binary, "tax", "section-1256", "--json"], {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: safeEnvironment(),
+      timeout: 10_000,
+    });
 
     expect(child.error).toBeUndefined();
     expect(child.status, child.stderr).toBe(0);

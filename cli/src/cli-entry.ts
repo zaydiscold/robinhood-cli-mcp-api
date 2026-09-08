@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { runTaxCli } from "./tax-cli.js";
 
@@ -28,7 +28,7 @@ export function isCliEntryMain(
 ): boolean {
   if (!argvPath) return false;
   try {
-    return resolve(fileURLToPath(metaUrl)) === resolve(argvPath);
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(argvPath);
   } catch {
     return false;
   }

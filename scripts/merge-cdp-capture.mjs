@@ -1,5 +1,5 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   assertSanitizedCapture,
@@ -132,7 +132,10 @@ for (const item of capture.routeIndex ?? []) {
   if (requestType && !requestType.includes("XHR") && !requestType.includes("FETCH")) continue;
   const normalizedPath = normalizePath(item.url.path);
   const queryKeys = [...new Set(item.url.queryKeys ?? [])].sort();
-  const key = canonicalOperationKey(item.method, routeUrl(item.url.origin, normalizedPath, queryKeys));
+  const key = canonicalOperationKey(
+    item.method,
+    routeUrl(item.url.origin, normalizedPath, queryKeys),
+  );
   const group = grouped.get(key) ?? {
     methodSet: new Set(),
     typeSet: new Set(),
@@ -290,7 +293,8 @@ for (const route of existingRoutes) {
     dedupedRoutes.push(route);
     continue;
   }
-  const key = canonicalOperationKey(route.methods[0], route.url);
+  // Preserve existing placeholder names: callers may supply symbol rather than 0.
+  const key = `${route.methods[0]} ${route.url}`;
   const existing = exactOperations.get(key);
   if (existing) mergeRouteEvidence(existing, route);
   else {
@@ -302,8 +306,28 @@ existingRoutes = dedupedRoutes;
 
 existingRoutes.sort((a, b) => a.host.localeCompare(b.host) || a.url.localeCompare(b.url));
 
+// A newer narrow capture must not hide pages and operations observed previously.
+const olderFiles = (await readdir(dirname(browserRoutesPath)))
+  .filter(
+    (name) =>
+      /^browser-cdp-routes-\d{4}-\d{2}-\d{2}\.json$/.test(name) &&
+      name <= basename(browserRoutesPath),
+  )
+  .sort();
+const previousBrowserRoutes = olderFiles.length
+  ? JSON.parse(await readFile(resolve(dirname(browserRoutesPath), olderFiles.at(-1)), "utf8"))
+  : [];
+const cumulative = new Map();
+for (const route of [...previousBrowserRoutes, ...browserRoutes]) {
+  const key = canonicalOperationKey(route.methods?.[0] ?? "GET", route.url);
+  const previous = cumulative.get(key);
+  if (previous) mergeRouteEvidence(previous, route);
+  else cumulative.set(key, route);
+}
+const cumulativeBrowserRoutes = [...cumulative.values()].sort((a, b) => a.url.localeCompare(b.url));
+
 await mkdir(dirname(browserRoutesPath), { recursive: true });
-await writeFile(browserRoutesPath, `${JSON.stringify(browserRoutes, null, 2)}\n`);
+await writeFile(browserRoutesPath, `${JSON.stringify(cumulativeBrowserRoutes, null, 2)}\n`);
 await writeFile(routesPath, `${JSON.stringify(existingRoutes, null, 2)}\n`);
 
 console.error(`capture=${capturePath}`);

@@ -1,4 +1,4 @@
-import { cp, mkdir, rename, rm } from "node:fs/promises";
+import { cp, mkdir, readdir, rename, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,9 +25,35 @@ async function acquireLock() {
   throw new Error(`Timed out waiting for API-map copy lock: ${lock}`);
 }
 
-await cp(source, staging, { recursive: true });
-await acquireLock();
+async function latestMatching(pattern) {
+  const matches = (await readdir(source)).filter((file) => pattern.test(file)).sort();
+  const latest = matches.at(-1);
+  if (!latest) throw new Error(`No API-map asset matched ${pattern}`);
+  return latest;
+}
 
+const runtimeFiles = [
+  "brokerage-routes.json",
+  "robinhood-routes.json",
+  "recipes.json",
+  await latestMatching(/^browser-cdp-routes-\d{4}-\d{2}-\d{2}\.json$/),
+  await latestMatching(/^account-context-browser-workflows-\d{4}-\d{2}-\d{2}\.json$/),
+  await latestMatching(/^options-strategy-workflows-\d{4}-\d{2}-\d{2}\.json$/),
+];
+
+await mkdir(resolve(staging, "openapi"), { recursive: true });
+for (const file of runtimeFiles) {
+  await cp(resolve(source, file), resolve(staging, file));
+}
+for (const file of [
+  "robinhood-crypto.openapi.json",
+  "robinhood-brokerage.openapi.json",
+  "robinhood-unified.openapi.json",
+]) {
+  await cp(resolve(source, "openapi", file), resolve(staging, "openapi", file));
+}
+
+await acquireLock();
 try {
   await rm(dest, { recursive: true, force: true });
   await rename(staging, dest);
@@ -36,4 +62,6 @@ try {
   await rm(lock, { recursive: true, force: true });
 }
 
+// The npm package carries only runtime data. Generated Markdown, curl templates,
+// historical captures, and YAML mirrors remain in the repository for research.
 // Zayd Khan // cold // www.zayd.wtf

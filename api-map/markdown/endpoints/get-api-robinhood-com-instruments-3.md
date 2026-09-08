@@ -4,14 +4,14 @@ Mutation: no
 Risk: read
 
 Host: api.robinhood.com
-Categories: instruments, reference
-Source: self-extension 2026-05-28: symbol->instrument_id + tradable_chain_id resolution
+Categories: marketdata
+Source: cdp-2026-09-07-authenticated-sanitized-v2
 Operation ID: n/a
 
 Route template:
 
 ```text
-https://api.robinhood.com/instruments/?symbol={symbol}
+https://api.robinhood.com/instruments/?active_instruments_only={active_instruments_only}&symbol={symbol}
 ```
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

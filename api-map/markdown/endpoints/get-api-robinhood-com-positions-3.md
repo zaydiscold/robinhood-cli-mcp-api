@@ -5,13 +5,13 @@ Risk: sensitive-read
 
 Host: api.robinhood.com
 Categories: account
-Source: self-extension 2026-05-28: templated account_number form so any account (individual, Roth/IRA, etc.) can be queried, not just primary; placeholder filled via --param
+Source: cdp-2026-09-07-authenticated-sanitized-v2
 Operation ID: n/a
 
 Route template:
 
 ```text
-https://api.robinhood.com/positions/?account_number={account_number}&nonzero=true
+https://api.robinhood.com/positions/?account_number={account_number}&instrument={instrument}&nonzero={nonzero}
 ```
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

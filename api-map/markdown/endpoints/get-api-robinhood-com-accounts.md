@@ -5,7 +5,7 @@ Risk: sensitive-read
 
 Host: api.robinhood.com
 Categories: account
-Source: community-seed
+Source: cdp-2026-09-07-authenticated-sanitized-v2
 Operation ID: n/a
 
 Route template:

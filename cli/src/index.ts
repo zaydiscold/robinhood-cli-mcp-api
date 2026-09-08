@@ -121,7 +121,9 @@ import {
   finiteNumber,
   optionPositionSide,
   optionMoney,
+  operatorDataRoot,
   repositoryRoot,
+  refreshBrokerageSession,
   appendPortfolioSnapshot,
   buildOptionsWorkbench,
   diffPortfolioSnapshots,
@@ -164,6 +166,18 @@ program
 
 // Help-only credit line — must never print on normal or --json command output.
 program.addHelpText("after", "\nby zayd @ zayd.wtf");
+
+program
+  .command("auth")
+  .description("Manage the local browser-backed session")
+  .command("refresh")
+  .description("Import and validate an existing browser session with an accounts read")
+  .action(async () => {
+    await refreshBrokerageSession();
+    process.stdout.write(
+      "Browser session validated and stored. No credential values are displayed.\n",
+    );
+  });
 
 function parseJsonBody(value?: string): unknown {
   if (!value) return undefined;
@@ -6400,7 +6414,7 @@ program
   )
   .option("--json", "emit JSON")
   .action((opts: any) => {
-    const result = runDoctor(repositoryRoot());
+    const result = runDoctor(repositoryRoot(), process.env, process.platform, operatorDataRoot());
     if (opts.json) return printJson(result);
     printTable(
       result.checks.map((check) => ({ ...check })),
@@ -6440,7 +6454,7 @@ program
   .option(
     "--path <path>",
     "snapshot JSONL path",
-    resolvePath(repositoryRoot(), "local/portfolio-snapshots.jsonl"),
+    resolvePath(operatorDataRoot(), "local/portfolio-snapshots.jsonl"),
   )
   .action(async (action: string, opts: any) => {
     const snapshots = readPortfolioSnapshots(opts.path);

@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "MCP server for personal live Robinhood read/write API-map tools.",
+  "description": "Optional MCP adapter for the Robinhood CLI shared account, analytics, and order workflows.",
   "author": "Zayd Khan // cold (www.zayd.wtf)",
   "bin": {
     "robinhood-cli-mcp": "dist/server.js"
@@ -22,5 +22,14 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zaydiscold/robinhood-cli-mcp-api.git"
   }
 }

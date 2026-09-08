@@ -37,7 +37,7 @@ node cli/dist/index.js margin --json
 node cli/dist/index.js options holdings --json
 ```
 
-Packaging proof: packed CLI and MCP tarballs installed into a separate empty directory. CLI help and MCP initialization succeeded without the source checkout. Packed files contain no .env, local/, research/, or proofs/ paths.
+Initial packaging checks installed CLI and MCP tarballs into a separate directory, but the CLI check did not assert nonempty output. The follow-up found and fixed an executable-symlink defect, then asserted actual installed help and tax output. MCP initialization succeeded without the source checkout. Packed files contain no .env, local/, research/, or proofs/ paths.
 
 ## Privacy and remaining limits
 
@@ -45,7 +45,7 @@ Replaced captured account identifiers, nickname, and financial fixture amounts w
 
 Raw browser tokens, cookies, account responses, and review text were not included in this document or source changes. Private captures remain local and ignored. No credentials were copied to another machine.
 
-The remote Hermes installation is not verified: the local Tailscale service was stopped. Local source, built runtime, a fresh MCP process, and an already-running Hermes session are distinct states. Existing Hermes sessions may retain an old server until reloaded.
+Follow-up: Tailscale was restarted and remote authenticated reads were verified. See [the browser and runtime follow-up](browser-coverage-2026-09-07.md) for the distinct cached-process results. Local source, built runtime, a fresh MCP process, and an already-running Hermes session are distinct states. Existing Hermes sessions may retain an old server until reloaded.
 
 Watchlist/settings/recurring transport receipts without exact readback remain unverified. Account-specific endpoints can depend on entitlement or require forms that have not been exercised. Real trading, transfer, withdrawal, and enrollment paths were not live-tested. A complete route inventory is not a claim of universal live coverage.
 
@@ -58,3 +58,7 @@ Twenty additional command invocations covered exposure/Greeks, risk, performance
 The clean source checkout was fast-forwarded to e515301 and rebuilt at the configured Hermes MCP path. `hermes mcp test robinhood-cli` connected and discovered 93 tools. A separate client launched that exact path without inherited brokerage token/cookie environment values and successfully read five accounts. The session was refreshed from the authorized Chrome and independently verified before promotion. This verifies a new local MCP process, not an existing cached Hermes process or the remote host.
 
 A narrower `review --days 7 --json` retry completed in 14.8 seconds with no warnings. The original 90-day query remains outside the completed live evidence.
+
+## Additional PR review
+
+PR #107 adds useful browser-session recovery guidance. Its claims that validation can silently refresh and MCP requires a repository cwd are outdated relative to the integrated implementation. The useful session-lifetime, network-diagnosis, and credential-source guidance was incorporated with those corrections. The active remote PR #107 repair and history-pagination work remain separate concurrent work, not silently declared merged.

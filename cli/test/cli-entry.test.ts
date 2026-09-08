@@ -1,4 +1,8 @@
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   isCliEntryMain,
@@ -9,6 +13,23 @@ import {
 } from "../src/cli-entry.js";
 
 describe("unified CLI entry", () => {
+  it.skipIf(process.platform === "win32")(
+    "prints useful output through an installed bin symlink",
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), "rh-bin-"));
+      try {
+        const bin = join(dir, "robinhood-cli");
+        symlinkSync(fileURLToPath(new URL("../dist/cli-entry.js", import.meta.url)), bin);
+        const help = execFileSync(process.execPath, [bin, "--help"], { encoding: "utf8" });
+        expect(help).toContain("Usage: robinhood-cli");
+        expect(help).toContain("panic");
+        const tax = execFileSync(process.execPath, [bin, "tax", "--help"], { encoding: "utf8" });
+        expect(tax).toContain("robinhood-tax");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
   it("recognizes only an exact tax subcommand", () => {
     expect(isTaxInvocation(["node", "cli", "tax"])).toBe(true);
     expect(isTaxInvocation(["node", "cli", "tax-lots"])).toBe(false);

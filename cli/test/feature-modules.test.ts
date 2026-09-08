@@ -195,6 +195,7 @@ describe("doctor", () => {
     writeFileSync(join(root, "api-map/brokerage-routes.json"), "[]");
     writeFileSync(join(root, "cli/dist/api-map/brokerage-routes.json"), "[]");
     for (const path of [
+      "pnpm-workspace.yaml",
       "AGENTS.md",
       "SKILL.md",
       "docs/cli-mcp-architecture.md",
@@ -228,6 +229,7 @@ describe("doctor", () => {
     writeFileSync(join(root, "api-map/brokerage-routes.json"), "[]");
     writeFileSync(join(root, "cli/dist/api-map/brokerage-routes.json"), "[]");
     for (const path of [
+      "pnpm-workspace.yaml",
       "AGENTS.md",
       "SKILL.md",
       "docs/cli-mcp-architecture.md",

@@ -1,0 +1,17 @@
+# GET /user_info/opt_out_consent/
+
+Mutation: no
+Risk: sensitive-read
+
+Host: identi.robinhood.com
+Categories: unknown
+Source: cdp-2026-09-07-authenticated-sanitized-v2
+Operation ID: n/a
+
+Route template:
+
+```text
+https://identi.robinhood.com/user_info/opt_out_consent/?type={type}
+```
+
+<!-- Zayd Khan // cold // www.zayd.wtf -->

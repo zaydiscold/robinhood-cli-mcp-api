@@ -5,7 +5,7 @@ Risk: write-safe
 
 Host: api.robinhood.com
 Categories: telemetry-config
-Source: cdp-2026-07-14-authenticated-sanitized-v2
+Source: cdp-2026-07-14-authenticated-sanitized-v2; cdp-2026-09-07-authenticated-sanitized-v2
 Operation ID: n/a
 
 Route template:

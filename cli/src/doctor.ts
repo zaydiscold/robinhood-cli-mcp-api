@@ -17,6 +17,7 @@ export function runDoctor(
   root: string,
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
+  dataRoot: string = root,
 ) {
   const checks: DoctorCheck[] = [];
   const add = (id: string, status: DoctorStatus, message: string) =>
@@ -24,7 +25,7 @@ export function runDoctor(
   const major = Number(process.versions.node.split(".")[0]);
   add("node", major >= 20 ? "pass" : "fail", `Node ${process.versions.node}; requires >=20`);
 
-  const envPath = join(root, ".env");
+  const envPath = env.ROBINHOOD_ENV_PATH || join(dataRoot, ".env");
   if (!existsSync(envPath))
     add(
       "auth",
@@ -70,9 +71,12 @@ export function runDoctor(
     );
   }
 
-  const sourceMap = join(root, "api-map", "brokerage-routes.json");
+  const isWorkspace = existsSync(join(root, "pnpm-workspace.yaml"));
+  const assetRoot = isWorkspace ? root : join(root, "dist");
+  const sourceMap = join(assetRoot, "api-map", "brokerage-routes.json");
   const distMap = join(root, "cli", "dist", "api-map", "brokerage-routes.json");
   if (!existsSync(sourceMap)) add("route-map", "fail", "source route map is missing");
+  else if (!isWorkspace) add("route-map", "pass", "installed route map exists");
   else if (!existsSync(distMap))
     add("source-dist-parity", "warn", "built route map is missing; run the CLI build");
   else
@@ -105,12 +109,11 @@ export function runDoctor(
   }
 
   const required = [
-    "AGENTS.md",
-    "SKILL.md",
+    ...(isWorkspace ? ["AGENTS.md", "SKILL.md"] : []),
     "docs/cli-mcp-architecture.md",
     "docs/write-operations.md",
   ];
-  const missing = required.filter((path) => !existsSync(join(root, path)));
+  const missing = required.filter((path) => !existsSync(join(assetRoot, path)));
   add(
     "knowledge",
     missing.length ? "fail" : "pass",
@@ -118,13 +121,14 @@ export function runDoctor(
   );
   const mcpSource = join(root, "mcp", "src", "server.ts");
   const mcpDist = join(root, "mcp", "dist", "server.js");
-  if (!existsSync(mcpDist))
+  if (!isWorkspace) add("mcp-build", "pass", "MCP is an optional separate package");
+  else if (!existsSync(mcpDist))
     add("mcp-build", "warn", "MCP dist is missing; build and reload the server");
   else if (existsSync(mcpSource) && statSync(mcpSource).mtimeMs > statSync(mcpDist).mtimeMs)
     add("mcp-build", "fail", "MCP source is newer than dist; build then reload MCP");
   else
     add("mcp-build", "pass", "MCP dist is current with source; reload running clients after pulls");
-  const localDir = join(root, "local");
+  const localDir = join(dataRoot, "local");
   if (existsSync(localDir)) {
     const localMode = statSync(localDir).mode & 0o777;
     if (platform === "win32")

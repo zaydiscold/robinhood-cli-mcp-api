@@ -57,3 +57,11 @@ robinhood-cli brokerage execute "https://api.robinhood.com/accounts/" --dry-run 
 Live execution is personal-side behavior. Writes are env-gated by `ROBINHOOD_ALLOW_LIVE_WRITE=1` — the single master switch; without it, every write is a dry-run. `--dry-run` is accepted but no longer the gate; the environment variable is the sole live-write control.
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->
+
+## Recovery across CLI and MCP
+
+Run `robinhood-cli auth refresh` to discover an existing local browser session, validate the exact candidate with an accounts read, and atomically promote it. This does not mint a new 30-day session or rotate the browser refresh token. A failed candidate leaves the existing credential file intact.
+
+Use the same `ROBINHOOD_ENV_PATH` for CLI, MCP, and scheduled jobs. `ROBINHOOD_DATA_DIR` selects the default credential and operator-data directory. Source checkouts work independently of the caller's current directory; installed packages use their own assets and the configured data directory. Avoid embedding copied bearer tokens in MCP or cron definitions, since a long-running process can retain them after the file changes.
+
+A network timeout is not evidence of logout. Verify host reachability separately, then verify an account read. A fresh process succeeding does not prove an existing cached MCP process has reloaded. Read recovery can adopt a newer on-disk token; writes never automatically resubmit after authentication recovery.

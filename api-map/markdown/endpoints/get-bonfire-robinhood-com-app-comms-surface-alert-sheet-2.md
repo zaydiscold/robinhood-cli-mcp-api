@@ -1,17 +1,17 @@
-# GET /app-comms/surface/alert-sheet/
+# GET /app-comms/surface/alert-sheet
 
 Mutation: no
 Risk: sensitive-read
 
 Host: bonfire.robinhood.com
 Categories: notifications
-Source: cdp-2026-07-14-authenticated-sanitized-v2
+Source: cdp-2026-09-07-authenticated-sanitized-v2
 Operation ID: n/a
 
 Route template:
 
 ```text
-https://bonfire.robinhood.com/app-comms/surface/alert-sheet/
+https://bonfire.robinhood.com/app-comms/surface/alert-sheet?instrument_id={instrument_id}&location={location}
 ```
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

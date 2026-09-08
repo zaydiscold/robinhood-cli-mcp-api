@@ -64,6 +64,97 @@ describe("margin-call intelligence", () => {
     ]);
   });
 
+  it("includes an in-window legacy equity order from a later cursor page", async () => {
+    const olderSale = {
+      id: "older-sale",
+      side: "sell",
+      quantity: "1.25",
+      average_price: "28.00",
+      state: "filled",
+      updated_at: "2026-09-03T15:58:44.978Z",
+    };
+    const getJson = async (url: string, _params?: Record<string, string>, query?: Record<string, string>) => {
+      if (url.includes("transfer/accounts")) return accounts;
+      if (url.includes("wormhole/bw/orders/recent")) return { results: [] };
+      if (url === "https://api.robinhood.com/orders/") {
+        return query?.cursor === "page-2"
+          ? { results: [olderSale], next: null }
+          : { results: [], next: "https://api.robinhood.com/orders/?cursor=page-2" };
+      }
+      if (url.includes("options/orders")) return { results: [] };
+      if (url.includes("nummus.robinhood.com")) return { results: [] };
+      if (url.includes("ach/transfers")) return { results: [] };
+      throw new Error(`unexpected ${url}`);
+    };
+
+    const events = await getUnifiedHistory(
+      { accountNumber: "873870497", days: 7 },
+      { getJson: getJson as never, now: () => Date.parse("2026-09-04T21:00:00Z") },
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "equity",
+        orderId: "older-sale",
+        side: "sell",
+        quantity: 1.25,
+        averagePrice: 28,
+        accountLast4: "0497",
+        state: "filled",
+        summary: "sell 1.25 @ 28.00",
+      }),
+    );
+  });
+
+  it("reads legacy equity pages separately for every owned account", async () => {
+    const getJson = async (url: string, _params?: Record<string, string>, query?: Record<string, string>) => {
+      if (url.includes("transfer/accounts"))
+        return {
+          results: [
+            ...accounts.results,
+            { type: "ira_roth", account_number: "710276346", account_name: "Roth IRA", state: "active" },
+          ],
+        };
+      if (url.includes("wormhole/bw/orders/recent")) return { results: [] };
+      if (url === "https://api.robinhood.com/orders/") {
+        const updated_at = "2026-09-03T15:58:44.978Z";
+        if (query?.account_number === "873870497")
+          return { results: [{ id: "far-sale", side: "sell", quantity: "1", average_price: "10", state: "filled", updated_at }] };
+        if (query?.account_number === "710276346")
+          return { results: [{ id: "roth-sale", side: "sell", quantity: "2", average_price: "20", state: "filled", updated_at }] };
+        return { results: [] };
+      }
+      if (url.includes("options/orders")) return { results: [] };
+      if (url.includes("nummus.robinhood.com")) return { results: [] };
+      if (url.includes("ach/transfers")) return { results: [] };
+      throw new Error(`unexpected ${url}`);
+    };
+
+    const events = await getUnifiedHistory(
+      { days: 7 },
+      { getJson: getJson as never, now: () => Date.parse("2026-09-04T21:00:00Z") },
+    );
+
+    expect(events.filter((event) => event.kind === "equity" && event.state === "filled")).toHaveLength(2);
+  });
+
+  it("does not silently return a truncated legacy order history at the pagination guard", async () => {
+    const getJson = async (url: string) => {
+      if (url.includes("transfer/accounts")) return accounts;
+      if (url.includes("wormhole/bw/orders/recent")) return { results: [] };
+      if (url === "https://api.robinhood.com/orders/")
+        return { results: [], next: "https://api.robinhood.com/orders/?cursor=still-more" };
+      if (url.includes("options/orders")) return { results: [] };
+      if (url.includes("nummus.robinhood.com")) return { results: [] };
+      if (url.includes("ach/transfers")) return { results: [] };
+      throw new Error(`unexpected ${url}`);
+    };
+
+    await expect(
+      getUnifiedHistory({ accountNumber: "873870497", days: 7 }, { getJson: getJson as never }),
+    ).rejects.toThrow("pagination limit");
+  });
+
   it("reports the true maintenance buffer and recent risk-sale totals", async () => {
     const getJson = async (url: string) => {
       if (url.includes("transfer/accounts")) return accounts;

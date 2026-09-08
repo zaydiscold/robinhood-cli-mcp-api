@@ -35,3 +35,13 @@ proofs/
 
 # raw per-account CDP captures hold real account last-4s + types — never commit (keep local copies)
 api-map/cdp-capture-*-per-account.json
+
+# Local operator records and one-off session helpers. Never publish personal state.
+/ball-knowledge.md
+/hotlist.md
+/rolls.md
+/trade-notes.md
+/trading-log.md
+/inject-token.py
+/inject.py
+/NONEXISTENT

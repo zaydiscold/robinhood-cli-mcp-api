@@ -34,6 +34,8 @@ The remote MCP points to the canonical checkout. A browser's cookie lifetime doe
 
 ## Consolidation and limits
 
+Plaintext root operator notebooks and one-off session-injection helpers were removed from tracking and added to .gitignore. Local copies and private backups are preserved; empty templates ship instead. Historical copies still require a clean-history release.
+
 Each local project now has one worktree and one branch, main. Three redundant integration/release worktrees and two stale independent release snapshots were removed after verified local backups. On the remote host, six old worktrees were archived and removed. Two new worktrees were actively receiving auth/history edits during the audit and were preserved alongside the canonical checkout. Remote uncommitted publication work was selectively incorporated locally; older options changes were already represented by newer code and were not replayed over it.
 
 This pass does not establish every entitlement-specific page, every dropdown state, or every mutation. Transfers, orders, withdrawals, account enrollment, destructive settings, and financial actions were not submitted. Mutation receipts still need independent readback. Existing public Git history contains previously committed personal information; cleaning current files does not erase it. No public push, merge, or publication was performed.

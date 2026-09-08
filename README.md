@@ -118,7 +118,7 @@ For maintainers and agents that need the system map, [`docs/cli-mcp-architecture
 
 ## Operator-maintained files (fill these out — the agent reads them)
 
-The agent's cross-session brain is plain Markdown at the repo root. Fill these in and keep them honest; every finance task reads them:
+The agent's cross-session brain is local, gitignored Markdown in the operator data directory (the repo root for source checkouts). Empty examples live in `templates/operator/`. Keep personal entries local:
 
 - **`ball-knowledge.md`** — market beliefs, themes, tickers, and source leads (the investing-memory ledger).
 - **`trading-log.md`** — execution + intent history: what was done and _why_, with the strategy thread (auto JSONL mirror in `local/`).

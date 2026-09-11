@@ -1,6 +1,23 @@
 import { execFile, execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 export {
+  buildDepositInventory,
+  buildDepositPlan,
+  buildDepositQuote,
+  classifyDepositReceipt,
+  executeDeposit,
+} from "./deposit.js";
+export type {
+  CapturedDepositRequest as GenericCapturedDepositRequest,
+  DepositInput,
+  DepositInventory,
+  DepositPlan,
+  DepositQuote,
+  DepositReceipt,
+  DepositSource,
+  DepositPaymentMethod,
+} from "./deposit.js";
+export {
   buildRothDepositPlan,
   buildRothDepositSourceInventory,
   classifyRothDepositReceipt,
@@ -16,6 +33,7 @@ export type {
   RothDepositSourceInventoryRow,
   RothPaymentMethod,
 } from "./roth-deposit.js";
+import { buildDepositInventory } from "./deposit.js";
 import { buildRothDepositSourceInventory } from "./roth-deposit.js";
 import {
   appendFileSync,
@@ -2957,6 +2975,18 @@ export async function brokerageGetJson(
   if (result.status !== 200)
     throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
   return JSON.parse(result.body || "{}");
+}
+
+/** Live owned-destination × observed funding-source read using only captured authenticated GET contracts. */
+export async function getDepositInventory(): Promise<import("./deposit.js").DepositInventory> {
+  const [accounts, relationships] = await Promise.all([
+    brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/"),
+    brokerageGetJson("https://cashier.robinhood.com/ach/relationships/"),
+  ]);
+  return buildDepositInventory(
+    Array.isArray(accounts?.results) ? accounts.results : [],
+    Array.isArray(relationships?.results) ? relationships.results : [],
+  );
 }
 
 /** Live source × rail read using only captured authenticated GET contracts. */

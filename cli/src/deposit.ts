@@ -1,5 +1,22 @@
 /** Account-agnostic deposit domain. POST execution requires an action-scoped captured contract. */
 export type DepositPaymentMethod = "bank_standard" | "bank_instant" | "debit_card";
+
+/** Published reset cadence only; quotas remain authenticated per source × rail × destination observations. */
+export const DEPOSIT_RAIL_METADATA = {
+  bank_standard: {
+    limitReset: { timezone: "America/New_York", cadence: "business_day", localTime: "19:00" },
+    publishedSettlement: "up_to_5_business_days",
+  },
+  bank_instant: {
+    limitReset: { timezone: "America/New_York", cadence: "calendar_day", localTime: "00:00" },
+    publishedFee: "none",
+    publishedSettlement: "minutes",
+  },
+  debit_card: {
+    limitReset: { timezone: "America/New_York", cadence: "calendar_day", localTime: "00:00" },
+    publishedSettlement: "typically_30_minutes",
+  },
+} as const;
 export type DepositRequestStatus =
   | "captured_exact_write_contract"
   | "missing_exact_write_contract"
@@ -39,10 +56,33 @@ export interface CapturedDepositRequest {
   amountField: string;
 }
 
-export interface RetirementContribution {
+export interface IraContribution {
+  /** Selected through the IRA contribution flow only; never a generic deposit field. */
   contributionYear: number;
   contributionRoomUsd: string;
   eligibilityVerified: boolean;
+}
+/** @deprecated Use IraContribution. Retained only for input compatibility. */
+export type RetirementContribution = IraContribution;
+
+export interface DepositLimitWindow {
+  period: "per_transfer" | "daily" | "rolling";
+  amountRemainingUsd?: string;
+  countRemaining?: number;
+  windowEndsAt?: string;
+}
+
+/** An authenticated, action-specific source × rail × destination limit observation; never a published maximum. */
+export interface DepositLimitQuote {
+  sourceId: string;
+  method: DepositPaymentMethod;
+  destinationAccountId: string;
+  observedAt: string;
+  eligible: boolean;
+  fee: { known: boolean; usd?: string };
+  holds: string[];
+  windows: DepositLimitWindow[];
+  provenance: "authenticated_limit_read";
 }
 
 export interface DepositInput {
@@ -51,6 +91,11 @@ export interface DepositInput {
   source: Pick<DepositSource, "id" | "method" | "eligible">;
   fee: { known: boolean; usd?: string };
   history: DepositHistoryRow[];
+  /** Required for a live-eligible quote: exact account/source/rail observation from Transfers → limits. */
+  limitQuote?: DepositLimitQuote;
+  /** Used only when destination is ira/ira_roth; binds an IRA contribution-year contract. */
+  iraContribution?: IraContribution;
+  /** @deprecated Use iraContribution. */
   retirement?: RetirementContribution;
   capturedRequest?: CapturedDepositRequest;
 }
@@ -146,17 +191,50 @@ export function buildDepositQuote(input: DepositInput): DepositQuote {
     gates.push(`${input.source.method} source is not eligible`);
   if (!input.fee.known || asCents(input.fee.usd) !== 0)
     gates.push("fee is unknown or non-zero; no fee is authorized");
+  const limit = input.limitQuote;
+  if (!limit) {
+    gates.push("source × rail × destination authenticated limit quote is missing");
+  } else {
+    if (
+      limit.sourceId !== input.source.id ||
+      limit.method !== input.source.method ||
+      limit.destinationAccountId !== input.destination.accountId ||
+      limit.provenance !== "authenticated_limit_read"
+    )
+      gates.push("limit quote does not bind this source × rail × destination");
+    if (!Number.isFinite(Date.parse(limit.observedAt)))
+      gates.push("limit quote timestamp is invalid");
+    if (!limit.eligible) gates.push("limit quote reports this deposit route as ineligible");
+    if (!limit.fee.known || asCents(limit.fee.usd) !== 0)
+      gates.push("limit quote fee is unknown or non-zero; no fee is authorized");
+    if (limit.holds.length) gates.push("limit quote reports an active hold");
+    if (!limit.windows.length) gates.push("limit quote contains no quota windows");
+    for (const window of limit.windows) {
+      if (
+        (asCents(window.amountRemainingUsd) ?? Number.MAX_SAFE_INTEGER) <
+        (amountCents ?? Number.MAX_SAFE_INTEGER)
+      )
+        gates.push(`${window.period} amount remaining is below deposit amount`);
+      if (
+        window.countRemaining !== undefined &&
+        (!Number.isInteger(window.countRemaining) || window.countRemaining < 1)
+      )
+        gates.push(`${window.period} transfer count remaining is exhausted`);
+      if (window.windowEndsAt !== undefined && !Number.isFinite(Date.parse(window.windowEndsAt)))
+        gates.push(`${window.period} quota reset timestamp is invalid`);
+    }
+  }
+  const contribution = input.iraContribution ?? input.retirement;
   if (isRetirementDestination(input.destination.accountType)) {
-    if (!input.retirement?.eligibilityVerified)
+    if (!contribution?.eligibilityVerified)
       gates.push("retirement contribution eligibility is not verified");
     if (
-      !Number.isInteger(input.retirement?.contributionYear) ||
-      (input.retirement?.contributionYear ?? 0) < 2020
+      !Number.isInteger(contribution?.contributionYear) ||
+      (contribution?.contributionYear ?? 0) < 2020
     )
       gates.push("retirement contribution year is invalid");
     if (
-      (asCents(input.retirement?.contributionRoomUsd) ?? -1) <
-      (amountCents ?? Number.MAX_SAFE_INTEGER)
+      (asCents(contribution?.contributionRoomUsd) ?? -1) < (amountCents ?? Number.MAX_SAFE_INTEGER)
     )
       gates.push("verified retirement contribution room is below deposit amount");
   }

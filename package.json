@@ -42,7 +42,7 @@
     "@types/node": "^20.19.43",
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.7.0",
     "knip": "^6.26.0",
     "prettier": "^3.9.5",

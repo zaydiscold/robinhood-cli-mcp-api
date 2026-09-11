@@ -168,6 +168,13 @@ export function buildWithdrawalQuote(input: WithdrawalInput): WithdrawalQuote {
       gates.push("limit quote does not bind this source × rail × destination");
     if (!Number.isFinite(Date.parse(quote.observedAt))) gates.push("limit quote timestamp is invalid");
     if (!quote.eligible) gates.push("limit quote reports this withdrawal route as ineligible");
+    if (quote.rail === "bank_standard") {
+      if (!quote.fee.known || quote.fee.usd === undefined) {
+        gates.push("standard bank withdrawal fee is not explicitly confirmed as zero");
+      } else if (asCents(quote.fee.usd) !== 0) {
+        gates.push("standard bank withdrawal fee is not zero; parent approval is required");
+      }
+    }
     if (quote.holds.length) gates.push("limit quote reports an active hold");
     if (!quote.windows.length) gates.push("limit quote contains no quota windows");
     if ((asCents(quote.withdrawableCashUsd) ?? -1) < (amountCents ?? Number.MAX_SAFE_INTEGER)) gates.push("withdrawable cash is below withdrawal amount");

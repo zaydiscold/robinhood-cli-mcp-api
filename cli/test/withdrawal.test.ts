@@ -65,6 +65,12 @@ describe("withdrawal contracts", () => {
       history: [],
     };
     expect(buildWithdrawalQuote(input)).toMatchObject({ executable: true, gates: [] });
+    expect(buildWithdrawalQuote({ ...input, limitQuote: { ...limitQuote("taxable-a", "bank_standard"), fee: { known: true, usd: "0.01" } } }).gates).toContain(
+      "standard bank withdrawal fee is not zero; parent approval is required",
+    );
+    expect(buildWithdrawalQuote({ ...input, limitQuote: { ...limitQuote("taxable-a", "bank_standard"), fee: { known: false } } }).gates).toContain(
+      "standard bank withdrawal fee is not explicitly confirmed as zero",
+    );
     expect(
       buildWithdrawalQuote({ ...input, destination: { id: "card-a", rail: "debit_card", eligible: true } }).gates,
     ).toContain("limit quote does not bind this source × rail × destination");

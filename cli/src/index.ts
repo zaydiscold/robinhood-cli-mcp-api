@@ -148,6 +148,9 @@ import {
   getDepositStatus,
   buildRothDepositPlan,
   getRothDepositSourceInventory,
+  buildWithdrawalPlan,
+  buildWithdrawalQuote,
+  getWithdrawalInventory,
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -212,6 +215,23 @@ program
   .action(async (opts: { sourceId: string; destinationId: string; amount: string; method: "bank_standard" | "bank_instant" | "debit_card" }) =>
     printJson(await getDepositStatus({ sourceId: opts.sourceId, destinationId: opts.destinationId, amountUsd: opts.amount, method: opts.method })),
   );
+
+program
+  .command("withdrawal-quote")
+  .description("Validate an owned-source to linked-destination withdrawal quote. Does not submit a transfer.")
+  .requiredOption("--input-json <json>", "source, destination, history, and authenticated limit quote")
+  .action((opts: { inputJson: string }) => printJson(buildWithdrawalQuote(JSON.parse(opts.inputJson))));
+
+program
+  .command("withdrawal-plan")
+  .description("Build a one-shot withdrawal plan only from an exact captured POST contract. Does not submit.")
+  .requiredOption("--input-json <json>", "quote input plus a sanitized capturedRequest")
+  .action((opts: { inputJson: string }) => printJson(buildWithdrawalPlan(JSON.parse(opts.inputJson))));
+
+program
+  .command("withdrawal-inventory")
+  .description("Read eligible owned withdrawal sources and observed linked destinations. Never submits a withdrawal.")
+  .action(async () => printJson(await getWithdrawalInventory()));
 
 program
   .command("roth-deposit-plan")

@@ -134,6 +134,9 @@ import {
   getDepositInventory,
   executeCapturedDeposit,
   getDepositStatus,
+  buildWithdrawalPlan,
+  buildWithdrawalQuote,
+  getWithdrawalInventory,
   buildRothDepositPlan,
   getRothDepositSourceInventory,
   getTaxLotsForOrder,
@@ -983,6 +986,56 @@ server.registerTool(
       }),
     );
   },
+);
+
+server.registerTool(
+  "robinhood_withdrawal_quote",
+  {
+    title: "Robinhood Withdrawal Quote",
+    description: "Validate one owned source × linked destination × rail withdrawal against a current authenticated limit quote. Never submits.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({
+      amountUsd: z.string(),
+      source: z.object({ accountId: z.string(), accountType: z.string(), withdrawalsEnabled: z.boolean() }),
+      destination: z.object({ id: z.string(), rail: z.enum(["bank_standard", "bank_instant", "debit_card"]), eligible: z.boolean() }),
+      limitQuote: z.object({
+        sourceAccountId: z.string(), destinationId: z.string(), rail: z.enum(["bank_standard", "bank_instant", "debit_card"]), observedAt: z.string(), withdrawableCashUsd: z.string(), eligible: z.boolean(), fee: z.object({ known: z.boolean(), usd: z.string().optional() }), holds: z.array(z.string()), windows: z.array(z.object({ period: z.enum(["per_transfer", "daily", "rolling"]), amountRemainingUsd: z.string().optional(), countRemaining: z.number().int().optional(), windowEndsAt: z.string().optional() })), provenance: z.literal("authenticated_limit_read"),
+      }).optional(),
+      history: z.array(z.object({ amountUsd: z.string(), sourceAccountId: z.string(), destinationId: z.string(), rail: z.enum(["bank_standard", "bank_instant", "debit_card"]), state: z.string() })),
+      retirement: z.object({ eligibilityVerified: z.boolean() }).optional(),
+    }),
+  },
+  async (input) => jsonResponse(buildWithdrawalQuote(input)),
+);
+
+server.registerTool(
+  "robinhood_withdrawal_plan",
+  {
+    title: "Robinhood Withdrawal Plan",
+    description: "Build a one-shot withdrawal plan only from an exact sanitized POST capture. Never submits or guesses a POST body.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({
+      amountUsd: z.string(),
+      source: z.object({ accountId: z.string(), accountType: z.string(), withdrawalsEnabled: z.boolean() }),
+      destination: z.object({ id: z.string(), rail: z.enum(["bank_standard", "bank_instant", "debit_card"]), eligible: z.boolean() }),
+      limitQuote: z.object({ sourceAccountId: z.string(), destinationId: z.string(), rail: z.enum(["bank_standard", "bank_instant", "debit_card"]), observedAt: z.string(), withdrawableCashUsd: z.string(), eligible: z.boolean(), fee: z.object({ known: z.boolean(), usd: z.string().optional() }), holds: z.array(z.string()), windows: z.array(z.object({ period: z.enum(["per_transfer", "daily", "rolling"]), amountRemainingUsd: z.string().optional(), countRemaining: z.number().int().optional(), windowEndsAt: z.string().optional() })), provenance: z.literal("authenticated_limit_read") }).optional(),
+      history: z.array(z.object({ amountUsd: z.string(), sourceAccountId: z.string(), destinationId: z.string(), rail: z.enum(["bank_standard", "bank_instant", "debit_card"]), state: z.string() })),
+      retirement: z.object({ eligibilityVerified: z.boolean() }).optional(),
+      capturedRequest: z.object({ method: z.literal("POST"), url: z.string().url(), body: z.record(z.string(), z.unknown()), amountField: z.string().min(1) }).optional(),
+    }),
+  },
+  async (input) => jsonResponse(buildWithdrawalPlan(input)),
+);
+
+server.registerTool(
+  "robinhood_withdrawal_inventory",
+  {
+    title: "Robinhood Withdrawal Source × Destination Inventory",
+    description: "Live-read owned withdrawal-enabled sources and observed linked bank/card destinations from captured GET contracts. Never submits.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({}),
+  },
+  async () => jsonResponse(await getWithdrawalInventory()),
 );
 
 server.registerTool(

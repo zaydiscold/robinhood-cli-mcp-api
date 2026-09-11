@@ -436,5 +436,6 @@ Before answering or acting, verify:
    [`AGENTS.md`](AGENTS.md), focused depth into [`knowledge/`](knowledge/README.md), and architecture
    into [`docs/cli-mcp-architecture.md`](docs/cli-mcp-architecture.md).
 9. Re-run build, quality, full tests, and package-boundary checks after changing a public surface.
-10. Never weaken dry-run, account scope, exact approval, evidence, or privacy invariants to make a
+10. For withdrawals, read [`docs/withdrawals.md`](docs/withdrawals.md): use an authenticated source × rail × destination quote; never turn a generic ACH POST into a withdrawal body; a transport-ambiguous write requires status readback before any human-approved next action.
+11. Never weaken dry-run, account scope, exact approval, evidence, or privacy invariants to make a
     new feature easier to demo.

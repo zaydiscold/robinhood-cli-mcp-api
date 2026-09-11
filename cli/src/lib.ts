@@ -22,6 +22,27 @@ export type {
   DepositPaymentMethod,
 } from "./deposit.js";
 export {
+  buildWithdrawalInventory,
+  buildWithdrawalPlan,
+  buildWithdrawalQuote,
+  classifyWithdrawalReceipt,
+  executeWithdrawal,
+  WITHDRAWAL_RAIL_METADATA,
+} from "./withdrawal.js";
+export type {
+  CapturedWithdrawalRequest,
+  WithdrawalDestination,
+  WithdrawalInput,
+  WithdrawalInventory,
+  WithdrawalLimitQuote,
+  WithdrawalLimitWindow,
+  WithdrawalPlan,
+  WithdrawalQuote,
+  WithdrawalReceipt,
+  WithdrawalRail,
+  WithdrawalSource,
+} from "./withdrawal.js";
+export {
   buildRothDepositPlan,
   buildRothDepositSourceInventory,
   classifyRothDepositReceipt,
@@ -38,6 +59,7 @@ export type {
   RothPaymentMethod,
 } from "./roth-deposit.js";
 import { buildDepositInventory, correlateUnifiedDepositReceipts } from "./deposit.js";
+import { buildWithdrawalInventory } from "./withdrawal.js";
 import { buildRothDepositSourceInventory } from "./roth-deposit.js";
 import {
   bindDepositContract,
@@ -3052,6 +3074,18 @@ export async function getDepositInventory(): Promise<import("./deposit.js").Depo
     brokerageGetJson("https://cashier.robinhood.com/ach/relationships/"),
   ]);
   return buildDepositInventory(
+    Array.isArray(accounts?.results) ? accounts.results : [],
+    Array.isArray(relationships?.results) ? relationships.results : [],
+  );
+}
+
+/** Live owned-source × observed destination read using only captured authenticated GET contracts. */
+export async function getWithdrawalInventory(): Promise<import("./withdrawal.js").WithdrawalInventory> {
+  const [accounts, relationships] = await Promise.all([
+    brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/"),
+    brokerageGetJson("https://cashier.robinhood.com/ach/relationships/"),
+  ]);
+  return buildWithdrawalInventory(
     Array.isArray(accounts?.results) ? accounts.results : [],
     Array.isArray(relationships?.results) ? relationships.results : [],
   );

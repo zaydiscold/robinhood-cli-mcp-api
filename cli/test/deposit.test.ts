@@ -30,10 +30,28 @@ const request = {
   body: { direction: "deposit", relationship: "placeholder" },
   amountField: "amount",
 };
+const limitQuote = (
+  sourceId: string,
+  method: "bank_standard" | "bank_instant" | "debit_card",
+  destinationAccountId: string,
+) => ({
+  sourceId,
+  method,
+  destinationAccountId,
+  observedAt: "2026-09-11T15:00:00.000Z",
+  eligible: true,
+  fee: { known: true, usd: "0.00" },
+  holds: [],
+  windows: [{ period: "per_transfer" as const, amountRemainingUsd: "100.00", countRemaining: 1 }],
+  provenance: "authenticated_limit_read" as const,
+});
 
 describe("generic deposit contracts", () => {
   it("discovers every eligible owned destination and observed funding source without imposing Roth selection", () => {
-    const inventory = buildDepositInventory([taxable, roth, traditionalIra], [bankA, bankB, debitA]);
+    const inventory = buildDepositInventory(
+      [taxable, roth, traditionalIra],
+      [bankA, bankB, debitA],
+    );
     expect(inventory.destinations).toEqual([
       { accountId: "taxable-a", accountType: "brokerage", depositEnabled: true },
       { accountId: "roth-a", accountType: "ira_roth", depositEnabled: true },
@@ -56,6 +74,7 @@ describe("generic deposit contracts", () => {
       destination: { accountId: "taxable-a", accountType: "brokerage", depositEnabled: true },
       source: { id: "bank-b", method: "bank_standard", eligible: true },
       fee: { known: true, usd: "0.00" },
+      limitQuote: limitQuote("bank-b", "bank_standard", "taxable-a"),
       history: [],
     });
     expect(quote).toMatchObject({ executable: true, amountUsd: "25.00", gates: [] });
@@ -68,9 +87,19 @@ describe("generic deposit contracts", () => {
       fee: { known: true, usd: "0.00" },
       history: [],
     };
-    const taxableDestination = { accountId: taxable.id, accountType: taxable.type, depositEnabled: true };
+    const taxableDestination = {
+      accountId: taxable.id,
+      accountType: taxable.type,
+      depositEnabled: true,
+    };
     const rothDestination = { accountId: roth.id, accountType: roth.type, depositEnabled: true };
-    expect(buildDepositQuote({ ...base, destination: taxableDestination }).executable).toBe(true);
+    expect(
+      buildDepositQuote({
+        ...base,
+        destination: taxableDestination,
+        limitQuote: limitQuote("bank-a", "bank_instant", taxable.id),
+      }).executable,
+    ).toBe(true);
     expect(buildDepositQuote({ ...base, destination: rothDestination }).gates).toContain(
       "retirement contribution eligibility is not verified",
     );
@@ -78,7 +107,12 @@ describe("generic deposit contracts", () => {
       buildDepositQuote({
         ...base,
         destination: rothDestination,
-        retirement: { contributionYear: 2026, contributionRoomUsd: "1.00", eligibilityVerified: true },
+        limitQuote: limitQuote("bank-a", "bank_instant", roth.id),
+        retirement: {
+          contributionYear: 2026,
+          contributionRoomUsd: "1.00",
+          eligibilityVerified: true,
+        },
       }).executable,
     ).toBe(true);
   });
@@ -89,11 +123,18 @@ describe("generic deposit contracts", () => {
       destination: { accountId: "ira-a", accountType: "ira", depositEnabled: true },
       source: { id: "debit-a", method: "debit_card" as const, eligible: true },
       fee: { known: true, usd: "0.00" },
-      retirement: { contributionYear: 2026, contributionRoomUsd: "1.00", eligibilityVerified: true },
+      limitQuote: limitQuote("debit-a", "debit_card", "ira-a"),
+      retirement: {
+        contributionYear: 2026,
+        contributionRoomUsd: "1.00",
+        eligibilityVerified: true,
+      },
       history: [],
     };
     expect(buildDepositPlan(input).executable).toBe(false);
-    expect(buildDepositPlan(input).gates).toContain("exact deposit write contract has not been captured");
+    expect(buildDepositPlan(input).gates).toContain(
+      "exact deposit write contract has not been captured",
+    );
     expect(buildDepositPlan({ ...input, capturedRequest: request })).toMatchObject({
       executable: true,
       request,
@@ -102,11 +143,95 @@ describe("generic deposit contracts", () => {
     });
   });
 
+  it("binds dynamic limits and fees to each source × rail × destination without aggregating unrelated sources", () => {
+    const base = {
+      amountUsd: "10.00",
+      destination: { accountId: "taxable-a", accountType: "brokerage", depositEnabled: true },
+      source: { id: "bank-a", method: "bank_standard" as const, eligible: true },
+      fee: { known: true, usd: "0.00" },
+      history: [],
+    };
+    const bankATaxable = limitQuote("bank-a", "bank_standard", "taxable-a");
+    const cardATaxable = {
+      ...limitQuote("card-a", "debit_card", "taxable-a"),
+      fee: { known: true, usd: "0.25" },
+    };
+    const bankBRoth = {
+      ...limitQuote("bank-b", "bank_instant", "roth-a"),
+      windows: [
+        {
+          period: "daily" as const,
+          amountRemainingUsd: "9.99",
+          countRemaining: 0,
+          windowEndsAt: "2026-09-12T04:00:00.000Z",
+        },
+      ],
+    };
+    expect(buildDepositQuote({ ...base, limitQuote: bankATaxable }).executable).toBe(true);
+    expect(
+      buildDepositQuote({
+        ...base,
+        source: { id: "card-a", method: "debit_card", eligible: true },
+        limitQuote: cardATaxable,
+      }).gates,
+    ).toContain("limit quote fee is unknown or non-zero; no fee is authorized");
+    expect(
+      buildDepositQuote({
+        ...base,
+        source: { id: "bank-b", method: "bank_instant", eligible: true },
+        destination: { accountId: "roth-a", accountType: "ira_roth", depositEnabled: true },
+        retirement: {
+          contributionYear: 2026,
+          contributionRoomUsd: "10.00",
+          eligibilityVerified: true,
+        },
+        limitQuote: bankBRoth,
+      }).gates,
+    ).toEqual(
+      expect.arrayContaining([
+        "daily amount remaining is below deposit amount",
+        "daily transfer count remaining is exhausted",
+      ]),
+    );
+    expect(
+      buildDepositQuote({
+        ...base,
+        source: { id: "card-b", method: "debit_card", eligible: true },
+        limitQuote: bankATaxable,
+      }).gates,
+    ).toContain("limit quote does not bind this source × rail × destination");
+  });
+
+  it("rejects missing authenticated limit reads and invalid captured non-POST contracts", () => {
+    const input = {
+      amountUsd: "1.00",
+      destination: { accountId: "taxable-a", accountType: "brokerage", depositEnabled: true },
+      source: { id: "bank-a", method: "bank_standard" as const, eligible: true },
+      fee: { known: true, usd: "0.00" },
+      history: [],
+    };
+    expect(buildDepositQuote(input).gates).toContain(
+      "source × rail × destination authenticated limit quote is missing",
+    );
+    expect(
+      buildDepositPlan({
+        ...input,
+        limitQuote: limitQuote("bank-a", "bank_standard", "taxable-a"),
+        capturedRequest: { ...request, method: "PUT" as never },
+      }).gates,
+    ).toContain("captured deposit write contract is incomplete");
+  });
+
   it("keeps receipt status generic and marks transport uncertainty ambiguous", () => {
-    expect(classifyDepositReceipt({ status: 201, body: { id: "synthetic-receipt" } })).toMatchObject({
+    expect(
+      classifyDepositReceipt({ status: 201, body: { id: "synthetic-receipt" } }),
+    ).toMatchObject({
       submitted: true,
       receiptStatus: "accepted",
     });
-    expect(classifyDepositReceipt()).toMatchObject({ ambiguous: true, receiptStatus: "transport_ambiguous" });
+    expect(classifyDepositReceipt()).toMatchObject({
+      ambiguous: true,
+      receiptStatus: "transport_ambiguous",
+    });
   });
 });

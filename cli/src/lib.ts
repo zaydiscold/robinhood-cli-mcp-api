@@ -6,11 +6,14 @@ export {
   buildDepositQuote,
   classifyDepositReceipt,
   executeDeposit,
+  DEPOSIT_RAIL_METADATA,
 } from "./deposit.js";
 export type {
   CapturedDepositRequest as GenericCapturedDepositRequest,
   DepositInput,
   DepositInventory,
+  DepositLimitQuote,
+  DepositLimitWindow,
   DepositPlan,
   DepositQuote,
   DepositReceipt,

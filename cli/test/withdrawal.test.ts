@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildWithdrawalInventory,
+  buildNativeWithdrawalRequest,
   buildWithdrawalPlan,
   buildWithdrawalQuote,
   classifyWithdrawalReceipt,
@@ -39,6 +40,45 @@ const limitQuote = (sourceAccountId: string, rail: "bank_standard" | "bank_insta
 });
 
 describe("withdrawal contracts", () => {
+  it("builds the observed create schema without a private capture", () => {
+    expect(buildNativeWithdrawalRequest({ sourceId: "taxable-a", sourceType: "rhs", destinationId: "bank-a", destinationType: "ach", amountUsd: "1.00", rail: "bank_standard", idempotencyId: "fresh-client-id" })).toEqual({ method: "POST", url: "https://bonfire.robinhood.com/transfer/create/", amountField: "amount", body: { id: "fresh-client-id", additional_data: { entry_point: 5, is_instant_transfer: false }, amount: "1.00", currency: "usd", frequency: "once", source: { id: "taxable-a", type: "rhs" }, sink: { id: "bank-a", type: "ach" } } });
+  });
+
+  it("does not guess native withdrawal types or rail semantics", () => {
+    expect(() => buildNativeWithdrawalRequest({ sourceId: "taxable-a", sourceType: "unknown", destinationId: "bank-a", destinationType: "ach", amountUsd: "1.00", rail: "bank_standard" })).toThrow(/observed source type/);
+    expect(() => buildNativeWithdrawalRequest({ sourceId: "taxable-a", sourceType: "rhs", destinationId: "bank-a", destinationType: "ach", amountUsd: "1.00", rail: "debit_card" })).toThrow(/observed debit_card sink type/);
+  });
+
+  it("keeps a successful server validation separate from unknown numeric quota fields", () => {
+    const quote = buildWithdrawalQuote({
+      amountUsd: "1.00",
+      source: { accountId: "taxable-a", accountType: "rhs", withdrawalsEnabled: true },
+      destination: { id: "bank-a", rail: "bank_standard", eligible: true },
+      limitQuote: {
+        sourceAccountId: "taxable-a", destinationId: "bank-a", rail: "bank_standard",
+        observedAt: "2026-09-11T15:00:00.000Z", eligible: true, fee: { known: true, usd: "0.00" },
+        holds: [], windows: [], provenance: "authenticated_limit_read", validationPassed: true,
+      },
+      history: [],
+    });
+    expect(quote).toMatchObject({ executable: true, validationPassed: true, numericLimitsKnown: false, gates: [] });
+  });
+
+  it("rejects a server validation failure even when numeric limits are unknown", () => {
+    const quote = buildWithdrawalQuote({
+      amountUsd: "1.00",
+      source: { accountId: "taxable-a", accountType: "rhs", withdrawalsEnabled: true },
+      destination: { id: "bank-a", rail: "bank_standard", eligible: true },
+      limitQuote: {
+        sourceAccountId: "taxable-a", destinationId: "bank-a", rail: "bank_standard",
+        observedAt: "2026-09-11T15:00:00.000Z", eligible: true, fee: { known: true, usd: "0.00" },
+        holds: [], windows: [], provenance: "authenticated_limit_read", validationPassed: false,
+      },
+      history: [],
+    });
+    expect(quote.gates).toContain("server validation rejected this withdrawal route");
+  });
+
   it("discovers every owned withdrawal source and only observed linked bank/card rails", () => {
     const inventory = buildWithdrawalInventory([taxable, roth, { id: "ach-external", type: "ach", is_withdrawals_enabled: true }], [bankA, bankB, cardA]);
     expect(inventory.sources).toEqual([

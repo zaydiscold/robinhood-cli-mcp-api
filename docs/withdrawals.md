@@ -1,37 +1,40 @@
 # Withdrawal capability — evidence and operating boundary
 
-**As of 2026-09-11.** This document records public rules and the code boundary; it does not claim account-specific eligibility, limits, balances, or a live write contract.
+**As of 2026-09-11.** Public rules below are citations. Account-specific eligibility, remaining allowance, and fees come from authenticated reads.
 
 ## Public rules (official Robinhood support)
 
-| Rail | Published fee | Published timing | Published reset cadence | Account-specific condition |
-|---|---:|---|---|---|
-| Standard bank (ACH) | none | 1 day on Robinhood; receiving bank may take longer | business day, 7 PM ET | actual amount/frequency limit is account-specific |
-| Instant bank / RTP | 1.75%, min $1, max $150 | typically 10 minutes | calendar day, 12 AM ET | linked with Plaid, bank eligible, requested amount within limit |
-| External debit card | 1.75%, min $1, max $150 | up to 30 minutes | calendar day, 12 AM ET | actual eligibility and limit are account-specific |
+- Standard bank (ACH): no published fee; receiving bank may take longer; limits reset 7 PM ET on business days
+- Instant bank / RTP withdrawals: up to 1.75%, min $1, max $150; typically minutes; calendar-day reset at 12 AM ET
+- External debit-card withdrawals: up to 1.75%, min $1, max $150
 
-Official sources retrieved 2026-09-11:
+Official sources:
 
-- [Withdraw money from Robinhood](https://robinhood.com/us/en/support/articles/withdraw-money-from-robinhood/) — ACH/no-fee rule, instant fee rule, reset clocks, settlement/pending-deposit/order/referral/margin/options-collateral restrictions, and 60-day different-source verification condition.
-- [Transfer types](https://robinhood.com/us/en/support/articles/transfer-types/) — published per-transfer maxima ($250k ACH, $15k debit card, $50k RTP), stated cross-account cumulative limits, and timings. These are not substituted for an authenticated quote.
-- [Instant bank transfers](https://robinhood.com/us/en/support/articles/instant-bank-transfers/) — Plaid/select-bank eligibility, 10-minute typical timing, fee deduction, incomplete request expiry, and managed-account exclusion for instant withdrawals.
-- [Transfer fees](https://robinhood.com/us/en/support/articles/are-there-fees-for-transfers/) — fee confirmation.
+- [Withdraw money from Robinhood](https://robinhood.com/us/en/support/articles/withdraw-money-from-robinhood/)
+- [Transfer types](https://robinhood.com/us/en/support/articles/transfer-types/)
+- [RHF Fee Schedule](https://cdn.robinhood.com/assets/robinhood/legal/RHF%20Fee%20Schedule.pdf)
+
+Do not substitute those published maxima for an authenticated quote.
 
 ## Product boundary
 
-The engine exposes `bank_standard`, `bank_instant`, and `debit_card` only when a linked destination read identifies them. It evaluates every **owned source × rail × destination × amount** separately using a fresh authenticated quote containing withdrawable cash, eligibility, holds, amount/count windows, reset timestamps, and fee.
+The engine quotes every **owned source × rail × destination × amount** with:
 
-Retirement sources are not blanket-disabled. They require an authenticated retirement-flow eligibility assertion. This does not decide tax treatment or eligibility.
+- `GET https://api.robinhood.com/bff-mm/transfer/validation`
+- `GET https://bonfire.robinhood.com/limitshub/v1/limits/`
+- `GET https://bonfire.robinhood.com/transfer/service_fee/`
 
-No generic ACH `POST` is treated as a withdrawal contract. A live execution is blocked until a sanitized action-scoped capture supplies the exact URL, headers/body semantics, source and destination identifiers, amount field, and status-read route. An ambiguous transport result is terminal for that invocation: read status before any human-approved next action; do not retry.
+Unknown numeric limits stay unknown. A successfully validated standard-bank route is not disabled just because a quota field is missing. Fees above the authorized maximum remain gated.
 
-## Required capture before execution
+Observed standard-bank create body: `POST https://bonfire.robinhood.com/transfer/create/` with `source.type=rhs`, ACH sink, `currency: "usd"`, `frequency: "once"`. There is no `pre_create` on the captured withdrawal path.
 
-Capture in the owned browser, without submitting the withdrawal:
+If the broker returns `suv_check_pending`, the CLI/MCP reports `verification_required` and prompts for phone approval. Use `money-movement-verify` under the **original CLI session**, then `money-movement-resume` with the recorded operation ID. Do not create a second request identity. WireBrowser sessions cannot consume another session’s workflow.
 
-1. source-account selection and bank, instant-bank, and debit-card destination variants;
-2. each route's limit/fee/hold read and the corresponding response fields;
-3. the final **Review** request shape only after a parent has the user's exact account, destination, rail, amount, and live-write approval;
-4. immediate history/status read route and stable correlation identifiers.
+## Commands
 
-Raw HAR/auth values stay private and gitignored. Add only sanitized field names, route templates, and fixtures to the repository.
+```bash
+node cli/dist/index.js money-movement-quote --source-id <id> --destination-id <id> --amount 1.00 --kind withdrawal --rail bank_standard
+ROBINHOOD_ALLOW_LIVE_WRITE=1 node cli/dist/index.js withdrawal-execute --source-id <id> --destination-id <id> --amount 1.00 --rail bank_standard --live-write
+node cli/dist/index.js money-movement-verify --workflow-id <id>
+node cli/dist/index.js money-movement-resume --operation-id <id>
+```

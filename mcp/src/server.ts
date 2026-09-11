@@ -28,6 +28,11 @@ import {
   computeChainStats,
   computeOptionsSnapshot,
   executeBrokerageRequest,
+  advanceMoneyMovementVerification,
+  getMoneyMovementQuote,
+  getMoneyMovementReceipt,
+  runMoneyMovement,
+  resumeMoneyMovement,
   executeCryptoRequest,
   filterAccountContextWorkflows,
   filterBrokerageRoutes,
@@ -132,12 +137,11 @@ import {
   buildDepositPlan,
   buildDepositQuote,
   getDepositInventory,
-  executeCapturedDeposit,
   getDepositStatus,
   buildWithdrawalPlan,
   buildWithdrawalQuote,
   getWithdrawalInventory,
-  executeCapturedWithdrawal,
+  getWithdrawalRead,
   buildInternalTransferPlan,
   buildInternalTransferQuote,
   getInternalTransferInventory,
@@ -1076,6 +1080,117 @@ server.registerTool(
   async (input) => jsonResponse(buildInternalTransferPlan(input)),
 );
 server.registerTool(
+  "robinhood_money_movement_resume",
+  {
+    title: "Robinhood Money Movement Resume",
+    description:
+      "Resume a recorded operation after device approval. Uses the original request identity; never invents a second submission.",
+    annotations: toolAnnotations(false, "write-mutate"),
+    inputSchema: z.object({ operationId: z.string() }),
+  },
+  async (input) => {
+    try {
+      return writeStatus(await resumeMoneyMovement(input.operationId), { dryRun: false });
+    } catch (error) {
+      return mcpError(error);
+    }
+  },
+);
+
+server.registerTool(
+  "robinhood_money_movement_quote",
+  {
+    title: "Robinhood Money Movement Quote",
+    description:
+      "Live fees, source/destination validation, amount/count/pending allowances and exact reset timestamps; unknown bucket-sharing remains explicit.",
+    annotations: toolAnnotations(true, "sensitive-read"),
+    inputSchema: z.object({
+      sourceId: z.string(),
+      destinationId: z.string(),
+      amountUsd: z.string(),
+      kind: z.enum(["deposit", "withdrawal", "internal"]),
+      rail: z.enum(["bank_standard", "bank_instant", "debit_card"]).optional(),
+      maxFeeUsd: z.string().optional(),
+    }),
+  },
+  async (input) => {
+    try {
+      return jsonResponse(await getMoneyMovementQuote(input));
+    } catch (error) {
+      return mcpError(error);
+    }
+  },
+);
+server.registerTool(
+  "robinhood_money_movement_receipt",
+  {
+    title: "Robinhood Exact Money Movement Receipt",
+    description:
+      "Reconcile an exact server receipt ID, account pair, amount and direction. No amount-only historical success.",
+    annotations: toolAnnotations(true, "sensitive-read"),
+    inputSchema: z.object({
+      serverReceiptId: z.string(),
+      sourceId: z.string(),
+      destinationId: z.string(),
+      amountUsd: z.string(),
+      kind: z.enum(["deposit", "withdrawal", "internal"]),
+    }),
+  },
+  async (input) => {
+    try {
+      return jsonResponse(await getMoneyMovementReceipt(input));
+    } catch (error) {
+      return mcpError(error);
+    }
+  },
+);
+
+server.registerTool(
+  "robinhood_money_movement_verify",
+  {
+    title: "Robinhood Money Movement Verification",
+    description:
+      "Read and advance a device-approval workflow under the original session. No funds are submitted. Resend requires explicit input.",
+    annotations: toolAnnotations(false, "write-mutate"),
+    inputSchema: z.object({ workflowId: z.string(), resend: z.boolean().default(false) }),
+  },
+  async (input) => {
+    try {
+      return jsonResponse(await advanceMoneyMovementVerification(input));
+    } catch (error) {
+      return mcpError(error);
+    }
+  },
+);
+
+server.registerTool(
+  "robinhood_internal_transfer_execute",
+  {
+    title: "Robinhood Internal Transfer Execute",
+    description:
+      "Native owned-account transfer with fresh broker validation. Supports dryRun; live submission requires ROBINHOOD_ALLOW_LIVE_WRITE=1.",
+    annotations: toolAnnotations(false, "write-mutate"),
+    inputSchema: z.object({
+      sourceId: z.string().min(1),
+      destinationId: z.string().min(1),
+      amountUsd: z.string(),
+      contributionYear: z.number().int().optional(),
+      idempotencyId: z.string().optional(),
+      dryRun: z.boolean().default(false),
+    }),
+  },
+  async (input) => {
+    try {
+      return writeStatus(await runMoneyMovement({ kind: "internal", input }), {
+        dryRun: input.dryRun,
+      });
+    } catch (error) {
+      return mcpError(error);
+    }
+  },
+);
+
+server.registerTool(
   "robinhood_internal_transfer_inventory",
   {
     title: "Robinhood Internal Account Transfer Inventory",
@@ -1213,29 +1328,33 @@ server.registerTool(
       "Execute exactly one private captured withdrawal create request. Requires selected source, destination, amount, rail, fresh authenticated quote, explicit live-write approval, and no retry or pre-create.",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
+      maxFeeUsd: z.string().optional(),
+      idempotencyId: z.string().optional(),
       sourceId: z.string().min(1),
       destinationId: z.string().min(1),
       amountUsd: z.string(),
       rail: z.enum(["bank_standard", "bank_instant", "debit_card"]),
-      limitQuote: z.object({
-        sourceAccountId: z.string(),
-        destinationId: z.string(),
-        rail: z.enum(["bank_standard", "bank_instant", "debit_card"]),
-        observedAt: z.string(),
-        withdrawableCashUsd: z.string(),
-        eligible: z.boolean(),
-        fee: z.object({ known: z.boolean(), usd: z.string().optional() }),
-        holds: z.array(z.string()),
-        windows: z.array(
-          z.object({
-            period: z.enum(["per_transfer", "daily", "rolling"]),
-            amountRemainingUsd: z.string().optional(),
-            countRemaining: z.number().int().optional(),
-            windowEndsAt: z.string().optional(),
-          }),
-        ),
-        provenance: z.literal("authenticated_limit_read"),
-      }),
+      limitQuote: z
+        .object({
+          sourceAccountId: z.string(),
+          destinationId: z.string(),
+          rail: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+          observedAt: z.string(),
+          withdrawableCashUsd: z.string().optional(),
+          eligible: z.boolean(),
+          fee: z.object({ known: z.boolean(), usd: z.string().optional() }),
+          holds: z.array(z.string()),
+          windows: z.array(
+            z.object({
+              period: z.enum(["per_transfer", "daily", "rolling"]),
+              amountRemainingUsd: z.string().optional(),
+              countRemaining: z.number().int().optional(),
+              windowEndsAt: z.string().optional(),
+            }),
+          ),
+          provenance: z.literal("authenticated_limit_read"),
+        })
+        .optional(),
       history: z
         .array(
           z.object({
@@ -1254,7 +1373,9 @@ server.registerTool(
   },
   async (input) => {
     try {
-      return writeStatus(await executeCapturedWithdrawal(input), { dryRun: input.dryRun });
+      return writeStatus(await runMoneyMovement({ kind: "withdrawal", input }), {
+        dryRun: input.dryRun,
+      });
     } catch (error) {
       return mcpError(error);
     }
@@ -1271,6 +1392,23 @@ server.registerTool(
     inputSchema: z.object({}),
   },
   async () => jsonResponse(await getWithdrawalInventory()),
+);
+
+server.registerTool(
+  "robinhood_withdrawal_read",
+  {
+    title: "Robinhood Withdrawal Validation and History Read",
+    description:
+      "Live-read the authenticated withdrawal validation and unified-transfer history for one route. Never submits.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({
+      sourceId: z.string().min(1),
+      destinationId: z.string().min(1),
+      amountUsd: z.string(),
+      rail: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+    }),
+  },
+  async (input) => jsonResponse(await getWithdrawalRead(input)),
 );
 
 server.registerTool(
@@ -1378,20 +1516,24 @@ server.registerTool(
   {
     title: "Robinhood Deposit Execute",
     description:
-      "Execute an observed pre_create then create deposit from the operator-private capture. Both POSTs are financial mutations; no retries. Requires ROBINHOOD_ALLOW_LIVE_WRITE=1 unless dryRun=true.",
+      "Execute an observed pre_create then create deposit using native bank request contracts. Both POSTs are financial mutations; no retries. Requires ROBINHOOD_ALLOW_LIVE_WRITE=1 unless dryRun=true.",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       sourceId: z.string().min(1),
       destinationId: z.string().min(1),
       amountUsd: z.string(),
       method: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+      contributionYear: z.number().int().optional(),
+      idempotencyId: z.string().optional(),
       contractPath: z.string().optional(),
       dryRun: z.boolean().default(false),
     }),
   },
   async (input) => {
     try {
-      return writeStatus(await executeCapturedDeposit(input), { dryRun: input.dryRun });
+      return writeStatus(await runMoneyMovement({ kind: "deposit", input }), {
+        dryRun: input.dryRun,
+      });
     } catch (error) {
       return mcpError(error);
     }

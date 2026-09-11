@@ -144,7 +144,6 @@ import {
   buildDepositPlan,
   buildDepositQuote,
   getDepositInventory,
-  executeCapturedDeposit,
   getDepositStatus,
   buildInternalTransferPlan,
   buildInternalTransferQuote,
@@ -154,7 +153,8 @@ import {
   buildWithdrawalPlan,
   buildWithdrawalQuote,
   getWithdrawalInventory,
-  executeCapturedWithdrawal,
+  getWithdrawalRead,
+  getWithdrawalStatus,
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -218,6 +218,105 @@ program
   .action((opts: { inputJson: string }) => printJson(buildDepositPlan(JSON.parse(opts.inputJson))));
 
 program
+  .command("money-movement-resume")
+  .description(
+    "Resume a previously recorded operation after device approval. Never creates a second request identity.",
+  )
+  .requiredOption("--operation-id <id>")
+  .action(async (opts) => {
+    const { resumeMoneyMovement } = await import("./money-movement-journal.js");
+    printJson(await resumeMoneyMovement(opts.operationId));
+  });
+
+program
+  .command("money-movement-quote")
+  .description(
+    "Read live pair validation, fees, amount/count/pending limits and provider reset timestamps.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--kind <kind>")
+  .option("--rail <rail>", "bank_standard, bank_instant, debit_card", "bank_standard")
+  .option("--max-fee <usd>", "maximum fee authorized", "0.00")
+  .action(async (opts) => {
+    const { getMoneyMovementQuote } = await import("./money-movement-quote.js");
+    printJson(
+      await getMoneyMovementQuote({
+        sourceId: opts.sourceId,
+        destinationId: opts.destinationId,
+        amountUsd: opts.amount,
+        kind: opts.kind,
+        rail: opts.rail,
+        maxFeeUsd: opts.maxFee,
+      }),
+    );
+  });
+program
+  .command("money-movement-receipt")
+  .description(
+    "Independently reconcile the exact server receipt with amount, source, destination and direction.",
+  )
+  .requiredOption("--receipt-id <id>")
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--kind <kind>")
+  .action(async (opts) => {
+    const { getMoneyMovementReceipt } = await import("./money-movement-receipt.js");
+    printJson(
+      await getMoneyMovementReceipt({
+        serverReceiptId: opts.receiptId,
+        sourceId: opts.sourceId,
+        destinationId: opts.destinationId,
+        amountUsd: opts.amount,
+        kind: opts.kind,
+      }),
+    );
+  });
+
+program
+  .command("money-movement-verify")
+  .description("Read and advance the original-session identity workflow; never submits a transfer.")
+  .requiredOption("--workflow-id <id>")
+  .option("--resend", "explicitly request a new device notification", false)
+  .action(async (opts) => {
+    const { advanceMoneyMovementVerification } = await import("./money-movement-verification.js");
+    printJson(
+      await advanceMoneyMovementVerification({ workflowId: opts.workflowId, resend: opts.resend }),
+    );
+  });
+
+program
+  .command("internal-transfer-execute")
+  .description(
+    "Validate and execute a native owned-account transfer; no private request fixture required.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .option("--contribution-year <year>")
+  .option("--idempotency-id <id>")
+  .option("--dry-run", "construct and validate without submitting", false)
+  .action(async (opts) => {
+    const { runMoneyMovement } = await import("./money-movement-journal.js");
+    printJson(
+      await runMoneyMovement({
+        kind: "internal",
+        input: {
+          sourceId: opts.sourceId,
+          destinationId: opts.destinationId,
+          amountUsd: opts.amount,
+          contributionYear:
+            opts.contributionYear === undefined ? undefined : Number(opts.contributionYear),
+          idempotencyId: opts.idempotencyId,
+          dryRun: opts.dryRun,
+        },
+      }),
+    );
+  });
+
+program
   .command("deposit-inventory")
   .description(
     "Read eligible owned deposit destinations and observed funding sources. Never submits a deposit.",
@@ -227,7 +326,7 @@ program
 program
   .command("deposit-execute")
   .description(
-    "Execute the observed pre_create → create deposit sequence from a private capture; never retries.",
+    "Execute the observed pre_create → create deposit sequence with native bank request contracts; never retries.",
   )
   .requiredOption("--source-id <id>")
   .requiredOption("--destination-id <id>")
@@ -237,6 +336,14 @@ program
     "--contract-path <path>",
     "optional operator-private capture override (defaults to ROBINHOOD_DEPOSIT_CONTRACT_PATH or operator-private store)",
   )
+  .option(
+    "--contribution-year <year>",
+    "required for retirement contributions; omit for taxable accounts",
+  )
+  .option(
+    "--idempotency-id <id>",
+    "preserve request identity on an explicitly reconciled continuation",
+  )
   .option("--dry-run", "validate and construct without sending", false)
   .action(
     async (opts: {
@@ -244,17 +351,27 @@ program
       destinationId: string;
       amount: string;
       method: "bank_standard" | "bank_instant" | "debit_card";
+      contributionYear?: string;
+      idempotencyId?: string;
       contractPath?: string;
       dryRun: boolean;
     }) =>
       printJson(
-        await executeCapturedDeposit({
-          sourceId: opts.sourceId,
-          destinationId: opts.destinationId,
-          amountUsd: opts.amount,
-          method: opts.method,
-          contractPath: opts.contractPath,
-          dryRun: opts.dryRun,
+        await (
+          await import("./money-movement-journal.js")
+        ).runMoneyMovement({
+          kind: "deposit",
+          input: {
+            contributionYear:
+              opts.contributionYear === undefined ? undefined : Number(opts.contributionYear),
+            idempotencyId: opts.idempotencyId,
+            sourceId: opts.sourceId,
+            destinationId: opts.destinationId,
+            amountUsd: opts.amount,
+            method: opts.method,
+            contractPath: opts.contractPath,
+            dryRun: opts.dryRun,
+          },
         }),
       ),
   );
@@ -299,6 +416,32 @@ program
   );
 
 program
+  .command("withdrawal-read")
+  .description(
+    "Read authenticated withdrawal validation and transfer history for one route. Never submits.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--rail <rail>")
+  .action(
+    async (opts: {
+      sourceId: string;
+      destinationId: string;
+      amount: string;
+      rail: "bank_standard" | "bank_instant" | "debit_card";
+    }) =>
+      printJson(
+        await getWithdrawalRead({
+          sourceId: opts.sourceId,
+          destinationId: opts.destinationId,
+          amountUsd: opts.amount,
+          rail: opts.rail,
+        }),
+      ),
+  );
+
+program
   .command("withdrawal-plan")
   .description(
     "Build a one-shot withdrawal plan only from an exact captured POST contract. Does not submit.",
@@ -317,10 +460,9 @@ program
   .requiredOption("--destination-id <id>")
   .requiredOption("--amount <usd>")
   .requiredOption("--rail <rail>")
-  .requiredOption(
-    "--limit-quote-json <json>",
-    "fresh authenticated source × rail × destination quote",
-  )
+  .option("--max-fee <usd>", "maximum authorized fee", "0.00")
+  .option("--idempotency-id <id>", "original request identity for a reconciled continuation")
+  .option("--limit-quote-json <json>", "fresh authenticated source × rail × destination quote")
   .option("--history-json <json>", "current withdrawal history (defaults to [])", "[]")
   .option("--contract-path <path>", "optional operator-private capture override")
   .option(
@@ -334,23 +476,50 @@ program
       destinationId: string;
       amount: string;
       rail: "bank_standard" | "bank_instant" | "debit_card";
-      limitQuoteJson: string;
+      limitQuoteJson?: string;
+      maxFee?: string;
+      idempotencyId?: string;
       historyJson: string;
       contractPath?: string;
       liveWrite: boolean;
     }) =>
       printJson(
-        await executeCapturedWithdrawal({
-          sourceId: opts.sourceId,
-          destinationId: opts.destinationId,
-          amountUsd: opts.amount,
-          rail: opts.rail,
-          limitQuote: JSON.parse(opts.limitQuoteJson),
-          history: JSON.parse(opts.historyJson),
-          contractPath: opts.contractPath,
-          dryRun: !opts.liveWrite,
+        await (
+          await import("./money-movement-journal.js")
+        ).runMoneyMovement({
+          kind: "withdrawal",
+          input: {
+            maxFeeUsd: opts.maxFee,
+            idempotencyId: opts.idempotencyId,
+            sourceId: opts.sourceId,
+            destinationId: opts.destinationId,
+            amountUsd: opts.amount,
+            rail: opts.rail,
+            limitQuote: opts.limitQuoteJson ? JSON.parse(opts.limitQuoteJson) : undefined,
+            history: JSON.parse(opts.historyJson),
+            contractPath: opts.contractPath,
+            dryRun: !opts.liveWrite,
+          },
         }),
       ),
+  );
+
+program
+  .command("withdrawal-status")
+  .description(
+    "Read the unified receipt surface for one selected withdrawal route; never submits or retries.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .action(async (opts: { sourceId: string; destinationId: string; amount: string }) =>
+    printJson(
+      await getWithdrawalStatus({
+        sourceId: opts.sourceId,
+        destinationId: opts.destinationId,
+        amountUsd: opts.amount,
+      }),
+    ),
   );
 
 program

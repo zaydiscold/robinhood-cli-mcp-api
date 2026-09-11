@@ -11,7 +11,7 @@ const bankA = {
   id: "bank-a",
   verified: true,
   state: "approved",
-  available_payment_rails: { is_rtp_eligible: true },
+  available_payment_rails: { is_rtp_eligible: true, is_rfp_eligible: true },
 };
 const bankB = {
   id: "bank-b",

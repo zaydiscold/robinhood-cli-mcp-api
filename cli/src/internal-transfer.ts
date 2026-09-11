@@ -90,7 +90,7 @@ export function buildInternalTransferInventory(rows: Array<Record<string, unknow
   return {
     accounts: rows
       .filter((row) => {
-        const id = row.id ?? row.account_id ?? row.account_number;
+        const id = row.account_id ?? row.id ?? row.account_number;
         const type = String(row.type ?? row.account_type ?? "");
         return (
           typeof id === "string" &&
@@ -100,10 +100,13 @@ export function buildInternalTransferInventory(rows: Array<Record<string, unknow
         );
       })
       .map((row) => ({
-        accountId: String(row.id ?? row.account_id ?? row.account_number),
+        accountId: String(row.account_id ?? row.id ?? row.account_number),
         accountType: String(row.type ?? row.account_type),
         owned: true,
-        transferEnabled: row.is_transfer_enabled === true,
+        transferEnabled:
+          row.is_transfer_enabled === true ||
+          row.is_withdrawals_enabled === true ||
+          row.is_deposits_enabled === true,
         withdrawableCashUsd:
           typeof (row.withdrawable_cash ?? row.withdrawable_amount) === "string"
             ? String(row.withdrawable_cash ?? row.withdrawable_amount)

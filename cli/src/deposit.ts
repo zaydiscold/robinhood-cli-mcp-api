@@ -138,7 +138,10 @@ export function buildDepositInventory(
   const destinations = accounts
     // Transfer-account rows carry their own `id`, but observed transfer bodies use
     // the underlying account_id as sink.id. Prefer that binding when both exist.
-    .filter((account) => typeof (account.account_id ?? account.id) === "string")
+    .filter(
+      (account) =>
+        account.is_external !== true && typeof (account.account_id ?? account.id) === "string",
+    )
     .map((account) => ({
       accountId: String(account.account_id ?? account.id),
       accountType: String(account.type ?? account.account_type ?? "unknown"),
@@ -168,13 +171,13 @@ export function buildDepositInventory(
       requestStatus: "missing_exact_write_contract",
       evidence: ["cashier/ach/relationships GET", "relationship verified/approved"],
     });
-    if (rails.is_rtp_eligible === true) {
+    if (rails.is_rfp_eligible === true) {
       sources.push({
         id,
         method: "bank_instant",
         eligible: verified,
         requestStatus: "missing_exact_write_contract",
-        evidence: ["cashier/ach/relationships GET", "available_payment_rails.is_rtp_eligible"],
+        evidence: ["cashier/ach/relationships GET", "available_payment_rails.is_rfp_eligible"],
       });
     }
   }

@@ -31,7 +31,7 @@ export interface BoundDepositContract {
 export interface DepositWorkflowReceipt {
   submitted: boolean;
   ambiguous: boolean;
-  receiptStatus: "accepted" | "rejected" | "transport_ambiguous";
+  receiptStatus: "accepted" | "rejected" | "transport_ambiguous" | "dry_run" | "action_required";
   serverReceiptId?: string;
   clientId?: string;
   steps: Array<{ url?: string; status?: number; body?: unknown }>;
@@ -78,7 +78,7 @@ function exactContext(row: any, steps: DepositContractStep[]): DepositContractCo
   const contribution = record(record(pre.body.additional_data)?.ira_contribution_data);
   if (isRetirement(String(context.destinationType))) {
     if (!contribution || contribution.tax_year !== year) return undefined;
-  } else if (pre.body.additional_data !== undefined || create.body.additional_data !== undefined)
+  } else if (contribution || record(record(create.body.additional_data)?.ira_contribution_data))
     return undefined;
   return context as unknown as DepositContractContext;
 }

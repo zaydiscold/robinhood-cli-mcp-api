@@ -126,13 +126,13 @@ robinhood-cli tax status --json
 
 The dedicated `robinhood-tax` binary accepts the same arguments without the leading `tax`.
 
-### Internal account transfers (read/plan only)
+### Internal account transfers
 
-Use `internal-transfer-inventory` / `robinhood_internal_transfer_inventory` to discover the owned account graph and read unified-transfer status history. Then supply the user-selected amount, source, destination, authenticated pair-bound eligibility/limit observation, zero-fee observation, and idempotency key to `internal-transfer-quote` / `robinhood_internal_transfer_quote`. `internal-transfer-plan` requires a sanitized captured POST contract and still never submits or invents its body.
+Use `internal-transfer-inventory` / `robinhood_internal_transfer_inventory` to discover owned accounts. Use `internal-transfer-execute` / `robinhood_internal_transfer_execute` for a native owned-account transfer. Quote first with `money-movement-quote`. Independently reconcile with `money-movement-receipt` and the exact server `transfer_id`.
 
-Retirement **destinations** require an explicitly verified contribution year and remaining room. Retirement **sources** require an explicitly authenticated, route-specific eligibility observation; this feature does not infer distribution or rollover semantics from an account type. Do not infer either tax treatment. A 2xx submission receipt is pending until the unified-transfer GET readback reconciles the status.
+Retirement **destinations** require an explicit contribution year. Retirement **sources** require route-specific distribution/conversion inputs; this feature does not infer a distribution or rollover. A 2xx is not proof until the unified-transfer GET matches the current receipt ID, amount, source, and destination.
 
-**Evidence:** captured authenticated `GET https://bonfire.robinhood.com/paymenthub/unified_transfers/?page_size=100` and `GET https://bonfire.robinhood.com/transfer/accounts/` are catalogued in [`api-map/brokerage-routes.json`](api-map/brokerage-routes.json); the captured POST key set and internal-transfer account-type observations are documented in [`AGENTS.md`](AGENTS.md). These are captured contracts, not an authorization to send money.
+**Evidence:** authenticated `GET https://bonfire.robinhood.com/transfer/accounts/`, `GET https://bonfire.robinhood.com/paymenthub/unified_transfers/?page_size=100`, `GET https://api.robinhood.com/bff-mm/transfer/validation`, and observed `POST https://bonfire.robinhood.com/transfer/pre_create/` then `POST https://bonfire.robinhood.com/transfer/create/` are catalogued in [`api-map/brokerage-routes.json`](api-map/brokerage-routes.json). See [`knowledge/internal-transfers.md`](knowledge/internal-transfers.md).
 
 ### MCP
 
@@ -174,7 +174,9 @@ business logic.**
 | Review open or completed orders | `orders open`, `order-status`, `order-watch` | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
 | Cancel one or all open orders | `cancel` or `panic` | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
 | Manage recurring investments | `recurring` subcommands | [`knowledge/accounts.md`](knowledge/accounts.md) |
-| Deposit from a linked bank/card into an owned account | `deposit-inventory`, then `deposit-execute`, then `deposit-status` | [`knowledge/deposits.md`](knowledge/deposits.md) |
+| Deposit from a linked bank/card into an owned account | `deposit-inventory`, `money-movement-quote`, `deposit-execute`, `deposit-status` | [`knowledge/deposits.md`](knowledge/deposits.md) |
+| Move money between owned Robinhood accounts | `internal-transfer-inventory`, `money-movement-quote`, `internal-transfer-execute`, `money-movement-receipt` | [`knowledge/internal-transfers.md`](knowledge/internal-transfers.md) |
+| Withdraw to a linked bank | `withdrawal-inventory`, `money-movement-quote`, `withdrawal-execute`, then `money-movement-verify` if the broker requires device approval | [`docs/withdrawals.md`](docs/withdrawals.md) |
 | Change DRIP, PDT, lending, sweep, or expiration settings | `settings` subcommands | [`knowledge/accounts.md`](knowledge/accounts.md) |
 | Research a tax rule | `robinhood-cli tax <topic>` | [`knowledge/tax-reference.md`](knowledge/tax-reference.md) |
 | Research tax mechanics of a named structure | `robinhood-cli tax strategy <id-or-alias>` | [`knowledge/tax-strategy-routing.md`](knowledge/tax-strategy-routing.md) |

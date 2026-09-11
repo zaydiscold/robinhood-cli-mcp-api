@@ -54,11 +54,14 @@ export interface WithdrawalLimitQuote {
   destinationId: string;
   rail: WithdrawalRail;
   observedAt: string;
-  withdrawableCashUsd: string;
+  /** Fresh owned-account cash when the account read exposes it; absent means unknown, not zero. */
+  withdrawableCashUsd?: string;
   eligible: boolean;
   fee: { known: boolean; usd?: string };
   holds: string[];
   windows: WithdrawalLimitWindow[];
+  /** Result of the exact amount-specific authenticated validation GET. */
+  validationPassed?: boolean;
   provenance: "authenticated_limit_read";
 }
 
@@ -82,7 +85,18 @@ export interface CapturedWithdrawalRequest {
   amountField: string;
 }
 
+export interface NativeWithdrawalRequestInput {
+  sourceId: string;
+  sourceType: string;
+  destinationId: string;
+  destinationType: string;
+  amountUsd: string;
+  rail: WithdrawalRail;
+  idempotencyId?: string;
+}
+
 export interface WithdrawalInput {
+  maxFeeUsd?: string;
   amountUsd: string;
   source: WithdrawalSource;
   destination: WithdrawalDestination;
@@ -98,6 +112,9 @@ export interface WithdrawalQuote {
   source: WithdrawalSource;
   destination: WithdrawalDestination;
   fee: { known: boolean; usd?: string };
+  /** Server validation is distinct from whether numeric cash/quota fields were disclosed. */
+  validationPassed?: boolean;
+  numericLimitsKnown: boolean;
   gates: string[];
 }
 
@@ -108,7 +125,14 @@ export interface WithdrawalPlan extends WithdrawalQuote {
 export interface WithdrawalReceipt {
   submitted: boolean;
   ambiguous: boolean;
-  receiptStatus: "accepted" | "rejected" | "transport_ambiguous";
+  receiptStatus:
+    "accepted" | "rejected" | "transport_ambiguous" | "verification_required" | "dry_run";
+  userAction?: {
+    type: "approve_on_phone";
+    message: string;
+    workflowId?: string;
+    automaticRetry: false;
+  };
   status?: number;
   body?: unknown;
 }
@@ -118,6 +142,41 @@ const asCents = (value: string | undefined): number | undefined => {
   const [whole, fraction = ""] = value.split(".");
   return Number(whole) * 100 + Number((fraction + "00").slice(0, 2));
 };
+
+const observedSourceTypes = new Set(["rhs", "ira", "ira_roth"]);
+const observedDestinationTypes = new Set(["ach", "bank_account", "debit_card"]);
+
+/** Builds the observed create schema; transfer types must come from authenticated reads. */
+export function buildNativeWithdrawalRequest(
+  input: NativeWithdrawalRequestInput,
+): CapturedWithdrawalRequest {
+  if (!input.sourceId || !input.destinationId)
+    throw new Error("sourceId and destinationId are required");
+  if (asCents(input.amountUsd) === undefined || asCents(input.amountUsd)! <= 0)
+    throw new Error("amountUsd must be a positive USD value with at most two decimals");
+  if (!observedSourceTypes.has(input.sourceType))
+    throw new Error("native withdrawal requires an observed source type");
+  if (!observedDestinationTypes.has(input.destinationType))
+    throw new Error("native withdrawal requires an observed destination type");
+  if (input.rail === "debit_card" && input.destinationType !== "debit_card")
+    throw new Error("debit_card rail requires an observed debit_card sink type");
+  if (input.rail !== "debit_card" && input.destinationType === "debit_card")
+    throw new Error("bank rail cannot use an observed debit_card sink type");
+  return {
+    method: "POST",
+    url: "https://bonfire.robinhood.com/transfer/create/",
+    amountField: "amount",
+    body: {
+      id: input.idempotencyId ?? crypto.randomUUID(),
+      additional_data: { entry_point: 5, is_instant_transfer: input.rail === "bank_instant" },
+      amount: input.amountUsd,
+      currency: "usd",
+      frequency: "once",
+      source: { id: input.sourceId, type: input.sourceType },
+      sink: { id: input.destinationId, type: input.destinationType },
+    },
+  };
+}
 
 const isRetirementAccount = (accountType: string): boolean =>
   accountType === "ira" || accountType === "ira_roth";
@@ -136,7 +195,7 @@ export function buildWithdrawalInventory(
       );
     })
     .map((account) => ({
-      accountId: String(account.id ?? account.account_id),
+      accountId: String(account.account_id ?? account.id),
       accountType: String(account.type ?? account.account_type ?? "unknown"),
       withdrawalsEnabled: account.is_withdrawals_enabled === true,
     }));
@@ -181,16 +240,30 @@ export function buildWithdrawalQuote(input: WithdrawalInput): WithdrawalQuote {
     if (!Number.isFinite(Date.parse(quote.observedAt)))
       gates.push("limit quote timestamp is invalid");
     if (!quote.eligible) gates.push("limit quote reports this withdrawal route as ineligible");
+    if (quote.validationPassed === false)
+      gates.push("server validation rejected this withdrawal route");
     if (quote.rail === "bank_standard") {
       if (!quote.fee.known || quote.fee.usd === undefined) {
         gates.push("standard bank withdrawal fee is not explicitly confirmed as zero");
-      } else if (asCents(quote.fee.usd) !== 0) {
+      } else if (
+        asCents(quote.fee.usd) === undefined ||
+        asCents(quote.fee.usd)! > (asCents(input.maxFeeUsd ?? "0.00") ?? 0)
+      ) {
         gates.push("standard bank withdrawal fee is not zero; parent approval is required");
       }
     }
+    if (
+      quote.rail !== "bank_standard" &&
+      (!quote.fee.known ||
+        asCents(quote.fee.usd) === undefined ||
+        asCents(quote.fee.usd)! > (asCents(input.maxFeeUsd ?? "0.00") ?? 0))
+    )
+      gates.push("fee unavailable or above authorized maximum");
     if (quote.holds.length) gates.push("limit quote reports an active hold");
-    if (!quote.windows.length) gates.push("limit quote contains no quota windows");
-    if ((asCents(quote.withdrawableCashUsd) ?? -1) < (amountCents ?? Number.MAX_SAFE_INTEGER))
+    if (
+      quote.withdrawableCashUsd !== undefined &&
+      (asCents(quote.withdrawableCashUsd) ?? -1) < (amountCents ?? Number.MAX_SAFE_INTEGER)
+    )
       gates.push("withdrawable cash is below withdrawal amount");
     for (const window of quote.windows) {
       if (
@@ -226,6 +299,13 @@ export function buildWithdrawalQuote(input: WithdrawalInput): WithdrawalQuote {
     source: input.source,
     destination: input.destination,
     fee: quote?.fee ?? { known: false },
+    validationPassed: quote?.validationPassed,
+    numericLimitsKnown: Boolean(
+      quote?.withdrawableCashUsd !== undefined ||
+      quote?.windows.some(
+        (window) => window.amountRemainingUsd !== undefined || window.countRemaining !== undefined,
+      ),
+    ),
     gates,
   };
 }
@@ -246,6 +326,24 @@ export function classifyWithdrawalReceipt(response?: {
   body?: unknown;
 }): WithdrawalReceipt {
   if (!response) return { submitted: false, ambiguous: true, receiptStatus: "transport_ambiguous" };
+  const body = response.body as
+    { error_code?: string; verification_workflow?: { id?: string } } | undefined;
+  if (body?.error_code === "suv_check_pending") {
+    return {
+      submitted: false,
+      ambiguous: false,
+      receiptStatus: "verification_required",
+      status: response.status,
+      body: response.body,
+      userAction: {
+        type: "approve_on_phone",
+        message:
+          "Open Robinhood on your phone and approve the verification notification. Approval is not a transfer receipt; reconcile transfer status before resuming this request.",
+        workflowId: body.verification_workflow?.id,
+        automaticRetry: false,
+      },
+    };
+  }
   const submitted = response.status >= 200 && response.status < 300;
   return {
     submitted,

@@ -39,6 +39,11 @@ export type {
 import { buildDepositInventory } from "./deposit.js";
 import { buildRothDepositSourceInventory } from "./roth-deposit.js";
 import {
+  bindDepositContract,
+  classifyDepositWorkflowReceipt,
+  loadDepositContractsFromJsonl,
+} from "./deposit-contract-loader.js";
+import {
   appendFileSync,
   existsSync,
   mkdirSync,
@@ -2978,6 +2983,61 @@ export async function brokerageGetJson(
   if (result.status !== 200)
     throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
   return JSON.parse(result.body || "{}");
+}
+
+/**
+ * Executes the two observed financial transfer mutations from an operator-private capture.
+ * `pre_create` is never treated as a harmless quote: if its response is uncertain, `create` is not
+ * attempted and the caller must reconcile with deposit-status before making any new request.
+ */
+export async function executeCapturedDeposit(input: {
+  sourceId: string;
+  destinationId: string;
+  amountUsd: string;
+  method: import("./deposit-contract-loader.js").DepositMethod;
+  contractPath?: string;
+  dryRun?: boolean;
+}): Promise<ReturnType<typeof classifyDepositWorkflowReceipt> & { idempotencyId: string; receiptVerificationCommand: string }> {
+  const inventory = await getDepositInventory();
+  const destination = inventory.destinations.find((row) => row.accountId === input.destinationId && row.depositEnabled);
+  if (!destination) throw new Error("destinationId is not an owned deposit-enabled account");
+  const source = inventory.sources.find((row) => row.id === input.sourceId && row.method === input.method && row.eligible);
+  if (!source) throw new Error("sourceId and method are not an observed eligible funding route");
+  const contractPath = input.contractPath ?? join(homedir(), "Desktop", "finance", "private", "robinhood-deposit-contracts.jsonl");
+  const contracts = loadDepositContractsFromJsonl(readFileSync(contractPath, "utf8"));
+  const contract = contracts.at(-1);
+  if (!contract) throw new Error("no complete pre_create/create contract in private capture artifact");
+  const bound = bindDepositContract(contract, input);
+  const send = async (step: (typeof bound.steps)[number]) => {
+    const result = await executeBrokerageRequest({
+      url: step.url,
+      method: "POST",
+      risk: "write-mutate",
+      mutatesAccount: true,
+      requiresAuth: true,
+      mode: input.dryRun ? "dry_run" : "live",
+    } as PlannedBrokerageRequest, { body: step.body, dryRun: input.dryRun ?? false, fullBody: true });
+    let body: unknown;
+    try { body = result.body ? JSON.parse(result.body) : undefined; } catch { body = undefined; }
+    return { url: step.url, status: result.status, body };
+  };
+  if (!input.dryRun && process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1")
+    throw new Error("ROBINHOOD_ALLOW_LIVE_WRITE=1 is required for deposit execution");
+  const first = await send(bound.steps[0]);
+  // Do not issue final create unless the first financial operation has a definite 2xx result.
+  if (first.status < 200 || first.status >= 300) {
+    return { ...classifyDepositWorkflowReceipt([first]), idempotencyId: bound.idempotencyId, receiptVerificationCommand: `robinhood-cli deposit-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --method ${input.method} --json` };
+  }
+  const final = await send(bound.steps[1]);
+  return { ...classifyDepositWorkflowReceipt([first, final]), idempotencyId: bound.idempotencyId, receiptVerificationCommand: `robinhood-cli deposit-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --method ${input.method} --json` };
+}
+
+/** Re-reads transfer history for a route-specific receipt; it never sends or retries. */
+export async function getDepositStatus(input: { sourceId: string; destinationId: string; amountUsd: string; method: import("./deposit-contract-loader.js").DepositMethod }): Promise<unknown> {
+  const data = await brokerageGetJson("https://api.robinhood.com/ach/transfers/");
+  const rows = Array.isArray(data?.results) ? data.results : [];
+  const matches = rows.filter((row: any) => String(row?.amount ?? "") === input.amountUsd && String(row?.source?.id ?? row?.source ?? "") === input.sourceId && String(row?.sink?.id ?? row?.sink ?? "") === input.destinationId);
+  return { checked: true, matchCount: matches.length, states: matches.map((row: any) => String(row?.state ?? row?.status ?? "unknown")), method: input.method, receiptVerified: matches.length > 0 };
 }
 
 /** Live owned-destination × observed funding-source read using only captured authenticated GET contracts. */

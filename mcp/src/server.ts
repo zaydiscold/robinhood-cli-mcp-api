@@ -132,6 +132,8 @@ import {
   buildDepositPlan,
   buildDepositQuote,
   getDepositInventory,
+  executeCapturedDeposit,
+  getDepositStatus,
   buildRothDepositPlan,
   getRothDepositSourceInventory,
   getTaxLotsForOrder,
@@ -1081,6 +1083,34 @@ server.registerTool(
     inputSchema: z.object({}),
   },
   async () => jsonResponse(await getDepositInventory()),
+);
+
+server.registerTool(
+  "robinhood_deposit_execute",
+  {
+    title: "Robinhood Deposit Execute",
+    description: "Execute an observed pre_create then create deposit from the operator-private capture. Both POSTs are financial mutations; no retries. Requires ROBINHOOD_ALLOW_LIVE_WRITE=1 unless dryRun=true.",
+    annotations: toolAnnotations(false, "write-mutate"),
+    inputSchema: z.object({ sourceId: z.string().min(1), destinationId: z.string().min(1), amountUsd: z.string(), method: z.enum(["bank_standard", "bank_instant", "debit_card"]), contractPath: z.string().optional(), dryRun: z.boolean().default(false) }),
+  },
+  async (input) => {
+    try { return writeStatus(await executeCapturedDeposit(input), { dryRun: input.dryRun }); }
+    catch (error) { return mcpError(error); }
+  },
+);
+
+server.registerTool(
+  "robinhood_deposit_status",
+  {
+    title: "Robinhood Deposit Receipt Status",
+    description: "Read the transfer receipt history for one source, destination, amount and rail. Never submits or retries.",
+    annotations: toolAnnotations(true, "sensitive-read"),
+    inputSchema: z.object({ sourceId: z.string().min(1), destinationId: z.string().min(1), amountUsd: z.string(), method: z.enum(["bank_standard", "bank_instant", "debit_card"]) }),
+  },
+  async (input) => {
+    try { return jsonResponse(await getDepositStatus(input)); }
+    catch (error) { return mcpError(error); }
+  },
 );
 
 server.registerTool(

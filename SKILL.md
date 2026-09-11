@@ -166,6 +166,7 @@ business logic.**
 | Review open or completed orders | `orders open`, `order-status`, `order-watch` | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
 | Cancel one or all open orders | `cancel` or `panic` | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
 | Manage recurring investments | `recurring` subcommands | [`knowledge/accounts.md`](knowledge/accounts.md) |
+| Deposit from a linked bank/card into an owned account | `deposit-inventory`, then `deposit-execute`, then `deposit-status` | [`knowledge/deposits.md`](knowledge/deposits.md) |
 | Change DRIP, PDT, lending, sweep, or expiration settings | `settings` subcommands | [`knowledge/accounts.md`](knowledge/accounts.md) |
 | Research a tax rule | `robinhood-cli tax <topic>` | [`knowledge/tax-reference.md`](knowledge/tax-reference.md) |
 | Research tax mechanics of a named structure | `robinhood-cli tax strategy <id-or-alias>` | [`knowledge/tax-strategy-routing.md`](knowledge/tax-strategy-routing.md) |

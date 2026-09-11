@@ -144,6 +144,8 @@ import {
   buildDepositPlan,
   buildDepositQuote,
   getDepositInventory,
+  executeCapturedDeposit,
+  getDepositStatus,
   buildRothDepositPlan,
   getRothDepositSourceInventory,
 } from "./lib.js";
@@ -186,6 +188,30 @@ program
     "Read eligible owned deposit destinations and observed funding sources. Never submits a deposit.",
   )
   .action(async () => printJson(await getDepositInventory()));
+
+program
+  .command("deposit-execute")
+  .description("Execute the observed pre_create → create deposit sequence from a private capture; never retries.")
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--method <rail>")
+  .option("--contract-path <path>", "operator-private JSONL capture path")
+  .option("--dry-run", "validate and construct without sending", false)
+  .action(async (opts: { sourceId: string; destinationId: string; amount: string; method: "bank_standard" | "bank_instant" | "debit_card"; contractPath?: string; dryRun: boolean }) =>
+    printJson(await executeCapturedDeposit({ sourceId: opts.sourceId, destinationId: opts.destinationId, amountUsd: opts.amount, method: opts.method, contractPath: opts.contractPath, dryRun: opts.dryRun })),
+  );
+
+program
+  .command("deposit-status")
+  .description("Read deposit transfer history for the selected source/destination/amount; never sends or retries.")
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--method <rail>")
+  .action(async (opts: { sourceId: string; destinationId: string; amount: string; method: "bank_standard" | "bank_instant" | "debit_card" }) =>
+    printJson(await getDepositStatus({ sourceId: opts.sourceId, destinationId: opts.destinationId, amountUsd: opts.amount, method: opts.method })),
+  );
 
 program
   .command("roth-deposit-plan")

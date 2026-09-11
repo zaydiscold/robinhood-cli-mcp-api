@@ -455,6 +455,22 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     outputSchema: "legacyObject",
   },
   {
+    id: "deposit-execute",
+    cli: "deposit-execute",
+    mcp: "robinhood_deposit_execute",
+    access: "write",
+    profiles: ["full"],
+    outputSchema: "legacyObject",
+  },
+  {
+    id: "deposit-status",
+    cli: "deposit-status",
+    mcp: "robinhood_deposit_status",
+    access: "read",
+    profiles: ["full"],
+    outputSchema: "legacyObject",
+  },
+  {
     id: "roth-deposit-plan",
     cli: "roth-deposit-plan",
     mcp: "robinhood_roth_deposit_plan",

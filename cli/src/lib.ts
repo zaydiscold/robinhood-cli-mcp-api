@@ -1,5 +1,17 @@
 import { execFile, execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
+export {
+  buildRothDepositPlan,
+  executeRothDeposit,
+} from "./roth-deposit.js";
+export type {
+  CapturedDepositRequest,
+  RothDepositHistoryRow,
+  RothDepositInput,
+  RothDepositPlan,
+  RothDepositReceipt,
+  RothPaymentMethod,
+} from "./roth-deposit.js";
 import {
   appendFileSync,
   existsSync,

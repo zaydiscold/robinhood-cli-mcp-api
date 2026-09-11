@@ -141,6 +141,7 @@ import {
   getTaxLotsForOrder,
   planTaxLotSale,
   submitTaxLotSale,
+  buildRothDepositPlan,
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -155,6 +156,12 @@ program
     "Unofficial Robinhood CLI for account data, options analytics, and controlled account workflows.",
   )
   .version("1.1.0");
+
+program
+  .command("roth-deposit-plan")
+  .description("Validate a $1 Roth deposit rail plan. Does not submit a transfer.")
+  .requiredOption("--input-json <json>", "verified source, destination, fee, history, and eligibility data")
+  .action((opts: { inputJson: string }) => printJson(buildRothDepositPlan(JSON.parse(opts.inputJson))));
 
 program
   .option(

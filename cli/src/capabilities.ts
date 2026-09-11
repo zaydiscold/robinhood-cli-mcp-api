@@ -430,6 +430,14 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     profiles: profilesForMcp("robinhood_share_safe"),
     outputSchema: "shareSafe",
   },
+  {
+    id: "roth-deposit-plan",
+    cli: "roth-deposit-plan",
+    mcp: "robinhood_roth_deposit_plan",
+    access: "read",
+    profiles: ["full"],
+    outputSchema: "legacyObject",
+  },
 ] as const;
 
 const REGISTERED_MCP_NAMES = new Set(CAPABILITIES.map((definition) => definition.mcp));

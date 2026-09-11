@@ -141,6 +141,9 @@ import {
   getTaxLotsForOrder,
   planTaxLotSale,
   submitTaxLotSale,
+  buildDepositPlan,
+  buildDepositQuote,
+  getDepositInventory,
   buildRothDepositPlan,
   getRothDepositSourceInventory,
 } from "./lib.js";
@@ -157,6 +160,32 @@ program
     "Unofficial Robinhood CLI for account data, options analytics, and controlled account workflows.",
   )
   .version("1.1.0");
+
+program
+  .command("deposit-quote")
+  .description("Validate an account-agnostic deposit quote. Does not submit a transfer.")
+  .requiredOption(
+    "--input-json <json>",
+    "destination, source, fee, history, and optional retirement data",
+  )
+  .action((opts: { inputJson: string }) =>
+    printJson(buildDepositQuote(JSON.parse(opts.inputJson))),
+  );
+
+program
+  .command("deposit-plan")
+  .description(
+    "Build a one-shot deposit plan only from an exact captured POST contract. Does not submit.",
+  )
+  .requiredOption("--input-json <json>", "quote input plus a sanitized capturedRequest")
+  .action((opts: { inputJson: string }) => printJson(buildDepositPlan(JSON.parse(opts.inputJson))));
+
+program
+  .command("deposit-inventory")
+  .description(
+    "Read eligible owned deposit destinations and observed funding sources. Never submits a deposit.",
+  )
+  .action(async () => printJson(await getDepositInventory()));
 
 program
   .command("roth-deposit-plan")

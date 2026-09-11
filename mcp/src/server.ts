@@ -129,6 +129,9 @@ import {
   getIpoAccess,
   getIpoAccessRequestPlan,
   getTaxLotInventory,
+  buildDepositPlan,
+  buildDepositQuote,
+  getDepositInventory,
   buildRothDepositPlan,
   getRothDepositSourceInventory,
   getTaxLotsForOrder,
@@ -978,6 +981,106 @@ server.registerTool(
       }),
     );
   },
+);
+
+server.registerTool(
+  "robinhood_deposit_quote",
+  {
+    title: "Robinhood Deposit Quote",
+    description:
+      "Validate an account-agnostic source-to-owned-destination deposit quote. Retirement fields apply only to IRA destinations. Never submits.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({
+      amountUsd: z.string(),
+      destination: z.object({
+        accountId: z.string(),
+        accountType: z.string(),
+        depositEnabled: z.boolean(),
+      }),
+      source: z.object({
+        id: z.string(),
+        method: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+        eligible: z.boolean(),
+      }),
+      fee: z.object({ known: z.boolean(), usd: z.string().optional() }),
+      history: z.array(
+        z.object({
+          amountUsd: z.string(),
+          method: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+          destinationAccountId: z.string(),
+          state: z.string(),
+        }),
+      ),
+      retirement: z
+        .object({
+          contributionYear: z.number().int(),
+          contributionRoomUsd: z.string(),
+          eligibilityVerified: z.boolean(),
+        })
+        .optional(),
+    }),
+  },
+  async (input) => jsonResponse(buildDepositQuote(input)),
+);
+
+server.registerTool(
+  "robinhood_deposit_plan",
+  {
+    title: "Robinhood Deposit Plan",
+    description:
+      "Build a one-shot deposit plan only when an exact sanitized POST contract is provided. Never submits or guesses a POST body.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({
+      amountUsd: z.string(),
+      destination: z.object({
+        accountId: z.string(),
+        accountType: z.string(),
+        depositEnabled: z.boolean(),
+      }),
+      source: z.object({
+        id: z.string(),
+        method: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+        eligible: z.boolean(),
+      }),
+      fee: z.object({ known: z.boolean(), usd: z.string().optional() }),
+      history: z.array(
+        z.object({
+          amountUsd: z.string(),
+          method: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+          destinationAccountId: z.string(),
+          state: z.string(),
+        }),
+      ),
+      retirement: z
+        .object({
+          contributionYear: z.number().int(),
+          contributionRoomUsd: z.string(),
+          eligibilityVerified: z.boolean(),
+        })
+        .optional(),
+      capturedRequest: z
+        .object({
+          method: z.literal("POST"),
+          url: z.string().url(),
+          body: z.record(z.string(), z.unknown()),
+          amountField: z.string().min(1),
+        })
+        .optional(),
+    }),
+  },
+  async (input) => jsonResponse(buildDepositPlan(input)),
+);
+
+server.registerTool(
+  "robinhood_deposit_inventory",
+  {
+    title: "Robinhood Deposit Destination × Funding Source Inventory",
+    description:
+      "Live-read eligible owned destinations and observed linked funding sources from captured GET contracts. Never submits a deposit.",
+    annotations: toolAnnotations(true, "read"),
+    inputSchema: z.object({}),
+  },
+  async () => jsonResponse(await getDepositInventory()),
 );
 
 server.registerTool(

@@ -7,6 +7,7 @@ export {
   classifyDepositReceipt,
   executeDeposit,
   DEPOSIT_RAIL_METADATA,
+  correlateUnifiedDepositReceipts,
 } from "./deposit.js";
 export type {
   CapturedDepositRequest as GenericCapturedDepositRequest,
@@ -36,7 +37,7 @@ export type {
   RothDepositSourceInventoryRow,
   RothPaymentMethod,
 } from "./roth-deposit.js";
-import { buildDepositInventory } from "./deposit.js";
+import { buildDepositInventory, correlateUnifiedDepositReceipts } from "./deposit.js";
 import { buildRothDepositSourceInventory } from "./roth-deposit.js";
 import {
   bindDepositContract,
@@ -2995,6 +2996,7 @@ export async function executeCapturedDeposit(input: {
   destinationId: string;
   amountUsd: string;
   method: import("./deposit-contract-loader.js").DepositMethod;
+  /** Optional override for the operator-private contract store; never a repository fixture. */
   contractPath?: string;
   dryRun?: boolean;
 }): Promise<ReturnType<typeof classifyDepositWorkflowReceipt> & { idempotencyId: string; receiptVerificationCommand: string }> {
@@ -3003,11 +3005,12 @@ export async function executeCapturedDeposit(input: {
   if (!destination) throw new Error("destinationId is not an owned deposit-enabled account");
   const source = inventory.sources.find((row) => row.id === input.sourceId && row.method === input.method && row.eligible);
   if (!source) throw new Error("sourceId and method are not an observed eligible funding route");
-  const contractPath = input.contractPath ?? join(homedir(), "Desktop", "finance", "private", "robinhood-deposit-contracts.jsonl");
+  const contractPath = input.contractPath ?? process.env.ROBINHOOD_DEPOSIT_CONTRACT_PATH ?? join(homedir(), "Desktop", "finance", "private", "robinhood-deposit-contracts.jsonl");
   const contracts = loadDepositContractsFromJsonl(readFileSync(contractPath, "utf8"));
-  const contract = contracts.at(-1);
-  if (!contract) throw new Error("no complete pre_create/create contract in private capture artifact");
-  const bound = bindDepositContract(contract, input);
+  const contributionYear = (destination.accountType === "ira" || destination.accountType === "ira_roth") ? new Date().getFullYear() : undefined;
+  const contract = contracts.find((candidate) => candidate.context.method === input.method && candidate.context.sourceId === input.sourceId && candidate.context.destinationId === input.destinationId && candidate.context.destinationType === destination.accountType && candidate.context.contributionYear === contributionYear);
+  if (!contract) throw new Error("no exact captured pre_create/create route for the selected source, rail, destination, account type, and contribution year");
+  const bound = bindDepositContract(contract, { ...input, destinationType: destination.accountType, contributionYear });
   const send = async (step: (typeof bound.steps)[number]) => {
     const result = await executeBrokerageRequest({
       url: step.url,
@@ -3032,12 +3035,14 @@ export async function executeCapturedDeposit(input: {
   return { ...classifyDepositWorkflowReceipt([first, final]), idempotencyId: bound.idempotencyId, receiptVerificationCommand: `robinhood-cli deposit-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --method ${input.method} --json` };
 }
 
-/** Re-reads transfer history for a route-specific receipt; it never sends or retries. */
-export async function getDepositStatus(input: { sourceId: string; destinationId: string; amountUsd: string; method: import("./deposit-contract-loader.js").DepositMethod }): Promise<unknown> {
-  const data = await brokerageGetJson("https://api.robinhood.com/ach/transfers/");
-  const rows = Array.isArray(data?.results) ? data.results : [];
-  const matches = rows.filter((row: any) => String(row?.amount ?? "") === input.amountUsd && String(row?.source?.id ?? row?.source ?? "") === input.sourceId && String(row?.sink?.id ?? row?.sink ?? "") === input.destinationId);
-  return { checked: true, matchCount: matches.length, states: matches.map((row: any) => String(row?.state ?? row?.status ?? "unknown")), method: input.method, receiptVerified: matches.length > 0 };
+/**
+ * Read paginated PaymentHub receipts. A row is evidence only when its observed server-side transfer
+ * type, source id, receiving account id, and amount agree; this never falls back to legacy ACH.
+ */
+export async function getDepositStatus(input: { sourceId: string; destinationId: string; amountUsd: string; method: import("./deposit-contract-loader.js").DepositMethod }): Promise<{ checked: true; receiptVerified: boolean; matchCount: number; method: import("./deposit-contract-loader.js").DepositMethod; receipts: Array<{ serverReceiptId: string; clientId?: string; state: string; transferType: string; serviceFeeUsd: string }> }> {
+  const rows = await brokerageGetAllResults("https://bonfire.robinhood.com/paymenthub/unified_transfers/", {}, { page_size: "100" });
+  const receipts = correlateUnifiedDepositReceipts(rows, input);
+  return { checked: true, receiptVerified: receipts.length > 0, matchCount: receipts.length, method: input.method, receipts };
 }
 
 /** Live owned-destination × observed funding-source read using only captured authenticated GET contracts. */

@@ -4,6 +4,7 @@ import {
   buildDepositPlan,
   buildDepositQuote,
   classifyDepositReceipt,
+  correlateUnifiedDepositReceipts,
 } from "../src/deposit.js";
 
 const bankA = {
@@ -220,6 +221,27 @@ describe("generic deposit contracts", () => {
         capturedRequest: { ...request, method: "PUT" as never },
       }).gates,
     ).toContain("captured deposit write contract is incomplete");
+  });
+
+  it("correlates unified history by its observed reversed account fields and never source_id", () => {
+    const receipts = correlateUnifiedDepositReceipts([
+      {
+        id: "server-receipt",
+        transfer_type: "originated_ach",
+        amount: "1.00",
+        originating_account_id: "destination-a",
+        receiving_account_id: "source-a",
+        source_id: null,
+        state: "pending",
+        service_fee: "0.00",
+      },
+    ], { sourceId: "source-a", destinationId: "destination-a", amountUsd: "1.00", method: "bank_standard" });
+    expect(receipts).toEqual([{
+      serverReceiptId: "server-receipt",
+      state: "pending",
+      transferType: "originated_ach",
+      serviceFeeUsd: "0.00",
+    }]);
   });
 
   it("keeps receipt status generic and marks transport uncertainty ambiguous", () => {

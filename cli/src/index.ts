@@ -196,7 +196,7 @@ program
   .requiredOption("--destination-id <id>")
   .requiredOption("--amount <usd>")
   .requiredOption("--method <rail>")
-  .option("--contract-path <path>", "operator-private JSONL capture path")
+  .option("--contract-path <path>", "optional operator-private capture override (defaults to ROBINHOOD_DEPOSIT_CONTRACT_PATH or operator-private store)")
   .option("--dry-run", "validate and construct without sending", false)
   .action(async (opts: { sourceId: string; destinationId: string; amount: string; method: "bank_standard" | "bank_instant" | "debit_card"; contractPath?: string; dryRun: boolean }) =>
     printJson(await executeCapturedDeposit({ sourceId: opts.sourceId, destinationId: opts.destinationId, amountUsd: opts.amount, method: opts.method, contractPath: opts.contractPath, dryRun: opts.dryRun })),

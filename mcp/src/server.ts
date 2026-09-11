@@ -984,16 +984,32 @@ server.registerTool(
   "robinhood_roth_deposit_plan",
   {
     title: "Robinhood Roth $1 Deposit Plan",
-    description: "Validate a distinct $1 Roth deposit method against verified eligibility, room, source, zero fee, and history. It never submits or invents an undocumented rail request.",
+    description:
+      "Validate a distinct $1 Roth deposit method against verified eligibility, room, source, zero fee, and history. It never submits or invents an undocumented rail request.",
     annotations: toolAnnotations(true, "read"),
     inputSchema: z.object({
       year: z.number().int(),
       contributionRoomUsd: z.string(),
       eligibilityVerified: z.boolean(),
-      destination: z.object({ accountId: z.string(), accountType: z.string(), depositEnabled: z.boolean() }),
-      source: z.object({ id: z.string(), method: z.enum(["bank_standard", "bank_instant", "debit_card"]), eligible: z.boolean() }),
+      destination: z.object({
+        accountId: z.string(),
+        accountType: z.string(),
+        depositEnabled: z.boolean(),
+      }),
+      source: z.object({
+        id: z.string(),
+        method: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+        eligible: z.boolean(),
+      }),
       fee: z.object({ known: z.boolean(), usd: z.string().optional() }),
-      history: z.array(z.object({ amountUsd: z.string(), method: z.enum(["bank_standard", "bank_instant", "debit_card"]), destinationAccountId: z.string(), state: z.string() })),
+      history: z.array(
+        z.object({
+          amountUsd: z.string(),
+          method: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+          destinationAccountId: z.string(),
+          state: z.string(),
+        }),
+      ),
     }),
   },
   async (input) => jsonResponse(buildRothDepositPlan(input)),
@@ -1003,7 +1019,8 @@ server.registerTool(
   "robinhood_roth_deposit_inventory",
   {
     title: "Robinhood Roth Deposit Source × Rail Inventory",
-    description: "Live-read Roth destination and ACH source × rail availability from captured GET contracts. Every row reports whether an exact write request remains missing; it never submits a deposit.",
+    description:
+      "Live-read Roth destination and ACH source × rail availability from captured GET contracts. Every row reports whether an exact write request remains missing; it never submits a deposit.",
     annotations: toolAnnotations(true, "read"),
     inputSchema: z.object({}),
   },

@@ -1,4 +1,24 @@
-export type RothPaymentMethod = "bank_standard" | "bank_instant" | "debit_card" | "wire";
+/** The only requested rails. Wire is deliberately excluded: no wire-deposit contract was captured. */
+export type RothPaymentMethod = "bank_standard" | "bank_instant" | "debit_card";
+
+export type RothDepositRequestStatus =
+  | "missing_exact_write_contract"
+  | "missing_source_and_exact_write_contract";
+
+export interface RothDepositSourceInventoryRow {
+  id: string;
+  method: RothPaymentMethod;
+  eligible: boolean;
+  requestStatus: RothDepositRequestStatus;
+  evidence: string[];
+}
+
+export interface RothDepositSourceInventory {
+  destination?: { accountId: string; accountType: string; depositEnabled: boolean };
+  sources: RothDepositSourceInventoryRow[];
+  /** There is no POST capture in the approved route map, so this never authorizes a send. */
+  executableMethods: RothPaymentMethod[];
+}
 
 export interface RothDepositHistoryRow {
   amountUsd: string;
@@ -82,8 +102,71 @@ export function buildRothDepositPlan(input: RothDepositInput): RothDepositPlan {
 export interface RothDepositReceipt {
   submitted: boolean;
   ambiguous: boolean;
+  receiptStatus: "accepted" | "rejected" | "transport_ambiguous";
   status?: number;
   body?: unknown;
+}
+
+/**
+ * Normalize the exact read contracts observed on the transfer page. `is_rtp_eligible`
+ * proves an instant-payment rail capability, not a deposit POST shape; no source means
+ * debit-card availability is explicitly unavailable rather than guessed.
+ */
+export function buildRothDepositSourceInventory(
+  accounts: Array<Record<string, unknown>>,
+  relationships: Array<Record<string, unknown>>,
+): RothDepositSourceInventory {
+  const roth = accounts.find((account) => account.type === "ira_roth");
+  const destination = roth
+    ? {
+        accountId: String(roth.id ?? roth.account_id ?? ""),
+        accountType: "ira_roth",
+        depositEnabled: roth.is_deposits_enabled === true,
+      }
+    : undefined;
+  const sources: RothDepositSourceInventoryRow[] = [];
+  for (const relationship of relationships) {
+    const id = String(relationship.id ?? "");
+    const rails = (relationship.available_payment_rails ?? {}) as Record<string, unknown>;
+    const verified = relationship.verified === true && relationship.state === "approved";
+    sources.push({
+      id,
+      method: "bank_standard",
+      eligible: verified,
+      requestStatus: "missing_exact_write_contract",
+      evidence: ["cashier/ach/relationships GET", "relationship verified/approved"],
+    });
+    if (rails.is_rtp_eligible === true) {
+      sources.push({
+        id,
+        method: "bank_instant",
+        eligible: verified,
+        requestStatus: "missing_exact_write_contract",
+        evidence: ["cashier/ach/relationships GET", "available_payment_rails.is_rtp_eligible"],
+      });
+    }
+  }
+  sources.push({
+    id: "unobserved",
+    method: "debit_card",
+    eligible: false,
+    requestStatus: "missing_source_and_exact_write_contract",
+    evidence: ["no debit-card source or write request captured"],
+  });
+  return { destination, sources, executableMethods: [] };
+}
+
+/** Stable status boundary for callers to decide whether a history read is mandatory. */
+export function classifyRothDepositReceipt(response?: { status: number; body?: unknown }): RothDepositReceipt {
+  if (!response) return { submitted: false, ambiguous: true, receiptStatus: "transport_ambiguous" };
+  const submitted = response.status >= 200 && response.status < 300;
+  return {
+    submitted,
+    ambiguous: false,
+    receiptStatus: submitted ? "accepted" : "rejected",
+    status: response.status,
+    body: response.body,
+  };
 }
 
 /** One-shot executor: no retry, and transport uncertainty is surfaced as ambiguous. */
@@ -96,8 +179,8 @@ export async function executeRothDeposit(
   const body = { ...plan.request.body, [plan.request.amountField]: plan.amountUsd };
   try {
     const response = await send({ ...plan.request, body });
-    return { submitted: response.status >= 200 && response.status < 300, ambiguous: false, status: response.status, body: response.body };
+    return classifyRothDepositReceipt(response);
   } catch (error) {
-    return { submitted: false, ambiguous: true, body: { error: (error as Error).message } };
+    return { submitted: false, ambiguous: true, receiptStatus: "transport_ambiguous", body: { error: (error as Error).message } };
   }
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildRothDepositPlan, executeRothDeposit } from "../src/roth-deposit.js";
+import {
+  buildRothDepositPlan,
+  buildRothDepositSourceInventory,
+  classifyRothDepositReceipt,
+  executeRothDeposit,
+} from "../src/roth-deposit.js";
 
 const eligible = {
   year: 2026,
@@ -36,6 +41,25 @@ describe("Roth $1 deposit planner", () => {
   it("refuses an unknown fee or insufficient room without imposing a method-count cap", () => {
     expect(buildRothDepositPlan({ ...eligible, fee: { known: false } }).executable).toBe(false);
     expect(buildRothDepositPlan({ ...eligible, contributionRoomUsd: "0.99" }).executable).toBe(false);
-    expect(buildRothDepositPlan({ ...eligible, source: { id: "bank-2", method: "wire" as const, eligible: true } }).executable).toBe(true);
+    expect(buildRothDepositPlan({ ...eligible, source: { id: "bank-2", method: "bank_standard" as const, eligible: true } }).executable).toBe(true);
+  });
+
+  it("inventories verified bank rails but makes every unobserved write contract non-executable", () => {
+    const inventory = buildRothDepositSourceInventory(
+      [{ id: "roth", type: "ira_roth", is_deposits_enabled: true }],
+      [{ id: "bank", verified: true, state: "approved", available_payment_rails: { is_rtp_eligible: true, is_rfp_eligible: false } }],
+    );
+    expect(inventory.destination).toEqual({ accountId: "roth", accountType: "ira_roth", depositEnabled: true });
+    expect(inventory.sources).toEqual([
+      expect.objectContaining({ id: "bank", method: "bank_standard", eligible: true, requestStatus: "missing_exact_write_contract" }),
+      expect.objectContaining({ id: "bank", method: "bank_instant", eligible: true, requestStatus: "missing_exact_write_contract" }),
+      expect.objectContaining({ method: "debit_card", eligible: false, requestStatus: "missing_source_and_exact_write_contract" }),
+    ]);
+  });
+
+  it("classifies accepted, rejected, and transport-ambiguous receipts without retries", () => {
+    expect(classifyRothDepositReceipt({ status: 201, body: { id: "receipt" } })).toMatchObject({ submitted: true, ambiguous: false, receiptStatus: "accepted" });
+    expect(classifyRothDepositReceipt({ status: 422, body: { detail: "invalid" } })).toMatchObject({ submitted: false, ambiguous: false, receiptStatus: "rejected" });
+    expect(classifyRothDepositReceipt()).toMatchObject({ submitted: false, ambiguous: true, receiptStatus: "transport_ambiguous" });
   });
 });

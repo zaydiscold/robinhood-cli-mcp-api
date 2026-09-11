@@ -438,6 +438,14 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     profiles: ["full"],
     outputSchema: "legacyObject",
   },
+  {
+    id: "roth-deposit-inventory",
+    cli: "roth-deposit-inventory",
+    mcp: "robinhood_roth_deposit_inventory",
+    access: "read",
+    profiles: ["full"],
+    outputSchema: "legacyObject",
+  },
 ] as const;
 
 const REGISTERED_MCP_NAMES = new Set(CAPABILITIES.map((definition) => definition.mcp));

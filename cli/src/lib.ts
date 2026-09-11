@@ -2,6 +2,8 @@ import { execFile, execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 export {
   buildRothDepositPlan,
+  buildRothDepositSourceInventory,
+  classifyRothDepositReceipt,
   executeRothDeposit,
 } from "./roth-deposit.js";
 export type {
@@ -10,8 +12,11 @@ export type {
   RothDepositInput,
   RothDepositPlan,
   RothDepositReceipt,
+  RothDepositSourceInventory,
+  RothDepositSourceInventoryRow,
   RothPaymentMethod,
 } from "./roth-deposit.js";
+import { buildRothDepositSourceInventory } from "./roth-deposit.js";
 import {
   appendFileSync,
   existsSync,
@@ -2952,6 +2957,18 @@ export async function brokerageGetJson(
   if (result.status !== 200)
     throw new Error(`${result.status} ${result.statusText} for ${plan.url}`);
   return JSON.parse(result.body || "{}");
+}
+
+/** Live source × rail read using only captured authenticated GET contracts. */
+export async function getRothDepositSourceInventory(): Promise<import("./roth-deposit.js").RothDepositSourceInventory> {
+  const [accounts, relationships] = await Promise.all([
+    brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/"),
+    brokerageGetJson("https://cashier.robinhood.com/ach/relationships/"),
+  ]);
+  return buildRothDepositSourceInventory(
+    Array.isArray(accounts?.results) ? accounts.results : [],
+    Array.isArray(relationships?.results) ? relationships.results : [],
+  );
 }
 
 /**

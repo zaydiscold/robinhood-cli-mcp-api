@@ -142,6 +142,7 @@ import {
   planTaxLotSale,
   submitTaxLotSale,
   buildRothDepositPlan,
+  getRothDepositSourceInventory,
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -162,6 +163,11 @@ program
   .description("Validate a $1 Roth deposit rail plan. Does not submit a transfer.")
   .requiredOption("--input-json <json>", "verified source, destination, fee, history, and eligibility data")
   .action((opts: { inputJson: string }) => printJson(buildRothDepositPlan(JSON.parse(opts.inputJson))));
+
+program
+  .command("roth-deposit-inventory")
+  .description("Read verified Roth destination and bank source × rail availability. Never submits a deposit.")
+  .action(async () => printJson(await getRothDepositSourceInventory()));
 
 program
   .option(

@@ -44,6 +44,7 @@ import {
   fetchOptionMarks,
   fetchQuotes,
   computePortfolioPnl,
+  readBuyingPower,
   computeDividends,
   computeTradeReview,
   addTradeNote,
@@ -4318,43 +4319,7 @@ program
       accts = [String(opts.account)];
     }
 
-    const results: any[] = [];
-    for (const acct of accts) {
-      try {
-        const bp = await brokerageGetJson(
-          "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
-          { num: acct },
-        );
-        const p = await brokerageGetJson("https://api.robinhood.com/portfolios/{num}/", {
-          num: acct,
-        });
-        const n = (v: unknown) => Number(v);
-        const equity = n(p.equity);
-        const marketVal = n(p.market_value);
-        const marginHealth = marketVal > 0 ? (equity / marketVal) * 100 : Number.NaN;
-        results.push({
-          accountNumber: acct,
-          buyingPower: n(bp.buying_power),
-          unleveragedBuyingPower: n(bp.unleveraged_buying_power),
-          intradayBuyingPower: n(bp.intraday_buying_power),
-          cash: n(bp.cash ?? bp.breakdown?.find((x: any) => x.category === "Cash")?.value ?? 0),
-          leverageEnabled: bp.leverage_enabled ?? false,
-          marginTotal:
-            bp.breakdown?.find((x: any) => x.title?.toLowerCase().includes("margin total"))
-              ?.value ?? null,
-          marginUsed:
-            bp.breakdown?.find((x: any) => x.title?.toLowerCase().includes("margin used"))?.value ??
-            null,
-          excessMaintenance: n(p.excess_maintenance),
-          excessMargin: n(p.excess_margin),
-          equity,
-          marketValue: marketVal,
-          marginHealthPct: marginHealth,
-        });
-      } catch (e) {
-        results.push({ accountNumber: acct, error: (e as Error).message });
-      }
-    }
+    const results = await readBuyingPower({ accountNumber: opts.account });
 
     if (opts.json) {
       printJson(results);

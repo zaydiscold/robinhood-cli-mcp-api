@@ -56,6 +56,7 @@ import {
   computeOptionExposureAnalytics,
   calendarDaysUntil,
   computePortfolioPnl,
+  readBuyingPower,
   getUnifiedHistory,
   computeDividends,
   computeTradeReview,
@@ -1343,63 +1344,8 @@ server.registerTool(
     }),
     annotations: toolAnnotations(true, "sensitive-read"),
   },
-  async ({ account_number }) => {
-    const graph = await brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/");
-    const rows: any[] = Array.isArray(graph?.results)
-      ? graph.results
-      : Array.isArray(graph)
-        ? graph
-        : [];
-    let accts: string[] = [];
-    for (const a of rows) {
-      if (a?.type !== "rhs" && a?.type !== "ira_roth") continue;
-      if (!a.account_number) continue;
-      accts.push(String(a.account_number));
-    }
-    if (account_number) {
-      if (!accts.includes(String(account_number)))
-        throw new Error(`Account ${account_number} not found.`);
-      accts = [String(account_number)];
-    }
-    const results: any[] = [];
-    for (const acct of accts) {
-      try {
-        const bp = await brokerageGetJson(
-          "https://api.robinhood.com/accounts/{num}/buying_power_breakdown",
-          { num: acct },
-        );
-        const p = await brokerageGetJson("https://api.robinhood.com/portfolios/{num}/", {
-          num: acct,
-        });
-        const n = (v: unknown) => Number(v);
-        const equity = n(p.equity);
-        const marketVal = n(p.market_value);
-        const marginHealth = marketVal > 0 ? (equity / marketVal) * 100 : Number.NaN;
-        results.push({
-          accountNumber: acct,
-          buyingPower: n(bp.buying_power),
-          unleveragedBuyingPower: n(bp.unleveraged_buying_power),
-          intradayBuyingPower: n(bp.intraday_buying_power),
-          cash: n(bp.cash ?? bp.breakdown?.find((x: any) => x.category === "Cash")?.value ?? 0),
-          leverageEnabled: bp.leverage_enabled ?? false,
-          marginTotal:
-            bp.breakdown?.find((x: any) => x.title?.toLowerCase().includes("margin total"))
-              ?.value ?? null,
-          marginUsed:
-            bp.breakdown?.find((x: any) => x.title?.toLowerCase().includes("margin used"))?.value ??
-            null,
-          excessMaintenance: n(p.excess_maintenance),
-          excessMargin: n(p.excess_margin),
-          equity,
-          marketValue: marketVal,
-          marginHealthPct: marginHealth,
-        });
-      } catch (e) {
-        results.push({ accountNumber: acct, error: (e as Error).message });
-      }
-    }
-    return jsonResponse(results);
-  },
+  async ({ account_number }) =>
+    jsonResponse(await readBuyingPower({ accountNumber: account_number })),
 );
 
 // ── robinhood_buy: simple market/limit order — matching the CLI `buy` command ──

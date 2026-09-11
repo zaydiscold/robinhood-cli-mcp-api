@@ -3179,6 +3179,69 @@ export interface PortfolioPnlOptions {
 }
 
 /**
+ * Read the broker's regular equity buying-power breakdown and portfolio context.
+ * These are distinct broker surfaces and not an atomic snapshot: cash is a broker
+ * cash balance, while buyingPower is the regular equity-order limit.  Preserve the
+ * client receipt time for each surface so a consumer cannot silently compare values
+ * from different reads or substitute cash for buying power.
+ */
+export async function readBuyingPower(
+  opts: { accountNumber?: string } = {},
+  deps: { getJson?: typeof brokerageGetJson; now?: () => Date } = {},
+): Promise<any[]> {
+  const getJson = deps.getJson ?? brokerageGetJson;
+  const now = deps.now ?? (() => new Date());
+  const graph = await getJson("https://bonfire.robinhood.com/transfer/accounts/");
+  const rows: any[] = Array.isArray(graph?.results)
+    ? graph.results
+    : Array.isArray(graph)
+      ? graph
+      : [];
+  let accounts = rows
+    .filter((a: any) => (a?.type === "rhs" || a?.type === "ira_roth") && a?.account_number)
+    .map((a: any) => String(a.account_number));
+  if (opts.accountNumber) {
+    if (!accounts.includes(String(opts.accountNumber))) throw new Error(`Account ${opts.accountNumber} not found.`);
+    accounts = [String(opts.accountNumber)];
+  }
+  const n = (v: unknown) => Number(v);
+  const results: any[] = [];
+  for (const accountNumber of accounts) {
+    try {
+      const bp = await getJson("https://api.robinhood.com/accounts/{num}/buying_power_breakdown", {
+        num: accountNumber,
+      });
+      const buyingPowerAsOf = now().toISOString();
+      const p = await getJson("https://api.robinhood.com/portfolios/{num}/", { num: accountNumber });
+      const portfolioAsOf = now().toISOString();
+      const equity = n(p.equity);
+      const marketValue = n(p.market_value);
+      results.push({
+        accountNumber,
+        buyingPower: n(bp.buying_power),
+        unleveragedBuyingPower: n(bp.unleveraged_buying_power),
+        intradayBuyingPower: n(bp.intraday_buying_power),
+        cash: n(bp.cash ?? bp.breakdown?.find((x: any) => x.category === "Cash")?.value),
+        leverageEnabled: bp.leverage_enabled ?? false,
+        marginTotal:
+          bp.breakdown?.find((x: any) => x.title?.toLowerCase().includes("margin total"))?.value ?? null,
+        marginUsed:
+          bp.breakdown?.find((x: any) => x.title?.toLowerCase().includes("margin used"))?.value ?? null,
+        excessMaintenance: n(p.excess_maintenance),
+        excessMargin: n(p.excess_margin),
+        equity,
+        marketValue,
+        marginHealthPct: marketValue > 0 ? (equity / marketValue) * 100 : Number.NaN,
+        asOf: { buyingPowerBreakdown: buyingPowerAsOf, portfolio: portfolioAsOf },
+      });
+    } catch (e) {
+      results.push({ accountNumber, error: (e as Error).message });
+    }
+  }
+  return results;
+}
+
+/**
  * Composed portfolio P&L across all owned accounts — the SHARED engine for the CLI `portfolio`
  * command and the MCP `robinhood_portfolio` tool (single source per the alignment invariant; the CLI
  * just renders this object, MCP returns it as JSON). Metrics agents get wrong, pinned here:

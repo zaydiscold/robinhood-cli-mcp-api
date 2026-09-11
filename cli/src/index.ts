@@ -146,11 +146,15 @@ import {
   getDepositInventory,
   executeCapturedDeposit,
   getDepositStatus,
+  buildInternalTransferPlan,
+  buildInternalTransferQuote,
+  getInternalTransferInventory,
   buildRothDepositPlan,
   getRothDepositSourceInventory,
   buildWithdrawalPlan,
   buildWithdrawalQuote,
   getWithdrawalInventory,
+  executeCapturedWithdrawal,
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -165,6 +169,34 @@ program
     "Unofficial Robinhood CLI for account data, options analytics, and controlled account workflows.",
   )
   .version("1.1.0");
+
+program
+  .command("internal-transfer-quote")
+  .description("Validate an owned account-to-account transfer quote. Does not submit.")
+  .requiredOption(
+    "--input-json <json>",
+    "amount, source, destination, limits, eligibility, and idempotency key",
+  )
+  .action((opts: { inputJson: string }) =>
+    printJson(buildInternalTransferQuote(JSON.parse(opts.inputJson))),
+  );
+
+program
+  .command("internal-transfer-plan")
+  .description(
+    "Build a one-shot internal-transfer plan only from a captured POST contract. Does not submit.",
+  )
+  .requiredOption("--input-json <json>", "quote input plus sanitized capturedRequest")
+  .action((opts: { inputJson: string }) =>
+    printJson(buildInternalTransferPlan(JSON.parse(opts.inputJson))),
+  );
+
+program
+  .command("internal-transfer-inventory")
+  .description(
+    "Live-read owned internal accounts and unified-transfer history for reconciliation. Does not submit.",
+  )
+  .action(async () => printJson(await getInternalTransferInventory()));
 
 program
   .command("deposit-quote")
@@ -194,43 +226,138 @@ program
 
 program
   .command("deposit-execute")
-  .description("Execute the observed pre_create → create deposit sequence from a private capture; never retries.")
+  .description(
+    "Execute the observed pre_create → create deposit sequence from a private capture; never retries.",
+  )
   .requiredOption("--source-id <id>")
   .requiredOption("--destination-id <id>")
   .requiredOption("--amount <usd>")
   .requiredOption("--method <rail>")
-  .option("--contract-path <path>", "optional operator-private capture override (defaults to ROBINHOOD_DEPOSIT_CONTRACT_PATH or operator-private store)")
+  .option(
+    "--contract-path <path>",
+    "optional operator-private capture override (defaults to ROBINHOOD_DEPOSIT_CONTRACT_PATH or operator-private store)",
+  )
   .option("--dry-run", "validate and construct without sending", false)
-  .action(async (opts: { sourceId: string; destinationId: string; amount: string; method: "bank_standard" | "bank_instant" | "debit_card"; contractPath?: string; dryRun: boolean }) =>
-    printJson(await executeCapturedDeposit({ sourceId: opts.sourceId, destinationId: opts.destinationId, amountUsd: opts.amount, method: opts.method, contractPath: opts.contractPath, dryRun: opts.dryRun })),
+  .action(
+    async (opts: {
+      sourceId: string;
+      destinationId: string;
+      amount: string;
+      method: "bank_standard" | "bank_instant" | "debit_card";
+      contractPath?: string;
+      dryRun: boolean;
+    }) =>
+      printJson(
+        await executeCapturedDeposit({
+          sourceId: opts.sourceId,
+          destinationId: opts.destinationId,
+          amountUsd: opts.amount,
+          method: opts.method,
+          contractPath: opts.contractPath,
+          dryRun: opts.dryRun,
+        }),
+      ),
   );
 
 program
   .command("deposit-status")
-  .description("Read deposit transfer history for the selected source/destination/amount; never sends or retries.")
+  .description(
+    "Read deposit transfer history for the selected source/destination/amount; never sends or retries.",
+  )
   .requiredOption("--source-id <id>")
   .requiredOption("--destination-id <id>")
   .requiredOption("--amount <usd>")
   .requiredOption("--method <rail>")
-  .action(async (opts: { sourceId: string; destinationId: string; amount: string; method: "bank_standard" | "bank_instant" | "debit_card" }) =>
-    printJson(await getDepositStatus({ sourceId: opts.sourceId, destinationId: opts.destinationId, amountUsd: opts.amount, method: opts.method })),
+  .action(
+    async (opts: {
+      sourceId: string;
+      destinationId: string;
+      amount: string;
+      method: "bank_standard" | "bank_instant" | "debit_card";
+    }) =>
+      printJson(
+        await getDepositStatus({
+          sourceId: opts.sourceId,
+          destinationId: opts.destinationId,
+          amountUsd: opts.amount,
+          method: opts.method,
+        }),
+      ),
   );
 
 program
   .command("withdrawal-quote")
-  .description("Validate an owned-source to linked-destination withdrawal quote. Does not submit a transfer.")
-  .requiredOption("--input-json <json>", "source, destination, history, and authenticated limit quote")
-  .action((opts: { inputJson: string }) => printJson(buildWithdrawalQuote(JSON.parse(opts.inputJson))));
+  .description(
+    "Validate an owned-source to linked-destination withdrawal quote. Does not submit a transfer.",
+  )
+  .requiredOption(
+    "--input-json <json>",
+    "source, destination, history, and authenticated limit quote",
+  )
+  .action((opts: { inputJson: string }) =>
+    printJson(buildWithdrawalQuote(JSON.parse(opts.inputJson))),
+  );
 
 program
   .command("withdrawal-plan")
-  .description("Build a one-shot withdrawal plan only from an exact captured POST contract. Does not submit.")
+  .description(
+    "Build a one-shot withdrawal plan only from an exact captured POST contract. Does not submit.",
+  )
   .requiredOption("--input-json <json>", "quote input plus a sanitized capturedRequest")
-  .action((opts: { inputJson: string }) => printJson(buildWithdrawalPlan(JSON.parse(opts.inputJson))));
+  .action((opts: { inputJson: string }) =>
+    printJson(buildWithdrawalPlan(JSON.parse(opts.inputJson))),
+  );
+
+program
+  .command("withdrawal-execute")
+  .description(
+    "Execute exactly one captured withdrawal create request; requires a fresh route quote, explicit --live-write, and never pre-creates or retries.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--rail <rail>")
+  .requiredOption(
+    "--limit-quote-json <json>",
+    "fresh authenticated source × rail × destination quote",
+  )
+  .option("--history-json <json>", "current withdrawal history (defaults to [])", "[]")
+  .option("--contract-path <path>", "optional operator-private capture override")
+  .option(
+    "--live-write",
+    "submit the captured create request (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)",
+    false,
+  )
+  .action(
+    async (opts: {
+      sourceId: string;
+      destinationId: string;
+      amount: string;
+      rail: "bank_standard" | "bank_instant" | "debit_card";
+      limitQuoteJson: string;
+      historyJson: string;
+      contractPath?: string;
+      liveWrite: boolean;
+    }) =>
+      printJson(
+        await executeCapturedWithdrawal({
+          sourceId: opts.sourceId,
+          destinationId: opts.destinationId,
+          amountUsd: opts.amount,
+          rail: opts.rail,
+          limitQuote: JSON.parse(opts.limitQuoteJson),
+          history: JSON.parse(opts.historyJson),
+          contractPath: opts.contractPath,
+          dryRun: !opts.liveWrite,
+        }),
+      ),
+  );
 
 program
   .command("withdrawal-inventory")
-  .description("Read eligible owned withdrawal sources and observed linked destinations. Never submits a withdrawal.")
+  .description(
+    "Read eligible owned withdrawal sources and observed linked destinations. Never submits a withdrawal.",
+  )
   .action(async () => printJson(await getWithdrawalInventory()));
 
 program

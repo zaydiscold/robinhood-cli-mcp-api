@@ -119,7 +119,8 @@ const asCents = (value: string | undefined): number | undefined => {
   return Number(whole) * 100 + Number((fraction + "00").slice(0, 2));
 };
 
-const isRetirementAccount = (accountType: string): boolean => accountType === "ira" || accountType === "ira_roth";
+const isRetirementAccount = (accountType: string): boolean =>
+  accountType === "ira" || accountType === "ira_roth";
 
 /** Builds only linked/observed routes; no bank, card, or eligibility is inferred. */
 export function buildWithdrawalInventory(
@@ -129,7 +130,10 @@ export function buildWithdrawalInventory(
   const sources = accounts
     .filter((account) => {
       const type = String(account.type ?? account.account_type ?? "").toLowerCase();
-      return typeof (account.id ?? account.account_id) === "string" && ["rhs", "brokerage", "ira", "ira_roth"].includes(type);
+      return (
+        typeof (account.id ?? account.account_id) === "string" &&
+        ["rhs", "brokerage", "ira", "ira_roth"].includes(type)
+      );
     })
     .map((account) => ({
       accountId: String(account.id ?? account.account_id),
@@ -157,16 +161,25 @@ export function buildWithdrawalInventory(
 export function buildWithdrawalQuote(input: WithdrawalInput): WithdrawalQuote {
   const gates: string[] = [];
   const amountCents = asCents(input.amountUsd);
-  if (amountCents === undefined || amountCents <= 0) gates.push("withdrawal amount must be a positive USD amount");
-  if (!input.source.accountId || !input.source.withdrawalsEnabled) gates.push("source is not withdrawal-enabled");
-  if (!input.destination.id || !input.destination.eligible) gates.push("destination is not eligible");
+  if (amountCents === undefined || amountCents <= 0)
+    gates.push("withdrawal amount must be a positive USD amount");
+  if (!input.source.accountId || !input.source.withdrawalsEnabled)
+    gates.push("source is not withdrawal-enabled");
+  if (!input.destination.id || !input.destination.eligible)
+    gates.push("destination is not eligible");
   const quote = input.limitQuote;
   if (!quote) {
     gates.push("source × rail × destination authenticated limit quote is missing");
   } else {
-    if (quote.sourceAccountId !== input.source.accountId || quote.destinationId !== input.destination.id || quote.rail !== input.destination.rail || quote.provenance !== "authenticated_limit_read")
+    if (
+      quote.sourceAccountId !== input.source.accountId ||
+      quote.destinationId !== input.destination.id ||
+      quote.rail !== input.destination.rail ||
+      quote.provenance !== "authenticated_limit_read"
+    )
       gates.push("limit quote does not bind this source × rail × destination");
-    if (!Number.isFinite(Date.parse(quote.observedAt))) gates.push("limit quote timestamp is invalid");
+    if (!Number.isFinite(Date.parse(quote.observedAt)))
+      gates.push("limit quote timestamp is invalid");
     if (!quote.eligible) gates.push("limit quote reports this withdrawal route as ineligible");
     if (quote.rail === "bank_standard") {
       if (!quote.fee.known || quote.fee.usd === undefined) {
@@ -177,18 +190,44 @@ export function buildWithdrawalQuote(input: WithdrawalInput): WithdrawalQuote {
     }
     if (quote.holds.length) gates.push("limit quote reports an active hold");
     if (!quote.windows.length) gates.push("limit quote contains no quota windows");
-    if ((asCents(quote.withdrawableCashUsd) ?? -1) < (amountCents ?? Number.MAX_SAFE_INTEGER)) gates.push("withdrawable cash is below withdrawal amount");
+    if ((asCents(quote.withdrawableCashUsd) ?? -1) < (amountCents ?? Number.MAX_SAFE_INTEGER))
+      gates.push("withdrawable cash is below withdrawal amount");
     for (const window of quote.windows) {
-      if ((asCents(window.amountRemainingUsd) ?? Number.MAX_SAFE_INTEGER) < (amountCents ?? Number.MAX_SAFE_INTEGER)) gates.push(`${window.period} amount remaining is below withdrawal amount`);
-      if (window.countRemaining !== undefined && (!Number.isInteger(window.countRemaining) || window.countRemaining < 1)) gates.push(`${window.period} transfer count remaining is exhausted`);
-      if (window.windowEndsAt !== undefined && !Number.isFinite(Date.parse(window.windowEndsAt))) gates.push(`${window.period} quota reset timestamp is invalid`);
+      if (
+        (asCents(window.amountRemainingUsd) ?? Number.MAX_SAFE_INTEGER) <
+        (amountCents ?? Number.MAX_SAFE_INTEGER)
+      )
+        gates.push(`${window.period} amount remaining is below withdrawal amount`);
+      if (
+        window.countRemaining !== undefined &&
+        (!Number.isInteger(window.countRemaining) || window.countRemaining < 1)
+      )
+        gates.push(`${window.period} transfer count remaining is exhausted`);
+      if (window.windowEndsAt !== undefined && !Number.isFinite(Date.parse(window.windowEndsAt)))
+        gates.push(`${window.period} quota reset timestamp is invalid`);
     }
   }
   if (isRetirementAccount(input.source.accountType) && !input.retirement?.eligibilityVerified)
     gates.push("retirement withdrawal eligibility is not verified");
-  if (input.history.some((row) => row.amountUsd === input.amountUsd && row.sourceAccountId === input.source.accountId && row.destinationId === input.destination.id && row.rail === input.destination.rail && /pending|queued|submitted|complete|completed|settled/i.test(row.state)))
+  if (
+    input.history.some(
+      (row) =>
+        row.amountUsd === input.amountUsd &&
+        row.sourceAccountId === input.source.accountId &&
+        row.destinationId === input.destination.id &&
+        row.rail === input.destination.rail &&
+        /pending|queued|submitted|complete|completed|settled/i.test(row.state),
+    )
+  )
     gates.push("matching withdrawal is already pending or completed");
-  return { executable: gates.length === 0, amountUsd: input.amountUsd, source: input.source, destination: input.destination, fee: quote?.fee ?? { known: false }, gates };
+  return {
+    executable: gates.length === 0,
+    amountUsd: input.amountUsd,
+    source: input.source,
+    destination: input.destination,
+    fee: quote?.fee ?? { known: false },
+    gates,
+  };
 }
 
 /** Requires an exact captured POST and never silently turns a generic ACH route into a withdrawal body. */
@@ -197,26 +236,51 @@ export function buildWithdrawalPlan(input: WithdrawalInput): WithdrawalPlan {
   const gates = [...quote.gates];
   const request = input.capturedRequest;
   if (!request) gates.push("exact withdrawal write contract has not been captured");
-  else if (request.method !== "POST" || !request.url.startsWith("https://") || !request.amountField) gates.push("captured withdrawal write contract is incomplete");
+  else if (request.method !== "POST" || !request.url.startsWith("https://") || !request.amountField)
+    gates.push("captured withdrawal write contract is incomplete");
   return { ...quote, executable: gates.length === 0, gates, request };
 }
 
-export function classifyWithdrawalReceipt(response?: { status: number; body?: unknown }): WithdrawalReceipt {
+export function classifyWithdrawalReceipt(response?: {
+  status: number;
+  body?: unknown;
+}): WithdrawalReceipt {
   if (!response) return { submitted: false, ambiguous: true, receiptStatus: "transport_ambiguous" };
   const submitted = response.status >= 200 && response.status < 300;
-  return { submitted, ambiguous: false, receiptStatus: submitted ? "accepted" : "rejected", status: response.status, body: response.body };
+  return {
+    submitted,
+    ambiguous: false,
+    receiptStatus: submitted ? "accepted" : "rejected",
+    status: response.status,
+    body: response.body,
+  };
 }
 
 /** One-shot only: the caller must read withdrawal status before considering any retry. */
 export async function executeWithdrawal(
   plan: WithdrawalPlan,
-  send: (request: CapturedWithdrawalRequest & { body: Record<string, unknown> }) => Promise<{ status: number; body?: unknown }>,
+  send: (
+    request: CapturedWithdrawalRequest & { body: Record<string, unknown> },
+  ) => Promise<{ status: number; body?: unknown }>,
 ): Promise<WithdrawalReceipt> {
   if (!plan.executable) throw new Error(`Withdrawal is not executable: ${plan.gates.join("; ")}`);
-  if (!plan.request) throw new Error("Withdrawal write contract has not been captured; refusing to invent a request");
+  if (!plan.request)
+    throw new Error(
+      "Withdrawal write contract has not been captured; refusing to invent a request",
+    );
   try {
-    return classifyWithdrawalReceipt(await send({ ...plan.request, body: { ...plan.request.body, [plan.request.amountField]: plan.amountUsd } }));
+    return classifyWithdrawalReceipt(
+      await send({
+        ...plan.request,
+        body: { ...plan.request.body, [plan.request.amountField]: plan.amountUsd },
+      }),
+    );
   } catch (error) {
-    return { submitted: false, ambiguous: true, receiptStatus: "transport_ambiguous", body: { error: (error as Error).message } };
+    return {
+      submitted: false,
+      ambiguous: true,
+      receiptStatus: "transport_ambiguous",
+      body: { error: (error as Error).message },
+    };
   }
 }

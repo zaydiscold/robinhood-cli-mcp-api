@@ -43,6 +43,15 @@ export type {
   WithdrawalSource,
 } from "./withdrawal.js";
 export {
+  buildInternalTransferInventory,
+  buildInternalTransferPlan,
+  buildInternalTransferQuote,
+  classifyInternalTransferReceipt,
+  executeInternalTransfer,
+  findCurrentInternalTransferReceipt,
+} from "./internal-transfer.js";
+export type { CapturedInternalTransferRequest, InternalTransferAccount, InternalTransferInput, InternalTransferLimitQuote, InternalTransferPlan, InternalTransferQuote, InternalTransferReceipt } from "./internal-transfer.js";
+export {
   buildRothDepositPlan,
   buildRothDepositSourceInventory,
   classifyRothDepositReceipt,
@@ -59,7 +68,9 @@ export type {
   RothPaymentMethod,
 } from "./roth-deposit.js";
 import { buildDepositInventory, correlateUnifiedDepositReceipts } from "./deposit.js";
-import { buildWithdrawalInventory } from "./withdrawal.js";
+import { buildWithdrawalInventory, buildWithdrawalPlan, classifyWithdrawalReceipt } from "./withdrawal.js";
+import { bindWithdrawalContract, loadWithdrawalContractsFromJsonl } from "./withdrawal-contract-loader.js";
+import { buildInternalTransferInventory } from "./internal-transfer.js";
 import { buildRothDepositSourceInventory } from "./roth-deposit.js";
 import {
   bindDepositContract,
@@ -3079,6 +3090,77 @@ export async function getDepositInventory(): Promise<import("./deposit.js").Depo
   );
 }
 
+/**
+ * Executes only the captured withdrawal create request. It deliberately does not pre-create:
+ * this withdrawal capture observed `create` only. A caller supplies a fresh authenticated
+ * route quote and history; execution is one-shot and must be reconciled with the receipt read.
+ */
+export async function executeCapturedWithdrawal(input: {
+  sourceId: string;
+  destinationId: string;
+  amountUsd: string;
+  rail: import("./withdrawal.js").WithdrawalRail;
+  limitQuote: import("./withdrawal.js").WithdrawalLimitQuote;
+  history: import("./withdrawal.js").WithdrawalHistoryRow[];
+  retirement?: import("./withdrawal.js").RetirementWithdrawal;
+  contractPath?: string;
+  dryRun?: boolean;
+}): Promise<import("./withdrawal.js").WithdrawalReceipt & { idempotencyId: string; receiptVerificationCommand: string }> {
+  const inventory = await getWithdrawalInventory();
+  const source = inventory.sources.find((row) => row.accountId === input.sourceId && row.withdrawalsEnabled);
+  if (!source) throw new Error("sourceId is not an owned withdrawal-enabled account");
+  const destination = inventory.destinations.find((row) => row.id === input.destinationId && row.rail === input.rail && row.eligible);
+  if (!destination) throw new Error("destinationId and rail are not an observed eligible withdrawal route");
+  const contractPath = input.contractPath ?? process.env.ROBINHOOD_WITHDRAWAL_CONTRACT_PATH ?? join(homedir(), "Desktop", "Finance", "private", "robinhood-withdrawal-contracts.jsonl");
+  const contracts = loadWithdrawalContractsFromJsonl(readFileSync(contractPath, "utf8"));
+  const contract = contracts.find((candidate) => candidate.context.sourceId === input.sourceId && candidate.context.destinationId === input.destinationId && candidate.context.rail === input.rail);
+  if (!contract) throw new Error("no exact captured create route for the selected source, destination, and rail");
+  const bound = bindWithdrawalContract(contract, input);
+  const plan = buildWithdrawalPlan({
+    amountUsd: input.amountUsd,
+    source,
+    destination,
+    limitQuote: input.limitQuote,
+    history: input.history,
+    retirement: input.retirement,
+    capturedRequest: { method: "POST", url: contract.request.url, body: bound.body, amountField: contract.request.amountField },
+  });
+  if (!plan.executable) throw new Error(`Withdrawal is not executable: ${plan.gates.join("; ")}`);
+  if (!input.dryRun && process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1")
+    throw new Error("ROBINHOOD_ALLOW_LIVE_WRITE=1 is required for withdrawal execution");
+  if (input.dryRun) {
+    return {
+      ...classifyWithdrawalReceipt({ status: 0, body: { dryRun: true } }),
+      idempotencyId: bound.idempotencyId,
+      receiptVerificationCommand: `robinhood-cli withdrawal-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --rail ${input.rail} --json`,
+    };
+  }
+  try {
+    const result = await executeBrokerageRequest({
+      url: contract.request.url,
+      method: "POST",
+      risk: "write-mutate",
+      mutatesAccount: true,
+      requiresAuth: true,
+      mode: "live",
+    } as unknown as PlannedBrokerageRequest, { body: bound.body, dryRun: false, fullBody: true });
+    let body: unknown;
+    try { body = result.body ? JSON.parse(result.body) : undefined; } catch { body = undefined; }
+    return {
+      ...classifyWithdrawalReceipt({ status: result.status, body }),
+      idempotencyId: bound.idempotencyId,
+      receiptVerificationCommand: `robinhood-cli withdrawal-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --rail ${input.rail} --json`,
+    };
+  } catch (error) {
+    return {
+      ...classifyWithdrawalReceipt(),
+      body: { error: error instanceof Error ? error.message : String(error) },
+      idempotencyId: bound.idempotencyId,
+      receiptVerificationCommand: `robinhood-cli withdrawal-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --rail ${input.rail} --json`,
+    };
+  }
+}
+
 /** Live owned-source × observed destination read using only captured authenticated GET contracts. */
 export async function getWithdrawalInventory(): Promise<import("./withdrawal.js").WithdrawalInventory> {
   const [accounts, relationships] = await Promise.all([
@@ -3089,6 +3171,15 @@ export async function getWithdrawalInventory(): Promise<import("./withdrawal.js"
     Array.isArray(accounts?.results) ? accounts.results : [],
     Array.isArray(relationships?.results) ? relationships.results : [],
   );
+}
+
+/** Live account graph and unified-transfer history reads from captured authenticated GET routes. */
+export async function getInternalTransferInventory(): Promise<{ accounts: import("./internal-transfer.js").InternalTransferAccount[]; history: unknown[]; readbackRoute: string }> {
+  const [accounts, history] = await Promise.all([
+    brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/"),
+    brokerageGetJson("https://bonfire.robinhood.com/paymenthub/unified_transfers/?page_size=100"),
+  ]);
+  return { ...buildInternalTransferInventory(Array.isArray(accounts?.results) ? accounts.results : Array.isArray(accounts) ? accounts : []), history: Array.isArray(history?.results) ? history.results : Array.isArray(history) ? history : [], readbackRoute: "https://bonfire.robinhood.com/paymenthub/unified_transfers/?page_size=100" };
 }
 
 /** Live source × rail read using only captured authenticated GET contracts. */

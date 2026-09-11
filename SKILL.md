@@ -126,6 +126,14 @@ robinhood-cli tax status --json
 
 The dedicated `robinhood-tax` binary accepts the same arguments without the leading `tax`.
 
+### Internal account transfers (read/plan only)
+
+Use `internal-transfer-inventory` / `robinhood_internal_transfer_inventory` to discover the owned account graph and read unified-transfer status history. Then supply the user-selected amount, source, destination, authenticated pair-bound eligibility/limit observation, zero-fee observation, and idempotency key to `internal-transfer-quote` / `robinhood_internal_transfer_quote`. `internal-transfer-plan` requires a sanitized captured POST contract and still never submits or invents its body.
+
+Retirement **destinations** require an explicitly verified contribution year and remaining room. Retirement **sources** require an explicitly authenticated, route-specific eligibility observation; this feature does not infer distribution or rollover semantics from an account type. Do not infer either tax treatment. A 2xx submission receipt is pending until the unified-transfer GET readback reconciles the status.
+
+**Evidence:** captured authenticated `GET https://bonfire.robinhood.com/paymenthub/unified_transfers/?page_size=100` and `GET https://bonfire.robinhood.com/transfer/accounts/` are catalogued in [`api-map/brokerage-routes.json`](api-map/brokerage-routes.json); the captured POST key set and internal-transfer account-type observations are documented in [`AGENTS.md`](AGENTS.md). These are captured contracts, not an authorization to send money.
+
 ### MCP
 
 Use MCP when an agent client needs typed discovery and structured results. The selected profile

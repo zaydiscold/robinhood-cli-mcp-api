@@ -184,28 +184,44 @@ export function buildDepositInventory(
 /** Correlates PaymentHub's observed deposit-history schema without trusting nullable `source_id`. */
 export function correlateUnifiedDepositReceipts(
   rows: Array<Record<string, unknown>>,
-  input: { sourceId: string; destinationId: string; amountUsd: string; method: DepositPaymentMethod },
-): Array<{ serverReceiptId: string; clientId?: string; state: string; transferType: string; serviceFeeUsd: string }> {
+  input: {
+    sourceId: string;
+    destinationId: string;
+    amountUsd: string;
+    method: DepositPaymentMethod;
+  },
+): Array<{
+  serverReceiptId: string;
+  clientId?: string;
+  state: string;
+  transferType: string;
+  serviceFeeUsd: string;
+}> {
   const transferTypeByMethod: Record<DepositPaymentMethod, string> = {
     bank_standard: "originated_ach",
     bank_instant: "instant_bank_transfer",
     debit_card: "debit_card_funding",
   };
-  return rows
-    // For a pull deposit, PaymentHub reports the broker destination as originating
-    // and the funding relationship as receiving. `source_id` is nullable in this row.
-    .filter((row) => row.transfer_type === transferTypeByMethod[input.method]
-      && String(row.amount) === input.amountUsd
-      && row.receiving_account_id === input.sourceId
-      && row.originating_account_id === input.destinationId
-      && typeof row.id === "string")
-    .map((row) => ({
-      serverReceiptId: row.id as string,
-      clientId: typeof row.ref_id === "string" ? row.ref_id : undefined,
-      state: typeof row.state === "string" ? row.state : "unknown",
-      transferType: row.transfer_type as string,
-      serviceFeeUsd: typeof row.service_fee === "string" ? row.service_fee : "unknown",
-    }));
+  return (
+    rows
+      // For a pull deposit, PaymentHub reports the broker destination as originating
+      // and the funding relationship as receiving. `source_id` is nullable in this row.
+      .filter(
+        (row) =>
+          row.transfer_type === transferTypeByMethod[input.method] &&
+          String(row.amount) === input.amountUsd &&
+          row.receiving_account_id === input.sourceId &&
+          row.originating_account_id === input.destinationId &&
+          typeof row.id === "string",
+      )
+      .map((row) => ({
+        serverReceiptId: row.id as string,
+        clientId: typeof row.ref_id === "string" ? row.ref_id : undefined,
+        state: typeof row.state === "string" ? row.state : "unknown",
+        transferType: row.transfer_type as string,
+        serviceFeeUsd: typeof row.service_fee === "string" ? row.service_fee : "unknown",
+      }))
+  );
 }
 
 /** Validates a specific source-to-destination amount; retirement gates are destination-specific. */

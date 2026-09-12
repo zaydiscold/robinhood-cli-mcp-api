@@ -6,6 +6,12 @@ export interface MovementQuoteInput {
   kind: MovementKind;
   rail?: "bank_standard" | "bank_instant" | "debit_card";
   maxFeeUsd?: string;
+  iraDistribution?: {
+    distributionType: string;
+    federalTaxWithholdingPercent: string;
+    stateTaxWithholdingPercent: string;
+    state: string;
+  };
 }
 export const USD_CURRENCY_ID = "1072fc76-1862-41ab-82c2-485837590762"; // public currency identifier, not an account identifier
 export async function getMoneyMovementQuote(input: MovementQuoteInput) {
@@ -41,9 +47,9 @@ export async function getMoneyMovementQuote(input: MovementQuoteInput) {
     Number(source.withdrawable_cash) < Number(input.amountUsd)
   )
     reasons.push("Withdrawable cash is below the requested amount");
-  if (String(source.type).startsWith("ira") && input.kind !== "deposit")
+  if (String(source.type).startsWith("ira") && input.kind !== "deposit" && !input.iraDistribution)
     reasons.push(
-      "Retirement-originating movement requires captured distribution/conversion fields; no distribution is inferred",
+      "Retirement-originating movement requires explicit distribution type, two-letter state, and withholding percents; no distribution is inferred",
     );
   const rail = input.rail ?? "bank_standard";
   const productType =

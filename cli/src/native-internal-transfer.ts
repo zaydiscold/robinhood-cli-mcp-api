@@ -1,12 +1,21 @@
 import { randomUUID } from "node:crypto";
+export interface IraDistributionFields {
+  distributionType: string;
+  federalTaxWithholdingPercent: string;
+  stateTaxWithholdingPercent: string;
+  state: string;
+}
 export interface NativeInternalTransferInput {
   sourceId: string;
   destinationId: string;
   amountUsd: string;
   contributionYear?: number;
+  contributionType?: "contribution" | "rollover";
+  iraDistribution?: IraDistributionFields;
   idempotencyId?: string;
   dryRun?: boolean;
 }
+const percent = (value: string) => /^\d+(?:\.\d{1,4})?$/.test(value);
 export function buildNativeInternalTransferBody(
   input: NativeInternalTransferInput,
   sourceType: string,
@@ -15,24 +24,50 @@ export function buildNativeInternalTransferBody(
   if (!/^\d+(?:\.\d{1,2})?$/.test(input.amountUsd) || Number(input.amountUsd) <= 0)
     throw new Error("Positive USD amount required");
   if (input.sourceId === input.destinationId) throw new Error("Source and destination must differ");
-  if (sourceType.startsWith("ira"))
-    throw new Error(
-      "Retirement-originating transfer requires route-specific distribution/conversion inputs; no distribution is inferred",
-    );
-  const retirement = destinationType.startsWith("ira");
-  if (retirement && !Number.isInteger(input.contributionYear))
+  const retirementSource = sourceType.startsWith("ira");
+  const retirementDestination = destinationType.startsWith("ira");
+  if (retirementSource && retirementDestination)
+    throw new Error("Retirement-to-retirement conversion requires a captured conversion contract");
+  if (retirementSource) {
+    const distribution = input.iraDistribution;
+    if (
+      !distribution ||
+      !distribution.distributionType ||
+      !/^[A-Z]{2}$/.test(distribution.state) ||
+      !percent(distribution.federalTaxWithholdingPercent) ||
+      !percent(distribution.stateTaxWithholdingPercent)
+    )
+      throw new Error(
+        "Retirement-originating transfer requires explicit distribution type, two-letter state, and withholding percents; no distribution is inferred",
+      );
+    if (input.contributionYear !== undefined)
+      throw new Error("Contribution year does not apply to a retirement-originating transfer");
+  } else if (input.iraDistribution) {
+    throw new Error("Distribution fields do not apply to a taxable source");
+  }
+  if (retirementDestination && !Number.isInteger(input.contributionYear))
     throw new Error("Explicit contribution year required for a retirement destination");
-  if (!retirement && input.contributionYear !== undefined)
+  if (!retirementDestination && input.contributionYear !== undefined)
     throw new Error("Contribution year does not apply to taxable transfers");
   return {
     id: input.idempotencyId ?? randomUUID(),
     additional_data: {
-      entry_point: retirement ? 0 : 5,
-      ...(retirement
+      entry_point: retirementDestination ? 0 : 5,
+      ...(retirementDestination
         ? {
             ira_contribution_data: {
-              contribution_type: "contribution",
+              contribution_type: input.contributionType ?? "contribution",
               tax_year: input.contributionYear,
+            },
+          }
+        : {}),
+      ...(retirementSource
+        ? {
+            ira_distribution_data: {
+              distribution_type: input.iraDistribution!.distributionType,
+              federal_tax_withholding_percent: input.iraDistribution!.federalTaxWithholdingPercent,
+              state: input.iraDistribution!.state,
+              state_tax_withholding_percent: input.iraDistribution!.stateTaxWithholdingPercent,
             },
           }
         : {}),

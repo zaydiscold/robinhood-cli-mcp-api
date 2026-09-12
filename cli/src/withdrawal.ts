@@ -93,6 +93,12 @@ export interface NativeWithdrawalRequestInput {
   amountUsd: string;
   rail: WithdrawalRail;
   idempotencyId?: string;
+  iraDistribution?: {
+    distributionType: string;
+    federalTaxWithholdingPercent: string;
+    stateTaxWithholdingPercent: string;
+    state: string;
+  };
 }
 
 export interface WithdrawalInput {
@@ -162,13 +168,43 @@ export function buildNativeWithdrawalRequest(
     throw new Error("debit_card rail requires an observed debit_card sink type");
   if (input.rail !== "debit_card" && input.destinationType === "debit_card")
     throw new Error("bank rail cannot use an observed debit_card sink type");
+  const retirementSource = input.sourceType.startsWith("ira");
+  if (retirementSource) {
+    const distribution = input.iraDistribution;
+    if (
+      !distribution ||
+      !distribution.distributionType ||
+      !/^[A-Z]{2}$/.test(distribution.state) ||
+      !/^\d+(?:\.\d{1,4})?$/.test(distribution.federalTaxWithholdingPercent) ||
+      !/^\d+(?:\.\d{1,4})?$/.test(distribution.stateTaxWithholdingPercent)
+    )
+      throw new Error(
+        "Retirement-originating withdrawal requires explicit distribution type, two-letter state, and withholding percents; no distribution is inferred",
+      );
+  } else if (input.iraDistribution) {
+    throw new Error("Distribution fields do not apply to a taxable source");
+  }
   return {
     method: "POST",
     url: "https://bonfire.robinhood.com/transfer/create/",
     amountField: "amount",
     body: {
       id: input.idempotencyId ?? crypto.randomUUID(),
-      additional_data: { entry_point: 5, is_instant_transfer: input.rail === "bank_instant" },
+      additional_data: {
+        entry_point: 5,
+        is_instant_transfer: input.rail === "bank_instant",
+        ...(retirementSource
+          ? {
+              ira_distribution_data: {
+                distribution_type: input.iraDistribution!.distributionType,
+                federal_tax_withholding_percent:
+                  input.iraDistribution!.federalTaxWithholdingPercent,
+                state: input.iraDistribution!.state,
+                state_tax_withholding_percent: input.iraDistribution!.stateTaxWithholdingPercent,
+              },
+            }
+          : {}),
+      },
       amount: input.amountUsd,
       currency: "usd",
       frequency: "once",

@@ -26,7 +26,9 @@ The engine quotes every **owned source × rail × destination × amount** with:
 
 Unknown numeric limits stay unknown. A successfully validated standard-bank route is not disabled just because a quota field is missing. Fees above the authorized maximum remain gated.
 
-Observed standard-bank create body: `POST https://bonfire.robinhood.com/transfer/create/` with `source.type=rhs`, ACH sink, `currency: "usd"`, `frequency: "once"`. There is no `pre_create` on the captured withdrawal path.
+Observed standard-bank create body: `POST https://bonfire.robinhood.com/transfer/create/` with `source.type=rhs`, ACH sink, `currency: "usd"`, `frequency: "once"`. There is no `pre_create` on the captured taxable withdrawal path.
+
+Roth-origin withdrawals use the same create URL plus `additional_data.ira_distribution_data` (`distribution_type`, `federal_tax_withholding_percent`, `state_tax_withholding_percent`, `state`). Read `GET /transfer/ira_distributions_questionnaire/?account_type={account_type}` and `GET /transfer/calculate_tax_withholdings/` first. Do not infer those fields. Captured Roth-origin paths (Roth → brokerage and Roth → bank) both use `pre_create` then `create` with that distribution object.
 
 If the broker returns `suv_check_pending`, the CLI/MCP reports `verification_required` and prompts for phone approval. Use `money-movement-verify` under the **original CLI session**, then `money-movement-resume` with the recorded operation ID. Do not create a second request identity. WireBrowser sessions cannot consume another session’s workflow.
 

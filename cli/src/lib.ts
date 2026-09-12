@@ -1,9 +1,9 @@
 import { execFile, execFileSync } from "node:child_process";
-export {executeNativeInternalTransfer} from "./native-internal-transfer.js";
-export {advanceMoneyMovementVerification} from "./money-movement-verification.js";
-export {getMoneyMovementQuote} from "./money-movement-quote.js";
-export {getMoneyMovementReceipt} from "./money-movement-receipt.js";
-export {runMoneyMovement,resumeMoneyMovement} from "./money-movement-journal.js";
+export { executeNativeInternalTransfer } from "./native-internal-transfer.js";
+export { advanceMoneyMovementVerification } from "./money-movement-verification.js";
+export { getMoneyMovementQuote } from "./money-movement-quote.js";
+export { getMoneyMovementReceipt } from "./money-movement-receipt.js";
+export { runMoneyMovement, resumeMoneyMovement } from "./money-movement-journal.js";
 import { createHash, createPrivateKey, randomUUID, sign } from "node:crypto";
 export {
   buildDepositInventory,
@@ -3070,24 +3070,52 @@ export async function executeCapturedDeposit(input: {
   let bound: import("./deposit-contract-loader.js").BoundDepositContract;
   if (!input.contractPath) {
     const { buildNativeBankDeposit } = await import("./native-bank-deposit.js");
-    bound = buildNativeBankDeposit({...input, method:input.method, destinationType: destination.accountType});
+    bound = buildNativeBankDeposit({
+      ...input,
+      method: input.method,
+      destinationType: destination.accountType,
+    });
   } else {
-    const contractPath = input.contractPath ?? process.env.ROBINHOOD_DEPOSIT_CONTRACT_PATH ??
+    const contractPath =
+      input.contractPath ??
+      process.env.ROBINHOOD_DEPOSIT_CONTRACT_PATH ??
       join(homedir(), "Desktop", "finance", "private", "robinhood-deposit-contracts.jsonl");
     const contracts = loadDepositContractsFromJsonl(readFileSync(contractPath, "utf8"));
     const contributionYear = input.contributionYear;
-    const contract = contracts.find(candidate => candidate.context.method === input.method &&
-      candidate.context.sourceId === input.sourceId && candidate.context.destinationId === input.destinationId &&
-      candidate.context.destinationType === destination.accountType && candidate.context.contributionYear === contributionYear);
-    if (!contract) throw new Error("No mapped contract for the exact source, rail, destination and contribution year");
-    bound = bindDepositContract(contract, {...input, destinationType:destination.accountType, contributionYear});
+    const contract = contracts.find(
+      (candidate) =>
+        candidate.context.method === input.method &&
+        candidate.context.sourceId === input.sourceId &&
+        candidate.context.destinationId === input.destinationId &&
+        candidate.context.destinationType === destination.accountType &&
+        candidate.context.contributionYear === contributionYear,
+    );
+    if (!contract)
+      throw new Error(
+        "No mapped contract for the exact source, rail, destination and contribution year",
+      );
+    bound = bindDepositContract(contract, {
+      ...input,
+      destinationType: destination.accountType,
+      contributionYear,
+    });
   }
-  const validation = await brokerageGetJson("https://api.robinhood.com/bff-mm/transfer/validation", {}, {
-    direction: "TRANSFER_DIRECTION_DEPOSIT", state: "TRANSFER_STATE_EDIT",
-    "amount.amount": input.amountUsd, "amount.currency": "USD",
-    "source.id": input.sourceId, "sink.id": input.destinationId,
-  });
-  if (validation?.isSuccess !== true) throw new Error("Broker validation rejected this deposit route/amount: " + JSON.stringify(validation));
+  const validation = await brokerageGetJson(
+    "https://api.robinhood.com/bff-mm/transfer/validation",
+    {},
+    {
+      direction: "TRANSFER_DIRECTION_DEPOSIT",
+      state: "TRANSFER_STATE_EDIT",
+      "amount.amount": input.amountUsd,
+      "amount.currency": "USD",
+      "source.id": input.sourceId,
+      "sink.id": input.destinationId,
+    },
+  );
+  if (validation?.isSuccess !== true)
+    throw new Error(
+      "Broker validation rejected this deposit route/amount: " + JSON.stringify(validation),
+    );
   const send = async (step: (typeof bound.steps)[number]) => {
     const result = await executeBrokerageRequest(
       {
@@ -3110,12 +3138,15 @@ export async function executeCapturedDeposit(input: {
   };
   if (!input.dryRun && process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1")
     throw new Error("ROBINHOOD_ALLOW_LIVE_WRITE=1 is required for deposit execution");
-  if (input.dryRun) return {
-    submitted:false, ambiguous:false, receiptStatus:"dry_run",
-    steps:bound.steps.map(step=>({url:step.url,status:0,body:step.body})),
-    idempotencyId:bound.idempotencyId,
-    receiptVerificationCommand:"No transfer submitted (dry run)",
-  };
+  if (input.dryRun)
+    return {
+      submitted: false,
+      ambiguous: false,
+      receiptStatus: "dry_run",
+      steps: bound.steps.map((step) => ({ url: step.url, status: 0, body: step.body })),
+      idempotencyId: bound.idempotencyId,
+      receiptVerificationCommand: "No transfer submitted (dry run)",
+    };
   const first = await send(bound.steps[0]);
   // Do not issue final create unless the first financial operation has a definite 2xx result.
   if (first.status < 200 || first.status >= 300) {
@@ -3125,17 +3156,31 @@ export async function executeCapturedDeposit(input: {
       receiptVerificationCommand: `robinhood-cli deposit-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --method ${input.method} --json`,
     };
   }
-  const preActions = (first.body as {pre_transfer_actions?: unknown[]})?.pre_transfer_actions ?? [];
-  if (input.method === "bank_instant" && preActions.length === 0) throw new Error("Broker did not offer instant bank deposit for this route; no final transfer submitted");
+  const preActions =
+    (first.body as { pre_transfer_actions?: unknown[] })?.pre_transfer_actions ?? [];
+  if (input.method === "bank_instant" && preActions.length === 0)
+    throw new Error(
+      "Broker did not offer instant bank deposit for this route; no final transfer submitted",
+    );
   if (preActions.length) {
-    if (input.method !== 'debit_card' && preActions.every(a=>['rfp_upsell','rtp_upsell'].includes(String((a as {type?:string}).type)))) {
-      const {applyBankTransferChoice}=await import('./bank-transfer-choice.js');
-      bound.steps[1].body=applyBankTransferChoice(bound.steps[1].body,preActions,input.method);
-    } else return {
-      submitted:false, ambiguous:false, receiptStatus:"action_required", steps:[first],
-      idempotencyId:bound.idempotencyId,
-      receiptVerificationCommand:"Complete the broker-provided pre-transfer action before resuming this request",
-    };
+    if (
+      input.method !== "debit_card" &&
+      preActions.every((a) =>
+        ["rfp_upsell", "rtp_upsell"].includes(String((a as { type?: string }).type)),
+      )
+    ) {
+      const { applyBankTransferChoice } = await import("./bank-transfer-choice.js");
+      bound.steps[1].body = applyBankTransferChoice(bound.steps[1].body, preActions, input.method);
+    } else
+      return {
+        submitted: false,
+        ambiguous: false,
+        receiptStatus: "action_required",
+        steps: [first],
+        idempotencyId: bound.idempotencyId,
+        receiptVerificationCommand:
+          "Complete the broker-provided pre-transfer action before resuming this request",
+      };
   }
   const final = await send(bound.steps[1]);
   return {
@@ -3173,7 +3218,9 @@ export async function getDepositStatus(input: {
     {},
     { page_size: "100" },
   );
-  const receipts = correlateUnifiedDepositReceipts(rows, input).filter(r=>!input.serverReceiptId || r.serverReceiptId===input.serverReceiptId);
+  const receipts = correlateUnifiedDepositReceipts(rows, input).filter(
+    (r) => !input.serverReceiptId || r.serverReceiptId === input.serverReceiptId,
+  );
   return {
     checked: true,
     receiptVerified: Boolean(input.serverReceiptId) && receipts.length === 1,
@@ -3189,11 +3236,17 @@ export async function getDepositInventory(): Promise<import("./deposit.js").Depo
     brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/"),
     brokerageGetJson("https://cashier.robinhood.com/ach/relationships/"),
   ]);
-  return buildDepositInventory(
-    Array.isArray(accounts?.results) ? accounts.results : [],
-    [...(Array.isArray(relationships?.results) ? relationships.results : []),
-      ...(Array.isArray(accounts?.results) ? accounts.results : []).filter((r: Record<string,unknown>)=>r.is_external===true && r.type==="dcf").map((r: Record<string,unknown>)=>({id:r.account_id,type:"debit_card",verified:r.status==="approved",state:r.status}))],
-  );
+  return buildDepositInventory(Array.isArray(accounts?.results) ? accounts.results : [], [
+    ...(Array.isArray(relationships?.results) ? relationships.results : []),
+    ...(Array.isArray(accounts?.results) ? accounts.results : [])
+      .filter((r: Record<string, unknown>) => r.is_external === true && r.type === "dcf")
+      .map((r: Record<string, unknown>) => ({
+        id: r.account_id,
+        type: "debit_card",
+        verified: r.status === "approved",
+        state: r.status,
+      })),
+  ]);
 }
 
 /**
@@ -3208,6 +3261,12 @@ export async function executeCapturedWithdrawal(input: {
   destinationId: string;
   amountUsd: string;
   rail: import("./withdrawal.js").WithdrawalRail;
+  iraDistribution?: {
+    distributionType: string;
+    federalTaxWithholdingPercent: string;
+    stateTaxWithholdingPercent: string;
+    state: string;
+  };
   limitQuote?: import("./withdrawal.js").WithdrawalLimitQuote;
   history?: import("./withdrawal.js").WithdrawalHistoryRow[];
   retirement?: import("./withdrawal.js").RetirementWithdrawal;
@@ -3230,18 +3289,19 @@ export async function executeCapturedWithdrawal(input: {
   if (!destination)
     throw new Error("destinationId and rail are not an observed eligible withdrawal route");
   // Validate this exact amount and route immediately before building a request.
-  const {getMoneyMovementQuote}=await import("./money-movement-quote.js");
-  const liveQuote=await getMoneyMovementQuote({...input,kind:"withdrawal"});
-  if(!liveQuote.executable)throw new Error(liveQuote.reasons.join("; "));
+  const { getMoneyMovementQuote } = await import("./money-movement-quote.js");
+  const liveQuote = await getMoneyMovementQuote({ ...input, kind: "withdrawal" });
+  if (!liveQuote.executable) throw new Error(liveQuote.reasons.join("; "));
   const validationPassed = liveQuote.validation?.isSuccess === true;
-  if (!validationPassed) throw new Error("The broker did not validate this withdrawal amount and route");
+  if (!validationPassed)
+    throw new Error("The broker did not validate this withdrawal amount and route");
   const effectiveQuote: import("./withdrawal.js").WithdrawalLimitQuote = input.limitQuote ?? {
     sourceAccountId: input.sourceId,
     destinationId: input.destinationId,
     rail: input.rail,
     observedAt: new Date().toISOString(),
     eligible: true,
-    fee: {known:true,usd:String(liveQuote.fee.service_fee)},
+    fee: { known: true, usd: String(liveQuote.fee.service_fee) },
     holds: [],
     windows: [],
     validationPassed,
@@ -3251,15 +3311,16 @@ export async function executeCapturedWithdrawal(input: {
   const native = buildNativeWithdrawalRequest({
     idempotencyId: input.idempotencyId,
     sourceId: input.sourceId,
-    sourceType: "rhs",
+    sourceType: source.accountType,
     destinationId: input.destinationId,
     destinationType: input.rail === "debit_card" ? "debit_card" : "ach",
     amountUsd: input.amountUsd,
     rail: input.rail,
+    iraDistribution: input.iraDistribution,
   });
   const bound = { body: native.body, idempotencyId: String(native.body.id) };
   const plan = buildWithdrawalPlan({
-    maxFeeUsd:input.maxFeeUsd,
+    maxFeeUsd: input.maxFeeUsd,
     amountUsd: input.amountUsd,
     source,
     destination,
@@ -3279,31 +3340,45 @@ export async function executeCapturedWithdrawal(input: {
   if (input.dryRun) {
     return {
       ...classifyWithdrawalReceipt({ status: 0, body: { dryRun: true } }),
-      receiptStatus:"dry_run",
+      receiptStatus: "dry_run",
       idempotencyId: bound.idempotencyId,
       receiptVerificationCommand: `robinhood-cli withdrawal-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --json`,
     };
   }
+  const endpoints = source.accountType.startsWith("ira")
+    ? ["https://bonfire.robinhood.com/transfer/pre_create/", native.url]
+    : [native.url];
   try {
-    const result = await executeBrokerageRequest(
-      {
-        url: native.url,
-        method: "POST",
-        risk: "write-mutate",
-        mutatesAccount: true,
-        requiresAuth: true,
-        mode: "live",
-      } as unknown as PlannedBrokerageRequest,
-      { body: bound.body, dryRun: false, fullBody: true, autoRetry: false },
-    );
-    let body: unknown;
-    try {
-      body = result.body ? JSON.parse(result.body) : undefined;
-    } catch {
-      body = undefined;
+    let last: { status: number; body?: unknown } | undefined;
+    for (const url of endpoints) {
+      const result = await executeBrokerageRequest(
+        {
+          url,
+          method: "POST",
+          risk: "write-mutate",
+          mutatesAccount: true,
+          requiresAuth: true,
+          mode: "live",
+        } as unknown as PlannedBrokerageRequest,
+        { body: bound.body, dryRun: false, fullBody: true, autoRetry: false },
+      );
+      let body: unknown;
+      try {
+        body = result.body ? JSON.parse(result.body) : undefined;
+      } catch {
+        body = undefined;
+      }
+      last = { status: result.status, body };
+      if (result.status < 200 || result.status >= 300) {
+        return {
+          ...classifyWithdrawalReceipt({ status: result.status, body }),
+          idempotencyId: bound.idempotencyId,
+          receiptVerificationCommand: `robinhood-cli withdrawal-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --json`,
+        };
+      }
     }
     return {
-      ...classifyWithdrawalReceipt({ status: result.status, body }),
+      ...classifyWithdrawalReceipt(last ?? { status: 0, body: undefined }),
       idempotencyId: bound.idempotencyId,
       receiptVerificationCommand: `robinhood-cli withdrawal-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --json`,
     };
@@ -3340,7 +3415,7 @@ export async function getWithdrawalStatus(input: {
         row?.originating_account_id === input.sourceId &&
         row?.receiving_account_id === input.destinationId &&
         Number(row?.amount) === Number(input.amountUsd) &&
-        (!input.serverReceiptId || row.id===input.serverReceiptId) &&
+        (!input.serverReceiptId || row.id === input.serverReceiptId) &&
         typeof row?.id === "string",
     )
     .map((row) => ({
@@ -3366,7 +3441,13 @@ export async function getWithdrawalRead(input: {
   destinationId: string;
   amountUsd: string;
   rail: import("./withdrawal.js").WithdrawalRail;
-}): Promise<{ checked: true; validation: unknown; history: unknown[]; validationRoute: string; historyRoute: string }> {
+}): Promise<{
+  checked: true;
+  validation: unknown;
+  history: unknown[];
+  validationRoute: string;
+  historyRoute: string;
+}> {
   const params = new URLSearchParams({
     "amount.amount": input.amountUsd,
     "amount.currency": "USD",
@@ -3378,8 +3459,16 @@ export async function getWithdrawalRead(input: {
   const validationRoute = `https://api.robinhood.com/bff-mm/transfer/validation?${params}`;
   const historyRoute = "https://bonfire.robinhood.com/paymenthub/unified_transfers/?page_size=100";
   const [validation, history] = await Promise.all([
-    brokerageGetJson("https://api.robinhood.com/bff-mm/transfer/validation", {}, Object.fromEntries(params)),
-    brokerageGetAllResults("https://bonfire.robinhood.com/paymenthub/unified_transfers/", {}, { page_size: "100" }),
+    brokerageGetJson(
+      "https://api.robinhood.com/bff-mm/transfer/validation",
+      {},
+      Object.fromEntries(params),
+    ),
+    brokerageGetAllResults(
+      "https://bonfire.robinhood.com/paymenthub/unified_transfers/",
+      {},
+      { page_size: "100" },
+    ),
   ]);
   return { checked: true, validation, history, validationRoute, historyRoute };
 }

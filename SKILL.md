@@ -130,7 +130,7 @@ The dedicated `robinhood-tax` binary accepts the same arguments without the lead
 
 Use `internal-transfer-inventory` / `robinhood_internal_transfer_inventory` to discover owned accounts. Use `internal-transfer-execute` / `robinhood_internal_transfer_execute` for a native owned-account transfer. Quote first with `money-movement-quote`. Independently reconcile with `money-movement-receipt` and the exact server `transfer_id`.
 
-Retirement **destinations** require an explicit contribution year. Retirement **sources** require route-specific distribution/conversion inputs; this feature does not infer a distribution or rollover. A 2xx is not proof until the unified-transfer GET matches the current receipt ID, amount, source, and destination.
+Retirement **destinations** require an explicit contribution year. Retirement **sources** require explicit distribution type, two-letter withholding state, and withholding percents; this feature does not infer a distribution or rollover. A 2xx is not proof until the unified-transfer GET matches the current receipt ID, amount, source, and destination.
 
 **Evidence:** authenticated `GET https://bonfire.robinhood.com/transfer/accounts/`, `GET https://bonfire.robinhood.com/paymenthub/unified_transfers/?page_size=100`, `GET https://api.robinhood.com/bff-mm/transfer/validation`, and observed `POST https://bonfire.robinhood.com/transfer/pre_create/` then `POST https://bonfire.robinhood.com/transfer/create/` are catalogued in [`api-map/brokerage-routes.json`](api-map/brokerage-routes.json). See [`knowledge/internal-transfers.md`](knowledge/internal-transfers.md).
 

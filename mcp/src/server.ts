@@ -1175,6 +1175,15 @@ server.registerTool(
       destinationId: z.string().min(1),
       amountUsd: z.string(),
       contributionYear: z.number().int().optional(),
+      contributionType: z.enum(["contribution", "rollover"]).optional(),
+      iraDistribution: z
+        .object({
+          distributionType: z.string().min(1),
+          federalTaxWithholdingPercent: z.string(),
+          stateTaxWithholdingPercent: z.string(),
+          state: z.string().length(2),
+        })
+        .optional(),
       idempotencyId: z.string().optional(),
       dryRun: z.boolean().default(false),
     }),
@@ -1334,6 +1343,14 @@ server.registerTool(
       destinationId: z.string().min(1),
       amountUsd: z.string(),
       rail: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+      iraDistribution: z
+        .object({
+          distributionType: z.string().min(1),
+          federalTaxWithholdingPercent: z.string(),
+          stateTaxWithholdingPercent: z.string(),
+          state: z.string().length(2),
+        })
+        .optional(),
       limitQuote: z
         .object({
           sourceAccountId: z.string(),

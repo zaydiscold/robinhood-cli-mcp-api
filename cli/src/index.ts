@@ -296,6 +296,11 @@ program
   .requiredOption("--destination-id <id>")
   .requiredOption("--amount <usd>")
   .option("--contribution-year <year>")
+  .option("--contribution-type <type>")
+  .option("--distribution-type <type>")
+  .option("--federal-withholding-percent <percent>")
+  .option("--state-withholding-percent <percent>")
+  .option("--withholding-state <code>")
   .option("--idempotency-id <id>")
   .option("--dry-run", "construct and validate without submitting", false)
   .action(async (opts) => {
@@ -309,6 +314,19 @@ program
           amountUsd: opts.amount,
           contributionYear:
             opts.contributionYear === undefined ? undefined : Number(opts.contributionYear),
+          contributionType: opts.contributionType,
+          iraDistribution:
+            opts.distributionType &&
+            opts.federalWithholdingPercent &&
+            opts.stateWithholdingPercent &&
+            opts.withholdingState
+              ? {
+                  distributionType: opts.distributionType,
+                  federalTaxWithholdingPercent: opts.federalWithholdingPercent,
+                  stateTaxWithholdingPercent: opts.stateWithholdingPercent,
+                  state: opts.withholdingState,
+                }
+              : undefined,
           idempotencyId: opts.idempotencyId,
           dryRun: opts.dryRun,
         },
@@ -462,6 +480,10 @@ program
   .requiredOption("--rail <rail>")
   .option("--max-fee <usd>", "maximum authorized fee", "0.00")
   .option("--idempotency-id <id>", "original request identity for a reconciled continuation")
+  .option("--distribution-type <type>")
+  .option("--federal-withholding-percent <percent>")
+  .option("--state-withholding-percent <percent>")
+  .option("--withholding-state <code>")
   .option("--limit-quote-json <json>", "fresh authenticated source × rail × destination quote")
   .option("--history-json <json>", "current withdrawal history (defaults to [])", "[]")
   .option("--contract-path <path>", "optional operator-private capture override")
@@ -479,6 +501,10 @@ program
       limitQuoteJson?: string;
       maxFee?: string;
       idempotencyId?: string;
+      distributionType?: string;
+      federalWithholdingPercent?: string;
+      stateWithholdingPercent?: string;
+      withholdingState?: string;
       historyJson: string;
       contractPath?: string;
       liveWrite: boolean;
@@ -495,6 +521,18 @@ program
             destinationId: opts.destinationId,
             amountUsd: opts.amount,
             rail: opts.rail,
+            iraDistribution:
+              opts.distributionType &&
+              opts.federalWithholdingPercent &&
+              opts.stateWithholdingPercent &&
+              opts.withholdingState
+                ? {
+                    distributionType: opts.distributionType,
+                    federalTaxWithholdingPercent: opts.federalWithholdingPercent,
+                    stateTaxWithholdingPercent: opts.stateWithholdingPercent,
+                    state: opts.withholdingState,
+                  }
+                : undefined,
             limitQuote: opts.limitQuoteJson ? JSON.parse(opts.limitQuoteJson) : undefined,
             history: JSON.parse(opts.historyJson),
             contractPath: opts.contractPath,

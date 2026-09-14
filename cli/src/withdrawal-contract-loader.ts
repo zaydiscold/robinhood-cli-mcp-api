@@ -26,7 +26,7 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 const knownSourceTypes = new Set(["rhs", "brokerage", "rhs_account", "ira", "ira_roth"]);
-const knownDestinationTypes = new Set(["ach", "bank_account", "debit_card"]);
+const knownDestinationTypes = new Set(["ach", "bank_account", "dcf", "debit_card"]);
 
 /** Loads action-scoped final create requests from the operator-private JSONL capture. */
 export function loadWithdrawalContractsFromJsonl(text: string): WithdrawalContract[] {
@@ -39,7 +39,7 @@ export function loadWithdrawalContractsFromJsonl(text: string): WithdrawalContra
     } catch {
       continue;
     }
-    if (row?.action !== "decline-upsell" || !Array.isArray(row.events)) continue;
+    if (!["decline-upsell", "final"].includes(row?.action) || !Array.isArray(row.events)) continue;
     const event = row.events.find(
       (item: any) =>
         item?.dispatch === "blocked_before_dispatch" &&
@@ -70,13 +70,15 @@ export function loadWithdrawalContractsFromJsonl(text: string): WithdrawalContra
       !knownDestinationTypes.has(sink.type)
     )
       continue;
-    if (typeof additionalData.is_instant_transfer !== "boolean") continue;
-    const rail: WithdrawalRail =
-      sink.type === "debit_card"
-        ? "debit_card"
-        : additionalData.is_instant_transfer
-          ? "bank_instant"
-          : "bank_standard";
+    const isCard = sink.type === "dcf" || sink.type === "debit_card";
+    const isRetirementSource = source.type === "ira" || source.type === "ira_roth";
+    if (!isCard && !isRetirementSource && typeof additionalData.is_instant_transfer !== "boolean")
+      continue;
+    const rail: WithdrawalRail = isCard
+      ? "debit_card"
+      : additionalData.is_instant_transfer
+        ? "bank_instant"
+        : "bank_standard";
     contracts.push({
       context: {
         sourceId: source.id,

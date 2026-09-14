@@ -21,6 +21,8 @@ Contribution year is required only for a retirement destination. Retirement sour
 - `GET /transfer/calculate_distribution_fee/` and `GET /transfer/calculate_tax_withholdings/` with query keys `account_number`, `account_type`, `amount`, `distribution_type`, `federal_withholding_percent`, `state_withholding_percent`. JSON POST returns 405.
 
 Live history correlation uses `originating_account_id` as the source and `receiving_account_id` as the destination. Independently verify with `money-movement-receipt` and the exact server `transfer_id`.
+Before a live send or post-verification continuation, the engine reads complete PaymentHub history and refuses a reused client identity or active same-route transfer. It never replays `create` merely because device approval succeeded.
+An atomic intent lock is acquired before preflight and blocks concurrent fresh-ID calls with the same kind, account pair, rail, normalized amount and IRA semantics until terminal reconciliation.
 
 ## Commands
 

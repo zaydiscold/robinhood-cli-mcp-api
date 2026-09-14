@@ -86,6 +86,7 @@ import {
   buildWithdrawalInventory,
   buildWithdrawalPlan,
   classifyWithdrawalReceipt,
+  getWithdrawalMutationUrls,
 } from "./withdrawal.js";
 import { buildInternalTransferInventory } from "./internal-transfer.js";
 import { buildRothDepositSourceInventory } from "./roth-deposit.js";
@@ -3100,6 +3101,34 @@ export async function executeCapturedDeposit(input: {
       contributionYear,
     });
   }
+  if (!input.dryRun) {
+    const { reconcileBeforeMoneyMovement } = await import("./money-movement-receipt.js");
+    const existing = await reconcileBeforeMoneyMovement({
+      clientId: bound.idempotencyId,
+      sourceId: input.sourceId,
+      destinationId: input.destinationId,
+      amountUsd: input.amountUsd,
+      kind: "deposit",
+      rail: input.method,
+    });
+    if (existing)
+      return {
+        submitted: false,
+        ambiguous: false,
+        receiptStatus: "already_exists",
+        serverReceiptId: existing.serverReceiptId,
+        steps: [],
+        idempotencyId: bound.idempotencyId,
+        receiptVerificationCommand: `robinhood-cli money-movement-receipt --receipt-id ${existing.serverReceiptId} --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --kind deposit`,
+      };
+  }
+  const { getMoneyMovementQuote } = await import("./money-movement-quote.js");
+  const liveQuote = await getMoneyMovementQuote({
+    ...input,
+    kind: "deposit",
+    rail: input.method,
+  });
+  if (!liveQuote.executable) throw new Error(liveQuote.reasons.join("; "));
   const validation = await brokerageGetJson(
     "https://api.robinhood.com/bff-mm/transfer/validation",
     {},
@@ -3307,18 +3336,41 @@ export async function executeCapturedWithdrawal(input: {
     validationPassed,
     provenance: "authenticated_limit_read",
   };
-  // The authenticated UI capture established this native contract; builds are bound only to normal inputs.
-  const native = buildNativeWithdrawalRequest({
-    idempotencyId: input.idempotencyId,
-    sourceId: input.sourceId,
-    sourceType: source.accountType,
-    destinationId: input.destinationId,
-    destinationType: input.rail === "debit_card" ? "debit_card" : "ach",
-    amountUsd: input.amountUsd,
-    rail: input.rail,
-    iraDistribution: input.iraDistribution,
-  });
-  const bound = { body: native.body, idempotencyId: String(native.body.id) };
+  const expectedDestinationType = input.rail === "debit_card" ? "dcf" : "ach";
+  let bound: { body: Record<string, unknown>; idempotencyId: string };
+  let requestUrl = "https://bonfire.robinhood.com/transfer/create/";
+  if (input.contractPath) {
+    const { bindWithdrawalContract, loadWithdrawalContractsFromJsonl } =
+      await import("./withdrawal-contract-loader.js");
+    const contract = loadWithdrawalContractsFromJsonl(
+      readFileSync(input.contractPath, "utf8"),
+    ).find(
+      (candidate) =>
+        candidate.context.sourceId === input.sourceId &&
+        candidate.context.sourceType === source.accountType &&
+        candidate.context.destinationId === input.destinationId &&
+        candidate.context.destinationType === expectedDestinationType &&
+        candidate.context.rail === input.rail,
+    );
+    if (!contract)
+      throw new Error("No captured withdrawal contract matches this source, destination, and rail");
+    bound = bindWithdrawalContract(contract, input);
+    requestUrl = contract.request.url;
+  } else {
+    // The authenticated UI capture established this native contract; builds bind normal inputs only.
+    const native = buildNativeWithdrawalRequest({
+      idempotencyId: input.idempotencyId,
+      sourceId: input.sourceId,
+      sourceType: source.accountType,
+      destinationId: input.destinationId,
+      destinationType: expectedDestinationType,
+      amountUsd: input.amountUsd,
+      rail: input.rail,
+      iraDistribution: input.iraDistribution,
+    });
+    bound = { body: native.body, idempotencyId: String(native.body.id) };
+    requestUrl = native.url;
+  }
   const plan = buildWithdrawalPlan({
     maxFeeUsd: input.maxFeeUsd,
     amountUsd: input.amountUsd,
@@ -3329,9 +3381,9 @@ export async function executeCapturedWithdrawal(input: {
     retirement: input.retirement,
     capturedRequest: {
       method: "POST",
-      url: native.url,
+      url: requestUrl,
       body: bound.body,
-      amountField: native.amountField,
+      amountField: "amount",
     },
   });
   if (!plan.executable) throw new Error(`Withdrawal is not executable: ${plan.gates.join("; ")}`);
@@ -3345,9 +3397,25 @@ export async function executeCapturedWithdrawal(input: {
       receiptVerificationCommand: `robinhood-cli withdrawal-status --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --json`,
     };
   }
-  const endpoints = source.accountType.startsWith("ira")
-    ? ["https://bonfire.robinhood.com/transfer/pre_create/", native.url]
-    : [native.url];
+  const { reconcileBeforeMoneyMovement } = await import("./money-movement-receipt.js");
+  const existing = await reconcileBeforeMoneyMovement({
+    clientId: bound.idempotencyId,
+    sourceId: input.sourceId,
+    destinationId: input.destinationId,
+    amountUsd: input.amountUsd,
+    kind: "withdrawal",
+    rail: input.rail,
+  });
+  if (existing)
+    return {
+      submitted: false,
+      ambiguous: false,
+      receiptStatus: "already_exists",
+      serverReceiptId: existing.serverReceiptId,
+      idempotencyId: bound.idempotencyId,
+      receiptVerificationCommand: `robinhood-cli money-movement-receipt --receipt-id ${existing.serverReceiptId} --source-id ${input.sourceId} --destination-id ${input.destinationId} --amount ${input.amountUsd} --kind withdrawal`,
+    };
+  const endpoints = getWithdrawalMutationUrls(source.accountType, input.rail);
   try {
     let last: { status: number; body?: unknown } | undefined;
     for (const url of endpoints) {
@@ -3481,10 +3549,12 @@ export async function getWithdrawalInventory(): Promise<
     brokerageGetJson("https://bonfire.robinhood.com/transfer/accounts/"),
     brokerageGetJson("https://cashier.robinhood.com/ach/relationships/"),
   ]);
-  return buildWithdrawalInventory(
-    Array.isArray(accounts?.results) ? accounts.results : [],
-    Array.isArray(relationships?.results) ? relationships.results : [],
-  );
+  return buildWithdrawalInventory(Array.isArray(accounts?.results) ? accounts.results : [], [
+    ...(Array.isArray(relationships?.results) ? relationships.results : []),
+    ...(Array.isArray(accounts?.results) ? accounts.results : []).filter(
+      (row: Record<string, unknown>) => row.is_external === true && row.type === "dcf",
+    ),
+  ]);
 }
 
 /** Live account graph and unified-transfer history reads from captured authenticated GET routes. */

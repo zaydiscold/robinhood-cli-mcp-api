@@ -307,6 +307,19 @@ function writeStatus(result: object, opts: { dryRun: boolean; reason?: string })
   return jsonResponse({ executed: !opts.dryRun, executionStatus, ...result });
 }
 
+function moneyMovementWriteStatus(
+  result: { submitted?: boolean; receiptStatus?: string },
+  dryRun: boolean,
+) {
+  const executed = !dryRun && result.submitted === true;
+  const executionStatus = dryRun
+    ? "DRY RUN — no money-movement request was sent"
+    : executed
+      ? "SUBMITTED — reconcile the exact server receipt before treating it as settled"
+      : `NOT SUBMITTED — ${result.receiptStatus ?? "provider action or reconciliation required"}`;
+  return jsonResponse({ executed, executionStatus, ...result });
+}
+
 function toolAnnotations(readOnly: boolean, risk: RiskLevel) {
   const destructive =
     risk === "write-mutate" || risk === "write-or-sensitive" || risk === "destructive";
@@ -1090,7 +1103,7 @@ server.registerTool(
   },
   async (input) => {
     try {
-      return writeStatus(await resumeMoneyMovement(input.operationId), { dryRun: false });
+      return moneyMovementWriteStatus(await resumeMoneyMovement(input.operationId), false);
     } catch (error) {
       return mcpError(error);
     }
@@ -1190,9 +1203,10 @@ server.registerTool(
   },
   async (input) => {
     try {
-      return writeStatus(await runMoneyMovement({ kind: "internal", input }), {
-        dryRun: input.dryRun,
-      });
+      return moneyMovementWriteStatus(
+        await runMoneyMovement({ kind: "internal", input }),
+        input.dryRun,
+      );
     } catch (error) {
       return mcpError(error);
     }
@@ -1334,7 +1348,7 @@ server.registerTool(
   {
     title: "Robinhood Withdrawal Execute",
     description:
-      "Execute exactly one private captured withdrawal create request. Requires selected source, destination, amount, rail, fresh authenticated quote, explicit live-write approval, and no retry or pre-create.",
+      "Build or execute the captured withdrawal sequence for standard bank, instant bank, debit card, or IRA distribution. Requires an exact pair, fresh authenticated quote, explicit live-write approval, and never retries.",
     annotations: toolAnnotations(false, "write-mutate"),
     inputSchema: z.object({
       maxFeeUsd: z.string().optional(),
@@ -1390,9 +1404,10 @@ server.registerTool(
   },
   async (input) => {
     try {
-      return writeStatus(await runMoneyMovement({ kind: "withdrawal", input }), {
-        dryRun: input.dryRun,
-      });
+      return moneyMovementWriteStatus(
+        await runMoneyMovement({ kind: "withdrawal", input }),
+        input.dryRun,
+      );
     } catch (error) {
       return mcpError(error);
     }
@@ -1428,6 +1443,25 @@ server.registerTool(
   async (input) => jsonResponse(await getWithdrawalRead(input)),
 );
 
+const depositLimitQuoteSchema = z.object({
+  sourceId: z.string(),
+  method: z.enum(["bank_standard", "bank_instant", "debit_card"]),
+  destinationAccountId: z.string(),
+  observedAt: z.string(),
+  eligible: z.boolean(),
+  fee: z.object({ known: z.boolean(), usd: z.string().optional() }),
+  holds: z.array(z.string()),
+  windows: z.array(
+    z.object({
+      period: z.enum(["per_transfer", "daily", "rolling"]),
+      amountRemainingUsd: z.string().optional(),
+      countRemaining: z.number().int().optional(),
+      windowEndsAt: z.string().optional(),
+    }),
+  ),
+  provenance: z.literal("authenticated_limit_read"),
+});
+
 server.registerTool(
   "robinhood_deposit_quote",
   {
@@ -1448,6 +1482,7 @@ server.registerTool(
         eligible: z.boolean(),
       }),
       fee: z.object({ known: z.boolean(), usd: z.string().optional() }),
+      limitQuote: depositLimitQuoteSchema.optional(),
       history: z.array(
         z.object({
           amountUsd: z.string(),
@@ -1488,6 +1523,7 @@ server.registerTool(
         eligible: z.boolean(),
       }),
       fee: z.object({ known: z.boolean(), usd: z.string().optional() }),
+      limitQuote: depositLimitQuoteSchema.optional(),
       history: z.array(
         z.object({
           amountUsd: z.string(),
@@ -1548,9 +1584,10 @@ server.registerTool(
   },
   async (input) => {
     try {
-      return writeStatus(await runMoneyMovement({ kind: "deposit", input }), {
-        dryRun: input.dryRun,
-      });
+      return moneyMovementWriteStatus(
+        await runMoneyMovement({ kind: "deposit", input }),
+        input.dryRun,
+      );
     } catch (error) {
       return mcpError(error);
     }

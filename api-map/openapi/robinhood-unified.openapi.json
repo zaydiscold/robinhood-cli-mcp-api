@@ -8539,6 +8539,112 @@
         "x-robinhood-source": "brokerage-browser-map"
       }
     },
+    "/bff-mm/transfer/validation": {
+      "get": {
+        "operationId": "brokerage_get_bff_mm_transfer_validation",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [
+          {
+            "name": "amount.amount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "amount.currency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "sink.id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "source.id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized response shape observed in authenticated browser traffic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "isSuccess": {
+                      "type": "boolean"
+                    },
+                    "errorDetails": {}
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "api.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://api.robinhood.com/bff-mm/transfer/validation"
+        ],
+        "x-robinhood-sources": [
+          "community-seed"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
     "/bw/account/futures": {
       "get": {
         "operationId": "brokerage_get_bw_account_futures",
@@ -24400,6 +24506,56 @@
           "transfers"
         ],
         "x-robinhood-observation-count": 228,
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/limitshub/v1/limits/": {
+      "get": {
+        "operationId": "brokerage_get_limitshub_v1_limits",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sanitized response shape observed in authenticated browser traffic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "product_limits": {
+                      "type": "array"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/limitshub/v1/limits/"
+        ],
+        "x-robinhood-sources": [
+          "WireBrowser App module 815722 LimitHubRecord, 2026-09-11"
+        ],
+        "x-robinhood-seen-on": [],
         "x-robinhood-auth-observed": true,
         "security": [
           {
@@ -46518,6 +46674,492 @@
           "account-transfers"
         ],
         "x-robinhood-observation-count": 1,
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/transfer/calculate_distribution_fee/": {
+      "get": {
+        "operationId": "brokerage_get_transfer_calculate_distribution_fee",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "account_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "distribution_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "federal_withholding_percent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "state_withholding_percent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized response shape observed in authenticated browser traffic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "string"
+                    },
+                    "enoki_removal_fee": {},
+                    "enoki_removal_alert": {}
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/transfer/calculate_distribution_fee/"
+        ],
+        "x-robinhood-sources": [
+          "WireBrowser App IRACalculateDistributionFeeModelRecord + live GET 2026-09-11"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/transfer/calculate_tax_withholdings/": {
+      "get": {
+        "operationId": "brokerage_get_transfer_calculate_tax_withholdings",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "account_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "distribution_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "federal_withholding_percent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "state_withholding_percent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized response shape observed in authenticated browser traffic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "distribution_type": {
+                      "type": "string"
+                    },
+                    "federal_withholding_percent": {
+                      "type": "string"
+                    },
+                    "state_withholding_percent": {
+                      "type": "string"
+                    },
+                    "amount_received": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/transfer/calculate_tax_withholdings/"
+        ],
+        "x-robinhood-sources": [
+          "WireBrowser App IRACalculateTaxWithholdingsViewModelRecord + live GET 2026-09-11"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/transfer/create/": {
+      "post": {
+        "operationId": "brokerage_post_transfer_create",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: write-mutate. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Response shape not yet live-verified.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "write-mutate",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/transfer/create/"
+        ],
+        "x-robinhood-sources": [
+          "community-seed"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/transfer/ira_contributions_questionnaire/": {
+      "get": {
+        "operationId": "brokerage_get_transfer_ira_contributions_questionnaire",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sanitized response shape observed in authenticated browser traffic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contribution_type_view_model": {
+                      "type": "object"
+                    },
+                    "tax_year_view_model": {
+                      "type": "object"
+                    },
+                    "match_rate_view_model": {
+                      "type": "object"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/transfer/ira_contributions_questionnaire/"
+        ],
+        "x-robinhood-sources": [
+          "WireBrowser App IRAContributionsViewmodelRecord + live GET 2026-09-11"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/transfer/ira_distributions_questionnaire/": {
+      "get": {
+        "operationId": "brokerage_get_transfer_ira_distributions_questionnaire",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [
+          {
+            "name": "account_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized response shape observed in authenticated browser traffic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "account_type": {
+                      "type": "string"
+                    },
+                    "distribution_faq_view_model": {
+                      "type": "object"
+                    },
+                    "distribution_type_view_model": {
+                      "type": "object"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/transfer/ira_distributions_questionnaire/?account_type={account_type}"
+        ],
+        "x-robinhood-sources": [
+          "WireBrowser App IRADistributionViewmodelRecord + live GET 2026-09-11"
+        ],
+        "x-robinhood-seen-on": [],
+        "x-robinhood-auth-observed": true,
+        "security": [
+          {
+            "brokerageToken": []
+          },
+          {
+            "browserCookie": []
+          }
+        ],
+        "x-robinhood-source": "brokerage-browser-map"
+      }
+    },
+    "/transfer/service_fee/": {
+      "get": {
+        "operationId": "brokerage_get_transfer_service_fee",
+        "summary": "Money Movement brokerage route",
+        "description": "Personal route map entry. Risk: sensitive-read. Live execution requires ROBINHOOD_BROKERAGE_TOKEN or ROBINHOOD_COOKIE. Use dryRun/--dry-run to avoid sending.",
+        "tags": [
+          "money-movement"
+        ],
+        "parameters": [
+          {
+            "name": "amount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "sink_account_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "source_account_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          },
+          {
+            "name": "transfer_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Observed query key from route templates or sanitized browser capture; values are intentionally not stored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized response shape observed in authenticated browser traffic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "service_fee": {
+                      "type": "string"
+                    },
+                    "net_amount": {
+                      "type": "string"
+                    },
+                    "original_amount": {
+                      "type": "string"
+                    },
+                    "service_fee_discount_amount": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        },
+        "x-robinhood-risk": "sensitive-read",
+        "x-robinhood-hosts": [
+          "bonfire.robinhood.com"
+        ],
+        "x-robinhood-route-templates": [
+          "https://bonfire.robinhood.com/transfer/service_fee/"
+        ],
+        "x-robinhood-sources": [
+          "WireBrowser App module 81502 TransferServiceFeeRecord, 2026-09-11"
+        ],
+        "x-robinhood-seen-on": [
+          "account-transfers"
+        ],
         "x-robinhood-auth-observed": true,
         "security": [
           {

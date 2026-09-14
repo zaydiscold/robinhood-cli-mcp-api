@@ -4,10 +4,10 @@ Source: official Robinhood Crypto Trading OpenAPI plus sanitized authenticated C
 
 Crypto operations are official Robinhood-published endpoints and should use Ed25519 signing. Brokerage/account operations are browser-backed route-map entries and use caller-owned brokerage token or browser cookie auth.
 
-Current count: 541 route entries.
+Current count: 549 route entries.
 Official Crypto route entries: 16.
-Brokerage/account route entries: 525.
-Risk counts: destructive=11, read=143, sensitive-read=355, write-mutate=13, write-or-sensitive=7, write-safe=12.
+Brokerage/account route entries: 533.
+Risk counts: destructive=11, read=143, sensitive-read=362, write-mutate=14, write-or-sensitive=7, write-safe=12.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
@@ -46,6 +46,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2; cdp-2026-09-07-authenticated-sanitized-v2 | `https://api.robinhood.com/beacon/base-indicators` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2; cdp-2026-09-07-authenticated-sanitized-v2 | `https://api.robinhood.com/beacon/indicator-groups` |
 | no | read | GET | marketdata | api.robinhood.com | cdp-2026-09-07-authenticated-sanitized-v2 | `https://api.robinhood.com/beacon/scans` |
+| no | sensitive-read | GET | money-movement | api.robinhood.com | brokerage-browser-map | `https://api.robinhood.com/bff-mm/transfer/validation` |
 | no | sensitive-read | GET | account, futures | api.robinhood.com | cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/bw/account/futures` |
 | no | sensitive-read | GET | account, futures | api.robinhood.com | cdp-2026-09-07-authenticated-sanitized-v2 | `https://api.robinhood.com/bw/account/futures?rhsAccountNumber={rhsAccountNumber}` |
 | no | sensitive-read | GET | unknown | api.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; cdp-2026-09-07-authenticated-sanitized-v2 | `https://api.robinhood.com/bw/config` |
@@ -411,6 +412,7 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | read | GET | marketdata | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/instruments/chart-bounds/` |
 | no | read | GET | marketdata | bonfire.robinhood.com | cdp-2026-09-07-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/instruments/chart-bounds/?now={now}` |
 | no | read | GET | marketdata | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; cdp-2026-09-07-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/instruments/spans/` |
+| no | sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App module 815722 LimitHubRecord, 2026-09-11 | `https://bonfire.robinhood.com/limitshub/v1/limits/` |
 | no | sensitive-read | GET | account | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/margin/{id}/` |
 | no | sensitive-read | GET | account | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/margin/{id}/buying_power_hub_view` |
 | no | sensitive-read | GET | account, telemetry-config | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/margin/{id}/eligibility` |
@@ -497,6 +499,12 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | no | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-09-07-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/tax_info/instrument/{uuid}/withholding_status/` |
 | no | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized | `https://bonfire.robinhood.com/tax_info/withheld_amount/` |
 | no | sensitive-read | GET | account | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/transfer/accounts/` |
+| no | sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App IRACalculateDistributionFeeModelRecord + live GET 2026-09-11 | `https://bonfire.robinhood.com/transfer/calculate_distribution_fee/` |
+| no | sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App IRACalculateTaxWithholdingsViewModelRecord + live GET 2026-09-11 | `https://bonfire.robinhood.com/transfer/calculate_tax_withholdings/` |
+| yes | write-mutate | POST | money-movement | bonfire.robinhood.com | brokerage-browser-map | `https://bonfire.robinhood.com/transfer/create/` |
+| no | sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App IRAContributionsViewmodelRecord + live GET 2026-09-11 | `https://bonfire.robinhood.com/transfer/ira_contributions_questionnaire/` |
+| no | sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App IRADistributionViewmodelRecord + live GET 2026-09-11 | `https://bonfire.robinhood.com/transfer/ira_distributions_questionnaire/?account_type={account_type}` |
+| no | sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App module 81502 TransferServiceFeeRecord, 2026-09-11 | `https://bonfire.robinhood.com/transfer/service_fee/` |
 | no | sensitive-read | GET | unknown | bonfire.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://bonfire.robinhood.com/user_status/stripe/` |
 | no | sensitive-read | GET | money-movement | cashier.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://cashier.robinhood.com/ach/deposit_schedules/` |
 | no | sensitive-read | GET | money-movement | cashier.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://cashier.robinhood.com/ach/relationships/` |

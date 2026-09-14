@@ -472,7 +472,7 @@ program
 program
   .command("withdrawal-execute")
   .description(
-    "Execute exactly one captured withdrawal create request; requires a fresh route quote, explicit --live-write, and never pre-creates or retries.",
+    "Build or execute the captured withdrawal sequence for standard bank, instant bank, debit card, or IRA distribution; dry-runs unless --live-write and never retries.",
   )
   .requiredOption("--source-id <id>")
   .requiredOption("--destination-id <id>")
@@ -484,12 +484,17 @@ program
   .option("--federal-withholding-percent <percent>")
   .option("--state-withholding-percent <percent>")
   .option("--withholding-state <code>")
+  .option(
+    "--retirement-eligibility-verified",
+    "confirm the selected IRA distribution questionnaire/eligibility reads were completed",
+    false,
+  )
   .option("--limit-quote-json <json>", "fresh authenticated source × rail × destination quote")
   .option("--history-json <json>", "current withdrawal history (defaults to [])", "[]")
   .option("--contract-path <path>", "optional operator-private capture override")
   .option(
     "--live-write",
-    "submit the captured create request (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)",
+    "submit the captured mutation sequence (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)",
     false,
   )
   .action(
@@ -505,6 +510,7 @@ program
       federalWithholdingPercent?: string;
       stateWithholdingPercent?: string;
       withholdingState?: string;
+      retirementEligibilityVerified: boolean;
       historyJson: string;
       contractPath?: string;
       liveWrite: boolean;
@@ -533,6 +539,9 @@ program
                     state: opts.withholdingState,
                   }
                 : undefined,
+            retirement: opts.retirementEligibilityVerified
+              ? { eligibilityVerified: true }
+              : undefined,
             limitQuote: opts.limitQuoteJson ? JSON.parse(opts.limitQuoteJson) : undefined,
             history: JSON.parse(opts.historyJson),
             contractPath: opts.contractPath,

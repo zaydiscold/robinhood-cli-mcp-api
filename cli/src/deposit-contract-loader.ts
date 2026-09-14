@@ -31,7 +31,13 @@ export interface BoundDepositContract {
 export interface DepositWorkflowReceipt {
   submitted: boolean;
   ambiguous: boolean;
-  receiptStatus: "accepted" | "rejected" | "transport_ambiguous" | "dry_run" | "action_required";
+  receiptStatus:
+    | "accepted"
+    | "rejected"
+    | "transport_ambiguous"
+    | "dry_run"
+    | "action_required"
+    | "already_exists";
   serverReceiptId?: string;
   clientId?: string;
   steps: Array<{ url?: string; status?: number; body?: unknown }>;

@@ -128,6 +128,16 @@ describe("MCP protocol conformance", () => {
     expect(
       tools.tools.every((tool) => tool.inputSchema && tool.outputSchema && tool.annotations),
     ).toBe(true);
+    for (const name of ["robinhood_deposit_quote", "robinhood_deposit_plan"]) {
+      const schema = tools.tools.find((tool) => tool.name === name)?.inputSchema as {
+        properties?: Record<string, unknown>;
+      };
+      expect(schema.properties).toHaveProperty("limitQuote");
+    }
+    const withdrawalExecute = tools.tools.find(
+      (tool) => tool.name === "robinhood_withdrawal_execute",
+    )?.inputSchema as { properties?: Record<string, unknown> };
+    expect(withdrawalExecute.properties).toHaveProperty("retirement");
     expect(resources.resources.map((resource) => resource.name)).toEqual(
       expect.arrayContaining(["readme", "docs-readme", "cli-mcp-architecture", "wheel"]),
     );

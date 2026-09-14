@@ -132,7 +132,13 @@ export interface WithdrawalReceipt {
   submitted: boolean;
   ambiguous: boolean;
   receiptStatus:
-    "accepted" | "rejected" | "transport_ambiguous" | "verification_required" | "dry_run";
+    | "accepted"
+    | "rejected"
+    | "transport_ambiguous"
+    | "verification_required"
+    | "dry_run"
+    | "already_exists";
+  serverReceiptId?: string;
   userAction?: {
     type: "approve_on_phone";
     message: string;
@@ -150,7 +156,17 @@ const asCents = (value: string | undefined): number | undefined => {
 };
 
 const observedSourceTypes = new Set(["rhs", "ira", "ira_roth"]);
-const observedDestinationTypes = new Set(["ach", "bank_account", "debit_card"]);
+const observedDestinationTypes = new Set(["ach", "bank_account", "dcf", "debit_card"]);
+
+const WITHDRAWAL_PRE_CREATE_URL = "https://bonfire.robinhood.com/transfer/pre_create/";
+const WITHDRAWAL_CREATE_URL = "https://bonfire.robinhood.com/transfer/create/";
+
+/** Captured 2026-09-11/13: instant, card, and IRA paths pre-create; taxable standard ACH does not. */
+export function getWithdrawalMutationUrls(sourceType: string, rail: WithdrawalRail): string[] {
+  return sourceType.startsWith("ira") || rail !== "bank_standard"
+    ? [WITHDRAWAL_PRE_CREATE_URL, WITHDRAWAL_CREATE_URL]
+    : [WITHDRAWAL_CREATE_URL];
+}
 
 /** Builds the observed create schema; transfer types must come from authenticated reads. */
 export function buildNativeWithdrawalRequest(
@@ -164,10 +180,10 @@ export function buildNativeWithdrawalRequest(
     throw new Error("native withdrawal requires an observed source type");
   if (!observedDestinationTypes.has(input.destinationType))
     throw new Error("native withdrawal requires an observed destination type");
-  if (input.rail === "debit_card" && input.destinationType !== "debit_card")
-    throw new Error("debit_card rail requires an observed debit_card sink type");
-  if (input.rail !== "debit_card" && input.destinationType === "debit_card")
-    throw new Error("bank rail cannot use an observed debit_card sink type");
+  if (input.rail === "debit_card" && !["dcf", "debit_card"].includes(input.destinationType))
+    throw new Error("debit_card rail requires an observed dcf sink type");
+  if (input.rail !== "debit_card" && ["dcf", "debit_card"].includes(input.destinationType))
+    throw new Error("bank rail cannot use an observed dcf sink type");
   const retirementSource = input.sourceType.startsWith("ira");
   if (retirementSource) {
     const distribution = input.iraDistribution;
@@ -192,7 +208,9 @@ export function buildNativeWithdrawalRequest(
       id: input.idempotencyId ?? crypto.randomUUID(),
       additional_data: {
         entry_point: 5,
-        is_instant_transfer: input.rail === "bank_instant",
+        ...(!retirementSource && input.rail !== "debit_card"
+          ? { is_instant_transfer: input.rail === "bank_instant" }
+          : {}),
         ...(retirementSource
           ? {
               ira_distribution_data: {
@@ -237,11 +255,15 @@ export function buildWithdrawalInventory(
     }));
   const observed: WithdrawalDestination[] = [];
   for (const destination of destinations) {
-    const id = String(destination.id ?? destination.relationship_id ?? "");
+    const id = String(
+      destination.id ?? destination.relationship_id ?? destination.account_id ?? "",
+    );
     if (!id) continue;
-    const eligible = destination.verified === true && destination.state === "approved";
+    const eligible =
+      (destination.verified === true && destination.state === "approved") ||
+      destination.status === "approved";
     const type = String(destination.type ?? destination.source_type ?? "").toLowerCase();
-    if (type === "debit_card") {
+    if (type === "debit_card" || type === "dcf") {
       observed.push({ id, rail: "debit_card", eligible });
       continue;
     }
@@ -363,7 +385,8 @@ export function classifyWithdrawalReceipt(response?: {
 }): WithdrawalReceipt {
   if (!response) return { submitted: false, ambiguous: true, receiptStatus: "transport_ambiguous" };
   const body = response.body as
-    { error_code?: string; verification_workflow?: { id?: string } } | undefined;
+    | { error_code?: string; transfer_id?: string; verification_workflow?: { id?: string } }
+    | undefined;
   if (body?.error_code === "suv_check_pending") {
     return {
       submitted: false,
@@ -380,11 +403,21 @@ export function classifyWithdrawalReceipt(response?: {
       },
     };
   }
-  const submitted = response.status >= 200 && response.status < 300;
+  const successfulHttp = response.status >= 200 && response.status < 300;
+  const serverReceiptId = typeof body?.transfer_id === "string" ? body.transfer_id : undefined;
+  if (successfulHttp && !serverReceiptId)
+    return {
+      submitted: false,
+      ambiguous: true,
+      receiptStatus: "transport_ambiguous",
+      status: response.status,
+      body: response.body,
+    };
   return {
-    submitted,
+    submitted: successfulHttp,
     ambiguous: false,
-    receiptStatus: submitted ? "accepted" : "rejected",
+    receiptStatus: successfulHttp ? "accepted" : "rejected",
+    ...(serverReceiptId ? { serverReceiptId } : {}),
     status: response.status,
     body: response.body,
   };

@@ -6,6 +6,7 @@ import {
   buildWithdrawalQuote,
   classifyWithdrawalReceipt,
   executeWithdrawal,
+  getWithdrawalMutationUrls,
 } from "../src/withdrawal.js";
 
 const taxable = { id: "taxable-a", type: "brokerage", is_withdrawals_enabled: true };
@@ -90,7 +91,7 @@ describe("withdrawal contracts", () => {
         amountUsd: "1.00",
         rail: "debit_card",
       }),
-    ).toThrow(/observed debit_card sink type/);
+    ).toThrow(/observed dcf sink type/);
     expect(() =>
       buildNativeWithdrawalRequest({
         sourceId: "roth-a",
@@ -101,6 +102,59 @@ describe("withdrawal contracts", () => {
         rail: "bank_standard",
       }),
     ).toThrow(/distribution/);
+  });
+
+  it("matches the captured instant-bank withdrawal request sequence and body", () => {
+    const request = buildNativeWithdrawalRequest({
+      sourceId: "taxable-a",
+      sourceType: "rhs",
+      destinationId: "bank-a",
+      destinationType: "ach",
+      amountUsd: "1.00",
+      rail: "bank_instant",
+      idempotencyId: "fresh-client-id",
+    });
+    expect(request.body).toMatchObject({
+      additional_data: { entry_point: 5, is_instant_transfer: true },
+      source: { id: "taxable-a", type: "rhs" },
+      sink: { id: "bank-a", type: "ach" },
+    });
+    expect(getWithdrawalMutationUrls("rhs", "bank_instant")).toEqual([
+      "https://bonfire.robinhood.com/transfer/pre_create/",
+      "https://bonfire.robinhood.com/transfer/create/",
+    ]);
+  });
+
+  it("matches the captured debit-card withdrawal request sequence and body", () => {
+    const request = buildNativeWithdrawalRequest({
+      sourceId: "taxable-a",
+      sourceType: "rhs",
+      destinationId: "card-a",
+      destinationType: "dcf",
+      amountUsd: "1.00",
+      rail: "debit_card",
+      idempotencyId: "fresh-client-id",
+    });
+    expect(request.body).toMatchObject({
+      additional_data: { entry_point: 5 },
+      source: { id: "taxable-a", type: "rhs" },
+      sink: { id: "card-a", type: "dcf" },
+    });
+    expect(request.body.additional_data).not.toHaveProperty("is_instant_transfer");
+    expect(getWithdrawalMutationUrls("rhs", "debit_card")).toEqual([
+      "https://bonfire.robinhood.com/transfer/pre_create/",
+      "https://bonfire.robinhood.com/transfer/create/",
+    ]);
+  });
+
+  it("uses pre-create for retirement distributions but not standard taxable ACH", () => {
+    expect(getWithdrawalMutationUrls("rhs", "bank_standard")).toEqual([
+      "https://bonfire.robinhood.com/transfer/create/",
+    ]);
+    expect(getWithdrawalMutationUrls("ira_roth", "bank_standard")).toEqual([
+      "https://bonfire.robinhood.com/transfer/pre_create/",
+      "https://bonfire.robinhood.com/transfer/create/",
+    ]);
   });
   it("matches the independently captured Roth-origin withdrawal create schema", () => {
     expect(
@@ -127,7 +181,6 @@ describe("withdrawal contracts", () => {
         id: "fresh-client-id",
         additional_data: {
           entry_point: 5,
-          is_instant_transfer: false,
           ira_distribution_data: {
             distribution_type: "early",
             federal_tax_withholding_percent: "0",
@@ -196,7 +249,17 @@ describe("withdrawal contracts", () => {
   it("discovers every owned withdrawal source and only observed linked bank/card rails", () => {
     const inventory = buildWithdrawalInventory(
       [taxable, roth, { id: "ach-external", type: "ach", is_withdrawals_enabled: true }],
-      [bankA, bankB, cardA],
+      [
+        bankA,
+        bankB,
+        cardA,
+        {
+          account_id: "dcf-transfer-account",
+          type: "dcf",
+          is_external: true,
+          status: "approved",
+        },
+      ],
     );
     expect(inventory.sources).toEqual([
       { accountId: "taxable-a", accountType: "brokerage", withdrawalsEnabled: true },
@@ -208,6 +271,11 @@ describe("withdrawal contracts", () => {
         expect.objectContaining({ id: "bank-a", rail: "bank_instant", eligible: true }),
         expect.objectContaining({ id: "bank-b", rail: "bank_standard", eligible: true }),
         expect.objectContaining({ id: "card-a", rail: "debit_card", eligible: true }),
+        expect.objectContaining({
+          id: "dcf-transfer-account",
+          rail: "debit_card",
+          eligible: true,
+        }),
       ]),
     );
     expect(inventory.destinations).not.toContainEqual(
@@ -296,14 +364,26 @@ describe("withdrawal contracts", () => {
     ).toContain("exact withdrawal write contract has not been captured");
   });
 
-  it("marks a missing response transport-ambiguous so callers must read status before any retry", () => {
+  it("requires the observed transfer_id before classifying a withdrawal as submitted", () => {
     expect(classifyWithdrawalReceipt()).toMatchObject({
+      submitted: false,
       ambiguous: true,
       receiptStatus: "transport_ambiguous",
     });
-    expect(classifyWithdrawalReceipt({ status: 201, body: { id: "synthetic" } })).toMatchObject({
+    expect(
+      classifyWithdrawalReceipt({ status: 201, body: { id: "client-id-only" } }),
+    ).toMatchObject({
+      submitted: false,
+      ambiguous: true,
+      receiptStatus: "transport_ambiguous",
+    });
+    expect(
+      classifyWithdrawalReceipt({ status: 201, body: { transfer_id: "server-receipt" } }),
+    ).toMatchObject({
       submitted: true,
+      ambiguous: false,
       receiptStatus: "accepted",
+      serverReceiptId: "server-receipt",
     });
   });
 

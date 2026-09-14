@@ -25,12 +25,22 @@ The engine quotes every **owned source × rail × destination × amount** with:
 - `GET https://bonfire.robinhood.com/transfer/service_fee/`
 
 Unknown numeric limits stay unknown. A successfully validated standard-bank route is not disabled just because a quota field is missing. Fees above the authorized maximum remain gated.
+The observed LimitHub rows are product + direction buckets with no source identifier, so the quote reports them as shared across sources. A missing row remains unknown instead of being treated as zero.
 
-Observed standard-bank create body: `POST https://bonfire.robinhood.com/transfer/create/` with `source.type=rhs`, ACH sink, `currency: "usd"`, `frequency: "once"`. There is no `pre_create` on the captured taxable withdrawal path.
+Observed mutation matrix:
+
+- taxable → standard ACH: `create` only; `source.type=rhs`, `sink.type=ach`, `additional_data={entry_point:5,is_instant_transfer:false}`
+- taxable → instant bank: `pre_create` then `create`; the same account pair plus `is_instant_transfer:true`
+- taxable → debit card: `pre_create` then `create`; `sink.type=dcf` and `additional_data={entry_point:5}` (no ACH instant flag)
+- retirement source → bank/brokerage: `pre_create` then `create`, with explicit `ira_distribution_data`
+
+The instant and debit-card rows were captured fail-closed on 2026-09-13: both final POSTs were intercepted before dispatch, so no fee-bearing withdrawal was sent. A prior debit-card withdrawal in authenticated history independently establishes that the UI class is a real supported route.
 
 Roth-origin withdrawals use the same create URL plus `additional_data.ira_distribution_data` (`distribution_type`, `federal_tax_withholding_percent`, `state_tax_withholding_percent`, `state`). Read `GET /transfer/ira_distributions_questionnaire/?account_type={account_type}` and `GET /transfer/calculate_tax_withholdings/` first. Do not infer those fields. Captured Roth-origin paths (Roth → brokerage and Roth → bank) both use `pre_create` then `create` with that distribution object.
 
 If the broker returns `suv_check_pending`, the CLI/MCP reports `verification_required` and prompts for phone approval. Use `money-movement-verify` under the **original CLI session**, then `money-movement-resume` with the recorded operation ID. Do not create a second request identity. WireBrowser sessions cannot consume another session’s workflow.
+Resume first reconciles complete PaymentHub history by the original client identity and route. A 2xx create response is `transport_ambiguous` unless it contains Robinhood's observed `transfer_id`; only that exact ID can become a verified receipt.
+Equivalent live intents are atomically serialized across CLI/MCP processes before preflight. IRA execution also requires the operator to pass the verified retirement eligibility result (`--retirement-eligibility-verified` in the CLI or `retirement.eligibilityVerified=true` in MCP) together with the explicit distribution and withholding fields.
 
 ## Commands
 

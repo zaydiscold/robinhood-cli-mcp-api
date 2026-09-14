@@ -103,6 +103,22 @@ export async function executeNativeInternalTransfer(input: NativeInternalTransfe
     String(source.type),
     String(destination.type),
   );
+  const { getMoneyMovementQuote } = await import("./money-movement-quote.js");
+  const liveQuote = await getMoneyMovementQuote({
+    sourceId: input.sourceId,
+    destinationId: input.destinationId,
+    amountUsd: input.amountUsd,
+    kind: "internal",
+  });
+  if (!liveQuote.executable)
+    return {
+      submitted: false,
+      ambiguous: false,
+      receiptStatus: "validation_rejected",
+      validation: liveQuote.validation,
+      reasons: liveQuote.reasons,
+      idempotencyId: body.id,
+    };
   const validation = await api.brokerageGetJson(
     "https://api.robinhood.com/bff-mm/transfer/validation",
     {},
@@ -134,6 +150,22 @@ export async function executeNativeInternalTransfer(input: NativeInternalTransfe
     };
   if (process.env.ROBINHOOD_ALLOW_LIVE_WRITE !== "1")
     throw new Error("ROBINHOOD_ALLOW_LIVE_WRITE=1 required");
+  const { reconcileBeforeMoneyMovement } = await import("./money-movement-receipt.js");
+  const existing = await reconcileBeforeMoneyMovement({
+    clientId: body.id,
+    sourceId: input.sourceId,
+    destinationId: input.destinationId,
+    amountUsd: input.amountUsd,
+    kind: "internal",
+  });
+  if (existing)
+    return {
+      submitted: false,
+      ambiguous: false,
+      receiptStatus: "already_exists",
+      serverReceiptId: existing.serverReceiptId,
+      idempotencyId: body.id,
+    };
   const steps: Array<{ status: number; body: Record<string, unknown>; url: string }> = [];
   for (const endpoint of ["pre_create", "create"]) {
     const url = "https://bonfire.robinhood.com/transfer/" + endpoint + "/";

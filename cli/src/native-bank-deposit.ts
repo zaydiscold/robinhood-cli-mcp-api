@@ -32,7 +32,7 @@ export function buildNativeBankDeposit(input: {
   const body = {
     id,
     additional_data: {
-      entry_point: 5,
+      entry_point: retirement ? 0 : 5,
       ...(input.radarSessionId ? { radar_session_id: input.radarSessionId } : {}),
       ...(retirement
         ? {

@@ -5,6 +5,12 @@
 # These templates are commented. The personal CLI is preferred for live sends
 # because it emits risk warnings and supports --dry-run.
 
+# sensitive-read GET https://api.robinhood.com/bff-mm/transfer/validation
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/bff-mm/transfer/validation'
+
+# write-mutate POST https://bonfire.robinhood.com/transfer/create/
+# curl -sS -X POST -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/transfer/create/'
+
 # sensitive-read GET https://api.robinhood.com/acats-aggregation/fee_reimbursements/history
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://api.robinhood.com/acats-aggregation/fee_reimbursements/history'
 
@@ -1579,5 +1585,23 @@
 
 # sensitive-read GET https://phoenix.robinhood.com/accounts/unified
 # curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://phoenix.robinhood.com/accounts/unified'
+
+# sensitive-read GET https://bonfire.robinhood.com/transfer/service_fee/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/transfer/service_fee/'
+
+# sensitive-read GET https://bonfire.robinhood.com/limitshub/v1/limits/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/limitshub/v1/limits/'
+
+# sensitive-read GET https://bonfire.robinhood.com/transfer/ira_distributions_questionnaire/?account_type={account_type}
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/transfer/ira_distributions_questionnaire/?account_type={account_type}'
+
+# sensitive-read GET https://bonfire.robinhood.com/transfer/ira_contributions_questionnaire/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/transfer/ira_contributions_questionnaire/'
+
+# sensitive-read GET https://bonfire.robinhood.com/transfer/calculate_distribution_fee/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/transfer/calculate_distribution_fee/'
+
+# sensitive-read GET https://bonfire.robinhood.com/transfer/calculate_tax_withholdings/
+# curl -sS -X GET -H 'Authorization: Bearer <REDACTED>' 'https://bonfire.robinhood.com/transfer/calculate_tax_withholdings/'
 
 # Zayd Khan // cold // www.zayd.wtf

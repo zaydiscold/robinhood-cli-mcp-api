@@ -14,6 +14,33 @@ export interface MovementQuoteInput {
   };
 }
 export const USD_CURRENCY_ID = "1072fc76-1862-41ab-82c2-485837590762"; // public currency identifier, not an account identifier
+
+export function classifyLimitScope(
+  group: Record<string, unknown> | null,
+  providerProduct: string,
+  direction: MovementKind,
+) {
+  if (!group)
+    return {
+      providerProduct,
+      direction,
+      sourceSpecificBucket: null,
+      sharedAcrossSources: null,
+      provenance: "limit_bucket_not_observed" as const,
+    };
+  const details = (group.details ?? {}) as Record<string, unknown>;
+  const hasSourceKey = Object.keys(details).some((key) => /source.*(?:id|account)/i.test(key));
+  return {
+    providerProduct,
+    direction,
+    sourceSpecificBucket: hasSourceKey,
+    sharedAcrossSources: !hasSourceKey,
+    provenance: hasSourceKey
+      ? ("limitshub_product_direction_with_source_key" as const)
+      : ("limitshub_product_direction_without_source_key" as const),
+  };
+}
+
 export async function getMoneyMovementQuote(input: MovementQuoteInput) {
   if (!/^\d+(?:\.\d{1,2})?$/.test(input.amountUsd) || Number(input.amountUsd) <= 0)
     throw new Error("Positive USD amount required");
@@ -139,12 +166,7 @@ export async function getMoneyMovementQuote(input: MovementQuoteInput) {
     validation,
     fee,
     limits: group,
-    limitScope: {
-      providerProduct: productType,
-      direction: input.kind,
-      sourceSpecificBucket: null,
-      sharedAcrossSources: null,
-    },
+    limitScope: classifyLimitScope(group, productType, input.kind),
     withdrawableCashUsd: source.withdrawable_cash ?? null,
     holds: source.holds ?? null,
     settlement:

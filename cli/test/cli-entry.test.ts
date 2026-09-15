@@ -22,7 +22,10 @@ describe("unified CLI entry", () => {
         symlinkSync(fileURLToPath(new URL("../dist/cli-entry.js", import.meta.url)), bin);
         const help = execFileSync(process.execPath, [bin, "--help"], { encoding: "utf8" });
         expect(help).toContain("Usage: robinhood-cli");
-        expect(help).toContain("panic");
+        const panic = execFileSync(process.execPath, [bin, "panic", "--help"], {
+          encoding: "utf8",
+        });
+        expect(panic).toContain("panic");
         const tax = execFileSync(process.execPath, [bin, "tax", "--help"], { encoding: "utf8" });
         expect(tax).toContain("robinhood-tax");
       } finally {

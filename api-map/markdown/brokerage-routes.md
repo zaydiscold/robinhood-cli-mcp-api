@@ -4,13 +4,15 @@ Source: reverse-engineered routes plus sanitized authenticated Chrome/CDP captur
 
 Personal repo semantics: mapped routes can be executed live with caller-owned `ROBINHOOD_BROKERAGE_TOKEN` or `ROBINHOOD_COOKIE`. Pass `--dry-run` when you want a non-sending test plan.
 
-Current count: 525 route templates.
-Risk counts: destructive=9, read=137, sensitive-read=349, write-mutate=11, write-or-sensitive=7, write-safe=12.
+Current count: 533 route templates.
+Risk counts: destructive=9, read=137, sensitive-read=356, write-mutate=12, write-or-sensitive=7, write-safe=12.
 
 Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts with `Mutation: yes` or `Mutation: no`.
 
 | Risk | Methods | Categories | Host | Source | Route template |
 |---|---|---|---|---|---|
+| sensitive-read | GET | money-movement | api.robinhood.com | community-seed | `https://api.robinhood.com/bff-mm/transfer/validation` |
+| write-mutate | POST | money-movement | bonfire.robinhood.com | community-seed | `https://bonfire.robinhood.com/transfer/create/` |
 | sensitive-read | GET | money-movement | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/acats-aggregation/fee_reimbursements/history` |
 | sensitive-read | GET | money-movement | api.robinhood.com | cdp-2026-05-26-stock-account-sanitized; cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2 | `https://api.robinhood.com/acats/` |
 | sensitive-read | GET | account | api.robinhood.com | cdp-2026-09-07-authenticated-sanitized-v2 | `https://api.robinhood.com/accounts/` |
@@ -536,5 +538,11 @@ Per-endpoint files are generated in `api-map/markdown/endpoints/`. Each starts w
 | sensitive-read | GET | account | nummus.robinhood.com | cdp-2026-05-27-stock-account-sanitized; cdp-2026-07-14-authenticated-sanitized-v2; cdp-2026-09-07-authenticated-sanitized-v2 | `https://nummus.robinhood.com/portfolios/{uuid}/` |
 | sensitive-read | GET | telemetry-config | nummus.robinhood.com | cdp-2026-09-07-authenticated-sanitized-v2 | `https://nummus.robinhood.com/v1/activation/eligibility/monetization/{uuid}` |
 | sensitive-read | inferred | account | phoenix.robinhood.com | community-seed | `https://phoenix.robinhood.com/accounts/unified` |
+| sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App module 81502 TransferServiceFeeRecord, 2026-09-11 | `https://bonfire.robinhood.com/transfer/service_fee/` |
+| sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App module 815722 LimitHubRecord, 2026-09-11 | `https://bonfire.robinhood.com/limitshub/v1/limits/` |
+| sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App IRADistributionViewmodelRecord + live GET 2026-09-11 | `https://bonfire.robinhood.com/transfer/ira_distributions_questionnaire/?account_type={account_type}` |
+| sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App IRAContributionsViewmodelRecord + live GET 2026-09-11 | `https://bonfire.robinhood.com/transfer/ira_contributions_questionnaire/` |
+| sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App IRACalculateDistributionFeeModelRecord + live GET 2026-09-11 | `https://bonfire.robinhood.com/transfer/calculate_distribution_fee/` |
+| sensitive-read | GET | money-movement | bonfire.robinhood.com | WireBrowser App IRACalculateTaxWithholdingsViewModelRecord + live GET 2026-09-11 | `https://bonfire.robinhood.com/transfer/calculate_tax_withholdings/` |
 
 <!-- Zayd Khan // cold // www.zayd.wtf -->

@@ -73,14 +73,14 @@ open deep research under `docs/` only when the focused module directs you there.
 
 Load the smallest layer that can answer the request:
 
-| Layer | Source | Purpose |
-| --- | --- | --- |
-| Router | This `SKILL.md` | Safety contract, surface selection, and intent routing |
-| Focused operation | [`knowledge/*.md`](knowledge/README.md) | Commands, decision rules, and task-specific failure modes |
-| Machine-backed reference | generated catalogs, API maps, and validated JSON | Versioned claims and cross-surface contracts |
-| Deep research | `docs/*.md` | Dated evidence, methodology, and long-form analysis |
-| Maintainer reference | [`AGENTS.md`](AGENTS.md) | Auth, route map, implementation, and raw examples |
-| Runtime truth | CLI `--help`, MCP `tools/list`, package exports | What the installed build exposes now |
+| Layer                    | Source                                           | Purpose                                                   |
+| ------------------------ | ------------------------------------------------ | --------------------------------------------------------- |
+| Router                   | This `SKILL.md`                                  | Safety contract, surface selection, and intent routing    |
+| Focused operation        | [`knowledge/*.md`](knowledge/README.md)          | Commands, decision rules, and task-specific failure modes |
+| Machine-backed reference | generated catalogs, API maps, and validated JSON | Versioned claims and cross-surface contracts              |
+| Deep research            | `docs/*.md`                                      | Dated evidence, methodology, and long-form analysis       |
+| Maintainer reference     | [`AGENTS.md`](AGENTS.md)                         | Auth, route map, implementation, and raw examples         |
+| Runtime truth            | CLI `--help`, MCP `tools/list`, package exports  | What the installed build exposes now                      |
 
 When sources conflict, do not choose the sentence that makes an action easier. Report the conflict
 and prefer, in order:
@@ -126,6 +126,27 @@ robinhood-cli tax status --json
 
 The dedicated `robinhood-tax` binary accepts the same arguments without the leading `tax`.
 
+### Money-movement matrix
+
+Model money movement as `kind × source ID/type × rail × destination ID/type × account class × amount`. Always discover the current transfer graph first; never hardcode a bank, card, account count, or Roth destination. A supported pair is quoted from authenticated validation, LimitHub, and fee reads immediately before execution. An absent pair is reported as `not_evaluated`/broker-unoffered rather than inferred from another user.
+
+Observed request classes are:
+
+- deposits: ACH standard/instant or DCF card → an offered taxable/IRA destination; IRA destinations use contribution type/year and `entry_point=0`
+- internal: taxable → taxable, taxable → IRA contribution, or IRA → taxable distribution
+- withdrawals: taxable/IRA source → standard ACH, instant ACH, or DCF card when present in the live inventory
+
+Taxable standard ACH withdrawal uses `create` only. Instant withdrawal, debit-card withdrawal, and retirement-originating withdrawal use `pre_create` then `create`. Quote and receipt state remain separate: an intercepted request is `contract_mapped_unexecuted`; only exact server-ID history reconciliation is `live_reconciled`.
+Every live executor performs a fresh PaymentHub reconciliation before mutation. An atomic intent lock serializes kind + source + destination + rail + normalized amount + retirement semantics across processes, so two fresh client IDs cannot race the same transfer before history is visible. The same client ID or an active same-route transfer blocks submission; device approval never authorizes a blind replay. The lock remains until terminal exact-receipt reconciliation. A 2xx without the observed `transfer_id` remains ambiguous.
+
+### Internal account transfers
+
+Use `internal-transfer-inventory` / `robinhood_internal_transfer_inventory` to discover owned accounts. Use `internal-transfer-execute` / `robinhood_internal_transfer_execute` for a native owned-account transfer. Quote first with `money-movement-quote`. Independently reconcile with `money-movement-receipt` and the exact server `transfer_id`.
+
+Retirement **destinations** require an explicit contribution year. Retirement **sources** require explicit distribution type, two-letter withholding state, and withholding percents; this feature does not infer a distribution or rollover. A 2xx is not proof until the unified-transfer GET matches the current receipt ID, amount, source, and destination.
+
+**Evidence:** authenticated `GET https://bonfire.robinhood.com/transfer/accounts/`, `GET https://bonfire.robinhood.com/paymenthub/unified_transfers/?page_size=100`, `GET https://api.robinhood.com/bff-mm/transfer/validation`, and observed `POST https://bonfire.robinhood.com/transfer/pre_create/` then `POST https://bonfire.robinhood.com/transfer/create/` are catalogued in [`api-map/brokerage-routes.json`](api-map/brokerage-routes.json). See [`knowledge/internal-transfers.md`](knowledge/internal-transfers.md).
+
 ### MCP
 
 Use MCP when an agent client needs typed discovery and structured results. The selected profile
@@ -153,28 +174,31 @@ business logic.**
 
 ## Intent router
 
-| User intent | First surface | Focused module |
-| --- | --- | --- |
-| What accounts exist or what can this account do? | `accounts`, `account-pulse`, `buying-power` | [`knowledge/accounts.md`](knowledge/accounts.md) |
-| What do I own? | `positions`, `options positions`, `options holdings` | [`knowledge/accounts.md`](knowledge/accounts.md) |
-| Why am I up or down today or after hours? | `portfolio --day` or `portfolio --after-hours` | [`knowledge/cli-routing.md`](knowledge/cli-routing.md) |
-| Quote or research a ticker | `quote`, `stock profile`, `news`, `ratings`, `earnings` | `knowledge/signals.md` |
-| Price or analyze a multi-leg option structure | `options strategy-quote`, `options workbench` | `knowledge/multi-leg.md`, `knowledge/greeks.md` |
-| Roll or defend an option | `options roll-plan` | `knowledge/rolling.md` |
-| Build or manage a wheel | `wheel` | `knowledge/wheel.md` |
-| Buy or sell stock | `buy` or `sell`, dry-run first | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
-| Review open or completed orders | `orders open`, `order-status`, `order-watch` | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
-| Cancel one or all open orders | `cancel` or `panic` | [`knowledge/execution-safety.md`](knowledge/execution-safety.md) |
-| Manage recurring investments | `recurring` subcommands | [`knowledge/accounts.md`](knowledge/accounts.md) |
-| Change DRIP, PDT, lending, sweep, or expiration settings | `settings` subcommands | [`knowledge/accounts.md`](knowledge/accounts.md) |
-| Research a tax rule | `robinhood-cli tax <topic>` | [`knowledge/tax-reference.md`](knowledge/tax-reference.md) |
-| Research tax mechanics of a named structure | `robinhood-cli tax strategy <id-or-alias>` | [`knowledge/tax-strategy-routing.md`](knowledge/tax-strategy-routing.md) |
-| Combine tax rules with live account facts | tax research first, then named account reads | [`knowledge/tax.md`](knowledge/tax.md) |
-| Inspect lots or build a non-sending lot-aware plan | `tax-lots list` or `tax-lots plan-sell` | [`knowledge/tax.md`](knowledge/tax.md) |
-| Harvest a loss | strategy guide, exact lots, then 61-day acquisition review | [`knowledge/tax-loss-harvesting.md`](knowledge/tax-loss-harvesting.md) |
-| Download statements or tax forms | `documents list` or `documents download` | [`knowledge/tax.md`](knowledge/tax.md) |
-| Inspect an unwrapped endpoint | `brokerage describe`, `brokerage plan`, then `brokerage execute` | `knowledge/cli-routing.md` |
-| Add or verify a route | generated map and evidence workflow | `docs/undocumented-surface.md` |
+| User intent                                              | First surface                                                                                                                             | Focused module                                                           |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| What accounts exist or what can this account do?         | `accounts`, `account-pulse`, `buying-power`                                                                                               | [`knowledge/accounts.md`](knowledge/accounts.md)                         |
+| What do I own?                                           | `positions`, `options positions`, `options holdings`                                                                                      | [`knowledge/accounts.md`](knowledge/accounts.md)                         |
+| Why am I up or down today or after hours?                | `portfolio --day` or `portfolio --after-hours`                                                                                            | [`knowledge/cli-routing.md`](knowledge/cli-routing.md)                   |
+| Quote or research a ticker                               | `quote`, `stock profile`, `news`, `ratings`, `earnings`                                                                                   | `knowledge/signals.md`                                                   |
+| Price or analyze a multi-leg option structure            | `options strategy-quote`, `options workbench`                                                                                             | `knowledge/multi-leg.md`, `knowledge/greeks.md`                          |
+| Roll or defend an option                                 | `options roll-plan`                                                                                                                       | `knowledge/rolling.md`                                                   |
+| Build or manage a wheel                                  | `wheel`                                                                                                                                   | `knowledge/wheel.md`                                                     |
+| Buy or sell stock                                        | `buy` or `sell`, dry-run first                                                                                                            | [`knowledge/execution-safety.md`](knowledge/execution-safety.md)         |
+| Review open or completed orders                          | `orders open`, `order-status`, `order-watch`                                                                                              | [`knowledge/execution-safety.md`](knowledge/execution-safety.md)         |
+| Cancel one or all open orders                            | `cancel` or `panic`                                                                                                                       | [`knowledge/execution-safety.md`](knowledge/execution-safety.md)         |
+| Manage recurring investments                             | `recurring` subcommands                                                                                                                   | [`knowledge/accounts.md`](knowledge/accounts.md)                         |
+| Deposit from a linked bank/card into an owned account    | `deposit-inventory`, `money-movement-quote`, `deposit-execute`, `deposit-status`                                                          | [`knowledge/deposits.md`](knowledge/deposits.md)                         |
+| Move money between owned Robinhood accounts              | `internal-transfer-inventory`, `money-movement-quote`, `internal-transfer-execute`, `money-movement-receipt`                              | [`knowledge/internal-transfers.md`](knowledge/internal-transfers.md)     |
+| Withdraw to a linked bank/card                           | `withdrawal-inventory`, `money-movement-quote`, `withdrawal-execute`, then `money-movement-verify` if the broker requires device approval | [`docs/withdrawals.md`](docs/withdrawals.md)                             |
+| Change DRIP, PDT, lending, sweep, or expiration settings | `settings` subcommands                                                                                                                    | [`knowledge/accounts.md`](knowledge/accounts.md)                         |
+| Research a tax rule                                      | `robinhood-cli tax <topic>`                                                                                                               | [`knowledge/tax-reference.md`](knowledge/tax-reference.md)               |
+| Research tax mechanics of a named structure              | `robinhood-cli tax strategy <id-or-alias>`                                                                                                | [`knowledge/tax-strategy-routing.md`](knowledge/tax-strategy-routing.md) |
+| Combine tax rules with live account facts                | tax research first, then named account reads                                                                                              | [`knowledge/tax.md`](knowledge/tax.md)                                   |
+| Inspect lots or build a non-sending lot-aware plan       | `tax-lots list` or `tax-lots plan-sell`                                                                                                   | [`knowledge/tax.md`](knowledge/tax.md)                                   |
+| Harvest a loss                                           | strategy guide, exact lots, then 61-day acquisition review                                                                                | [`knowledge/tax-loss-harvesting.md`](knowledge/tax-loss-harvesting.md)   |
+| Download statements or tax forms                         | `documents list` or `documents download`                                                                                                  | [`knowledge/tax.md`](knowledge/tax.md)                                   |
+| Inspect an unwrapped endpoint                            | `brokerage describe`, `brokerage plan`, then `brokerage execute`                                                                          | `knowledge/cli-routing.md`                                               |
+| Add or verify a route                                    | generated map and evidence workflow                                                                                                       | `docs/undocumented-surface.md`                                           |
 
 ## Account discovery and scope
 
@@ -435,5 +459,6 @@ Before answering or acting, verify:
    [`AGENTS.md`](AGENTS.md), focused depth into [`knowledge/`](knowledge/README.md), and architecture
    into [`docs/cli-mcp-architecture.md`](docs/cli-mcp-architecture.md).
 9. Re-run build, quality, full tests, and package-boundary checks after changing a public surface.
-10. Never weaken dry-run, account scope, exact approval, evidence, or privacy invariants to make a
+10. For withdrawals, read [`docs/withdrawals.md`](docs/withdrawals.md): use an authenticated source × rail × destination quote; never turn a generic ACH POST into a withdrawal body; a transport-ambiguous write requires status readback before any human-approved next action.
+11. Never weaken dry-run, account scope, exact approval, evidence, or privacy invariants to make a
     new feature easier to demo.

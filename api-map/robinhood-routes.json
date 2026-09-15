@@ -4726,6 +4726,46 @@
     }
   },
   {
+    "url": "https://api.robinhood.com/bff-mm/transfer/validation",
+    "host": "api.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "queryKeys": [
+      "amount.amount",
+      "amount.currency",
+      "direction",
+      "sink.id",
+      "source.id",
+      "state"
+    ],
+    "requestTypes": [
+      "XHR"
+    ],
+    "requiresAuth": true,
+    "fields": [
+      "isSuccess"
+    ],
+    "fieldsSource": "verified",
+    "verificationStatus": "captured",
+    "responseBodySchemas": {
+      "200": {
+        "type": "object",
+        "properties": {
+          "isSuccess": {
+            "type": "boolean"
+          },
+          "errorDetails": {}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  {
     "url": "https://api.robinhood.com/bw/account/futures",
     "host": "api.robinhood.com",
     "categories": [
@@ -42897,6 +42937,36 @@
     "fieldsShape": "object"
   },
   {
+    "url": "https://bonfire.robinhood.com/limitshub/v1/limits/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "WireBrowser App module 815722 LimitHubRecord, 2026-09-11",
+    "fields": [
+      "product_limits"
+    ],
+    "fieldsSource": "inferred",
+    "queryKeys": [],
+    "requiresAuth": true,
+    "verificationStatus": "source-observed",
+    "responseBodySchemas": {
+      "200": {
+        "type": "object",
+        "properties": {
+          "product_limits": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  {
     "url": "https://bonfire.robinhood.com/margin/{id}/",
     "host": "bonfire.robinhood.com",
     "categories": [
@@ -52370,6 +52440,252 @@
     },
     "verificationStatus": "captured",
     "fieldsShape": "object"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/transfer/calculate_distribution_fee/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "WireBrowser App IRACalculateDistributionFeeModelRecord + live GET 2026-09-11",
+    "queryKeys": [
+      "account_number",
+      "account_type",
+      "amount",
+      "distribution_type",
+      "federal_withholding_percent",
+      "state_withholding_percent"
+    ],
+    "requiresAuth": true,
+    "verificationStatus": "captured",
+    "fields": [
+      "amount",
+      "enoki_removal_fee",
+      "enoki_removal_alert"
+    ],
+    "fieldsSource": "verified",
+    "responseBodySchemas": {
+      "200": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "enoki_removal_fee": {},
+          "enoki_removal_alert": {}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  {
+    "url": "https://bonfire.robinhood.com/transfer/calculate_tax_withholdings/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "WireBrowser App IRACalculateTaxWithholdingsViewModelRecord + live GET 2026-09-11",
+    "queryKeys": [
+      "account_number",
+      "account_type",
+      "amount",
+      "distribution_type",
+      "federal_withholding_percent",
+      "state_withholding_percent"
+    ],
+    "requiresAuth": true,
+    "verificationStatus": "captured",
+    "fields": [
+      "distribution_type",
+      "federal_withholding_percent",
+      "state_withholding_percent",
+      "federal_withholding_amount",
+      "state_withholding_amount",
+      "amount_received",
+      "state"
+    ],
+    "fieldsSource": "verified",
+    "responseBodySchemas": {
+      "200": {
+        "type": "object",
+        "properties": {
+          "distribution_type": {
+            "type": "string"
+          },
+          "federal_withholding_percent": {
+            "type": "string"
+          },
+          "state_withholding_percent": {
+            "type": "string"
+          },
+          "amount_received": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  {
+    "url": "https://bonfire.robinhood.com/transfer/create/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "write-mutate",
+    "methods": [
+      "POST"
+    ],
+    "requiresAuth": true,
+    "fields": [
+      "id",
+      "additional_data",
+      "amount",
+      "currency",
+      "frequency",
+      "source",
+      "sink"
+    ],
+    "fieldsSource": "verified",
+    "verificationStatus": "captured"
+  },
+  {
+    "url": "https://bonfire.robinhood.com/transfer/ira_contributions_questionnaire/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "WireBrowser App IRAContributionsViewmodelRecord + live GET 2026-09-11",
+    "requiresAuth": true,
+    "verificationStatus": "captured",
+    "fields": [
+      "contribution_type_view_model",
+      "tax_year_view_model",
+      "match_rate_view_model"
+    ],
+    "fieldsSource": "verified",
+    "responseBodySchemas": {
+      "200": {
+        "type": "object",
+        "properties": {
+          "contribution_type_view_model": {
+            "type": "object"
+          },
+          "tax_year_view_model": {
+            "type": "object"
+          },
+          "match_rate_view_model": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  {
+    "url": "https://bonfire.robinhood.com/transfer/ira_distributions_questionnaire/?account_type={account_type}",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "WireBrowser App IRADistributionViewmodelRecord + live GET 2026-09-11",
+    "queryKeys": [
+      "account_type"
+    ],
+    "requiresAuth": true,
+    "verificationStatus": "captured",
+    "fields": [
+      "account_type",
+      "distribution_faq_view_model",
+      "distribution_type_view_model"
+    ],
+    "fieldsSource": "verified",
+    "responseBodySchemas": {
+      "200": {
+        "type": "object",
+        "properties": {
+          "account_type": {
+            "type": "string"
+          },
+          "distribution_faq_view_model": {
+            "type": "object"
+          },
+          "distribution_type_view_model": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  {
+    "url": "https://bonfire.robinhood.com/transfer/service_fee/",
+    "host": "bonfire.robinhood.com",
+    "categories": [
+      "money-movement"
+    ],
+    "risk": "sensitive-read",
+    "methods": [
+      "GET"
+    ],
+    "source": "WireBrowser App module 81502 TransferServiceFeeRecord, 2026-09-11",
+    "seenOn": [
+      "account-transfers"
+    ],
+    "queryKeys": [
+      "amount",
+      "source_account_type",
+      "sink_account_type",
+      "transfer_type"
+    ],
+    "requiresAuth": true,
+    "verificationStatus": "source-observed",
+    "fields": [
+      "net_amount",
+      "original_amount",
+      "service_fee",
+      "service_fee_discount_amount"
+    ],
+    "fieldsSource": "inferred",
+    "responseBodySchemas": {
+      "200": {
+        "type": "object",
+        "properties": {
+          "service_fee": {
+            "type": "string"
+          },
+          "net_amount": {
+            "type": "string"
+          },
+          "original_amount": {
+            "type": "string"
+          },
+          "service_fee_discount_amount": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
   },
   {
     "url": "https://bonfire.robinhood.com/user_status/stripe/",

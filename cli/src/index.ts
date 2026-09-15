@@ -144,8 +144,17 @@ import {
   buildDepositPlan,
   buildDepositQuote,
   getDepositInventory,
+  getDepositStatus,
+  buildInternalTransferPlan,
+  buildInternalTransferQuote,
+  getInternalTransferInventory,
   buildRothDepositPlan,
   getRothDepositSourceInventory,
+  buildWithdrawalPlan,
+  buildWithdrawalQuote,
+  getWithdrawalInventory,
+  getWithdrawalRead,
+  getWithdrawalStatus,
 } from "./lib.js";
 import type { OptionStrategyLegTemplate, OptionsStrategyPricingMode } from "./lib.js";
 
@@ -160,6 +169,34 @@ program
     "Unofficial Robinhood CLI for account data, options analytics, and controlled account workflows.",
   )
   .version("1.1.0");
+
+program
+  .command("internal-transfer-quote")
+  .description("Validate an owned account-to-account transfer quote. Does not submit.")
+  .requiredOption(
+    "--input-json <json>",
+    "amount, source, destination, limits, eligibility, and idempotency key",
+  )
+  .action((opts: { inputJson: string }) =>
+    printJson(buildInternalTransferQuote(JSON.parse(opts.inputJson))),
+  );
+
+program
+  .command("internal-transfer-plan")
+  .description(
+    "Build a one-shot internal-transfer plan only from a captured POST contract. Does not submit.",
+  )
+  .requiredOption("--input-json <json>", "quote input plus sanitized capturedRequest")
+  .action((opts: { inputJson: string }) =>
+    printJson(buildInternalTransferPlan(JSON.parse(opts.inputJson))),
+  );
+
+program
+  .command("internal-transfer-inventory")
+  .description(
+    "Live-read owned internal accounts and unified-transfer history for reconciliation. Does not submit.",
+  )
+  .action(async () => printJson(await getInternalTransferInventory()));
 
 program
   .command("deposit-quote")
@@ -181,11 +218,363 @@ program
   .action((opts: { inputJson: string }) => printJson(buildDepositPlan(JSON.parse(opts.inputJson))));
 
 program
+  .command("money-movement-resume")
+  .description(
+    "Resume a previously recorded operation after device approval. Never creates a second request identity.",
+  )
+  .requiredOption("--operation-id <id>")
+  .action(async (opts) => {
+    const { resumeMoneyMovement } = await import("./money-movement-journal.js");
+    printJson(await resumeMoneyMovement(opts.operationId));
+  });
+
+program
+  .command("money-movement-quote")
+  .description(
+    "Read live pair validation, fees, amount/count/pending limits and provider reset timestamps.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--kind <kind>")
+  .option("--rail <rail>", "bank_standard, bank_instant, debit_card", "bank_standard")
+  .option("--max-fee <usd>", "maximum fee authorized", "0.00")
+  .action(async (opts) => {
+    const { getMoneyMovementQuote } = await import("./money-movement-quote.js");
+    printJson(
+      await getMoneyMovementQuote({
+        sourceId: opts.sourceId,
+        destinationId: opts.destinationId,
+        amountUsd: opts.amount,
+        kind: opts.kind,
+        rail: opts.rail,
+        maxFeeUsd: opts.maxFee,
+      }),
+    );
+  });
+program
+  .command("money-movement-receipt")
+  .description(
+    "Independently reconcile the exact server receipt with amount, source, destination and direction.",
+  )
+  .requiredOption("--receipt-id <id>")
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--kind <kind>")
+  .action(async (opts) => {
+    const { getMoneyMovementReceipt } = await import("./money-movement-receipt.js");
+    printJson(
+      await getMoneyMovementReceipt({
+        serverReceiptId: opts.receiptId,
+        sourceId: opts.sourceId,
+        destinationId: opts.destinationId,
+        amountUsd: opts.amount,
+        kind: opts.kind,
+      }),
+    );
+  });
+
+program
+  .command("money-movement-verify")
+  .description("Read and advance the original-session identity workflow; never submits a transfer.")
+  .requiredOption("--workflow-id <id>")
+  .option("--resend", "explicitly request a new device notification", false)
+  .action(async (opts) => {
+    const { advanceMoneyMovementVerification } = await import("./money-movement-verification.js");
+    printJson(
+      await advanceMoneyMovementVerification({ workflowId: opts.workflowId, resend: opts.resend }),
+    );
+  });
+
+program
+  .command("internal-transfer-execute")
+  .description(
+    "Validate and execute a native owned-account transfer; no private request fixture required.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .option("--contribution-year <year>")
+  .option("--contribution-type <type>")
+  .option("--distribution-type <type>")
+  .option("--federal-withholding-percent <percent>")
+  .option("--state-withholding-percent <percent>")
+  .option("--withholding-state <code>")
+  .option("--idempotency-id <id>")
+  .option("--dry-run", "construct and validate without submitting", false)
+  .action(async (opts) => {
+    const { runMoneyMovement } = await import("./money-movement-journal.js");
+    printJson(
+      await runMoneyMovement({
+        kind: "internal",
+        input: {
+          sourceId: opts.sourceId,
+          destinationId: opts.destinationId,
+          amountUsd: opts.amount,
+          contributionYear:
+            opts.contributionYear === undefined ? undefined : Number(opts.contributionYear),
+          contributionType: opts.contributionType,
+          iraDistribution:
+            opts.distributionType &&
+            opts.federalWithholdingPercent &&
+            opts.stateWithholdingPercent &&
+            opts.withholdingState
+              ? {
+                  distributionType: opts.distributionType,
+                  federalTaxWithholdingPercent: opts.federalWithholdingPercent,
+                  stateTaxWithholdingPercent: opts.stateWithholdingPercent,
+                  state: opts.withholdingState,
+                }
+              : undefined,
+          idempotencyId: opts.idempotencyId,
+          dryRun: opts.dryRun,
+        },
+      }),
+    );
+  });
+
+program
   .command("deposit-inventory")
   .description(
     "Read eligible owned deposit destinations and observed funding sources. Never submits a deposit.",
   )
   .action(async () => printJson(await getDepositInventory()));
+
+program
+  .command("deposit-execute")
+  .description(
+    "Execute the observed pre_create → create deposit sequence with native bank request contracts; never retries.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--method <rail>")
+  .option(
+    "--contract-path <path>",
+    "optional operator-private capture override (defaults to ROBINHOOD_DEPOSIT_CONTRACT_PATH or operator-private store)",
+  )
+  .option(
+    "--contribution-year <year>",
+    "required for retirement contributions; omit for taxable accounts",
+  )
+  .option(
+    "--idempotency-id <id>",
+    "preserve request identity on an explicitly reconciled continuation",
+  )
+  .option("--dry-run", "validate and construct without sending", false)
+  .action(
+    async (opts: {
+      sourceId: string;
+      destinationId: string;
+      amount: string;
+      method: "bank_standard" | "bank_instant" | "debit_card";
+      contributionYear?: string;
+      idempotencyId?: string;
+      contractPath?: string;
+      dryRun: boolean;
+    }) =>
+      printJson(
+        await (
+          await import("./money-movement-journal.js")
+        ).runMoneyMovement({
+          kind: "deposit",
+          input: {
+            contributionYear:
+              opts.contributionYear === undefined ? undefined : Number(opts.contributionYear),
+            idempotencyId: opts.idempotencyId,
+            sourceId: opts.sourceId,
+            destinationId: opts.destinationId,
+            amountUsd: opts.amount,
+            method: opts.method,
+            contractPath: opts.contractPath,
+            dryRun: opts.dryRun,
+          },
+        }),
+      ),
+  );
+
+program
+  .command("deposit-status")
+  .description(
+    "Read deposit transfer history for the selected source/destination/amount; never sends or retries.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--method <rail>")
+  .action(
+    async (opts: {
+      sourceId: string;
+      destinationId: string;
+      amount: string;
+      method: "bank_standard" | "bank_instant" | "debit_card";
+    }) =>
+      printJson(
+        await getDepositStatus({
+          sourceId: opts.sourceId,
+          destinationId: opts.destinationId,
+          amountUsd: opts.amount,
+          method: opts.method,
+        }),
+      ),
+  );
+
+program
+  .command("withdrawal-quote")
+  .description(
+    "Validate an owned-source to linked-destination withdrawal quote. Does not submit a transfer.",
+  )
+  .requiredOption(
+    "--input-json <json>",
+    "source, destination, history, and authenticated limit quote",
+  )
+  .action((opts: { inputJson: string }) =>
+    printJson(buildWithdrawalQuote(JSON.parse(opts.inputJson))),
+  );
+
+program
+  .command("withdrawal-read")
+  .description(
+    "Read authenticated withdrawal validation and transfer history for one route. Never submits.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--rail <rail>")
+  .action(
+    async (opts: {
+      sourceId: string;
+      destinationId: string;
+      amount: string;
+      rail: "bank_standard" | "bank_instant" | "debit_card";
+    }) =>
+      printJson(
+        await getWithdrawalRead({
+          sourceId: opts.sourceId,
+          destinationId: opts.destinationId,
+          amountUsd: opts.amount,
+          rail: opts.rail,
+        }),
+      ),
+  );
+
+program
+  .command("withdrawal-plan")
+  .description(
+    "Build a one-shot withdrawal plan only from an exact captured POST contract. Does not submit.",
+  )
+  .requiredOption("--input-json <json>", "quote input plus a sanitized capturedRequest")
+  .action((opts: { inputJson: string }) =>
+    printJson(buildWithdrawalPlan(JSON.parse(opts.inputJson))),
+  );
+
+program
+  .command("withdrawal-execute")
+  .description(
+    "Build or execute the captured withdrawal sequence for standard bank, instant bank, debit card, or IRA distribution; dry-runs unless --live-write and never retries.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .requiredOption("--rail <rail>")
+  .option("--max-fee <usd>", "maximum authorized fee", "0.00")
+  .option("--idempotency-id <id>", "original request identity for a reconciled continuation")
+  .option("--distribution-type <type>")
+  .option("--federal-withholding-percent <percent>")
+  .option("--state-withholding-percent <percent>")
+  .option("--withholding-state <code>")
+  .option(
+    "--retirement-eligibility-verified",
+    "confirm the selected IRA distribution questionnaire/eligibility reads were completed",
+    false,
+  )
+  .option("--limit-quote-json <json>", "fresh authenticated source × rail × destination quote")
+  .option("--history-json <json>", "current withdrawal history (defaults to [])", "[]")
+  .option("--contract-path <path>", "optional operator-private capture override")
+  .option(
+    "--live-write",
+    "submit the captured mutation sequence (also requires ROBINHOOD_ALLOW_LIVE_WRITE=1)",
+    false,
+  )
+  .action(
+    async (opts: {
+      sourceId: string;
+      destinationId: string;
+      amount: string;
+      rail: "bank_standard" | "bank_instant" | "debit_card";
+      limitQuoteJson?: string;
+      maxFee?: string;
+      idempotencyId?: string;
+      distributionType?: string;
+      federalWithholdingPercent?: string;
+      stateWithholdingPercent?: string;
+      withholdingState?: string;
+      retirementEligibilityVerified: boolean;
+      historyJson: string;
+      contractPath?: string;
+      liveWrite: boolean;
+    }) =>
+      printJson(
+        await (
+          await import("./money-movement-journal.js")
+        ).runMoneyMovement({
+          kind: "withdrawal",
+          input: {
+            maxFeeUsd: opts.maxFee,
+            idempotencyId: opts.idempotencyId,
+            sourceId: opts.sourceId,
+            destinationId: opts.destinationId,
+            amountUsd: opts.amount,
+            rail: opts.rail,
+            iraDistribution:
+              opts.distributionType &&
+              opts.federalWithholdingPercent &&
+              opts.stateWithholdingPercent &&
+              opts.withholdingState
+                ? {
+                    distributionType: opts.distributionType,
+                    federalTaxWithholdingPercent: opts.federalWithholdingPercent,
+                    stateTaxWithholdingPercent: opts.stateWithholdingPercent,
+                    state: opts.withholdingState,
+                  }
+                : undefined,
+            retirement: opts.retirementEligibilityVerified
+              ? { eligibilityVerified: true }
+              : undefined,
+            limitQuote: opts.limitQuoteJson ? JSON.parse(opts.limitQuoteJson) : undefined,
+            history: JSON.parse(opts.historyJson),
+            contractPath: opts.contractPath,
+            dryRun: !opts.liveWrite,
+          },
+        }),
+      ),
+  );
+
+program
+  .command("withdrawal-status")
+  .description(
+    "Read the unified receipt surface for one selected withdrawal route; never submits or retries.",
+  )
+  .requiredOption("--source-id <id>")
+  .requiredOption("--destination-id <id>")
+  .requiredOption("--amount <usd>")
+  .action(async (opts: { sourceId: string; destinationId: string; amount: string }) =>
+    printJson(
+      await getWithdrawalStatus({
+        sourceId: opts.sourceId,
+        destinationId: opts.destinationId,
+        amountUsd: opts.amount,
+      }),
+    ),
+  );
+
+program
+  .command("withdrawal-inventory")
+  .description(
+    "Read eligible owned withdrawal sources and observed linked destinations. Never submits a withdrawal.",
+  )
+  .action(async () => printJson(await getWithdrawalInventory()));
 
 program
   .command("roth-deposit-plan")

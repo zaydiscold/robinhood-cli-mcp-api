@@ -15,6 +15,7 @@ import {
   computeAutopilot,
   computeCalendar,
   computeExposure,
+  readOwnedEquityPositions,
   computeIncome,
   computePerformance,
   computeRisk,
@@ -4551,12 +4552,7 @@ program
   .option("--account <number>", "account number to query (default: all accounts)")
   .option("--json", "emit JSON")
   .action(async (opts: { sort?: string; account?: string; json?: boolean }) => {
-    const query: Record<string, string> = { nonzero: "true" };
-    if (opts.account) query.account_number = opts.account;
-    const data = await brokerageGetJson(POSITIONS_URL, {}, query);
-    const held = (Array.isArray(data.results) ? data.results : []).filter(
-      (position: any) => num(position.quantity) > 0,
-    );
+    const held = await readOwnedEquityPositions(opts.account);
     if (held.length === 0) {
       process.stdout.write("No open equity positions.\n");
       return;
@@ -4569,6 +4565,7 @@ program
       const avgCost = num(position.average_buy_price);
       return {
         symbol: position.symbol,
+        accountLast4: position.accountLast4,
         qty: num(position.quantity),
         avgCost,
         last,
@@ -4585,10 +4582,11 @@ program
       printJson(rows);
       return;
     }
-    if (opts.account) process.stdout.write(`Account ${opts.account}\n`);
+    if (opts.account) process.stdout.write(`Account …${opts.account.slice(-4)}\n`);
     process.stdout.write(`as of ${new Date().toISOString()}\n`);
     printTable(
       rows.map((row: any) => ({
+        account: `…${row.accountLast4}`,
         symbol: row.symbol,
         qty: Number.isInteger(row.qty) ? row.qty : row.qty.toFixed(4),
         last: usd(row.last),
@@ -4596,7 +4594,7 @@ program
         avgCost: usd(row.avgCost),
         return: pct(row.returnPct),
       })),
-      ["symbol", "qty", "last", "value", "avgCost", "return"],
+      ["account", "symbol", "qty", "last", "value", "avgCost", "return"],
     );
     const winners = rows.filter(
       (row: any) => Number.isFinite(row.returnPct) && row.returnPct > 0,
@@ -5041,12 +5039,19 @@ program
         "risk_sales",
       ],
     );
-    process.stdout.write("\n");
+    process.stdout.write(
+      "\nRisk bands are derived from maintenance excess before uncleared deposits; they are not broker call notices.\n",
+    );
     for (const a of r.accounts) {
+      if (a.excessMaintenanceWithUnclearedDepositsUsd !== null) {
+        process.stdout.write(
+          `…${a.accountNumber.slice(-4)} maintenance excess including uncleared deposits: ${usd(a.excessMaintenanceWithUnclearedDepositsUsd)}; pending adjustment ${usd(a.pendingDepositMaintenanceAdjustmentUsd ?? Number.NaN)}.\n`,
+        );
+      }
       const who = `…${a.accountNumber.slice(-4)}`;
       process.stdout.write(
         a.borrowedUsd > 0
-          ? `${who} is borrowing ${usd(a.borrowedUsd)} at ${Number.isFinite(a.marginInterestRatePct) ? a.marginInterestRatePct.toFixed(2) : "?"}%${a.nextBillingDate ? ` — next billed ${a.nextBillingDate}` : ""}.\n`
+          ? `${who} broker-reported borrowed/debit balance ${usd(a.borrowedUsd)}; reported rate  ${Number.isFinite(a.marginInterestRatePct) ? a.marginInterestRatePct.toFixed(2) : "?"}%${a.nextBillingDate ? ` — next billed ${a.nextBillingDate}` : ""}.\n`
           : `${who} is not borrowing on margin${Number.isFinite(a.marginAvailableUsd) && a.marginAvailableUsd > 0 ? ` (${usd(a.marginAvailableUsd)} margin available)` : ""}.\n`,
       );
       if (a.recentRiskLiquidationCount > 0) {
@@ -5910,9 +5915,12 @@ program
       for (const a of r.accounts) {
         const s = a.summary;
         const ret =
-          s.periodReturnUsd !== null
-            ? `${usd(s.periodReturnUsd)} (${s.periodReturnPct?.toFixed(2)}%)`
-            : "—";
+          [
+            s.periodReturnUsd !== null ? usd(s.periodReturnUsd) : null,
+            s.periodReturnPct !== null ? `${s.periodReturnPct.toFixed(2)}%` : null,
+          ]
+            .filter((value) => value !== null)
+            .join(" / ") || "—";
         process.stdout.write(
           `${a.account}${a.nickname ? " " + a.nickname : ""}: ${s.currentValueUsd !== null ? usd(s.currentValueUsd) : "—"} · ${r.span} return ${ret} · ${s.pointCount} pts\n`,
         );
@@ -6252,15 +6260,19 @@ program
       `  delta: ${g.delta.toFixed(1)} · gamma: ${g.gamma.toFixed(1)} · theta: ${g.theta.toFixed(2)} · vega: ${g.vega.toFixed(2)} · rho: ${g.rho.toFixed(2)}\n\n`,
     );
     if (r.concentration.length) {
-      process.stdout.write("Concentration by Underlying:\n");
+      process.stdout.write(
+        "Concentration by ticker — weight = % of gross position value; net_equity = % of net equity; neither is delta-adjusted exposure:\n",
+      );
       printTable(
         r.concentration.map((c) => ({
           symbol: c.symbol,
           mktVal: usd(c.marketValueUsd),
           weight: `${c.weightPct.toFixed(1)}%`,
+          net_equity:
+            c.weightPctOfNetEquity !== null ? `${c.weightPctOfNetEquity.toFixed(1)}%` : "—",
           flag: c.flag ? ">20% ⚠️" : "",
         })),
-        ["symbol", "mktVal", "weight", "flag"],
+        ["symbol", "mktVal", "weight", "net_equity", "flag"],
       );
     } else {
       process.stdout.write("No positions.\n");

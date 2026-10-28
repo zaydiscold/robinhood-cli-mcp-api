@@ -2,21 +2,31 @@ packages:
   - cli
   - mcp
 
+# Security pins apply to every workspace dependency path, including dev tooling.
+# Recheck these when upgrading parents: stale exact overrides can hold back fixes.
 overrides:
   esbuild: 0.28.1
-  vite: 8.1.4
-  hono: 4.13.5
+  vite: 8.1.6
+  hono: 4.13.11
   "@hono/node-server": 2.0.10
-  smol-toml: 1.7.1
-  vitest: 4.1.11
-  "@vitest/mocker": 4.1.11
+  # The advisory names >=1.8.1; that version is not published. Use patched 1.9.1.
+  smol-toml: 1.9.1
+  vitest: 4.1.12
+  "@vitest/mocker": 4.1.12
   postcss: 8.5.23
-  body-parser: 2.3.0
-  fast-uri: 3.1.6
-  qs: 6.16.0
-  ip-address: 10.3.1
-  brace-expansion: 5.0.9
+  body-parser: 2.4.0
+  # Stay on Ajv's 3.x line; includes the upstream GHSA-58mr-gqgx-xq4g fix.
+  fast-uri: 3.1.9
+  qs: 6.16.1
+  ip-address: 10.7.4
+  brace-expansion: 5.0.12
   nanoid: 3.3.18
+  # Express trust-subnet spoofing (GHSA-jqcg-44mw-7w3h).
+  proxy-addr: 2.0.8
+  # PostCSS source-map event-loop DoS (GHSA-68fv-2mgg-jv7q).
+  source-map-js: 1.2.2
+  # Knip retains a separate Zod resolution from the MCP workspace.
+  "zod@^4": 4.6.7
 
 ignoredBuiltDependencies:
   - esbuild

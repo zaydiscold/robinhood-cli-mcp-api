@@ -1,20 +1,44 @@
-# Robinhood CLI documentation index
+# Robinhood CLI documentation
 
-This directory contains public, sanitized, long-form evidence and implementation notes. It is the
-third progressive-disclosure layer after [`../SKILL.md`](../SKILL.md) and the focused
-[`../knowledge/`](../knowledge/README.md) modules.
+Start with the task you are doing. The [project README](../README.md) covers installation and the
+first account read; the [command reference](command-reference.md) routes everyday work to the
+maintained CLI. Agents should read [SKILL.md](../SKILL.md), then one focused
+[knowledge module](../knowledge/README.md), rather than loading this entire library.
 
-Do not load every document into an agent context. Start with the skill, load one focused knowledge
-module, and open a deep document only when the module points here.
+## Find the right guide
 
-Private captures, credentials, account values, and unsanitized experiments belong outside the public
-repository or in the repository's protected local workflow. Public docs must never contain tokens,
-account numbers, balances, live order IDs, bank details, or private webhook payloads.
+| I want to… | Start here |
+| --- | --- |
+| Install, connect, and run a first read | [Project README](../README.md), [authentication](auth.md) |
+| Inspect accounts, positions, performance, or risk | [Command reference](command-reference.md), [accounts module](../knowledge/accounts.md), [margin intelligence](margin-call-intelligence.md) |
+| Understand what the analytics measure | [Portfolio-read reliability audit](reliability-audit-2026-10-27.md), [options exposure analytics](options-exposure-analytics.md) |
+| Connect an agent or choose its tool catalog | [MCP README](../mcp/README.md), [MCP operations](../knowledge/mcp-operations.md) |
+| Plan an option strategy or roll | [Multi-leg module](../knowledge/multi-leg.md), [rolling module](../knowledge/rolling.md), [execution safety](../knowledge/execution-safety.md) |
+| Prepare an account change and verify its result | [Write contract](write-operations.md), [execution safety](../knowledge/execution-safety.md) |
+| Deposit, transfer, or withdraw | [Deposit module](../knowledge/deposits.md), [internal transfers](../knowledge/internal-transfers.md), [withdrawals](withdrawals.md) |
+| Inspect tax lots or research tax mechanics | [Tax module](../knowledge/tax.md), [tax strategy routing](../knowledge/tax-strategy-routing.md) |
+| Extend the CLI, MCP, or API map | [Architecture](cli-mcp-architecture.md), [maintainer guide](../AGENTS.md), [route research](undocumented-surface.md) |
+| Check how well a capability is evidenced | [Evidence-confidence ledger](evidence-confidence-ledger.md), then the dated receipt it cites |
 
-## Core operating contracts
+## How to read this library
+
+Maintained operational guides describe the current contract; dated research and verification notes
+record what was observed at a particular time. A dated audit is not a promise that every conclusion
+still holds. Runtime CLI `--help`, MCP `tools/list`, package exports, and generated contracts resolve
+interface questions; report discrepancies rather than silently choosing a convenient source.
+
+Public documentation must be sanitized. Keep credentials, account identifiers, balances, live order
+IDs, bank details, screenshots, and raw responses in the operator's private workflow. Optional
+operator templates live in [`templates/operator/`](../templates/operator/); personal entries are not
+part of installation. See [local encryption](local-encryption.md) before handling a source checkout's
+protected `local/` files.
+
+## Maintained operating and implementation guides
 
 | File | Use |
 | --- | --- |
+| [`command-reference.md`](command-reference.md) | Maintained task-to-command reference and specialist workflow links |
+| [`reliability-audit-2026-10-27.md`](reliability-audit-2026-10-27.md) | Dated portfolio-read discrepancies, fixes, reproduction steps, and remaining accounting limits |
 | [`cli-mcp-architecture.md`](cli-mcp-architecture.md) | Shared engine, CLI/MCP adapters, route-map flow, and maintenance invariants |
 | [`write-operations.md`](write-operations.md) | Dry-run and live-write contract |
 | [`evidence-confidence-ledger.md`](evidence-confidence-ledger.md) | Evidence tier for capability families |
@@ -23,7 +47,7 @@ account numbers, balances, live order IDs, bank details, or private webhook payl
 | [`tos-notes.md`](tos-notes.md) | Terms and access-risk notes |
 | [`../ROADMAP.md`](../ROADMAP.md) | Current product goals |
 
-## Agent and MCP design
+## Dated agent and MCP design evidence
 
 | File | Use |
 | --- | --- |
@@ -36,7 +60,7 @@ account numbers, balances, live order IDs, bank details, or private webhook payl
 Runtime truth is CLI `--help`, MCP `tools/list`, package exports, and generated maps. Dated documents
 are evidence, not automatically the current interface.
 
-## Accounts, settings, and service reads
+## Account and service discovery evidence
 
 | File | Use |
 | --- | --- |
@@ -47,7 +71,7 @@ are evidence, not automatically the current interface.
 | [`ipo-access-and-24-hour-contract-map-2026-08-08.md`](ipo-access-and-24-hour-contract-map-2026-08-08.md) | IPO readiness and 24-hour equity-order evidence boundaries |
 | [`stock-page-profile-2026-06-03.md`](stock-page-profile-2026-06-03.md) | Stock-detail endpoint map |
 
-## Options mechanics and execution
+## Dated options research and execution evidence
 
 | File | Use |
 | --- | --- |
@@ -78,7 +102,7 @@ Narrative tax docs must not contradict the generated catalog. They also must not
 rate comparisons, convert Robinhood estimates into law, or present box-spread, QCC, wash-sale,
 straddle, or constructive-sale conclusions as automatic.
 
-## Market and research context
+## Historical market context and audits
 
 | File | Use |
 | --- | --- |
@@ -87,13 +111,11 @@ straddle, or constructive-sale conclusions as automatic.
 | [`release-notes-2026-06-04.md`](release-notes-2026-06-04.md) | Historical release notes |
 | [`COMPREHENSIVE-AUDIT-2026-06-18.md`](COMPREHENSIVE-AUDIT-2026-06-18.md) | Historical hardening audit; current issues and roadmap supersede completed items |
 
-Operator memory lives at the repository root:
-
-- [`../ball-knowledge.md`](../ball-knowledge.md): dated theses and source leads
-- [`../trading-log.md`](../trading-log.md): execution and intent history
-- [`../knowledge/signals.md`](../knowledge/signals.md): binding source-quality and memory rules
-
-Memory is context, not current fact, account truth, or standing authorization.
+Operator memory is separate from public product documentation. Optional local files such as
+`ball-knowledge.md`, `trading-log.md`, and `trade-notes.md` record the operator's theses, intent, and
+lessons; [templates](../templates/operator/) show their shape without publishing personal entries.
+The [signals module](../knowledge/signals.md) defines source-quality and memory rules. Memory is
+context, not current account truth or standing authorization.
 
 ## Archive and naming rules
 
@@ -101,7 +123,7 @@ Use short operational names when a document is maintained. Keep a date in the fi
 is part of the evidence, such as a browser capture, live verification, market outlook, or historical
 audit.
 
-Completed implementation plans and obsolete captures belong under `archive/`. If an archived or dated
+[`archive/`](archive/) holds historical plans and superseded material; [`evidence-receipts/`](evidence-receipts/) holds structured verification evidence. Completed plans and obsolete captures are candidates for archiving after their maintained replacement and inbound links have been checked. Do not move a document merely because its filename contains a date. If an archived or dated
 document conflicts with a maintained module, generated contract, or runtime surface, report the
 discrepancy and use the newer authority.
 

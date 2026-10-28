@@ -2,7 +2,16 @@
 
 All notable changes to the Robinhood CLI and MCP are documented here.
 
-## Unreleased - 2026-08-23
+## Unreleased
+
+### Portfolio read accuracy and onboarding — 2026-10-27
+
+- Read performance returns from signed broker-display fields instead of chart coordinates; preserve unavailable returns.
+- Share a complete paginated equity inventory between CLI and MCP, retaining account identity and surfacing read failures.
+- Query option history for each owned account and retain account, symbol, and order provenance.
+- Show uncleared-deposit maintenance context and distinguish gross concentration from net-equity weights.
+- Replace the overloaded README with focused onboarding and a separate command reference; clarify authentication and interpretation limits.
+
 
 ### Public-product cleanup
 

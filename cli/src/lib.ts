@@ -7563,6 +7563,38 @@ export async function listOwnedTradingAccounts(
   return accts;
 }
 
+/** Complete owned equity inventory shared by CLI and MCP; never substitutes the default account. */
+export async function readOwnedEquityPositions(
+  accountNumber?: string,
+  deps: { getJson?: typeof brokerageGetJson; getAll?: typeof brokerageGetAllResults } = {},
+): Promise<Awaited<ReturnType<typeof brokerageGetAllResults>>> {
+  const accounts = await listOwnedTradingAccounts(deps.getJson ?? brokerageGetJson, accountNumber);
+  if (!accounts.length)
+    throw new Error("No owned trading accounts discovered; inventory completeness is unknown");
+  const getAll = deps.getAll ?? brokerageGetAllResults;
+  const held: Awaited<ReturnType<typeof brokerageGetAllResults>> = [];
+  for (const { acct } of accounts) {
+    const positions = await getAll(
+      "https://api.robinhood.com/positions/",
+      {},
+      {
+        nonzero: "true",
+        account_number: acct,
+      },
+    );
+    held.push(
+      ...positions
+        .filter((position) => Number(position.quantity) > 0)
+        .map((position) => ({
+          ...position,
+          account_number: acct,
+          accountLast4: acct.slice(-4),
+        })),
+    );
+  }
+  return held;
+}
+
 export interface AccountPulseAccount {
   accountLast4: string;
   label: string;
@@ -8196,6 +8228,9 @@ export interface MarginHealth {
   equityUsd: number;
   marketValueUsd: number;
   excessMaintenanceUsd: number;
+  excessMaintenanceWithUnclearedDepositsUsd: number | null;
+  pendingDepositMaintenanceAdjustmentUsd: number | null;
+  riskStatusSource: string;
   excessMarginUsd: number;
   maintenanceRequirementUsd: number;
   maintenanceBufferPctOfEquity: number;
@@ -8295,6 +8330,21 @@ export async function getMarginHealth(
           equityUsd,
           marketValueUsd,
           excessMaintenanceUsd,
+          excessMaintenanceWithUnclearedDepositsUsd: Number.isFinite(
+            finiteNumber(portfolio.excess_maintenance_with_uncleared_deposits),
+          )
+            ? finiteNumber(portfolio.excess_maintenance_with_uncleared_deposits)
+            : null,
+          pendingDepositMaintenanceAdjustmentUsd:
+            Number.isFinite(finiteNumber(portfolio.excess_maintenance_with_uncleared_deposits)) &&
+            Number.isFinite(excessMaintenanceUsd)
+              ? round2(
+                  finiteNumber(portfolio.excess_maintenance_with_uncleared_deposits) -
+                    excessMaintenanceUsd,
+                )
+              : null,
+          riskStatusSource:
+            "derived_from_excess_maintenance_before_uncleared_deposits; not a broker call notice",
           excessMarginUsd,
           maintenanceRequirementUsd,
           maintenanceBufferPctOfEquity,
@@ -10400,6 +10450,30 @@ function parseMoneyUsd(v: unknown): number {
   if (!Number.isFinite(magnitude)) return Number.NaN;
   return negative ? -magnitude : magnitude;
 }
+// Chart x/y are plotting coordinates. Returns come from the broker's signed display.
+function parseDisplayedReturn(
+  display:
+    | { main?: { value?: unknown; color?: { light?: string; dark?: string } }; icon?: string }
+    | undefined,
+): { usd: number | null; pct: number | null } {
+  const value = String(display?.main?.value ?? "").trim();
+  const dollar = value.match(/[-−+]?\s*\$[\d,]+(?:\.\d+)?/);
+  const percent = value.match(/\(([−+\-]?[\d,.]+)%\)/);
+  const color = display?.main?.color;
+  const negative =
+    display?.icon === "stock_down_16" ||
+    color?.light === "negative" ||
+    color?.dark === "negative" ||
+    /^[-−]/.test(value);
+  const sign = negative ? -1 : 1;
+  return {
+    usd: dollar ? sign * Math.abs(parseMoneyUsd(dollar[0])) : null,
+    pct: percent
+      ? (negative || /^[−-]/.test(percent[1]) ? -1 : 1) *
+        Math.abs(Number(percent[1].replace(/[,−]/g, "")))
+      : null,
+  };
+}
 /**
  * Portfolio historical performance — the equity curve over time (the data behind a `performance`
  * command: account value across day/week/month/3month/ytd/year/all). Reads the desktop web app's
@@ -10411,14 +10485,13 @@ function parseMoneyUsd(v: unknown): number {
  * summed client-side. Each account degrades independently (a failed read → a warning, not a throw).
  *
  * Reliable fields: the curve lives in lines[identifier="returns"].segments[].points[], where each
- * point's dollar value is cursor_data.primary_value.value and its return fraction is `y` (both
- * populated on 100% of points). The high-precision price_chart_data block is inconsistent
+ * point's dollar value is cursor_data.primary_value.value. Returns must be parsed from
+ * cursor_data.secondary_value, including its direction metadata; `y` is a chart coordinate. The high-precision price_chart_data block is inconsistent
  * (null on year/all spans) — do NOT depend on it. `x` is a 0..1 layout fraction, not a timestamp;
  * the timestamp is cursor_data.label.value.
  */
 export async function computePerformance(opts: any = {}, deps: any = {}) {
   const getJson = deps.getJson ?? brokerageGetJson;
-  const n = (v: unknown) => Number(v);
   const warnings: string[] = [];
   const spanInput = String(opts.span ?? "day").toLowerCase();
   const span = PERFORMANCE_SPANS[spanInput] ?? "day";
@@ -10450,7 +10523,7 @@ export async function computePerformance(opts: any = {}, deps: any = {}) {
           points.push({
             at: cd.label?.value ?? null,
             valueUsd: round2(parseMoneyUsd(cd.primary_value?.value)),
-            returnPct: round2(n(p?.y) * 100),
+            returnPct: parseDisplayedReturn(cd.secondary_value).pct,
             returnLabel: cd.secondary_value?.main?.value ?? null,
             session: cd.secondary_value?.description?.value ?? null,
           });
@@ -10460,10 +10533,24 @@ export async function computePerformance(opts: any = {}, deps: any = {}) {
       const last = points[points.length - 1] ?? null;
       const baselineUsd = round2(parseMoneyUsd(body?.performance_baseline?.amount));
       const currentValueUsd = last ? last.valueUsd : Number.NaN;
-      const periodReturnUsd =
-        Number.isFinite(currentValueUsd) && Number.isFinite(baselineUsd)
-          ? round2(currentValueUsd - baselineUsd)
-          : null;
+      const displayedReturn = parseDisplayedReturn(body?.default_display?.secondary_value);
+      const lastReturn = parseDisplayedReturn(
+        returnsLine.segments
+          ?.flatMap(
+            (segment: {
+              points?: {
+                cursor_data?: { secondary_value?: Parameters<typeof parseDisplayedReturn>[0] };
+              }[];
+            }) => segment.points ?? [],
+          )
+          .at(-1)?.cursor_data?.secondary_value,
+      );
+      const periodReturnUsd = displayedReturn.usd ?? lastReturn.usd;
+      const periodReturnPct = displayedReturn.pct ?? lastReturn.pct;
+      if (periodReturnPct === null)
+        warnings.push(
+          `performance return unavailable (…${acct.slice(-4)}): no broker return display; chart coordinates are not returns`,
+        );
       accounts.push({
         accountNumber: acct,
         account: "…" + acct.slice(-4),
@@ -10473,7 +10560,8 @@ export async function computePerformance(opts: any = {}, deps: any = {}) {
           currentValueUsd: Number.isFinite(currentValueUsd) ? currentValueUsd : null,
           baselineUsd: Number.isFinite(baselineUsd) ? baselineUsd : null,
           periodReturnUsd,
-          periodReturnPct: last ? last.returnPct : null,
+          periodReturnPct,
+          returnSource: "broker_display",
           pointCount: points.length,
           first,
           last,
@@ -11186,12 +11274,15 @@ export async function computeExposure(opts: any = {}, deps: any = {}) {
       symbol,
       marketValueUsd: round2(value),
       weightPct: totalPortfolio > 0 ? round2((value / totalPortfolio) * 100) : 0,
+      weightPctOfNetEquity: totalEquity > 0 ? round2((value / totalEquity) * 100) : null,
       flag: totalPortfolio > 0 && value / totalPortfolio > 0.2,
     }))
     .sort((a, b) => b.weightPct - a.weightPct);
   return {
     accountsScanned: accts.map((a: any) => "…" + a.acct.slice(-4)),
     totalEquityUsd: round2(totalEquity),
+    grossPositionValueUsd: round2(totalPortfolio),
+    concentrationWeightBasis: "gross_position_market_value; not delta-adjusted economic exposure",
     concentration,
     netGreeks: {
       contractMultiplier: 100,
@@ -11523,25 +11614,35 @@ export async function getUnifiedHistory(
     }
   }
 
-  // Options orders
-  const op = await safeGetAll(
-    "https://api.robinhood.com/options/orders/",
-    {},
-    opts.accountNumber ? { account_numbers: opts.accountNumber } : {},
-  );
-  if (op.ok)
+  // The unscoped options endpoint defaults to the primary account. Enumerate explicitly.
+  for (const { acct, label } of owned) {
+    const op = await safeGetAll(
+      "https://api.robinhood.com/options/orders/",
+      {},
+      { account_numbers: acct },
+    );
+    if (!op.ok)
+      throw new Error(
+        `option history read failed (…${acct.slice(-4)}); refusing incomplete history`,
+      );
     for (const r of op.data) {
       if (r.id && seenOrderIds.has(String(r.id))) continue;
       const t = r.updated_at ?? r.created_at;
-      if (inWindow(t))
-        events.push({
-          time: String(t),
-          kind: "option",
-          summary:
-            `${r.chain_symbol ?? "?"} ${r.opening_strategy ?? r.closing_strategy ?? ""} ${r.direction ? `(${r.direction})` : ""} ${r.quantity ?? ""} @ ${r.price ?? "?"}`.trim(),
-          state: String(r.state ?? "?"),
-        });
+      if (!inWindow(t)) continue;
+      if (r.id) seenOrderIds.add(String(r.id));
+      events.push({
+        time: String(t),
+        kind: "option",
+        summary:
+          `${r.chain_symbol ?? "?"} ${r.opening_strategy ?? r.closing_strategy ?? ""} ${r.direction ? `(${r.direction})` : ""} ${r.quantity ?? ""} @ ${r.price ?? "?"}`.trim(),
+        state: String(r.state ?? "?"),
+        orderId: r.id ? String(r.id) : undefined,
+        accountLast4: acct.slice(-4),
+        accountLabel: label,
+        symbol: r.chain_symbol ? String(r.chain_symbol) : undefined,
+      });
     }
+  }
 
   // Crypto orders
   const cx = await safeGetAll("https://nummus.robinhood.com/orders/");

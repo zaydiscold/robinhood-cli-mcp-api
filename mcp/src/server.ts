@@ -15,6 +15,7 @@ import {
   computeSentinel,
   computeCalendar,
   computeExposure,
+  readOwnedEquityPositions,
   computeIncome,
   computePerformance,
   computeRisk,
@@ -1949,44 +1950,7 @@ server.registerTool(
     annotations: toolAnnotations(true, "read"),
   },
   async ({ account_number }) => {
-    // EH-03: enumerate every owned account, not just the default one. The bare positions/ read
-    // returns only the individual account — contracts/shares in IRAs or secondary accounts vanish.
-    let accounts: string[];
-    if (account_number) {
-      accounts = [account_number];
-    } else {
-      const owned = await loadOwnedAccounts();
-      accounts = owned ? [...owned.numbers] : [];
-    }
-    const held: any[] = [];
-    if (accounts.length === 0) {
-      // Owned-graph lookup failed — fall back to the bare (single/default) read rather than nothing.
-      const data = await brokerageGetJson(
-        "https://api.robinhood.com/positions/",
-        {},
-        { nonzero: "true" },
-      );
-      for (const p of Array.isArray(data.results) ? data.results : [])
-        if (n(p.quantity) > 0) held.push(p);
-    } else {
-      const perAccount = await Promise.all(
-        accounts.map(async (acct) => {
-          try {
-            const data = await brokerageGetJson(
-              "https://api.robinhood.com/positions/",
-              {},
-              { nonzero: "true", account_number: acct },
-            );
-            return (Array.isArray(data.results) ? data.results : [])
-              .filter((p: any) => n(p.quantity) > 0)
-              .map((p: any) => ({ ...p, account_number: p.account_number ?? acct }));
-          } catch {
-            return [];
-          }
-        }),
-      );
-      for (const arr of perAccount) held.push(...arr);
-    }
+    const held = await readOwnedEquityPositions(account_number);
     return jsonResponse({
       count: held.length,
       positions: held.map((p: any) => ({

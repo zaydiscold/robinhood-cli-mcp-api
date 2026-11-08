@@ -1,3 +1,4 @@
+*.sh text eol=lf
 # Keep Prettier-controlled text deterministic across Windows/macOS/Linux.
 *.ts text eol=lf
 *.tsx text eol=lf

@@ -153,6 +153,75 @@ describe("MCP protocol conformance", () => {
         readOnlyHint: tool.annotations?.readOnlyHint,
       }));
     expect(annotationMismatches).toEqual([]);
+    const byName = new Map(tools.tools.map((tool) => [tool.name, tool]));
+    for (const tool of tools.tools) {
+      expect(tool.name).toMatch(/^robinhood_[a-z0-9_]+$/);
+      expect(tool.title?.trim(), `${tool.name} title`).toBeTruthy();
+      expect(tool.description?.trim(), `${tool.name} description`).toBeTruthy();
+      expect(tool.annotations?.openWorldHint, tool.name).toBe(true);
+      if (accessByName.get(tool.name) === "read") {
+        expect(tool.annotations, tool.name).toMatchObject({
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+        });
+      }
+    }
+    // Pin real money/account mutations independently of the production risk derivation.
+    for (const name of [
+      "robinhood_buy",
+      "robinhood_sell",
+      "robinhood_cancel",
+      "robinhood_panic",
+      "robinhood_brokerage_execute",
+      "robinhood_crypto_execute",
+      "robinhood_settings",
+      "robinhood_recurring",
+      "robinhood_watchlist_add",
+      "robinhood_watchlist_remove",
+      "robinhood_watchlist_create",
+      "robinhood_watchlist_buy",
+    ]) {
+      if (activeMcpProfile !== "full" && !accessByName.has(name)) continue;
+      expect(byName.get(name)?.annotations, name).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+      });
+    }
+    for (const name of [
+      "robinhood_accounts",
+      "robinhood_portfolio",
+      "robinhood_positions",
+      "robinhood_buying_power",
+      "robinhood_margin",
+      "robinhood_documents",
+      "robinhood_dividends",
+      "robinhood_quote",
+      "robinhood_options_chain",
+      "robinhood_pretrade",
+    ]) {
+      if (activeMcpProfile !== "full" && !accessByName.has(name)) continue;
+      expect(byName.get(name)?.annotations, name).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    }
+    for (const name of ["robinhood_review_note", "robinhood_roll_ledger"]) {
+      if (activeMcpProfile !== "full" && !accessByName.has(name)) continue;
+      expect(byName.get(name)?.annotations, name).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    }
+    for (const name of ["robinhood_buy", "robinhood_sell", "robinhood_cancel"]) {
+      if (activeMcpProfile !== "full" && !accessByName.has(name)) continue;
+      const properties = byName.get(name)?.inputSchema.properties ?? {};
+      expect(properties, name).toHaveProperty("dryRun");
+      expect("liveWrite" in properties || "live" in properties, name).toBe(true);
+    }
   });
 
   it("returns both text and structured content over the wire", async () => {

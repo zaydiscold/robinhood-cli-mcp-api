@@ -1,9 +1,20 @@
 # Financial Tools Reference
 
-Six new financial-analysis tools added 2026-06-18. All math is done in-engine — agents and
-callers must not hand-compute totals, Greeks, or projections. The engine lives in
+Reference for the financial-analysis tools. Calculations are provided by the shared engine;
+inspect their account scope, source, and completeness before using them for decisions. The engine lives in
 `cli/src/lib.ts`; the CLI renders it; the MCP returns it as JSON. Same alignment invariant
 as every other `compute*` function in the codebase.
+
+---
+
+## Interpreting account values
+
+- Performance percentages come from the broker’s signed return display, not chart plotting coordinates. They are broker-reported returns, not an independently reconciled accounting or tax result.
+- Holdings and option history require explicit reads for each owned account and complete pagination. A failed account read must not be interpreted as an empty account.
+- Maintenance excess before uncleared deposits and maintenance excess including them are separate fields. A derived risk band is not a formal broker call notice; inspect current restrictions and funding status.
+- Gross-position concentration and concentration relative to net equity use different denominators. Neither is a look-through model of option delta or leveraged fund exposure.
+- Option marks and Greeks are estimates, not guaranteed closing proceeds. Missing data must remain unknown.
+- A replacement trade creates a new transaction; earlier losses remain part of the whole sequence and wash-sale adjustments can carry into the new basis. The current transaction history is not a complete campaign ledger.
 
 ---
 

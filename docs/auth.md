@@ -92,3 +92,7 @@ Run `robinhood-cli auth refresh` to discover an existing local browser session, 
 Use the same `ROBINHOOD_ENV_PATH` for CLI, MCP, and scheduled jobs. `ROBINHOOD_DATA_DIR` selects the default credential and operator-data directory. Source checkouts work independently of the caller's current directory; installed packages use their own assets and the configured data directory. Avoid embedding copied bearer tokens in MCP or cron definitions, since a long-running process can retain them after the file changes.
 
 A network timeout is not evidence of logout. Verify host reachability separately, then verify an account read. A fresh process succeeding does not prove an existing cached MCP process has reloaded. Read recovery can adopt a newer on-disk token; writes never automatically resubmit after authentication recovery.
+
+## Windows bootstrap
+
+`pnpm auth:refresh` selects Git Bash by absolute path, so a Windows `bash` command that starts WSL is never selected through PATH. Install Git for Windows in its standard location, or set `ROBINHOOD_BASH_PATH` to an existing absolute Bash executable path. This bootstrap works before the TypeScript build. Shell scripts are checked out with LF line endings.

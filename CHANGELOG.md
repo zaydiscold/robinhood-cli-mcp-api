@@ -4,6 +4,14 @@ All notable changes to the Robinhood CLI and MCP are documented here.
 
 ## Unreleased
 
+### Public consolidation — 2026-11-08
+
+- Use an absolute-path Bash launcher for bootstrap authentication, with Windows path and failure-propagation regressions; enforce LF shell scripts.
+- Refresh Hono server and minimatch security pins without lowering the audit threshold.
+- Add portable MCP configuration, a contributor guide, and protocol-level safety annotation assertions.
+- Consolidate concise onboarding and account-value interpretation notes.
+
+
 ### Portfolio read accuracy and onboarding — 2026-10-27
 
 - Read performance returns from signed broker-display fields instead of chart coordinates; preserve unavailable returns.

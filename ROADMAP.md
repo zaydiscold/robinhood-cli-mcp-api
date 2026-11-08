@@ -10,6 +10,9 @@ Current product goals only. Completed work belongs in [`CHANGELOG.md`](./CHANGEL
 
 ## P1 — public product quality
 
+- [ ] Build a shared trade-campaign ledger that joins original fills, explicit rolls, replacements, expirations, fees, transferred lots, and current inventory. Keep inferred replacement links distinct from explicit roll legs, report unmatched quantities, and do not label incomplete reconstructions as period returns or tax results.
+
+
 - [ ] Generate an API-map changelog from route-map diffs so additions, removals, method changes, and risk-tier changes are reviewable in every release.
 - [ ] Continue splitting the oversized CLI/MCP adapters into typed modules without breaking the shared-engine parity contract.
 - [ ] Add focused schemas for the highest-use MCP inputs and structured output for the highest-use reads, preserving compatibility content.

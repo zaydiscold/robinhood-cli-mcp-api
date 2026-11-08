@@ -1,31 +1,22 @@
 #!/usr/bin/env bash
-# Refresh the brokerage bearer token for robinhood-cli — fully agentic.
+# Refresh the local Robinhood session token for robinhood-cli.
 #
-# Token source, in priority order:
-#   1. LIVE read over CDP from a running debug Chrome (chrome-debug / port 9222):
-#      reads localStorage["web:auth_state"] straight from the tab's memory — the
-#      authoritative, always-current value. Fixes the case where Chrome hasn't
-#      flushed a freshly-rotated token to disk yet. Opt out with ROBINHOOD_NO_CDP=1.
-#   2. FALLBACK: scan Chrome's on-disk localStorage LevelDB (browser-free, zero
-#      network) — used headless/offline or when no debug Chrome is reachable.
+# This reuses the Robinhood web session you are already logged into, on your own
+# machine. It does not log in for you, complete MFA, mint a new session, or touch
+# your password. It looks at the sessions your own browser already holds, picks the
+# one with the most remaining lifetime, verifies it with a single read-only accounts
+# request, and only then promotes it into the local gitignored .env.
 #
-# Robinhood's web app keeps its auth in localStorage["web:auth_state"], and Chromium
-# periodically flushes that state to LevelDB. This command does not renew a bearer:
-# it ranks existing browser/session candidates, validates the winner live, and only
-# then promotes it. A new lifetime requires Robinhood to mint a new token at login.
+# Sources checked, in order (all local to this machine):
+#   1. A running local debug browser, if one is reachable (opt out with ROBINHOOD_NO_CDP=1).
+#      Useful because a freshly-rotated session may not have been written to disk yet.
+#   2. The browser's own on-disk session storage (no browser launched, no network).
 #
-# Why not CDP / the OAuth refresh-token grant?
-#   - CDP (browser-harness) needs a one-time Chrome "Allow" click on reconnect — noise.
-#   - The OAuth refresh_token grant rotates the refresh token on use, which can silently
-#     invalidate the live browser session. A local disk read touches neither.
-# Discovery never opens a browser. The final staged bearer is verified with one
-# read-only accounts request before the production .env is replaced.
-#
-# Chrome's localStorage split-encodes: the KEY (web:auth_state) is UTF-16 but the VALUE
-# JSON is stored single-byte (Latin-1) because it's ASCII — so we scan bytes for the
-# access_token/refresh_token object directly.
-#
-# The token value is written from inside the python process — it never touches stdout/argv.
+# This never renews or extends a session; a new lifetime only happens when you log in
+# to Robinhood normally in your browser. Nothing is opened or clicked on your behalf. The
+# selected token is verified live before the existing .env is replaced, and a failed check
+# leaves your current .env untouched. The token is written from inside the Python helper
+# and is kept out of the shell's stdout and argv so it does not land in logs.
 #
 # Usage:  scripts/refresh-auth.sh
 set -euo pipefail

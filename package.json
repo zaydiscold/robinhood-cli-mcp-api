@@ -19,14 +19,14 @@
     "test:write-boundaries": "node scripts/check-write-boundaries.mjs",
     "generate:api-map": "node scripts/generate-brokerage-openapi.mjs && node scripts/generate-unified-api-map.mjs && node scripts/generate-brokerage-markdown.mjs && node scripts/generate-brokerage-curl.mjs && node scripts/generate-endpoint-markdown.mjs",
     "generate:tax-reference": "node scripts/generate-tax-reference.mjs",
-    "test": "node scripts/pnpm-portable.mjs build && node scripts/pnpm-portable.mjs test:built && node scripts/test-auth-session.mjs && python scripts/test_auth_candidate_selection.py",
+    "test": "node scripts/pnpm-portable.mjs build && node scripts/pnpm-portable.mjs test:built && node scripts/test-auth-session.mjs",
     "test:built": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli exec vitest run && node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli-mcp exec vitest run",
     "coverage": "node scripts/pnpm-portable.mjs build && node scripts/pnpm-portable.mjs coverage:built",
     "coverage:built": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli test:coverage && node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli-mcp test:coverage",
     "typecheck": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli build && node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli-mcp typecheck",
     "cli": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli cli",
     "tax": "node scripts/pnpm-portable.mjs --filter @zaydiscold/robinhood-cli build && node cli/dist/tax-cli.js",
-    "auth:refresh": "bash scripts/refresh-auth.sh",
+    "auth:refresh": "node scripts/run-auth-refresh.mjs",
     "version:refresh": "node scripts/scrape-web-app-version.mjs",
     "quality": "node scripts/pnpm-portable.mjs lint && node scripts/pnpm-portable.mjs format:check && node scripts/pnpm-portable.mjs deadcode && node scripts/pnpm-portable.mjs test:api-map && node scripts/pnpm-portable.mjs test:skill && node scripts/pnpm-portable.mjs test:agent-guidance && node scripts/pnpm-portable.mjs test:tax-reference && node scripts/pnpm-portable.mjs test:portability && node scripts/pnpm-portable.mjs test:write-boundaries",
     "regression:recent": "node scripts/pnpm-portable.mjs build && node scripts/pnpm-portable.mjs test:portability && node scripts/pnpm-portable.mjs dlx pnpm@11.13.1 --pm-on-fail=ignore audit --audit-level low",
@@ -42,12 +42,12 @@
     "@types/node": "^20.19.43",
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.12",
     "eslint": "^10.7.0",
     "knip": "^6.26.0",
     "prettier": "^3.9.5",
     "typescript": "^5.8.0",
-    "vite": "8.1.4",
-    "vitest": "^4.1.10"
+    "vite": "8.1.6",
+    "vitest": "^4.1.12"
   }
 }

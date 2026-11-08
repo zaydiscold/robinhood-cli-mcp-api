@@ -1,5 +1,10 @@
 import { spawnSync } from "node:child_process";
 
+const launcherTests = spawnSync(process.execPath, ["--test", "scripts/test-auth-launcher.mjs"], {
+  stdio: "inherit",
+});
+if (launcherTests.status !== 0) process.exit(launcherTests.status ?? 1);
+
 const candidates = process.platform === "win32" ? ["python", "py"] : ["python3", "python"];
 const tests = ["scripts/test_auth_session.py", "scripts/test_auth_candidate_selection.py"];
 for (const candidate of candidates) {

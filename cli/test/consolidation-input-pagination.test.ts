@@ -106,3 +106,40 @@ describe("equity numeric boundary", () => {
     expect(getJson).not.toHaveBeenCalled();
   });
 });
+
+it("enumerates options history by account and preserves provenance", async () => {
+  const getJson = vi.fn(
+    async (url: string, _params: unknown, query: Record<string, string> = {}) => {
+      if (url.includes("transfer/accounts"))
+        return {
+          results: [
+            { type: "rhs", account_number: "111111111", account_name: "Main" },
+            { type: "ira_roth", account_number: "222222222", account_name: "Retirement" },
+          ],
+        };
+      if (url.includes("options/orders")) {
+        if (!query.account_numbers) throw new Error("unscoped endpoint hides retirement");
+        return {
+          results: [
+            {
+              id: query.account_numbers,
+              updated_at: "2026-10-27",
+              chain_symbol: "EXMP",
+              state: "filled",
+              quantity: "1",
+              price: "2",
+            },
+          ],
+        };
+      }
+      return { results: [] };
+    },
+  );
+  const result = await getUnifiedHistory(
+    { days: 7 },
+    { getJson: getJson as never, now: () => Date.parse("2026-10-27T12:00:00Z") },
+  );
+  expect(result.map((r) => r.accountLast4)).toEqual(["1111", "2222"]);
+  expect(result.map((r) => r.orderId)).toEqual(["111111111", "222222222"]);
+  expect(result.every((r) => r.symbol === "EXMP")).toBe(true);
+});

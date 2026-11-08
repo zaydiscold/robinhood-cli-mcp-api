@@ -4,7 +4,10 @@ import { computePerformance } from "../src/lib.js";
 // computePerformance calls getJson(url, params, query); brokerageGetJson fills {id} from params,
 // so the injected fake keys off params.id (the url stays the {id} template). The accounts graph
 // comes from transfer/accounts/.
-function fakeGetJson(perfBody: any, accounts = [{ type: "rhs", account_number: "111111111", account_name: "Main" }]) {
+function fakeGetJson(
+  perfBody: any,
+  accounts = [{ type: "rhs", account_number: "111111111", account_name: "Main" }],
+) {
   return async (url: string, _params: any = {}, _query: any = {}) => {
     if (url.includes("transfer/accounts")) return { results: accounts };
     if (url.includes("portfolio/performance")) return perfBody;
@@ -21,15 +24,45 @@ const perfFixture = {
       segments: [
         {
           points: [
-            { x: 0, y: 0.0, cursor_data: { label: { value: "Jun 20, 2025" }, primary_value: { value: "$10,000.00" }, secondary_value: { main: { value: "$0.00 (0.00%)" }, description: { value: "" } } } },
-            { x: 0.5, y: 0.05, cursor_data: { label: { value: "Dec 20, 2025" }, primary_value: { value: "$10,500.00" }, secondary_value: { main: { value: "+$500.00 (5.00%)" }, description: { value: "Overnight" } } } },
-            { x: 1, y: 0.1, cursor_data: { label: { value: "Jun 19, 2026" }, primary_value: { value: "$11,000.00" }, secondary_value: { main: { value: "+$1,000.00 (10.00%)" }, description: { value: "Today" } } } }
-          ]
-        }
-      ]
+            {
+              x: 0,
+              y: 0.0,
+              cursor_data: {
+                label: { value: "Jun 20, 2025" },
+                primary_value: { value: "$10,000.00" },
+                secondary_value: { main: { value: "$0.00 (0.00%)" }, description: { value: "" } },
+              },
+            },
+            {
+              x: 0.5,
+              y: 0.05,
+              cursor_data: {
+                label: { value: "Dec 20, 2025" },
+                primary_value: { value: "$10,500.00" },
+                secondary_value: {
+                  main: { value: "+$500.00 (5.00%)" },
+                  description: { value: "Overnight" },
+                },
+              },
+            },
+            {
+              x: 1,
+              y: 0.1,
+              cursor_data: {
+                label: { value: "Jun 19, 2026" },
+                primary_value: { value: "$11,000.00" },
+                secondary_value: {
+                  main: { value: "+$1,000.00 (10.00%)" },
+                  description: { value: "Today" },
+                },
+              },
+            },
+          ],
+        },
+      ],
     },
-    { identifier: "benchmark", segments: [] }
-  ]
+    { identifier: "benchmark", segments: [] },
+  ],
 };
 
 describe("computePerformance — portfolio equity curve", () => {
@@ -70,10 +103,25 @@ describe("computePerformance — portfolio equity curve", () => {
   it("parses negative formatted money: '-$50.00' and '($50.00)' both → -50", async () => {
     const neg = {
       performance_baseline: { amount: "10000" },
-      lines: [{ identifier: "returns", segments: [{ points: [
-        { y: -0.005, cursor_data: { label: { value: "x" }, primary_value: { value: "-$50.00" } } },
-        { y: -0.005, cursor_data: { label: { value: "y" }, primary_value: { value: "($50.00)" } } }
-      ] }] }]
+      lines: [
+        {
+          identifier: "returns",
+          segments: [
+            {
+              points: [
+                {
+                  y: -0.005,
+                  cursor_data: { label: { value: "x" }, primary_value: { value: "-$50.00" } },
+                },
+                {
+                  y: -0.005,
+                  cursor_data: { label: { value: "y" }, primary_value: { value: "($50.00)" } },
+                },
+              ],
+            },
+          ],
+        },
+      ],
     };
     const r = await computePerformance({ span: "day" }, { getJson: fakeGetJson(neg) });
     expect(r.accounts[0].points[0].valueUsd).toBe(-50);
@@ -82,10 +130,13 @@ describe("computePerformance — portfolio equity curve", () => {
 
   it("degrades per-account: a failing account becomes a warning; others survive", async () => {
     const getJson = async (url: string, params: any = {}) => {
-      if (url.includes("transfer/accounts")) return { results: [
-        { type: "rhs", account_number: "111111111", account_name: "Good" },
-        { type: "rhs", account_number: "222222222", account_name: "Bad" }
-      ] };
+      if (url.includes("transfer/accounts"))
+        return {
+          results: [
+            { type: "rhs", account_number: "111111111", account_name: "Good" },
+            { type: "rhs", account_number: "222222222", account_name: "Bad" },
+          ],
+        };
       if (url.includes("portfolio/performance")) {
         if (params?.id === "222222222") throw new Error("500 Internal Server Error");
         return perfFixture;
@@ -101,10 +152,59 @@ describe("computePerformance — portfolio equity curve", () => {
   it("scopes to a single account when accountNumber is given", async () => {
     const getJson = fakeGetJson(perfFixture, [
       { type: "rhs", account_number: "111111111", account_name: "Main" },
-      { type: "ira_roth", account_number: "222222222", account_name: "Roth" }
+      { type: "ira_roth", account_number: "222222222", account_name: "Roth" },
     ]);
     const r = await computePerformance({ span: "month", accountNumber: "222222222" }, { getJson });
     expect(r.accounts).toHaveLength(1);
     expect(r.accounts[0].account).toBe("…2222");
+  });
+});
+
+describe("broker display return truth", () => {
+  it("uses negative color/icon, never positive chart y, and preserves the broker cash-flow return", async () => {
+    const display = {
+      main: { value: "$2,000.00 (40.00%)", color: { light: "negative" } },
+      icon: "stock_down_16",
+    };
+    const body = {
+      ...perfFixture,
+      default_display: { secondary_value: display },
+      lines: [
+        {
+          identifier: "returns",
+          segments: [
+            {
+              points: [
+                {
+                  y: 0.8,
+                  cursor_data: { primary_value: { value: "$3,000.00" }, secondary_value: display },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const result = await computePerformance({ span: "ytd" }, { getJson: fakeGetJson(body) });
+    expect(result.accounts[0].summary.periodReturnPct).toBe(-40);
+    expect(result.accounts[0].summary.periodReturnUsd).toBe(-2000);
+    expect(result.accounts[0].points[0].returnPct).toBe(-40);
+  });
+  it("keeps missing display returns unknown rather than using coordinates or value differences", async () => {
+    const body = {
+      ...perfFixture,
+      lines: [
+        {
+          identifier: "returns",
+          segments: [
+            { points: [{ y: 0.5, cursor_data: { primary_value: { value: "$12,000.00" } } }] },
+          ],
+        },
+      ],
+    };
+    const result = await computePerformance({}, { getJson: fakeGetJson(body) });
+    expect(result.accounts[0].summary.periodReturnPct).toBeNull();
+    expect(result.accounts[0].summary.periodReturnUsd).toBeNull();
+    expect(result.warnings[0]).toContain("chart coordinates are not returns");
   });
 });
